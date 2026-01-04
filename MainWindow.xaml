@@ -1,0 +1,75 @@
+﻿<Window x:Class="SkyrimCraftingTool.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:SkyrimCraftingTool"
+        Title="Skyrim Crafting Tool"
+        MinWidth="900" MinHeight="700"
+        Background="#111">
+
+    <DockPanel>
+
+        <!-- Header -->
+        <StackPanel DockPanel.Dock="Top"
+                    Orientation="Horizontal"
+                    Background="#2F4F4F"
+                    Margin="10">
+
+            <ComboBox x:Name="EspLoader"
+                      Width="300"
+                      Margin="0 0 10 0"
+                      ItemsSource="{Binding EspItemData.Keys}"
+                      SelectedItem="{Binding SelectedEsp}"/>
+
+            <ComboBox x:Name="CraftingCategory"
+                      Width="150"
+                      Margin="0 0 10 0"/>
+
+            <Button x:Name="SaveJsonButton"
+                    Content="Save JSON"
+                    Width="120"
+                    Margin="0 0 10 0"
+                    Command="{Binding SaveJsonCommand}"/>
+
+            <Button x:Name="LoadJsonButton"
+                    Content="Load JSON"
+                    Width="120"
+                    Margin="0 0 10 0"
+                    Command="{Binding LoadJsonCommand}"/>
+            
+            <Button x:Name="WriteEspButton"
+                    Content="Write ESP"
+                    Width="120"
+                    Command="{Binding WriteEspCommand}"/>
+        </StackPanel>
+
+        <!-- Scrollable Content -->
+        <Grid Margin="10">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <StackPanel Orientation="Horizontal" Grid.Row="0">
+                <!-- Dropdowns und Buttons -->
+            </StackPanel>
+
+            <ScrollViewer Grid.Row="1"
+                          local:ScrollSpeedBehavior.ScrollSpeed="3">
+                <ListBox ItemsSource="{Binding SelectedItems}"
+                   SelectedItem="{x:Null}">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <local:ItemCard DataContext="{Binding}"/>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </ScrollViewer>
+        </Grid>
+
+    </DockPanel>
+</Window>

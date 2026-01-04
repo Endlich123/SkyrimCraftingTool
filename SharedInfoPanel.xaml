@@ -1,0 +1,40 @@
+﻿<UserControl x:Class="SkyrimCraftingTool.SharedInfoPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:SkyrimCraftingTool"
+             >
+
+    <UserControl.Resources>
+        <local:GlobalStateProxy x:Key="State"
+        SelectedVendorKeywords="{x:Static local:GlobalState.SelectedVendorKeywords}"/>
+        <local:KeywordInListConverter x:Key="KeywordInListConverter" />
+    </UserControl.Resources>
+    <StackPanel Margin="0,10,0,0">
+
+        <!-- Name -->
+        <StackPanel Orientation="Horizontal">
+            <TextBlock Text="Name:" Width="100"/>
+            <TextBox Text="{Binding EditorID}" IsReadOnly="True" Width="300"/>
+        </StackPanel>
+
+        <!-- FormKey -->
+        <StackPanel Orientation="Horizontal">
+            <TextBlock Text="FormKey:" Width="100"/>
+            <TextBox Text="{Binding Record.FormKey, Mode=OneWay}" IsReadOnly="True" Width="300"/>
+        </StackPanel>
+
+        <!-- Cost -->
+        <StackPanel Orientation="Horizontal">
+            <TextBlock Text="Cost:" Width="100"/>
+            <TextBox Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}" Width="60"/>
+        </StackPanel>
+
+        <!-- Weight -->
+        <StackPanel Orientation="Horizontal">
+            <TextBlock Text="Weight:" Width="100"/>
+            <TextBox Text="{Binding Weight, UpdateSourceTrigger=PropertyChanged}" Width="60"/>
+        </StackPanel>
+    </StackPanel>
+
+
+</UserControl>

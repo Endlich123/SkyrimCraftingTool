@@ -1,0 +1,29 @@
+﻿<UserControl x:Class="SkyrimCraftingTool.VendorPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <StackPanel Margin="0 10 0 0">
+        <TextBlock Text="Vendor Types"
+                   FontWeight="Bold"
+                   Margin="0 0 0 5"/>
+
+        <ListBox ItemsSource="{Binding VendorOptions}"
+         BorderThickness="0"
+         Background="Transparent">
+            <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <UniformGrid Columns="3"/>
+                </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <CheckBox Content="{Binding Keyword}"
+                      IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                      Margin="5"/>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </StackPanel>
+
+</UserControl>
