@@ -1,0 +1,102 @@
+﻿<UserControl x:Class="SkyrimCraftingTool.SlotSettingsCard"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:SkyrimCraftingTool">
+
+    <Border BorderBrush="Gray" BorderThickness="1" Padding="10" Margin="5">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1" Padding="0" Margin="0">
+                <StackPanel Margin="5">
+                    <!-- Slot Name -->
+                    <TextBlock Text="{Binding SlotName}" FontWeight="Bold" Margin="0 0 0 10"/>
+
+                    <!-- Cost -->
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Cost:" Width="100"/>
+                        <TextBox Text="{Binding Cost, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="80"/>
+                    </StackPanel>
+
+                    <!-- Weight -->
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Weight:" Width="100"/>
+                        <TextBox Text="{Binding Weight, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="80"/>
+                    </StackPanel>
+
+                    <!-- Damage -->
+                    <StackPanel Orientation="Horizontal"
+                    Visibility="{Binding IsWeapon, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Damage:" Width="100"/>
+                        <TextBox Text="{Binding Damage, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="80"/>
+                    </StackPanel>
+
+                    <!-- Armor Rating -->
+                    <StackPanel Orientation="Horizontal"
+                    Visibility="{Binding IsArmor, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Armor Rating:" Width="100"/>
+                        <TextBox Text="{Binding ArmorRating, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="80"/>
+                    </StackPanel>
+
+                    <!-- Workbench -->
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Workbench:" Width="100"/>
+                        <ComboBox
+                            ItemsSource="{Binding Workbenches}"
+                            SelectedItem="{Binding SelectedWorkbench, Mode=TwoWay}"
+                            Width="200"/>
+                    </StackPanel>
+
+                    <!-- Materials -->
+                    <Separator Margin="0 10"/>
+                    <TextBlock Text="Materials" FontWeight="Bold" Margin="0 0 0 5"/>
+                    <Button Content="Add Material"
+                        Command="{Binding AddMaterialCommand}"
+                        Width="120" Margin="0 0 0 10"/>
+
+                    <ItemsControl ItemsSource="{Binding Materials}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal">
+                                    <ComboBox ItemsSource="{Binding DataContext.AllMaterialNames,
+                                    RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                  SelectedItem="{Binding Material, Mode=TwoWay}"
+                                  Width="150"/>
+
+                                    <TextBox Text="{Binding Amount, Mode=TwoWay}"
+                                 Width="60" Margin="10 0"/>
+
+                                    <Button Content="X"
+                                Command="{Binding DataContext.RemoveMaterialCommand,
+                                    RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                CommandParameter="{Binding}"
+                                Width="25" Margin="10 0"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- 2. col -->
+            <Border Grid.Column="1" BorderBrush="Gray" BorderThickness="1" Padding="0" Margin="0">
+                <StackPanel Margin="5">
+                    <!-- Vendors -->
+                    <TextBlock Text="Vendors:"/>
+                    <ListBox ItemsSource="{Binding VendorOptions}" Height="100">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox Content="{Binding Keyword}"
+                      IsChecked="{Binding IsSelected, Mode=TwoWay}" />
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+    </Border>
+</UserControl>

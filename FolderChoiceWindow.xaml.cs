@@ -21,7 +21,7 @@ namespace SkyrimCraftingTool
                 _settings = new FolderSettings();
             }
 
-            // UI füllen
+            // load data for UI
             GameDataPathBox.Text = _settings.GameDataPath;
             ModDirectoryPathBox.Text = _settings.ModDirectoryPath;
             PluginsFilePathBox.Text = _settings.PluginsFilePath;
@@ -60,7 +60,7 @@ namespace SkyrimCraftingTool
 
         private void SaveAndClose_Click(object sender, RoutedEventArgs e)
         {
-            // Validierung
+            // validate
             if (!Directory.Exists(GameDataPathBox.Text))
             {
                 System.Windows.MessageBox.Show("GameDataPath existiert nicht.");
@@ -79,7 +79,7 @@ namespace SkyrimCraftingTool
                 return;
             }
 
-            // Speichern
+            // save
             _settings.GameDataPath = GameDataPathBox.Text;
             _settings.ModDirectoryPath = ModDirectoryPathBox.Text;
             _settings.PluginsFilePath = PluginsFilePathBox.Text;

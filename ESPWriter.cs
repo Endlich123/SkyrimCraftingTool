@@ -44,15 +44,15 @@ public class ESPWriter
             return;
         }
 
-        // Patch-Mod initialisieren
+        // Patch-Mod initialize
         var modKey = ModKey.FromNameAndExtension(Path.GetFileName(outputPath));
         _patchMod = new SkyrimMod(modKey, SkyrimRelease.SkyrimSE);
 
-        // 1. Alle gültigen EspPaths einsammeln
+        // 1. search all EspPaths
         var validItems = _items.Where(i => !string.IsNullOrWhiteSpace(i.EspPath)).ToList();
         if (validItems.Count == 0)
         {
-            //Console.WriteLine("[ESPWriter] Keine Items mit gültigem EspPath. Abbruch.");
+            //Console.WriteLine("[ESPWriter] No items found in EspPath. Break.");
             return;
         }
 
@@ -64,11 +64,11 @@ public class ESPWriter
 
         if (espPaths.Count == 0)
         {
-            //Console.WriteLine("[ESPWriter] Keine existierenden ESP-Dateien gefunden. Abbruch.");
+            //Console.WriteLine("[ESPWriter] no existing ESP-Data found. Break.");
             return;
         }
 
-        // 2. Master-Referenzen aus Dateinamen
+        // 2. Master from Dataname
         var masterNames = espPaths
             .Select(p => Path.GetFileName(p))
             .Where(n => !string.IsNullOrWhiteSpace(n))
@@ -83,7 +83,7 @@ public class ESPWriter
             });
         }
 
-        // 3. Alle benötigten ESPs laden
+        // 3. load all needed esp
         foreach (var espPath in espPaths)
         {
             try
@@ -98,25 +98,25 @@ public class ESPWriter
             }
         }
 
-        // 4. Items verarbeiten
+        // 4. process items 
         foreach (var item in validItems)
         {
             if (!_loadedSourceMods.TryGetValue(item.EspPath, out var sourceMod))
             {
-                //Console.WriteLine($"[ESPWriter] Quelle '{item.EspPath}' für Item '{item.ItemName}' konnte nicht geladen werden. Übersprungen.");
+                //Console.WriteLine($"[ESPWriter] source '{item.EspPath}' for Item '{item.ItemName}' could not be loaded. Skip.");
                 continue;
             }
 
             if (!FormKey.TryFactory(item.FormKey, out var formKey))
             {
-                //Console.WriteLine($"[ESPWriter] Ungültiger FormKey '{item.FormKey}' für Item '{item.ItemName}'. Übersprungen.");
+                //Console.WriteLine($"[ESPWriter] wrong FormKey '{item.FormKey}' for Item '{item.ItemName}'. Skip.");
                 continue;
             }
 
             WriteArmorWeaponOrMisc(item, sourceMod, formKey);
         }
 
-        // 5. Patch-ESP schreiben
+        // 5. create Patch-ESP 
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
         _patchMod.WriteToBinary(outputPath);
         Console.WriteLine($"[ESPWriter] Patch geschrieben: {outputPath}");
@@ -124,7 +124,7 @@ public class ESPWriter
 
     private void WriteArmorWeaponOrMisc(PluginInfo item, SkyrimMod sourceMod, FormKey formKey)
     {
-        // Robust: Typ anhand des tatsächlichen Records erkennen
+        // check for Typ Weapon, Armor or Misc
         var originalArmor = sourceMod.Armors.FirstOrDefault(a => a.FormKey == formKey);
         if (originalArmor != null)
         {
@@ -139,7 +139,7 @@ public class ESPWriter
             return;
         }
 
-        // Fallback: irgendwas anderes
+        // Fallback
         WriteMiscItem(item);
     }
 
@@ -150,7 +150,7 @@ public class ESPWriter
     {
         var armorOverride = _patchMod.Armors.GetOrAddAsOverride(originalArmor);
 
-        // Basiswerte
+        // Basis
         armorOverride.Value = (uint)item.ItemValue;
         armorOverride.Weight = item.ItemWeight;
         armorOverride.ArmorRating = item.ArmorRating;
@@ -162,14 +162,14 @@ public class ESPWriter
             ReplaceVendorKeywords(armorOverride.Keywords, item.Vendors);
         }
 
-        // Slot-Maske setzen (ArmorSlot ist bei dir aktuell der Enum-Name, z. B. "Body")
+        // Slot-mask
         if (TryBuildBipedFlagFromArmorSlot(item.ArmorSlot, out var bipedFlag))
         {
             armorOverride.BodyTemplate ??= new BodyTemplate();
             armorOverride.BodyTemplate.FirstPersonFlags = bipedFlag;
         }
 
-        // COBJ (Rezept) suchen / erstellen
+        // COBJ 
         var existingRecipe = sourceMod.ConstructibleObjects
             .FirstOrDefault(cobj => cobj.CreatedObject.FormKey == originalArmor.FormKey);
 
@@ -189,12 +189,12 @@ public class ESPWriter
 
         // Workbench
         if (!string.IsNullOrEmpty(item.Workbench) &&
-            Program.keywordMapReverse.TryGetValue(item.Workbench, out var workbenchKeyword))
+            GlobalState.KeywordMapReverse.TryGetValue(item.Workbench, out var workbenchKeyword))
         {
             recipeOverride.WorkbenchKeyword = new FormLinkNullable<IKeywordGetter>(workbenchKeyword);
         }
 
-        // Items neu setzen
+        // Items 
         recipeOverride.Items?.Clear();
         recipeOverride.Items ??= new();
 
@@ -202,7 +202,7 @@ public class ESPWriter
         {
             foreach (var mat in item.Materials)
             {
-                if (!Program.materialMapReverse.TryGetValue(mat.Key, out var materialFormKey))
+                if (!GlobalState.MaterialMapReverse.TryGetValue(mat.Key, out var materialFormKey))
                 {
                     Console.WriteLine($"[ESPWriter] Material '{mat.Key}' nicht in materialMapReverse gefunden.");
                     continue;
@@ -228,7 +228,7 @@ public class ESPWriter
         newRecipe.CreatedObjectCount = 1;
 
         if (!string.IsNullOrEmpty(item.Workbench) &&
-            Program.keywordMapReverse.TryGetValue(item.Workbench, out var workbenchKeyword))
+            GlobalState.KeywordMapReverse.TryGetValue(item.Workbench, out var workbenchKeyword))
         {
             newRecipe.WorkbenchKeyword = new FormLinkNullable<IKeywordGetter>(workbenchKeyword);
         }
@@ -237,7 +237,7 @@ public class ESPWriter
         {
             foreach (var mat in item.Materials)
             {
-                if (!Program.materialMapReverse.TryGetValue(mat.Key, out var materialFormKey))
+                if (!GlobalState.MaterialMapReverse.TryGetValue(mat.Key, out var materialFormKey))
                 {
                     Console.WriteLine($"[ESPWriter] Material '{mat.Key}' nicht in materialMapReverse gefunden.");
                     continue;
@@ -255,7 +255,7 @@ public class ESPWriter
     }
 
     // -------------------------
-    // Weapon-Schreiben (Grundgerüst)
+    // Weapon-write
     // -------------------------
     private void WriteWeapon(PluginInfo item, SkyrimMod sourceMod, IWeaponGetter originalWeapon)
     {
@@ -276,7 +276,7 @@ public class ESPWriter
             ReplaceVendorKeywords(weaponOverride.Keywords, item.Vendors);
         }
 
-        // COBJ suchen / schreiben
+        // COBJ
         var existingRecipe = sourceMod.ConstructibleObjects
             .FirstOrDefault(cobj => cobj.CreatedObject.FormKey == originalWeapon.FormKey);
 
@@ -297,7 +297,7 @@ public class ESPWriter
 
         if (!string.IsNullOrEmpty(item.Workbench))
         {
-            if (Program.keywordMapReverse.TryGetValue(item.Workbench, out var workbenchKeyword))
+            if (GlobalState.KeywordMapReverse.TryGetValue(item.Workbench, out var workbenchKeyword))
             {
                 Console.WriteLine($"[ESPWriter] Workbench gesetzt: {item.Workbench} → {workbenchKeyword}");
                 recipeOverride.WorkbenchKeyword = new FormLinkNullable<IKeywordGetter>(workbenchKeyword);
@@ -316,7 +316,7 @@ public class ESPWriter
         {
             foreach (var mat in item.Materials)
             {
-                if (!Program.materialMapReverse.TryGetValue(mat.Key, out var materialFormKey))
+                if (!GlobalState.MaterialMapReverse.TryGetValue(mat.Key, out var materialFormKey))
                     continue;
 
                 var containerItem = new ContainerItem
@@ -340,7 +340,7 @@ public class ESPWriter
 
         if (!string.IsNullOrEmpty(item.Workbench))
         {
-            if (Program.keywordMapReverse.TryGetValue(item.Workbench, out var workbenchKeyword))
+            if (GlobalState.KeywordMapReverse.TryGetValue(item.Workbench, out var workbenchKeyword))
             {
                 Console.WriteLine($"[ESPWriter] Workbench gesetzt: {item.Workbench} → {workbenchKeyword}");
                 newRecipe.WorkbenchKeyword = new FormLinkNullable<IKeywordGetter>(workbenchKeyword);
@@ -356,7 +356,7 @@ public class ESPWriter
         {
             foreach (var mat in item.Materials)
             {
-                if (!Program.materialMapReverse.TryGetValue(mat.Key, out var materialFormKey))
+                if (!GlobalState.MaterialMapReverse.TryGetValue(mat.Key, out var materialFormKey))
                     continue;
 
                 var containerItem = new ContainerItem
@@ -389,12 +389,12 @@ public class ESPWriter
         if (string.IsNullOrWhiteSpace(armorSlot))
             return false;
 
-        // Bei dir ist ArmorSlot aktuell der Enum-Name (z. B. "Body").
+        // ArmorSlot
         if (!Enum.TryParse<ArmorSlot>(armorSlot, out var slotEnum))
             return false;
 
-        int slotValue = (int)slotEnum;   // z. B. 32 für Body
-        int bitIndex = slotValue - 30;   // dein Offset in Program.cs
+        int slotValue = (int)slotEnum;   
+        int bitIndex = slotValue - 30;   // Offset in Program.cs
 
         if (bitIndex < 0 || bitIndex >= 64)
             return false;
@@ -413,21 +413,21 @@ public class ESPWriter
         if (keywords == null)
             return;
 
-        // 1. Alle Vendor‑Keywords entfernen
+        // 1. remove Vendor‑Keywords
         var vendorLinks = keywords
             .Where(link =>
                 link != null &&
-                Program.keywordMap.TryGetValue(link.FormKey, out var edid) &&
+                GlobalState.KeywordMap.TryGetValue(link.FormKey, out var edid) &&
                 edid.StartsWith("VendorItem", StringComparison.OrdinalIgnoreCase))
             .ToList();
 
         foreach (var vendorLink in vendorLinks)
             keywords.Remove(vendorLink);
 
-        // 2. Neue Vendor‑Keywords hinzufügen
+        // 2. reload Vendor‑Keywords 
         foreach (var vendorName in newVendorNames.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            if (Program.keywordMapReverse.TryGetValue(vendorName, out var keywordFormKey))
+            if (GlobalState.KeywordMapReverse.TryGetValue(vendorName, out var keywordFormKey))
             {
                 var newLink = keywordFormKey.ToLink<IKeywordGetter>();
                 if (!keywords.Any(k => k.FormKey == keywordFormKey))

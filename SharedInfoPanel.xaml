@@ -5,8 +5,7 @@
              >
 
     <UserControl.Resources>
-        <local:GlobalStateProxy x:Key="State"
-        SelectedVendorKeywords="{x:Static local:GlobalState.SelectedVendorKeywords}"/>
+        <local:GlobalStateProxy x:Key="State"/>
         <local:KeywordInListConverter x:Key="KeywordInListConverter" />
     </UserControl.Resources>
     <StackPanel Margin="0,10,0,0">

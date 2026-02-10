@@ -4,14 +4,14 @@
         xmlns:local="clr-namespace:SkyrimCraftingTool"
         Title="Skyrim Crafting Tool"
         MinWidth="900" MinHeight="700"
-        Background="#111">
+        Background="#333">
 
     <DockPanel>
 
         <!-- Header -->
         <StackPanel DockPanel.Dock="Top"
                     Orientation="Horizontal"
-                    Background="#2F4F4F"
+                    Background="#333"
                     Margin="10">
 
             <ComboBox x:Name="EspLoader"
@@ -22,7 +22,9 @@
 
             <ComboBox x:Name="CraftingCategory"
                       Width="150"
-                      Margin="0 0 10 0"/>
+                      Margin="0 0 10 0"
+                      ItemsSource="{Binding CraftingCategories}"
+                      SelectedItem="{Binding SelectedCraftingCategory, Mode=TwoWay}"/>
 
             <Button x:Name="SaveJsonButton"
                     Content="Save JSON"
@@ -39,7 +41,13 @@
             <Button x:Name="WriteEspButton"
                     Content="Write ESP"
                     Width="120"
+                    Margin="0 0 10 0"
                     Command="{Binding WriteEspCommand}"/>
+
+            <Button Content="Settings"
+                    Width="120"
+                    Command="{Binding OpenSettingsCommand}"/>
+
         </StackPanel>
 
         <!-- Scrollable Content -->

@@ -11,37 +11,23 @@ using System.Reactive;
 using Mutagen.Bethesda.Plugins.Binary.Parameters;
 using Mutagen.Bethesda.Plugins.Cache;
 using System.Diagnostics;
+using DynamicData.Kernel;
 
 namespace SkyrimCraftingTool;
 
 public class Program
 {
-    public static Dictionary<FormKey, string> materialMap = new Dictionary<FormKey, string>();
-    public static Dictionary<string, FormKey> materialMapReverse = new();
-    //workbench
-    public static HashSet<string> WorkbenchKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    public static List<string> WorkbenchTypes
-    => WorkbenchKeywords.ToList();
-
-    //
-    //public static HashSet<string> VendorKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    public static Dictionary<FormKey, string> keywordMap = new Dictionary<FormKey, string>();
-
-    public static Dictionary<string, FormKey> keywordMapReverse = new();
-    // GLOBALES KEYWORD-VERZEICHNIS (falls du es als Fallback nutzen willst)
-    public static Dictionary<FormKey, string> AllKeywords = new Dictionary<FormKey, string>();
 
     public static string loadOrderFile;
 
     public static readonly HashSet<string> skipMods = new(StringComparer.OrdinalIgnoreCase)
     {
+        // Filter problematic mods
         "Skyrim Extended Cut - Saints and Seducers.esp",
         "MoreNastyCritters.esp",
-        // weitere Problem-Mods kannst du hier eintragen
     };
 
-    // >>> Optional: skyrim.esm und update.esm als statische Cache-Felder,
-    // damit sie nicht mehrfach geladen werden müssen.
+    // SkyrimEsm UpdateEsm
     private static ISkyrimModGetter? _skyrimEsm;
     private static ISkyrimModGetter? _updateEsm;
 
@@ -54,7 +40,7 @@ public class Program
         var folders = new FolderStructure(settings);
         folders.CheckFoldersAndLog();
 
-        Console.WriteLine(">>> Version of 20. December 2025 <<<");
+        Console.WriteLine(">>> Version of 10. Februar 2026 <<<");
 
         string modFolder = AppContext.BaseDirectory;
         string inputFolder = Path.Combine(modFolder, "Input");
@@ -62,20 +48,21 @@ public class Program
         string outputFolder = Path.Combine(modFolder, "Output");
         Directory.CreateDirectory(outputFolder);
 
-        // LoadOrder nur einmal lesen
+        // LoadOrder 
         var loadOrderListings = LoadStockGameLoadOrder();
 
-        // Skyrim.esm einmal laden
+        // Skyrim.esm
         _skyrimEsm = SkyrimMod.CreateFromBinary(FolderStructure.Current.SkyrimEsmPath, SkyrimRelease.SkyrimSE);
 
         foreach (var misc in _skyrimEsm.MiscItems)
         {
             var editorID = misc.EditorID ?? "Unbenannt";
-            materialMap[misc.FormKey] = editorID;
-            materialMapReverse[editorID] = misc.FormKey;
+            GlobalState.MaterialMap[misc.FormKey] = editorID;
+            GlobalState.MaterialMapReverse[editorID] = misc.FormKey;
         }
 
-        // Mod-Dateien einmal scannen
+
+        // Mod-Data 
         GlobalState.ModFilePathMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var file in Directory.GetFiles(
@@ -93,7 +80,7 @@ public class Program
         }
 
 
-        // Alle Mods laden
+        // all mods
         Bench.Start("LoadAllMods");
         var loadedMods = MutagenSafeLoader.LoadAllMods(
             loadOrderListings.Select(lo => lo.ModKey),
@@ -103,47 +90,45 @@ public class Program
 
         GlobalState.LoadedMods = loadedMods;
 
-        // EIN globaler LinkCache
+        // to LinkCache 
         GlobalState.LinkCache = loadedMods.ToImmutableLinkCache();
 
-        // Keyword-Mapping aus ALLEN geladenen Mods
-
-        // Keyword-Mapping zurücksetzen
-        keywordMap.Clear();
-        WorkbenchKeywords.Clear();
+        // Keyword-Mapping
+        GlobalState.KeywordMap.Clear();
+        GlobalState.WorkbenchKeywords.Clear();
         GlobalState.VendorKeywords.Clear();
 
-        // Workbench-Keywords aus Skyrim.esm
+        // Keywords from SkyrimESM
         foreach (var keyword in _skyrimEsm.Keywords)
         {
             var edid = keyword.EditorID ?? "Unbenannt";
 
-            keywordMap[keyword.FormKey] = edid;
-            keywordMapReverse[edid] = keyword.FormKey;
+            GlobalState.KeywordMap[keyword.FormKey] = edid;
+            GlobalState.KeywordMapReverse[edid] = keyword.FormKey;
 
             if (edid.Contains("Craft", StringComparison.OrdinalIgnoreCase))
-                WorkbenchKeywords.Add(edid);
+                GlobalState.WorkbenchKeywords.Add(edid);
 
             if (edid.Contains("Vendor", StringComparison.OrdinalIgnoreCase))
             {
                 GlobalState.VendorKeywords.Add(edid);
-                keywordMap[keyword.FormKey] = edid; // EditorID für GUI
+                GlobalState.KeywordMap[keyword.FormKey] = edid; // EditorID für GUI
             }
 
         }
 
-        // Update.esm nur laden, wenn vorhanden
+        // Keywords from Update.esm 
         if (_updateEsm != null && _updateEsm.Keywords != null)
         {
             foreach (var keyword in _updateEsm.Keywords)
             {
                 var edid = keyword.EditorID ?? "Unbenannt";
 
-                keywordMap[keyword.FormKey] = edid;
-                keywordMapReverse[edid] = keyword.FormKey;
+                GlobalState.KeywordMap[keyword.FormKey] = edid;
+                GlobalState.KeywordMapReverse[edid] = keyword.FormKey;
 
                 if (edid.Contains("Craft", StringComparison.OrdinalIgnoreCase))
-                    WorkbenchKeywords.Add(edid);
+                    GlobalState.WorkbenchKeywords.Add(edid);
 
                 if (edid.Contains("Vendor", StringComparison.OrdinalIgnoreCase))
                     GlobalState.VendorKeywords.Add(edid);
@@ -151,11 +136,11 @@ public class Program
         }
         else
         {
-            //Console.WriteLine("WARNUNG: update.esm konnte nicht geladen werden oder enthält keine Keywords.");
+            //Console.WriteLine("WARNUNG: update.esm couldn't be loaded.");
         }
 
 
-        // Mods ergänzen (falls sie neue Keywords definieren)
+        // Keywords from Mods
         foreach (var mod in GlobalState.LoadedMods)
         {
             foreach (var keyword in mod.Keywords)
@@ -163,19 +148,33 @@ public class Program
                 var edid = keyword.EditorID ?? "Unbenannt";
                 Debug.WriteLine("Keywords!!!!!!!!!!!!!!!!!");
 
-                keywordMap[keyword.FormKey] = edid;
-                keywordMapReverse[edid] = keyword.FormKey;
+                GlobalState.KeywordMap[keyword.FormKey] = edid;
+                GlobalState.KeywordMapReverse[edid] = keyword.FormKey;
 
-                foreach (var kv in Program.keywordMapReverse)
+                foreach (var kv in GlobalState.KeywordMapReverse)
                     Debug.WriteLine($"{kv.Key} → {kv.Value}");
 
                 if (edid.Contains("Craft", StringComparison.OrdinalIgnoreCase))
-                    WorkbenchKeywords.Add(edid);
+                    GlobalState.WorkbenchKeywords.Add(edid);
 
                 if (edid.Contains("Vendor", StringComparison.OrdinalIgnoreCase))
                     GlobalState.VendorKeywords.Add(edid);
             }
         }
+
+        //DebugConditionsOnSomeCOBJs();
+        LoadAllPerks();
+        //foreach (var fk in GlobalState.SmithingPerks) // how access the Formkeys
+        //{
+        //    if (GlobalState.PerkMap.TryGetValue(fk, out var edid))
+        //    {
+        //        Debug.WriteLine($"{edid}  →  {fk}");
+        //    }
+        //    else
+        //    {
+        //        Debug.WriteLine($"UNKNOWN → {fk}");
+        //    }
+        //}
 
         Console.WriteLine("Patch successful!");
         Bench.End("Benchmark");
@@ -283,11 +282,11 @@ public class Program
 
         foreach (var mod in mods)
         {
-            // Skip-Liste
+            // skip filter
             if (skipMods.Contains(mod.ModKey.FileName))
                 continue;
 
-            // Nur Mods mit relevanten Gruppen
+            // filter for relevant tags
             if (!MutagenSafeLoader.HasRelevantContent(mod))
                 continue;
 
@@ -296,7 +295,7 @@ public class Program
 
             string sourcePath = FindModFile(mod.ModKey.FileName) ?? string.Empty;
 
-            // Waffen
+            // weapon
             foreach (var weapon in mod.Weapons)
             {
                 var record = new WeaponRecord
@@ -311,8 +310,7 @@ public class Program
                     FormKey = weapon.FormKey
                 };
 
-                // --- robustes Keyword-Handling (für weapon.Keywords oder armor.Keywords) ---
-                // Beispiel für weapon.Keywords (analog für armor.Keywords)
+                // Keyword-Handling
                 if (weapon.Keywords != null)
                 {
                     foreach (var kw in weapon.Keywords)
@@ -320,14 +318,13 @@ public class Program
                         var edid = TryGetKeywordEdid(kw, linkCache);
                         if (string.IsNullOrWhiteSpace(edid))
                         {
-                            // Optional: nur einmal pro FormKey loggen, um Konsole nicht zu fluten
                             //Console.WriteLine($"[KW-UNRESOLVED] Could not resolve keyword link for item {record.EditorID} in {mod.ModKey.FileName}");
                             continue;
                         }
 
                         record.Keywords.Add(edid);
 
-                        // VendorKeywords ist HashSet mit OrdinalIgnoreCase → Contains reicht
+                        // VendorKeywords
                         if (GlobalState.VendorKeywords.Contains(edid))
                         {
                             if (!record.Vendor.Contains(edid, StringComparer.OrdinalIgnoreCase))
@@ -338,7 +335,7 @@ public class Program
                 }
 
 
-
+                // ConstructibleObjects
                 foreach (var cobj in mod.ConstructibleObjects)
                 {
                     if (cobj.CreatedObject.FormKey != record.FormKey)
@@ -346,7 +343,6 @@ public class Program
 
                     var wbKey = cobj.WorkbenchKeyword?.FormKey;
 
-                    // FIX: Items können NULL sein
                     if (cobj.Items == null)
                         continue;
 
@@ -355,8 +351,8 @@ public class Program
                         var itemKey = entry.Item.Item.FormKey;
                         int count = entry.Item.Count;
 
-                        if (materialMap.TryGetValue(itemKey, out var matName) &&
-                            keywordMap.TryGetValue(wbKey ?? default, out var wbName))
+                        if (GlobalState.MaterialMap.TryGetValue(itemKey, out var matName) &&
+                            GlobalState.KeywordMap.TryGetValue(wbKey ?? default, out var wbName))
                         {
                             record.Materials[matName] = count;
                             record.Workbench = wbName;
@@ -368,7 +364,7 @@ public class Program
                 weaponItems.Add(record);
             }
 
-            // Rüstungen
+            // armor
             foreach (var armor in mod.Armors)
             {
                 var record = new ArmorRecord
@@ -381,8 +377,7 @@ public class Program
                     FormKey = armor.FormKey
                 };
 
-                // --- robustes Keyword-Handling (für weapon.Keywords oder armor.Keywords) ---
-                // Beispiel für weapon.Keywords (analog für armor.Keywords)
+                //keyword-Handling
                 if (armor.Keywords != null)
                 {
                     foreach (var kw in armor.Keywords)
@@ -390,14 +385,13 @@ public class Program
                         var edid = TryGetKeywordEdid(kw, linkCache);
                         if (string.IsNullOrWhiteSpace(edid))
                         {
-                            // Optional: nur einmal pro FormKey loggen, um Konsole nicht zu fluten
                             //Console.WriteLine($"[KW-UNRESOLVED] Could not resolve keyword link for item {record.EditorID} in {mod.ModKey.FileName}");
                             continue;
                         }
 
                         record.Keywords.Add(edid);
 
-                        // VendorKeywords ist HashSet mit OrdinalIgnoreCase → Contains reicht
+                        // VendorKeywords
                         if (GlobalState.VendorKeywords.Contains(edid))
                         {
                             if (!record.Vendor.Contains(edid, StringComparer.OrdinalIgnoreCase))
@@ -409,7 +403,7 @@ public class Program
 
 
 
-                // Konstanten: erster relevanter ArmorSlot-Bitindex in deiner GUI/Enum
+                // Slots
                 const int ArmorSlotBitOffset = 30;
 
                 var flags = armor.BodyTemplate?.FirstPersonFlags;
@@ -426,18 +420,17 @@ public class Program
 
                         if (Enum.IsDefined(typeof(ArmorSlot), slotValue))
                         {
-                            // Setze den eigentlichen Slot
+                            // place slot
                             record.SelectedSlot = (ArmorSlot)slotValue;
                         }
 
-                        // Falls du die Liste behalten willst:
                         string slotName = Enum.GetName(typeof(ArmorSlot), slotValue) ?? $"Unbekannter Slot {slotValue}";
                         record.Slots.Add($"{slotValue}:{slotName}");
                     }
                 }
 
 
-                // Materialien
+                // materials from ConstructibleObjects
                 foreach (var cobj in mod.ConstructibleObjects)
                 {
                     if (cobj.CreatedObject.FormKey != record.FormKey)
@@ -445,7 +438,6 @@ public class Program
 
                     var wbKey = cobj.WorkbenchKeyword?.FormKey;
 
-                    // FIX: Items können NULL sein
                     if (cobj.Items == null)
                         continue;
 
@@ -454,8 +446,8 @@ public class Program
                         var itemKey = entry.Item.Item.FormKey;
                         int count = entry.Item.Count;
 
-                        if (materialMap.TryGetValue(itemKey, out var matName) &&
-                            keywordMap.TryGetValue(wbKey ?? default, out var wbName))
+                        if (GlobalState.MaterialMap.TryGetValue(itemKey, out var matName) &&
+                            GlobalState.KeywordMap.TryGetValue(wbKey ?? default, out var wbName))
                         {
                             record.Materials[matName] = count;
                             record.Workbench = wbName;
@@ -497,15 +489,154 @@ public class Program
             return resolved!.EditorID.Trim();
 
         // 2) Fallback: lookup in your keywordMap (FormKey -> EditorID)
-        if (keywordMap.TryGetValue(kwLink.FormKey, out var edidFromMap) && !string.IsNullOrWhiteSpace(edidFromMap))
+        if (GlobalState.KeywordMap.TryGetValue(kwLink.FormKey, out var edidFromMap) && !string.IsNullOrWhiteSpace(edidFromMap))
             return edidFromMap.Trim();
 
         // 3) Optional: fallback to global AllKeywords if vorhanden
-        if (AllKeywords.TryGetValue(kwLink.FormKey, out var edidAll) && !string.IsNullOrWhiteSpace(edidAll))
+        if (GlobalState.AllKeywords.TryGetValue(kwLink.FormKey, out var edidAll) && !string.IsNullOrWhiteSpace(edidAll))
             return edidAll.Trim();
 
         return null;
     }
 
+    //public static void DebugConditionsOnSomeCOBJs()
+    //{
+    //    if (_skyrimEsm == null)
+    //        return;
 
+    //    int counter = 0;
+
+    //    foreach (var cobj in _skyrimEsm.ConstructibleObjects)
+    //    {
+    //        if (cobj.Conditions == null || cobj.Conditions.Count == 0)
+    //            continue;
+
+    //        Debug.WriteLine($"COBJ: {cobj.EditorID ?? cobj.FormKey.ToString()}");
+    //        foreach (var cond in cobj.Conditions)
+    //        {
+    //            var data = cond.Data;
+    //            Debug.WriteLine($"  Condition Data Type: {data?.GetType().FullName ?? "null"}");
+    //            Debug.WriteLine($"  Condition ToString(): {data}");
+    //        } 
+
+    //            counter++;
+    //        if (counter > 20) break; // nicht alles fluten
+    //    }
+    //}
+
+    //public static void readperksfromitems() //dont delete can be used later
+    //{
+    //    if (_skyrimEsm == null)
+    //        return;
+
+    //    // Lokale Variablen holen
+    //    var loadedMods = GlobalState.LoadedMods;
+    //    var linkCache = GlobalState.LinkCache;
+    //    var modKey = _skyrimEsm.ModKey;
+
+    //    // Skyrim.esm + Update.esm + Mods in EINEN Cache packen
+    //    var allMods = new List<ISkyrimModGetter>();
+    //    allMods.Add(_skyrimEsm);
+
+    //    if (_updateEsm != null)
+    //        allMods.Add(_updateEsm);
+
+    //    allMods.AddRange(loadedMods);
+
+    //    // new LinkCache
+    //    linkCache = allMods.ToImmutableLinkCache();
+
+    //    foreach (var cobj in _skyrimEsm.ConstructibleObjects)
+    //    {
+    //        if (cobj.Conditions == null)
+    //            continue;
+
+    //        foreach (var cond in cobj.Conditions)
+    //        {
+    //            if (cond.Data is HasPerkConditionData perkData)
+    //            {
+    //                var perkItem = perkData.Perk;
+
+    //                // Try Link
+    //                var link = perkItem.Link;
+    //                if (link != null && link.TryResolve<IPerkGetter>(linkCache, out var perk))
+    //                {
+    //                    Debug.WriteLine($"PERK FOUND (Link): {perk.EditorID} ({perk.FormKey})");
+    //                    continue;
+    //                }
+
+    //                // Index
+    //                if (perkItem.Index is uint index)
+    //                {
+    //                    var fk = new FormKey(_skyrimEsm.ModKey, index);
+    //                    var linkFromIndex = fk.ToLink<IPerkGetter>();
+
+    //                    if (linkFromIndex.TryResolve<IPerkGetter>(linkCache, out var resolved))
+    //                    {
+    //                        Debug.WriteLine($"PERK FOUND via Index: {resolved.EditorID} ({resolved.FormKey})");
+    //                    }
+    //                    else
+    //                    {
+    //                        Debug.WriteLine($"PERK unresolved (Index): {fk}");
+    //                    }
+
+    //                    continue;
+    //                }
+
+    //                // neither Link nor Index
+    //                Debug.WriteLine("PERK unresolved (neither Link nor Index)");
+    //            }
+    //        }
+    //    }
+    //}
+
+    public static void LoadAllPerks()
+    {
+        if (_skyrimEsm == null)
+            return;
+
+        var loadedMods = GlobalState.LoadedMods;
+        var allMods = new List<ISkyrimModGetter>();
+
+        allMods.Add(_skyrimEsm);
+        if (_updateEsm != null)
+            allMods.Add(_updateEsm);
+        allMods.AddRange(loadedMods);
+
+        var linkCache = allMods.ToImmutableLinkCache();
+
+        // Globale Maps clear
+        GlobalState.PerkMap.Clear();
+        GlobalState.PerkMapReverse.Clear();
+
+        // load all perks
+        var allPerks = linkCache.PriorityOrder
+            .SelectMany(mod => mod.EnumerateMajorRecords<IPerkGetter>())
+            .ToList();
+
+        foreach (var perk in allPerks)
+        {
+            var edid = perk.EditorID ?? $"PERK_{perk.FormKey}";
+
+            GlobalState.PerkMap[perk.FormKey] = edid;
+            GlobalState.PerkMapReverse[edid] = perk.FormKey;
+
+            //Debug.WriteLine($"PERK: {edid} ({perk.FormKey})");
+        }
+
+        GlobalState.SmithingPerks.Clear();
+
+        foreach (var perk in allPerks)
+        {
+            var edid = perk.EditorID ?? $"PERK_{perk.FormKey}";
+
+            GlobalState.PerkMap[perk.FormKey] = edid;
+            GlobalState.PerkMapReverse[edid] = perk.FormKey;
+
+            if (GlobalState.SmithingPerkEditorIDs.Contains(edid))
+                GlobalState.SmithingPerks.Add(perk.FormKey);
+        }
+
+
+    }
 }

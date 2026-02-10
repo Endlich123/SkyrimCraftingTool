@@ -44,9 +44,9 @@ public class FolderStructure
         foreach (string folder in foldersToCheck)
         {
             if (Directory.Exists(folder))
-                Console.WriteLine($"✔ Folder found: {folder}");
+                Console.WriteLine($" Folder found: {folder}");
             else
-                Console.WriteLine($"❌ Folder missing: {folder}");
+                Console.WriteLine($" Folder missing: {folder}");
         }
     }
 }

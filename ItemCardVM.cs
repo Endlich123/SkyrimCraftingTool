@@ -22,7 +22,7 @@ public class ItemCardVM : INotifyPropertyChanged
             if (_vendorPanel == value)
                 return;
 
-            // altes Event lösen, neues binden
+            // remove old Event, add new
             if (_vendorPanel != null)
                 _vendorPanel.VendorsChanged -= OnVendorsChanged;
 
@@ -39,8 +39,8 @@ public class ItemCardVM : INotifyPropertyChanged
         SelectedVendors = vendors;
     }
 
-    // Workbench
-    public IEnumerable<string> Workbenches => Program.WorkbenchTypes;
+    // add Workbench to WorkbenchPanel
+    public IEnumerable<string> Workbenches => GlobalState.WorkbenchTypes;
 
     // -------------------------
     // MATERIAL LIST
@@ -63,13 +63,13 @@ public class ItemCardVM : INotifyPropertyChanged
     public ICommand RemoveMaterialCommand { get; }
 
     // -------------------------
-    // Konstruktor
+    // Constructor
     // -------------------------
     public ItemCardVM(IGameRecord record, IEnumerable<string> allVendorKeywords)
     {
         Record = record;
 
-        // Vendor Panel + Rückkanal
+        // Vendor Panel
         VendorPanel = new VendorPanelVM(allVendorKeywords, record.Vendor);
 
         // Shared
@@ -197,7 +197,7 @@ public class ItemCardVM : INotifyPropertyChanged
     {
         MaterialList.Add(new MaterialEntry
         {
-            Material = Program.materialMap.Values.First(), // Default-Material
+            Material = GlobalState.MaterialMap.Values.First(), // Default-Material
             Amount = 1
         });
     }

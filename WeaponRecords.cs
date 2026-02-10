@@ -19,7 +19,7 @@ public class WeaponRecord : IGameRecord
     public Dictionary<string, int> Materials { get; set; } = new();
     public List<MaterialEntry> MaterialList { get; set; }
     public List<string> Keywords { get; set; } = new();
-    public List<string> Effects { get; set; } = new(); // z. B. Verzauberungen
+    public List<string> Effects { get; set; } = new(); // z. B. entchanments not yet used
 
     public WeaponRecord() { MaterialList = Materials.Select(kvp => new MaterialEntry { Material = kvp.Key, Amount = kvp.Value }).ToList(); }
 

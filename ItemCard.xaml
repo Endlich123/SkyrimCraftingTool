@@ -7,7 +7,7 @@
              MinHeight="100"
              Margin="0 0 0 15">
 
-    <Border BorderBrush="Gray" BorderThickness="1" Padding="10" Background="#333"
+    <Border BorderBrush="Gray" BorderThickness="1" Padding="10" Background="#555"
             HorizontalAlignment="Stretch">
 
         <StackPanel>

@@ -2,7 +2,7 @@
 using Mutagen.Bethesda.Plugins;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.ComponentModel;
+
 
 namespace SkyrimCraftingTool;
 public class ArmorRecord : IGameRecord, INotifyPropertyChanged
@@ -18,9 +18,6 @@ public class ArmorRecord : IGameRecord, INotifyPropertyChanged
     public List<string> Keywords { get; set; } = new();
     public List<string> Slots { get; set; } = new();
     private ArmorSlot? _selectedSlot; 
-    //public ArmorSlot? SelectedSlot { get => _selectedSlot; set { if (_selectedSlot != value) { _selectedSlot = value; OnPropertyChanged(nameof(SelectedSlot)); } } }
-    //public ArmorSlot? SelectedSlot { get { Console.WriteLine($"SelectedSlot GET: {_selectedSlot}"); return _selectedSlot; } set { Console.WriteLine($"SelectedSlot SET: {value}"); if (_selectedSlot != value) { _selectedSlot = value; OnPropertyChanged(nameof(SelectedSlot)); } } }
-    //public ArmorSlot? SelectedSlot { get; set; } = ArmorSlot.Body;
     public ArmorSlot SelectedSlot { get; set; }
 
 

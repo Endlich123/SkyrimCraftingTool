@@ -1,7 +1,7 @@
 ﻿<Window x:Class="SkyrimCraftingTool.FolderChoiceWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Ordner auswählen" Height="200" Width="600">
+        Title="Choose your Folder" Height="200" Width="600">
 
     <Window.Resources>
         <Style TargetType="TextBox">
@@ -56,6 +56,6 @@
             <TextBox x:Name="PluginsFilePathBox" Width="450" Tag="plugins.txt MO2-> profile or \Users\youruser\AppData\Local\Skyrim Special Edition"/>
             <Button Content="..." Width="40" Margin="5 0" Click="SelectPluginsFilePath_Click"/>
         </StackPanel>
-        <Button Grid.Row="3" Content="Speichern" Width="120" Height="30" HorizontalAlignment="Right" Click="SaveAndClose_Click"/>
+        <Button Grid.Row="3" Content="Save" Width="120" Height="30" HorizontalAlignment="Right" Click="SaveAndClose_Click"/>
     </Grid>
 </Window>

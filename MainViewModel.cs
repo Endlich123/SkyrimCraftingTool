@@ -9,21 +9,28 @@ namespace SkyrimCraftingTool;
 
 public class MainViewModel : INotifyPropertyChanged
 {
+    
     public ObservableCollection<ItemCardVM> SelectedItems { get; } = new();
 
     public static List<MaterialOption> MaterialOptions =
-        Program.materialMap.Select(kvp => new MaterialOption
+        GlobalState.MaterialMap.Select(kvp => new MaterialOption
         {
             KeyString = kvp.Key.ToString(),
             DisplayName = kvp.Value
         }).ToList();
 
     public static List<string> MaterialNames =>
-        Program.materialMapReverse.Keys.ToList();
+        GlobalState.MaterialMapReverse.Keys.ToList();
+
+    public ObservableCollection<string> CraftingCategories { get; }
+    = new ObservableCollection<string>();
+
 
     public ICommand SaveJsonCommand { get; }
     public ICommand LoadJsonCommand { get; }
     public ICommand WriteEspCommand { get; }
+    public ICommand OpenSettingsCommand { get; }
+
 
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -53,8 +60,23 @@ public class MainViewModel : INotifyPropertyChanged
         SaveJsonCommand = new RelayCommand(_ => SaveJson());
         LoadJsonCommand = new RelayCommand(_ => LoadJson());
         WriteEspCommand = new RelayCommand(_ => WriteEsp());
+        OpenSettingsCommand = new RelayCommand(_ => OpenSettings());
+
+        LoadCraftingCategories();
+
+        // Default-Wert setzen
+        SelectedCraftingCategory = "Random";
+
+        GlobalState.CraftingSettings.SettingsChanged += OnSettingsChanged;
+
 
     }
+
+    private void OnSettingsChanged(string key)
+    {
+        ApplySettingsToItems();
+    }
+
 
     protected void OnPropertyChanged([CallerMemberName] string? name = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
@@ -73,6 +95,7 @@ public class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    // 
     private void LoadSelectedItems()
     {
         SelectedItems.Clear();
@@ -88,6 +111,81 @@ public class MainViewModel : INotifyPropertyChanged
             SelectedItems.Add(new ItemCardVM(record, GlobalState.VendorKeywords));
         }
     }
+
+    // Crafting Categories Choicebox
+    private void LoadCraftingCategories()
+    {
+        CraftingCategories.Clear();
+
+        // 1. Dein eigener Eintrag
+        CraftingCategories.Add("Random");
+
+        // 2. Smithing-Perks hinzufügen
+        foreach (var perkName in GlobalState.SmithingPerkEditorIDs)
+        {
+            CraftingCategories.Add(perkName);
+        }
+    }
+
+    private string? _selectedCraftingCategory;
+    public string? SelectedCraftingCategory
+    {
+        get => _selectedCraftingCategory;
+        set
+        {
+            if (_selectedCraftingCategory == value)
+                return;
+
+            _selectedCraftingCategory = value;
+            OnPropertyChanged();
+
+            ApplySettingsToItems();
+        }
+    }
+
+    private void ApplySettingsToItems()
+    {
+        if (SelectedCraftingCategory == null)
+            return;
+
+        foreach (var item in SelectedItems)
+        {
+            // Category + Slot 
+            string category = SelectedCraftingCategory;
+            string slot = item.IsArmor ? item.ArmorSlot : item.WeaponType;
+
+            // SlotSettings 
+            var slotSettings = GlobalState.CraftingSettings.GetSlot(category, slot);
+
+            // Values
+            item.Value = (int)slotSettings.Cost;
+            item.Weight = slotSettings.Weight;
+
+            if (item.IsArmor)
+                item.ArmorRating = (int)slotSettings.ArmorRating;
+
+            if (item.IsWeapon)
+                item.Damage = (int)slotSettings.Damage;
+
+            // Vendors
+            item.SelectedVendors = slotSettings.Vendors.ToList();
+            item.VendorPanel = new VendorPanelVM(GlobalState.VendorKeywords, item.SelectedVendors);
+
+            // Workbench
+            item.SelectedWorkbench = slotSettings.SelectedWorkbench;
+
+            // Materials
+            item.MaterialList = new ObservableCollection<MaterialEntry>(
+                slotSettings.Materials.Select(m => new MaterialEntry
+                {
+                    Material = m.Material,
+                    Amount = m.Amount
+                })
+            );
+        }
+    }
+
+
 
     // ---------------------------------------------------------
     //  JSON EXPORT
@@ -163,7 +261,7 @@ public class MainViewModel : INotifyPropertyChanged
             // Weapon
             vm.Damage = info.Damage;
 
-            // 🔥 WICHTIG: WeaponType IMMER normalisieren
+            //  norm WeaponType 
             if (Enum.TryParse<WeaponTypes>(info.WeaponType, out var parsed))
                 vm.WeaponType = parsed.ToString();
             else
@@ -230,5 +328,15 @@ public class MainViewModel : INotifyPropertyChanged
             System.Windows.MessageBox.Show("Fehler beim Schreiben der ESP:\n" + ex.Message);
         }
     }
+
+    // ---------------------------------------------------------
+    //  Settings
+    // ---------------------------------------------------------
+    private void OpenSettings()
+    {
+        var win = new SettingsWindow();
+        win.ShowDialog();
+    }
+
 
 }

@@ -16,7 +16,7 @@ public partial class App : System.Windows.Application
 
         if (result == true)
         {
-            Program.Handler(); // <-- Hier startet deine komplette Logik 
+            Program.Handler(); // start program
         }
 
             if (result != true)
@@ -27,7 +27,7 @@ public partial class App : System.Windows.Application
 
         new MainWindow().Show();
 
-        // Jetzt erst wieder auf normalen Modus setzen
+        // change modus
         System.Windows.Application.Current.ShutdownMode = ShutdownMode.OnMainWindowClose;
     }
 

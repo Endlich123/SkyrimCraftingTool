@@ -3,13 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using static SkyrimCraftingTool.GlobalState;
 
 namespace SkyrimCraftingTool
 {
-    public class MaterialOption
+    public class AllSettings
     {
-        public string KeyString { get; set; }   // FormKey as string
-        public string DisplayName { get; set; } // EditorID
+        public Dictionary<string, SlotSettingsData> Settings { get; set; }
+            = new();
     }
 
 }
