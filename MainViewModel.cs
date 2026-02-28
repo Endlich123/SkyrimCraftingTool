@@ -167,28 +167,22 @@ public class MainViewModel : INotifyPropertyChanged
             if (item.IsWeapon)
                 item.Damage = (int)slotSettings.Damage;
 
-            // Vendors nur setzen, wenn Item noch keine eigenen hat
-            if (item.SelectedVendors == null || item.SelectedVendors.Count == 0)
-            {
-                item.SelectedVendors = slotSettings.Vendors.ToList();
-                item.VendorPanel = new VendorPanelVM(GlobalState.VendorKeywords, item.SelectedVendors);
-            }
+            // Vendors: übernehmen von SlotSettings (überschreibt bestehende Auswahl)
+            item.SelectedVendors = slotSettings.Vendors.ToList();
+            item.VendorPanel = new VendorPanelVM(GlobalState.VendorKeywords, item.SelectedVendors);
 
             // Workbench nur setzen, wenn leer
             if (string.IsNullOrEmpty(item.SelectedWorkbench))
                 item.SelectedWorkbench = slotSettings.SelectedWorkbench;
 
-            // Materials nur setzen, wenn Item noch keine eigenen hat
-            if (item.MaterialList == null || item.MaterialList.Count == 0)
-            {
-                item.MaterialList = new ObservableCollection<MaterialEntry>(
-                    slotSettings.Materials.Select(m => new MaterialEntry(item.SlotSettingsParent)
-                    {
-                        Material = m.Material,
-                        Amount = m.Amount
-                    })
-                );
-            }
+            // Materials: übernehmen von SlotSettings (überschreibt bestehende Liste)
+            item.MaterialList = new ObservableCollection<MaterialEntry>(
+                slotSettings.Materials.Select(m => new MaterialEntry(item.SlotSettingsParent)
+                {
+                    Material = m.Material,
+                    Amount = m.Amount
+                })
+            );
         }
     }
 
