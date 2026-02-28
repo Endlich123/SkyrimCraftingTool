@@ -78,6 +78,5 @@
                 </ListBox>
             </ScrollViewer>
         </Grid>
-
     </DockPanel>
 </Window>

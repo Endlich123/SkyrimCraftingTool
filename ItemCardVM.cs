@@ -10,6 +10,8 @@ public class ItemCardVM : INotifyPropertyChanged
 {
     public IGameRecord Record { get; }
 
+    public SlotSettingsViewModel SlotSettingsParent { get; set; }
+
     // -------------------------
     // Panels
     // -------------------------
@@ -22,7 +24,6 @@ public class ItemCardVM : INotifyPropertyChanged
             if (_vendorPanel == value)
                 return;
 
-            // remove old Event, add new
             if (_vendorPanel != null)
                 _vendorPanel.VendorsChanged -= OnVendorsChanged;
 
@@ -39,7 +40,6 @@ public class ItemCardVM : INotifyPropertyChanged
         SelectedVendors = vendors;
     }
 
-    // add Workbench to WorkbenchPanel
     public IEnumerable<string> Workbenches => GlobalState.WorkbenchTypes;
 
     // -------------------------
@@ -69,33 +69,30 @@ public class ItemCardVM : INotifyPropertyChanged
     {
         Record = record;
 
-        // Vendor Panel
         VendorPanel = new VendorPanelVM(allVendorKeywords, record.Vendor);
 
-        // Shared
         EditorID = record.EditorID;
         Value = (int)record.Value;
         Weight = record.Weight;
         SelectedWorkbench = record.Workbench;
         SelectedVendors = new List<string>(record.Vendor);
 
-        // Armor
         if (record is ArmorRecord armor)
         {
             ArmorRating = (int)armor.ArmorRating;
             ArmorSlot = armor.SelectedSlot.ToString();
         }
 
-        // Weapon
         if (record is WeaponRecord weapon)
         {
             Damage = (int)weapon.Damage;
             WeaponType = weapon.WeaponType;
         }
 
-        // Materials
+        // WICHTIG: MaterialEntry bekommt KEINEN Parent hier,
+        // weil SlotSettingsParent erst später gesetzt wird.
         MaterialList = new ObservableCollection<MaterialEntry>(
-            record.Materials.Select(kvp => new MaterialEntry
+            record.Materials.Select(kvp => new MaterialEntry(null)
             {
                 Material = kvp.Key,
                 Amount = kvp.Value
@@ -195,9 +192,9 @@ public class ItemCardVM : INotifyPropertyChanged
     // -------------------------
     private void AddMaterial()
     {
-        MaterialList.Add(new MaterialEntry
+        MaterialList.Add(new MaterialEntry(SlotSettingsParent)
         {
-            Material = GlobalState.MaterialMap.Values.First(), // Default-Material
+            Material = GlobalState.MaterialMap.Values.First(),
             Amount = 1
         });
     }

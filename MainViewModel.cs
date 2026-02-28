@@ -9,7 +9,6 @@ namespace SkyrimCraftingTool;
 
 public class MainViewModel : INotifyPropertyChanged
 {
-    
     public ObservableCollection<ItemCardVM> SelectedItems { get; } = new();
 
     public static List<MaterialOption> MaterialOptions =
@@ -23,21 +22,19 @@ public class MainViewModel : INotifyPropertyChanged
         GlobalState.MaterialMapReverse.Keys.ToList();
 
     public ObservableCollection<string> CraftingCategories { get; }
-    = new ObservableCollection<string>();
-
+        = new ObservableCollection<string>();
 
     public ICommand SaveJsonCommand { get; }
     public ICommand LoadJsonCommand { get; }
     public ICommand WriteEspCommand { get; }
     public ICommand OpenSettingsCommand { get; }
 
-
-
     public event PropertyChangedEventHandler? PropertyChanged;
 
     private string? _selectedEsp;
-
     public Dictionary<string, List<IGameRecord>> EspItemData { get; }
+
+    private CategorySettingsViewModel? _currentCategorySettings;
 
     public string? SelectedEsp
     {
@@ -64,19 +61,8 @@ public class MainViewModel : INotifyPropertyChanged
 
         LoadCraftingCategories();
 
-        // Default-Wert setzen
         SelectedCraftingCategory = "Random";
-
-        GlobalState.CraftingSettings.SettingsChanged += OnSettingsChanged;
-
-
     }
-
-    private void OnSettingsChanged(string key)
-    {
-        ApplySettingsToItems();
-    }
-
 
     protected void OnPropertyChanged([CallerMemberName] string? name = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
@@ -95,7 +81,6 @@ public class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    // 
     private void LoadSelectedItems()
     {
         SelectedItems.Clear();
@@ -110,21 +95,18 @@ public class MainViewModel : INotifyPropertyChanged
         {
             SelectedItems.Add(new ItemCardVM(record, GlobalState.VendorKeywords));
         }
+
+        ApplySettingsToItems();
     }
 
-    // Crafting Categories Choicebox
     private void LoadCraftingCategories()
     {
         CraftingCategories.Clear();
 
-        // 1. Dein eigener Eintrag
         CraftingCategories.Add("Random");
 
-        // 2. Smithing-Perks hinzufügen
         foreach (var perkName in GlobalState.SmithingPerkEditorIDs)
-        {
             CraftingCategories.Add(perkName);
-        }
     }
 
     private string? _selectedCraftingCategory;
@@ -139,25 +121,43 @@ public class MainViewModel : INotifyPropertyChanged
             _selectedCraftingCategory = value;
             OnPropertyChanged();
 
+            if (_selectedCraftingCategory == "Random")
+            {
+                _currentCategorySettings = null;
+                ApplySettingsToItems();   // setzt Items auf Default, erzeugt aber KEINE Datei
+                return;
+            }
+
+            // Normale Kategorien → Datei laden / erzeugen
+            _currentCategorySettings = new CategorySettingsViewModel(_selectedCraftingCategory);
             ApplySettingsToItems();
         }
     }
 
     private void ApplySettingsToItems()
     {
-        if (SelectedCraftingCategory == null)
+        if (SelectedCraftingCategory == null || SelectedCraftingCategory == "Random")
+            return;
+
+        if (_currentCategorySettings == null)
             return;
 
         foreach (var item in SelectedItems)
         {
-            // Category + Slot 
-            string category = SelectedCraftingCategory;
             string slot = item.IsArmor ? item.ArmorSlot : item.WeaponType;
 
-            // SlotSettings 
-            var slotSettings = GlobalState.CraftingSettings.GetSlot(category, slot);
+            var slotSettings =
+                _currentCategorySettings.ArmorSlots
+                    .Concat(_currentCategorySettings.WeaponTypes)
+                    .FirstOrDefault(s => s.SlotName == slot);
 
-            // Values
+            if (slotSettings == null)
+                continue;
+
+            // Parent setzen
+            item.SlotSettingsParent = slotSettings;
+
+            // Basiswerte aus Slot (kannst du bei Bedarf auch schützen)
             item.Value = (int)slotSettings.Cost;
             item.Weight = slotSettings.Weight;
 
@@ -167,29 +167,32 @@ public class MainViewModel : INotifyPropertyChanged
             if (item.IsWeapon)
                 item.Damage = (int)slotSettings.Damage;
 
-            // Vendors
-            item.SelectedVendors = slotSettings.Vendors.ToList();
-            item.VendorPanel = new VendorPanelVM(GlobalState.VendorKeywords, item.SelectedVendors);
+            // Vendors nur setzen, wenn Item noch keine eigenen hat
+            if (item.SelectedVendors == null || item.SelectedVendors.Count == 0)
+            {
+                item.SelectedVendors = slotSettings.Vendors.ToList();
+                item.VendorPanel = new VendorPanelVM(GlobalState.VendorKeywords, item.SelectedVendors);
+            }
 
-            // Workbench
-            item.SelectedWorkbench = slotSettings.SelectedWorkbench;
+            // Workbench nur setzen, wenn leer
+            if (string.IsNullOrEmpty(item.SelectedWorkbench))
+                item.SelectedWorkbench = slotSettings.SelectedWorkbench;
 
-            // Materials
-            item.MaterialList = new ObservableCollection<MaterialEntry>(
-                slotSettings.Materials.Select(m => new MaterialEntry
-                {
-                    Material = m.Material,
-                    Amount = m.Amount
-                })
-            );
+            // Materials nur setzen, wenn Item noch keine eigenen hat
+            if (item.MaterialList == null || item.MaterialList.Count == 0)
+            {
+                item.MaterialList = new ObservableCollection<MaterialEntry>(
+                    slotSettings.Materials.Select(m => new MaterialEntry(item.SlotSettingsParent)
+                    {
+                        Material = m.Material,
+                        Amount = m.Amount
+                    })
+                );
+            }
         }
     }
 
 
-
-    // ---------------------------------------------------------
-    //  JSON EXPORT
-    // ---------------------------------------------------------
     public List<PluginInfo> ExtractPluginInfoFromSelectedItems()
     {
         var list = new List<PluginInfo>();
@@ -221,9 +224,6 @@ public class MainViewModel : INotifyPropertyChanged
         return list;
     }
 
-    // ---------------------------------------------------------
-    //  JSON IMPORT
-    // ---------------------------------------------------------
     public void ApplyPluginInfoToGui(List<PluginInfo> items)
     {
         foreach (var info in items)
@@ -238,30 +238,24 @@ public class MainViewModel : INotifyPropertyChanged
             vm.Value = info.ItemValue;
             vm.Weight = info.ItemWeight;
 
-            // Vendors
             vm.SelectedVendors = info.Vendors;
             vm.VendorPanel = new VendorPanelVM(GlobalState.VendorKeywords, info.Vendors);
 
-            // Workbench
             vm.SelectedWorkbench = info.Workbench;
 
-            // Materials
             vm.MaterialList = new ObservableCollection<MaterialEntry>(
-                info.Materials.Select(kvp => new MaterialEntry
+                info.Materials.Select(kvp => new MaterialEntry(vm.SlotSettingsParent)
                 {
                     Material = kvp.Key,
                     Amount = kvp.Value
                 })
             );
 
-            // Armor
             vm.ArmorRating = info.ArmorRating;
             vm.ArmorSlot = info.ArmorSlot;
 
-            // Weapon
             vm.Damage = info.Damage;
 
-            //  norm WeaponType 
             if (Enum.TryParse<WeaponTypes>(info.WeaponType, out var parsed))
                 vm.WeaponType = parsed.ToString();
             else
@@ -269,9 +263,6 @@ public class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    // ---------------------------------------------------------
-    //  SAVE JSON
-    // ---------------------------------------------------------
     public void SaveJson()
     {
         string baseDir = AppContext.BaseDirectory;
@@ -285,9 +276,6 @@ public class MainViewModel : INotifyPropertyChanged
         JsonTranslator.Save(fullPath, data);
     }
 
-    // ---------------------------------------------------------
-    //  LOAD JSON
-    // ---------------------------------------------------------
     public void LoadJson()
     {
         string baseDir = AppContext.BaseDirectory;
@@ -304,9 +292,6 @@ public class MainViewModel : INotifyPropertyChanged
         ApplyPluginInfoToGui(data);
     }
 
-    // ---------------------------------------------------------
-    //  Write ESP
-    // ---------------------------------------------------------
     private void WriteEsp()
     {
         try
@@ -329,14 +314,9 @@ public class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    // ---------------------------------------------------------
-    //  Settings
-    // ---------------------------------------------------------
     private void OpenSettings()
     {
         var win = new SettingsWindow();
         win.ShowDialog();
     }
-
-
 }

@@ -26,5 +26,4 @@ namespace SkyrimCraftingTool
             return vm;
         }
     }
-
 }

@@ -6,10 +6,7 @@ namespace SkyrimCraftingTool;
 
 public class SettingsViewModel : INotifyPropertyChanged
 {
-    public event PropertyChangedEventHandler PropertyChanged;
-
-    public ObservableCollection<string> CraftingCategories { get; }
-        = new();
+    public ObservableCollection<string> CraftingCategories { get; } = new();
 
     private string _selectedCraftingCategory;
     public string SelectedCraftingCategory
@@ -26,30 +23,15 @@ public class SettingsViewModel : INotifyPropertyChanged
         }
     }
 
-    private CategorySettingsViewModel _currentCategorySettings;
-    public CategorySettingsViewModel CurrentCategorySettings
-    {
-        get => _currentCategorySettings;
-        set
-        {
-            _currentCategorySettings = value;
-            OnPropertyChanged();
-        }
-    }
+    public CategorySettingsViewModel CurrentCategorySettings { get; private set; }
 
     public SettingsViewModel()
     {
-        LoadCraftingCategories();
-        SelectedCraftingCategory = "Random";
-    }
-
-    private void LoadCraftingCategories()
-    {
-        CraftingCategories.Clear();
         CraftingCategories.Add("Random");
+        foreach (var perk in GlobalState.SmithingPerkEditorIDs)
+            CraftingCategories.Add(perk);
 
-        foreach (var perkName in GlobalState.SmithingPerkEditorIDs)
-            CraftingCategories.Add(perkName);
+        SelectedCraftingCategory = "Random";
     }
 
     private void LoadCategorySettings()
@@ -57,12 +39,21 @@ public class SettingsViewModel : INotifyPropertyChanged
         if (SelectedCraftingCategory == "Random")
         {
             CurrentCategorySettings = null;
+            OnPropertyChanged(nameof(CurrentCategorySettings));
             return;
         }
 
         CurrentCategorySettings = new CategorySettingsViewModel(SelectedCraftingCategory);
+        OnPropertyChanged(nameof(CurrentCategorySettings));
     }
 
+    public void SaveCurrent()
+    {
+        CurrentCategorySettings?.Save();
+    }
+
+    public event PropertyChangedEventHandler PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string name = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
+
