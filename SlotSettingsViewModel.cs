@@ -83,6 +83,9 @@ public class SlotSettingsViewModel : INotifyPropertyChanged
         foreach (var v in GlobalState.VendorKeywords)
             VendorOptions.Add(new VendorKeywordVM(v, false, this));
 
+        AddMaterialCommand = new RelayCommand(_ => AddMaterial());
+        RemoveMaterialCommand = new RelayCommand(p => RemoveMaterial(p as MaterialEntry), p => p is MaterialEntry);
+
         _isLoading = false;
     }
 
@@ -110,6 +113,9 @@ public class SlotSettingsViewModel : INotifyPropertyChanged
 
         foreach (var m in data.Materials)
             Materials.Add(new MaterialEntry(this) { Material = m.Material, Amount = m.Amount });
+
+        AddMaterialCommand = new RelayCommand(_ => AddMaterial());
+        RemoveMaterialCommand = new RelayCommand(p => RemoveMaterial(p as MaterialEntry), p => p is MaterialEntry);
 
         _isLoading = false;
     }
@@ -160,6 +166,9 @@ public class SlotSettingsViewModel : INotifyPropertyChanged
     // ---------------------------------------------------------
     public void Save()
     {
+        if (_isLoading)
+            return;
+
         var category = SettingsStorage.LoadCategory(Category);
 
         // Falls Datei leer → alle Slots erzeugen
