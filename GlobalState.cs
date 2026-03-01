@@ -55,7 +55,9 @@ public static class GlobalState
             "EbonySmithing",
             "DaedricSmithing",
             "DragonArmor",
-            "ArcaneBlacksmith"
+            "ArcaneBlacksmith",
+            "Leather",
+            "Clothing",
         };
 
     // Armor Slots

@@ -89,8 +89,6 @@ public class ItemCardVM : INotifyPropertyChanged
             WeaponType = weapon.WeaponType;
         }
 
-        // WICHTIG: MaterialEntry bekommt KEINEN Parent hier,
-        // weil SlotSettingsParent erst später gesetzt wird.
         MaterialList = new ObservableCollection<MaterialEntry>(
             record.Materials.Select(kvp => new MaterialEntry(null)
             {

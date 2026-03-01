@@ -46,6 +46,7 @@ public class MainViewModel : INotifyPropertyChanged
 
             _selectedEsp = value;
             OnPropertyChanged();
+            SelectedCraftingCategory = "Random";
             LoadSelectedItems();
         }
     }
@@ -124,7 +125,7 @@ public class MainViewModel : INotifyPropertyChanged
             if (_selectedCraftingCategory == "Random")
             {
                 _currentCategorySettings = null;
-                ApplySettingsToItems();   // setzt Items auf Default, erzeugt aber KEINE Datei
+                ApplySettingsToItems();
                 return;
             }
 
@@ -300,11 +301,11 @@ public class MainViewModel : INotifyPropertyChanged
             writer.AddItems(ExtractPluginInfoFromSelectedItems());
             writer.WriteToEsp(outputPath);
 
-            System.Windows.MessageBox.Show("ESP erfolgreich geschrieben:\n" + outputPath);
+            System.Windows.MessageBox.Show("ESP written:\n" + outputPath);
         }
         catch (Exception ex)
         {
-            System.Windows.MessageBox.Show("Fehler beim Schreiben der ESP:\n" + ex.Message);
+            System.Windows.MessageBox.Show("ESP Error:\n" + ex.Message);
         }
     }
 
