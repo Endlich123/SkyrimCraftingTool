@@ -1,8 +1,6 @@
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Skyrim;
-using System.Collections.ObjectModel;
-using System.Diagnostics;
 
 namespace SkyrimCraftingTool;
 
@@ -59,6 +57,58 @@ public static class GlobalState
             "Leather",
             "Clothing",
         };
+
+    public static readonly HashSet<string> VendorSkyPatcher =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Windhelm Blacksmith",
+            "Whiterun Warmaidens",
+            "Solitude Blacksmith",
+            "Riverwood Alvor",
+            "Riften Scorched Hammer",
+            "Narzulbur Blacksmith",
+            "Mor Khazgur Blacksmith",
+            "Markarth Castle Blacksmith",
+            "Markarth Blacksmith",
+            "Largashbur Blacksmith",
+            "Heljarchen Blacksmith",
+            "Shor’s Stone Filnjar",
+            "Falkreath Blacksmith",
+            "Dushnikh Yal Blacksmith",
+            "Dawnstar Rustleif",
+            "Dawnguard Gunmar",
+            "Dawnguard Hestla",
+            "Thirsk Blacksmith",
+            "Skaal Blacksmith",
+        };
+
+    public static readonly Dictionary<string, string> VendorChestFormIDs = new()
+    {
+        { "Windhelm Blacksmith", "000A3F17" },
+        { "Whiterun Warmaidens", "0009CAFD" },
+        { "Solitude Blacksmith", "000A6C07" },
+        { "Riverwood Alvor", "00078C0D" },
+        { "Riften Scorched Hammer", "000A31AF" },
+        { "Narzulbur Blacksmith", "000B3FE1" },
+        { "Mor Khazgur Blacksmith", "0009E46D" },
+        { "Markarth Castle Blacksmith", "0006479F" },
+        { "Markarth Blacksmith", "0009E0D8" },
+        { "Largashbur Blacksmith", "000ACB6F" },
+        { "Heljarchen Blacksmith", "0009E48E" },
+        { "Shor’s Stone Filnjar", "000AC9CE" },
+        { "Falkreath Blacksmith", "00072786" },
+        { "Dushnikh Yal Blacksmith", "0009E128" },
+        { "Dawnstar Rustleif", "0009DA3F" },
+
+        // Dawnguard
+        { "Dawnguard Gunmar", "0200F828" },
+        { "Dawnguard Hestla", "02010477" },
+
+        // Dragonborn
+        { "Thirsk Blacksmith", "04027108" },
+        { "Skaal Blacksmith", "0401F897" },
+    };
+
 
     // Armor Slots
     public static readonly List<ArmorSlot> AllArmorSlots =

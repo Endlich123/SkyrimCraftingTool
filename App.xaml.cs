@@ -19,7 +19,7 @@ public partial class App : System.Windows.Application
             Program.Handler(); // start program
         }
 
-            if (result != true)
+        if (result != true)
         {
             Shutdown();
             return;

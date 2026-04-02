@@ -1,5 +1,4 @@
-﻿using System.Collections.Generic;
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -28,6 +27,8 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand LoadJsonCommand { get; }
     public ICommand WriteEspCommand { get; }
     public ICommand OpenSettingsCommand { get; }
+
+    public ICommand OpenVendorSkyPatcherCommand { get; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -59,6 +60,7 @@ public class MainViewModel : INotifyPropertyChanged
         LoadJsonCommand = new RelayCommand(_ => LoadJson());
         WriteEspCommand = new RelayCommand(_ => WriteEsp());
         OpenSettingsCommand = new RelayCommand(_ => OpenSettings());
+        OpenVendorSkyPatcherCommand = new RelayCommand(_ => OpenVendorSkyPatcher());
 
         LoadCraftingCategories();
 
@@ -158,7 +160,7 @@ public class MainViewModel : INotifyPropertyChanged
             // Parent setzen
             item.SlotSettingsParent = slotSettings;
 
-            // Basiswerte aus Slot (kannst du bei Bedarf auch schützen)
+            // Basiswerte aus Slot
             item.Value = (int)slotSettings.Cost;
             item.Weight = slotSettings.Weight;
 
@@ -168,7 +170,7 @@ public class MainViewModel : INotifyPropertyChanged
             if (item.IsWeapon)
                 item.Damage = (int)slotSettings.Damage;
 
-            // Vendors: übernehmen von SlotSettings (überschreibt bestehende Auswahl)
+            // Vendors: übernehmen von SlotSettings 
             item.SelectedVendors = slotSettings.Vendors.ToList();
             item.VendorPanel = new VendorPanelVM(GlobalState.VendorKeywords, item.SelectedVendors);
 
@@ -176,7 +178,7 @@ public class MainViewModel : INotifyPropertyChanged
             if (string.IsNullOrEmpty(item.SelectedWorkbench))
                 item.SelectedWorkbench = slotSettings.SelectedWorkbench;
 
-            // Materials: übernehmen von SlotSettings (überschreibt bestehende Liste)
+            // Materials: übernehmen von SlotSettings
             item.MaterialList = new ObservableCollection<MaterialEntry>(
                 slotSettings.Materials.Select(m => new MaterialEntry(item.SlotSettingsParent)
                 {
@@ -314,4 +316,13 @@ public class MainViewModel : INotifyPropertyChanged
         var win = new SettingsWindow();
         win.ShowDialog();
     }
+
+    private void OpenVendorSkyPatcher()
+    {
+        var win = new VendorSkyPatcherWindow();
+        win.DataContext = new VendorSkyPatcherViewModel(SelectedItems, SelectedEsp);
+        win.ShowDialog();
+    }
+
+
 }

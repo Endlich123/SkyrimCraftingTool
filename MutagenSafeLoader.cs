@@ -1,9 +1,7 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Binary.Parameters;
 using Mutagen.Bethesda.Skyrim;
+using System.IO;
 
 namespace SkyrimCraftingTool;
 

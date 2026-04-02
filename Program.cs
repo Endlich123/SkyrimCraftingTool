@@ -1,17 +1,11 @@
-﻿using System;
-using System.Linq;
-using System.Collections.Generic;
-using System.IO;
-using Mutagen.Bethesda;
-using Mutagen.Bethesda.Skyrim;
+﻿using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
-using Mutagen.Bethesda.Plugins.Order;
-using Noggog;
-using System.Reactive;
-using Mutagen.Bethesda.Plugins.Binary.Parameters;
 using Mutagen.Bethesda.Plugins.Cache;
+using Mutagen.Bethesda.Plugins.Order;
+using Mutagen.Bethesda.Skyrim;
+using Noggog;
 using System.Diagnostics;
-using DynamicData.Kernel;
+using System.IO;
 
 namespace SkyrimCraftingTool;
 
@@ -46,7 +40,15 @@ public class Program
         string inputFolder = Path.Combine(modFolder, "Input");
         Directory.CreateDirectory(inputFolder);
         string outputFolder = Path.Combine(modFolder, "Output");
-        Directory.CreateDirectory(outputFolder);
+        //Directory.CreateDirectory(outputFolder);
+        string skyPatcherFolder = Path.Combine(
+            outputFolder,
+            "SKSE",
+            "Plugins",
+            "SkyPatcher",
+            "container"
+        );
+        Directory.CreateDirectory(skyPatcherFolder);
 
         // LoadOrder 
         var loadOrderListings = LoadStockGameLoadOrder();
@@ -358,6 +360,15 @@ public class Program
                             record.Workbench = wbName;
                         }
                     }
+
+                    if (cobj.Conditions != null)
+                    {
+                        Console.WriteLine("read perk", cobj.Conditions);
+                    }
+                    else
+                    {
+                        Console.WriteLine("no perk");
+                    }
                 }
 
 
@@ -452,6 +463,14 @@ public class Program
                             record.Materials[matName] = count;
                             record.Workbench = wbName;
                         }
+                    }
+
+
+                    foreach (var cond in cobj.Conditions)
+                    {
+                        Console.WriteLine($"  Function: {cond.Data.Function}");
+                        //Console.WriteLine($"  Comparison: {cond.Data.CompareOperator}");
+                        //Console.WriteLine($"  Value: {cond.Data.ComparisonValue}");
                     }
                 }
 

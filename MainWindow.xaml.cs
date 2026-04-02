@@ -1,6 +1,4 @@
 ﻿using System.Windows;
-using System.Windows.Controls;
-using WpfMessageBox = System.Windows.MessageBox;
 
 
 namespace SkyrimCraftingTool

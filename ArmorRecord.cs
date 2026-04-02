@@ -1,10 +1,10 @@
 
 using Mutagen.Bethesda.Plugins;
-using System.Collections.Generic;
 using System.ComponentModel;
 
 
 namespace SkyrimCraftingTool;
+
 public class ArmorRecord : IGameRecord, INotifyPropertyChanged
 {
     public string EditorID { get; set; }
@@ -17,7 +17,7 @@ public class ArmorRecord : IGameRecord, INotifyPropertyChanged
     public FormKey FormKey { get; set; }
     public List<string> Keywords { get; set; } = new();
     public List<string> Slots { get; set; } = new();
-    private ArmorSlot? _selectedSlot; 
+    private ArmorSlot? _selectedSlot;
     public ArmorSlot SelectedSlot { get; set; }
 
 

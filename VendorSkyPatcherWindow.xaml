@@ -1,0 +1,21 @@
+﻿<Window x:Class="SkyrimCraftingTool.VendorSkyPatcherWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:SkyrimCraftingTool"
+        Title="VendorSkyPatcherWindow" Height="450" Width="800">
+    <Grid Background="#222" >
+        <StackPanel Background="#222" Orientation="Vertical">
+            <ListBox ItemsSource="{Binding VendorOptions}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <CheckBox Content="{Binding Name}"
+                            IsChecked="{Binding IsSelected, Mode=TwoWay}"/>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            <Button Content="Create SkyPatcher Patch"
+                 Command="{Binding CreateVendorSkyPatcherPatch}"
+                 Width="120" Margin="0 0 0 10"/>
+        </StackPanel>
+    </Grid>
+</Window>

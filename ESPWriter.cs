@@ -1,14 +1,9 @@
 ﻿using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
-using Mutagen.Bethesda.Plugins.Aspects;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using Noggog;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
-using System.Linq;
 
 namespace SkyrimCraftingTool;
 
@@ -17,7 +12,7 @@ public class ESPWriter
     private SkyrimMod _patchMod;
     private readonly List<PluginInfo> _items = new();
 
-    // Cache der geladenen Quell-ESPs (Key = voller Pfad)
+    // Cache des geladenen Quell-ESPs (Key = voller Pfad)
     private readonly Dictionary<string, SkyrimMod> _loadedSourceMods = new(StringComparer.OrdinalIgnoreCase);
 
     public void AddItem(PluginInfo item)
@@ -393,7 +388,7 @@ public class ESPWriter
         if (!Enum.TryParse<ArmorSlot>(armorSlot, out var slotEnum))
             return false;
 
-        int slotValue = (int)slotEnum;   
+        int slotValue = (int)slotEnum;
         int bitIndex = slotValue - 30;   // Offset in Program.cs
 
         if (bitIndex < 0 || bitIndex >= 64)
