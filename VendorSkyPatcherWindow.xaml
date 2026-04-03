@@ -3,19 +3,39 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:SkyrimCraftingTool"
         Title="VendorSkyPatcherWindow" Height="450" Width="800">
-    <Grid Background="#222" >
-        <StackPanel Background="#222" Orientation="Vertical">
-            <ListBox ItemsSource="{Binding VendorOptions}">
-                <ListBox.ItemTemplate>
-                    <DataTemplate>
-                        <CheckBox Content="{Binding Name}"
-                            IsChecked="{Binding IsSelected, Mode=TwoWay}"/>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
-            <Button Content="Create SkyPatcher Patch"
-                 Command="{Binding CreateVendorSkyPatcherPatch}"
-                 Width="120" Margin="0 0 0 10"/>
-        </StackPanel>
+    <Grid Background="#222">
+        <ItemsControl ItemsSource="{Binding Categories}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <UniformGrid Columns="6"/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Margin="10">
+                        <TextBlock Text="{Binding CategoryName}" Foreground="White" FontWeight="Bold"/>
+
+                        <Button Content="Select All"
+                            Command="{Binding SelectAllCommand}"
+                            Margin="0 5 0 5"/>
+
+                        <ListBox ItemsSource="{Binding Vendors}">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <CheckBox Content="{Binding Name}"
+                                          IsChecked="{Binding IsSelected, Mode=TwoWay}"/>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </StackPanel>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <Button Content="Generate Patch"
+                Command="{Binding CreateVendorSkyPatcherPatch}"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Bottom"
+                Margin="10"/>
     </Grid>
 </Window>

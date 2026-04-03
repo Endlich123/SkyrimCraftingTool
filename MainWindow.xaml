@@ -49,7 +49,7 @@
                     Margin="0 0 10 0"
                     Command="{Binding OpenSettingsCommand}"/>
 
-            <Button Content="VendorSkyPatcher"
+            <Button Content="CreateVendorSkyPatcher"
                 Width="120"
                 Command="{Binding OpenVendorSkyPatcherCommand}"/>
 
