@@ -1,0 +1,20 @@
+﻿<Application x:Class="SkyrimCraftingTool.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:model="clr-namespace:SkyrimCraftingTool.Model"
+             >
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Styles/Controls.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            
+            <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+            <model:BoolToBrushConverter x:Key="BoolToBrushConverter" />
+            <model:SlotMaskToTextConverter x:Key="SlotMaskConverter"/>
+            <model:BoolToSelectTextConverter x:Key="BoolToSelectTextConverter"/>
+            <model:BoolToExpertTextConverter x:Key="BoolToExpertTextConverter"/>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
