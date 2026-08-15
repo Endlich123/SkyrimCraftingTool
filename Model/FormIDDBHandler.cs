@@ -33,6 +33,7 @@ namespace SkyrimCraftingTool.Model
             _cache.AddRange(LoadTable("Materials", "Material"));
             _cache.AddRange(LoadTable("Perks", "Perk"));
             _cache.AddRange(LoadTable("Quests", "Quest"));
+            _cache.AddRange(LoadTable("LVLi", "LVLi"));
 
             _cacheLoaded = true;
         }
@@ -89,12 +90,14 @@ namespace SkyrimCraftingTool.Model
             using var insertMaterial = PrepareInsert(connection, "Materials");
             using var insertPerk = PrepareInsert(connection, "Perks");
             using var insertQuest = PrepareInsert(connection, "Quests");
+            using var insertLVLI = PrepareInsert(connection, "LVLi");
 
             using var transaction = connection.BeginTransaction();
             insertKeyword.Transaction = transaction;
             insertMaterial.Transaction = transaction;
             insertPerk.Transaction = transaction;
             insertQuest.Transaction = transaction;
+            insertLVLI.Transaction = transaction;
 
             foreach (var plugin in allgamePathfromDB)
             {
@@ -115,6 +118,9 @@ namespace SkyrimCraftingTool.Model
 
                     foreach (var quest in mod.Quests.Records)
                         InsertRecord(insertQuest, quest.FormKey.ID.ToString("X6"), quest.EditorID, quest.FormKey.ModKey.FileName);
+
+                    foreach (var lvi in mod.LeveledItems.Records)
+                        InsertRecord(insertLVLI, lvi.FormKey.ID.ToString("X6"), lvi.EditorID, lvi.FormKey.ModKey.FileName);
                 }
             }
 
@@ -159,7 +165,13 @@ namespace SkyrimCraftingTool.Model
                 Key TEXT PRIMARY KEY,
                 Name TEXT NOT NULL
             );
+
+            CREATE TABLE LVLi(
+                Key TEXT PRIMARY KEY,
+                Name TEXT NOT NULL
+            );
             ";
+
             cmd.ExecuteNonQuery();
         }
 

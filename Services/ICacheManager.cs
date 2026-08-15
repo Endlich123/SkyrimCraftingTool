@@ -30,5 +30,16 @@ namespace SkyrimCraftingTool.Services
         // Recipe updates
         void UpdateRecipe(COBJRecord rec);
         void UpdateRecipeConditions(string cobjKey, List<COBJConditionRecord> conditions);
+
+        // Enchantment updates
+        void UpdateEnchantmentName(string key, string name);
+        void UpdateEnchantmentEditorID(string key, string editorID);
+        void UpdateEnchantmentCastType(string key, string castType);
+        void UpdateEnchantmentTargetType(string key, string targetType);
+        void UpdateEnchantmentCost(string key, float cost);
+        void UpdateEnchantmentWornRestrictionListKey(string key, string listKey);
+        void SaveEnchantmentEffects(string key, List<EnchantmentEffectRecord> effects);
+        void SaveEnchantmentWornRestrictionKeywords(string listKey, List<string> keywordKeys);
+
     }
 }

@@ -11,43 +11,78 @@
         </Grid.ColumnDefinitions>
 
         <!-- LEFT: TREEVIEW -->
+        <!-- LEFT: TREEVIEW + SEARCH -->
         <Border BorderBrush="{StaticResource ColorBorder}"
-                BorderThickness="1"
-                Padding="5"
-                Margin="0,0,10,0"
-                Background="{StaticResource ColorBackgroundPanel}">
-            <TreeView ItemsSource="{Binding TreeItems}"
-          SelectedItemChanged="TreeView_SelectedItemChanged"
-          Background="{StaticResource ColorBackgroundControl}"
-          Foreground="{StaticResource ColorTextPrimary}">
+            BorderThickness="1"
+            Padding="5"
+            Margin="0,0,10,0"
+            Background="{StaticResource ColorBackgroundPanel}">
 
-                <!-- Container-Style wie in MainContentView -->
-                <TreeView.ItemContainerStyle>
-                    <Style TargetType="TreeViewItem">
-                        <Setter Property="Padding" Value="2" />
-                        <Setter Property="HorizontalContentAlignment" Value="Left" />
-                        <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <!-- Suche -->
+                    <RowDefinition Height="Auto"/>
+                    <!-- Collapse -->
+                    <RowDefinition Height="*"/>
+                    <!-- TreeView -->
+                </Grid.RowDefinitions>
 
-                        <Style.Resources>
-                            <!-- Fokus-Selection -->
-                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}"
-                                 Color="#444444"/>
-                            <!-- Inaktive Selection -->
-                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}"
-                                 Color="#333333"/>
-                        </Style.Resources>
-                    </Style>
-                </TreeView.ItemContainerStyle>
+                <!-- SUCHFELD -->
+                <TextBox Grid.Row="0"
+                     Text="{Binding EnchantmentTreeSearchText, UpdateSourceTrigger=PropertyChanged}"
+                     Tag="Search..."
+                     Background="{StaticResource ColorBackgroundControl}"
+                     Foreground="{StaticResource ColorTextPrimary}"
+                     BorderBrush="#555"
+                     Padding="5"
+                     Margin="0,0,0,5"/>
 
-                <!-- Deine ursprünglichen Templates -->
-                <TreeView.ItemTemplate>
-                    <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                        <TextBlock Text="{Binding DisplayName}"
-                       Foreground="{StaticResource ColorTextPrimary}"/>
-                    </HierarchicalDataTemplate>
-                </TreeView.ItemTemplate>
-            </TreeView>
+                <!-- COLLAPSE BUTTON -->
+                <UniformGrid Grid.Row="1"
+                     Columns="1"
+                     Margin="0,0,0,5">
+                    <Button Content="Collapse all [-]"
+                    Command="{Binding EnchantementCollapseAllCommand}"
+                    Background="#444"
+                    Foreground="White"/>
+                </UniformGrid>
+
+                <!-- TREEVIEW need extra FilteredView -->
+                <TreeView Grid.Row="2"
+                  ItemsSource="{Binding EnchantementFilteredTree}"
+                  SelectedItemChanged="TreeView_SelectedItemChanged"
+                  Background="{StaticResource ColorBackgroundControl}"
+                  Foreground="{StaticResource ColorTextPrimary}">
+
+                    <!-- Container-Style wie bisher -->
+                    <TreeView.ItemContainerStyle>
+                        <Style TargetType="TreeViewItem">
+                            <Setter Property="Padding" Value="2" />
+                            <Setter Property="HorizontalContentAlignment" Value="Left" />
+                            <Setter Property="VerticalContentAlignment" Value="Center" />
+
+                            <Style.Resources>
+                                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}"
+                                         Color="#444444"/>
+                                <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}"
+                                         Color="#333333"/>
+                            </Style.Resources>
+                        </Style>
+                    </TreeView.ItemContainerStyle>
+
+                    <!-- Deine Templates bleiben unverändert -->
+                    <TreeView.ItemTemplate>
+                        <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                            <TextBlock Text="{Binding DisplayName}"
+                               Foreground="{StaticResource ColorTextPrimary}"/>
+                        </HierarchicalDataTemplate>
+                    </TreeView.ItemTemplate>
+
+                </TreeView>
+            </Grid>
         </Border>
+
 
         <!-- RIGHT: DETAIL VIEW -->
         <Border Grid.Column="1"

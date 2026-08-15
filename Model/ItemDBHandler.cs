@@ -1,7 +1,9 @@
 ﻿using DynamicData;
 using Microsoft.Data.Sqlite;
 using Mutagen.Bethesda;
+using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
+using SkyrimCraftingTool.Services;
 using SkyrimCraftingTool.ViewModel;
 using System.Collections.ObjectModel;
 using System.Data;
@@ -11,7 +13,6 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Media.Media3D;
 using static System.Net.Mime.MediaTypeNames;
-using SkyrimCraftingTool.Services;
 
 
 namespace SkyrimCraftingTool.Model
@@ -22,6 +23,9 @@ namespace SkyrimCraftingTool.Model
         private string ItemdbPath => Path.Combine(ItemFolder, "item.db");
         public static string ConnString
         => $"Data Source={Path.Combine(GlobalState.Tool.InputFolder, "Item", "item.db")}";
+
+        private readonly FormIDDBHandler _formIDDB = new FormIDDBHandler();
+
 
         // count
         private int _count = 893462;
@@ -489,7 +493,8 @@ namespace SkyrimCraftingTool.Model
                     // CONTAINER + LVLI
                     foreach (var container in mod.Containers.Records)
                     {
-                        string containerKey = $"{pluginName}|{container.FormKey.IDString()}";
+                        //string containerKey = $"{pluginName}|{container.FormKey.IDString()}";
+                        string containerKey = KeyFactory.BuildMasterKey(container.FormKey);
 
                         // Insert Container
                         insertContainer.Parameters["@key"].Value = containerKey;
@@ -501,24 +506,19 @@ namespace SkyrimCraftingTool.Model
                         {
                             foreach (var entry in container.Items)
                             {
-                                // FormKey des Items
                                 var fk = entry.Item.Item.FormKey;
+                                string lvliKey = KeyFactory.BuildMasterKey(fk);
 
-                                // Prüfen ob dieser FormKey ein LVLI ist
-                                if (mod.LeveledItems.ContainsKey(fk))
+                                // Prüfen ob LVLI existiert
+                                var lvliRecord = _formIDDB.GetByKey(lvliKey);
+                                if (lvliRecord != null && lvliRecord.Type == "LVLi")
                                 {
-                                    // LVLI gefunden
-                                    var lvli = mod.LeveledItems[fk];
-
-                                    string lvliKey = $"{lvli.FormKey.ModKey.FileName}|{lvli.FormKey.IDString()}";
-                                    string lvliName = lvli.EditorID ?? "";
-
                                     insertContainerLVLI.Parameters["@containerKey"].Value = containerKey;
                                     insertContainerLVLI.Parameters["@lvliKey"].Value = lvliKey;
-                                    insertContainerLVLI.Parameters["@lvliName"].Value = lvliName;
-
+                                    insertContainerLVLI.Parameters["@lvliName"].Value = lvliRecord.Name;
                                     insertContainerLVLI.ExecuteNonQuery();
                                 }
+
                             }
                         }
                     }
@@ -535,10 +535,11 @@ namespace SkyrimCraftingTool.Model
                         bool hasDuration = !mgef.Flags.HasFlag(MagicEffect.Flag.NoDuration);
                         insertMagicEffects.Parameters["@hasMag"].Value = hasMagnitude ? 1 : 0;
                         insertMagicEffects.Parameters["@hasDur"].Value = hasDuration ? 1 : 0;
-                        if(mgef.TargetType == TargetType.Aimed || mgef.TargetType == TargetType.TargetLocation)
+                        if (mgef.TargetType == TargetType.Aimed || mgef.TargetType == TargetType.TargetLocation)
                         {
                             insertMagicEffects.Parameters["@hasAre"].Value = 1;
-                        } else
+                        }
+                        else
                         {
                             insertMagicEffects.Parameters["@hasAre"].Value = 0;
                         }
@@ -629,7 +630,7 @@ namespace SkyrimCraftingTool.Model
             cmd.Parameters.Add("@kw", SqliteType.Text);
 
             return cmd;
-        }   
+        }
 
         private void ResetTables(SqliteConnection connection)
         {
@@ -2059,16 +2060,17 @@ namespace SkyrimCraftingTool.Model
             string workbenchKeyword = isTemper
                 ? "Skyrim.esm|088108"   // Temper
                 : "Skyrim.esm|0ADB78";  // Crafting
-            if(isTemper == true)
+            if (isTemper == true)
             {
                 if (item.IsArmor)
                 {
                     workbenchKeyword = "Skyrim.esm|088108";
-                } else
+                }
+                else
                 {
                     workbenchKeyword = "Skyrim.esm|0ADB78";
                 }
-                
+
             }
             else
             {
@@ -2090,7 +2092,7 @@ namespace SkyrimCraftingTool.Model
 
         public int Count()
         {
-            _count++; 
+            _count++;
             return _count;
         }
 
@@ -2155,6 +2157,129 @@ namespace SkyrimCraftingTool.Model
 
             // For other types, return an empty list.
             return new System.Collections.Generic.List<object>();
+        }
+
+        // -------------------------------------------------
+        // Enchantment: Updates
+        // -------------------------------------------------
+
+        public static void UpdateEnchantmentName(string key, string name)
+        {
+            Debug.WriteLine($"[DB] UpdateEnchantmentName key={key}, name={name}");
+            using var conn = new SqliteConnection(ConnString);
+            conn.Open();
+            using var cmd = new SqliteCommand("UPDATE Enchantments SET IsEditedName = @val, IsEdited = 1 WHERE Key = @key", conn);
+            cmd.Parameters.AddWithValue("@key", key);
+            cmd.Parameters.AddWithValue("@val", name);
+            cmd.ExecuteNonQuery();
+            Debug.WriteLine($"[DB] UpdateEnchantmentName completed for key={key}");
+        }
+
+        public static void UpdateEnchantmentEditorID(string key, string editorID)
+        {
+            Debug.WriteLine($"[DB] UpdateEnchantmentEditorID key={key}, editorID={editorID}");
+            using var conn = new SqliteConnection(ConnString);
+            conn.Open();
+            using var cmd = new SqliteCommand("UPDATE Enchantments SET IsEditedEditorID = @val, IsEdited = 1 WHERE Key = @key", conn);
+            cmd.Parameters.AddWithValue("@key", key);
+            cmd.Parameters.AddWithValue("@val", editorID);
+            cmd.ExecuteNonQuery();
+            Debug.WriteLine($"[DB] UpdateEnchantmentEditorID completed for key={key}");
+        }
+
+        public static void UpdateEnchantmentCastType(string key, string castType)
+        {
+            Debug.WriteLine($"[DB] UpdateEnchantmentCastType key={key}, castType={castType}");
+            using var conn = new SqliteConnection(ConnString);
+            conn.Open();
+            using var cmd = new SqliteCommand("UPDATE Enchantments SET IsEditedCastType = @val, IsEdited = 1 WHERE Key = @key", conn);
+            cmd.Parameters.AddWithValue("@key", key);
+            cmd.Parameters.AddWithValue("@val", castType);
+            cmd.ExecuteNonQuery();
+            Debug.WriteLine($"[DB] UpdateEnchantmentCastType completed for key={key}");
+        }
+
+        public static void UpdateEnchantmentTargetType(string key, string targetType)
+        {
+            Debug.WriteLine($"[DB] UpdateEnchantmentTargetType key={key}, targetType={targetType}");
+            using var conn = new SqliteConnection(ConnString);
+            conn.Open();
+            using var cmd = new SqliteCommand("UPDATE Enchantments SET IsEditedTargetType = @val, IsEdited = 1 WHERE Key = @key", conn);
+            cmd.Parameters.AddWithValue("@key", key);
+            cmd.Parameters.AddWithValue("@val", targetType);
+            cmd.ExecuteNonQuery();
+            Debug.WriteLine($"[DB] UpdateEnchantmentTargetType completed for key={key}");
+        }
+
+        public static void UpdateEnchantmentCost(string key, float cost)
+        {
+            Debug.WriteLine($"[DB] UpdateEnchantmentCost key={key}, cost={cost}");
+            using var conn = new SqliteConnection(ConnString);
+            conn.Open();
+            using var cmd = new SqliteCommand("UPDATE Enchantments SET IsEditedCost = @val, IsEdited = 1 WHERE Key = @key", conn);
+            cmd.Parameters.AddWithValue("@key", key);
+            cmd.Parameters.AddWithValue("@val", cost);
+            cmd.ExecuteNonQuery();
+            Debug.WriteLine($"[DB] UpdateEnchantmentCost completed for key={key}");
+        }
+
+        public static void UpdateEnchantmentWornRestrictionListKey(string key, string listKey)
+        {
+            Debug.WriteLine($"[DB] UpdateEnchantmentWornRestrictionListKey key={key}, listKey={listKey}");
+            using var conn = new SqliteConnection(ConnString);
+            conn.Open();
+            using var cmd = new SqliteCommand("UPDATE Enchantments SET IsEditedWornRestrictionListKey = @val, IsEdited = 1 WHERE Key = @key", conn);
+            cmd.Parameters.AddWithValue("@key", key);
+            cmd.Parameters.AddWithValue("@val", listKey);
+            cmd.ExecuteNonQuery();
+            Debug.WriteLine($"[DB] UpdateEnchantmentWornRestrictionListKey completed for key={key}");
+        }
+
+        public static void SaveEnchantmentEffects(string enchantmentKey, List<EnchantmentEffectRecord> effects)
+        {
+            Debug.WriteLine($"[DB] SaveEnchantmentEffects enchantmentKey={enchantmentKey}, effectsCount={effects.Count}");
+            using var conn = new SqliteConnection(ConnString);
+            conn.Open();
+            // Delete existing effects for the enchantment
+            using var deleteCmd = new SqliteCommand("DELETE FROM EnchantmentEffects WHERE EnchantmentKey = @key", conn);
+            deleteCmd.Parameters.AddWithValue("@key", enchantmentKey);
+            deleteCmd.ExecuteNonQuery();
+            // Insert new effects
+            foreach (var effect in effects)
+            {
+                using var insertCmd = new SqliteCommand(
+                    @"INSERT INTO EnchantmentEffects (EnchantmentKey, EffectKey, Magnitude, Duration, Area)
+                      VALUES (@enchantKey, @effectKey, @magnitude, @duration, @area)", conn);
+                insertCmd.Parameters.AddWithValue("@enchantKey", enchantmentKey);
+                insertCmd.Parameters.AddWithValue("@effectKey", effect.MagicEffectKey);
+                insertCmd.Parameters.AddWithValue("@magnitude", effect.Magnitude);
+                insertCmd.Parameters.AddWithValue("@duration", effect.Duration);
+                insertCmd.Parameters.AddWithValue("@area", effect.Area);
+                insertCmd.ExecuteNonQuery();
+            }
+            Debug.WriteLine($"[DB] SaveEnchantmentEffects completed for enchantmentKey={enchantmentKey}");
+        }
+
+        public static void SaveWornRestrictionKeywords(string listKey, List<string> keywordKeys)
+        {
+            Debug.WriteLine($"[DB] SaveWornRestrictionKeywords listKey={listKey}, keywordCount={keywordKeys.Count}");
+            using var conn = new SqliteConnection(ConnString);
+            conn.Open();
+            // Delete existing keywords for the list
+            using var deleteCmd = new SqliteCommand("DELETE FROM WornRestrictionKeywords WHERE ListKey = @key", conn);
+            deleteCmd.Parameters.AddWithValue("@key", listKey);
+            deleteCmd.ExecuteNonQuery();
+            // Insert new keywords
+            foreach (var keyword in keywordKeys)
+            {
+                using var insertCmd = new SqliteCommand(
+                    @"INSERT INTO WornRestrictionKeywords (ListKey, KeywordKey)
+                      VALUES (@listKey, @keywordKey)", conn);
+                insertCmd.Parameters.AddWithValue("@listKey", listKey);
+                insertCmd.Parameters.AddWithValue("@keywordKey", keyword);
+                insertCmd.ExecuteNonQuery();
+                Debug.WriteLine($"[DB] Inserted WornRestrictionKeyword listKey={listKey}, keywordKey={keyword}");
+            }
         }
     }
 }

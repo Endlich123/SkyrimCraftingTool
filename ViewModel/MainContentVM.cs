@@ -283,12 +283,14 @@ namespace SkyrimCraftingTool.ViewModel
 
         private void ExpandAll(bool expand)
         {
-            foreach (var p in FilteredTree)
+            foreach (var p in ModItemsTree)
             {
                 p.IsExpanded = expand;
                 foreach (var c in p.Categories)
                     c.IsExpanded = expand;
             }
+            ApplyFilter(_treeSearchText);
+
         }
 
         // --- Full rescan ---
@@ -376,9 +378,9 @@ namespace SkyrimCraftingTool.ViewModel
                 var filtered = plugin.FilterReference(text);
                 if (filtered != null)
                 {
-                    filtered.IsExpanded = true;
+                    filtered.IsExpanded = plugin.IsExpanded;
                     foreach (var cat in filtered.Categories)
-                        cat.IsExpanded = true;
+                        cat.IsExpanded = cat.IsExpanded; 
 
                     FilteredTree.Add(filtered);
                 }
@@ -620,6 +622,7 @@ namespace SkyrimCraftingTool.ViewModel
                         item.TemperRecipe = new COBJNodeVM(item, temperRec, FormIdService, true);
                         InitializeRecipeIngredients(item.TemperRecipe.Ingredients);
                         item.TemperIngredients = item.TemperRecipe.Ingredients;
+                        item.TemperConditions = item.TemperRecipe.Conditions;
                         Debug.WriteLine($"[LoadSelectedItemDetails] TemperRecipe SET → WB={item.TemperRecipe.WorkbenchKeywordKey}");
                     });
                 }

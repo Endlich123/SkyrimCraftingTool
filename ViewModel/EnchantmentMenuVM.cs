@@ -15,6 +15,8 @@ namespace SkyrimCraftingTool.ViewModel
         public ObservableCollection<EnchantmentRecord> Enchantments { get; } = new();
 
         private EnchantmentRecord _selectedEnchantment;
+        private readonly List<PluginInfo> _activePlugins;
+
 
         // MagicEffects loaded once
         public List<MagicEffectsRecords> AllMagicEffects { get; private set; } = new();
@@ -50,10 +52,11 @@ namespace SkyrimCraftingTool.ViewModel
         }
 
         // Constructor
-        public EnchantmentMenuVM(ItemDBHandler handler, IKeywordService keywordService)
+        public EnchantmentMenuVM(ItemDBHandler handler, IKeywordService keywordService, List<PluginInfo> activePlugins)
         {
             _handler = handler;
             _keywordService = keywordService;
+            _activePlugins = activePlugins;
 
             // Load MagicEffects ONCE
             AllMagicEffects = _handler.SearchByType("MagicEffect")
@@ -61,9 +64,122 @@ namespace SkyrimCraftingTool.ViewModel
                 .OrderBy(m => m.Name)
                 .ToList();
 
+            EnchantementCollapseAllCommand = new RelayCommand(() => EnchantementExpandAll(false));
+
             BuildEnchantmentTree();
         }
 
+        private void EnchantementExpandAll(bool expand)
+        {
+            foreach (var p in TreeItems)
+            {
+                ExpandNodeRecursive(p, expand);
+            }
+            ApplyEnchantmentFilterDebounced(_enchantmentTreeSearchText);
+        }
+
+        private void ExpandNodeRecursive(EnchantmentTreeNode node, bool expand)
+        {
+            node.IsExpanded = expand;
+
+            foreach (var child in node.Children)
+                ExpandNodeRecursive(child, expand);
+        }
+
+
+        private string _enchantmentTreeSearchText = string.Empty;
+        public string EnchantmentTreeSearchText
+        {
+            get => _enchantmentTreeSearchText;
+            set
+            {
+                if (SetProperty(ref _enchantmentTreeSearchText, value))
+                    ApplyEnchantmentFilterDebounced(value);
+            }
+        }
+
+        private readonly Debouncer _enchantmentDebouncer = new();
+        private readonly BackgroundFilterRunner<string, List<EnchantmentTreeNode>> _enchantmentFilterRunner = new();
+
+        public ObservableCollection<EnchantmentTreeNode> EnchantementFilteredTree { get; } = new();
+
+        private void ApplyEnchantmentFilterDebounced(string text)
+        {
+            _enchantmentDebouncer.Debounce(120, _ =>
+            {
+                _enchantmentFilterRunner.Run(
+                    text,
+                    (search, token) => FilterEnchantmentTreeOnBackground(search, token),
+                    result => UpdateEnchantmentFilteredTree(result)
+                );
+            });
+        }
+
+        private List<EnchantmentTreeNode> FilterEnchantmentTreeOnBackground(string search, CancellationToken token)
+        {
+            if (string.IsNullOrWhiteSpace(search))
+                return TreeItems.ToList();
+
+            search = search.ToLowerInvariant();
+
+            var result = new List<EnchantmentTreeNode>();
+
+            foreach (var pluginNode in TreeItems)
+            {
+                token.ThrowIfCancellationRequested();
+
+                var filtered = FilterPluginNode(pluginNode, search);
+                if (filtered != null)
+                    result.Add(filtered);
+            }
+
+            return result;
+        }
+
+
+        private EnchantmentTreeNode FilterPluginNode(EnchantmentTreeNode root, string search)
+        {
+            // Treffer im Plugin-Namen?
+            bool rootMatch = root.DisplayName.ToLowerInvariant().Contains(search);
+
+            var newRoot = new EnchantmentTreeNode
+            {
+                DisplayName = root.DisplayName,
+                Enchantment = root.Enchantment,
+                IsExpanded = root.IsExpanded
+            };
+
+            foreach (var child in root.Children)
+            {
+                var filteredChild = FilterPluginNode(child, search);
+                if (filteredChild != null)
+                    newRoot.Children.Add(filteredChild);
+            }
+
+            // Treffer im eigenen Namen oder Treffer in Kindern?
+            if (rootMatch || newRoot.Children.Any())
+            {
+                newRoot.IsExpanded = root.IsExpanded;
+                return newRoot;
+            }
+
+            // Treffer im Item?
+            if (root.Enchantment != null &&
+                root.Enchantment.EditorID.ToLowerInvariant().Contains(search))
+            {
+                newRoot.IsExpanded = true;
+                return newRoot;
+            }
+
+            return null;
+        }
+
+        private void UpdateEnchantmentFilteredTree(List<EnchantmentTreeNode> nodes)
+        {
+            EnchantementFilteredTree.Clear();
+            foreach (var n in nodes)
+                EnchantementFilteredTree.Add(n);
+        }
 
 
         // --- Keyword UI state ---
@@ -131,8 +247,13 @@ namespace SkyrimCraftingTool.ViewModel
             var enchantments = _handler.GetAllEnchantments();
 
             var grouped = enchantments
-                .GroupBy(e => e.Plugin)
-                .OrderBy(g => g.Key);
+             .GroupBy(e => e.Plugin)
+             .OrderBy(g =>
+                 _activePlugins.FindIndex(p =>
+                     p.FileName.Equals(g.Key, StringComparison.OrdinalIgnoreCase)
+                 )
+             );
+
 
             foreach (var pluginGroup in grouped)
             {
@@ -174,7 +295,11 @@ namespace SkyrimCraftingTool.ViewModel
                 if (otherNode.Children.Any()) pluginNode.Children.Add(otherNode);
 
                 TreeItems.Add(pluginNode);
+                UpdateEnchantmentFilteredTree(TreeItems.ToList());
+
             }
         }
+
+        public RelayCommand EnchantementCollapseAllCommand { get; }
     }
 }

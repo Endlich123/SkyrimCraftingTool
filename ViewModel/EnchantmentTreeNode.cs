@@ -8,8 +8,14 @@ using System.Threading.Tasks;
 
 namespace SkyrimCraftingTool.ViewModel
 {
-    public class EnchantmentTreeNode
+    public class EnchantmentTreeNode : ViewModelBase
     {
+        private bool _isExpanded;
+        public bool IsExpanded
+        {
+            get => _isExpanded;
+            set => SetProperty(ref _isExpanded, value);
+        }
         public string DisplayName { get; set; }
         public ObservableCollection<EnchantmentTreeNode> Children { get; set; }
             = new();

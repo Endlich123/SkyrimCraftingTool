@@ -282,5 +282,46 @@ namespace SkyrimCraftingTool.Services
                 }
             }
         }
+
+        // Enchantment updates
+        public void UpdateEnchantmentName(string key, string name)
+        {
+            // Implementation for updating enchantment name in cache
+        }
+
+        public void UpdateEnchantmentEditorID(string key, string editorID)
+        {
+            // Implementation for updating enchantment editor ID in cache
+        }
+
+        public void UpdateEnchantmentCastType(string key, string castType)
+        {
+            // Implementation for updating enchantment cast type in cache
+        }
+
+        public void UpdateEnchantmentTargetType(string key, string targetType)
+        {
+            // Implementation for updating enchantment target type in cache
+        }
+
+        public void UpdateEnchantmentCost(string key, float cost)
+        {
+            // Implementation for updating enchantment cost in cache
+        }
+
+        public void UpdateEnchantmentWornRestrictionListKey(string key, string listKey)
+        {
+            // Implementation for updating enchantment worn restriction list key in cache
+        }
+
+        public void SaveEnchantmentEffects(string key, List<EnchantmentEffectRecord> effects)
+        {
+            // Implementation for saving enchantment effects in cache
+        }
+
+        public void SaveEnchantmentWornRestrictionKeywords(string listKey, List<string> keywordKeys)
+        {
+            // Implementation for saving enchantment worn restriction keywords in cache
+        }
     }
 }

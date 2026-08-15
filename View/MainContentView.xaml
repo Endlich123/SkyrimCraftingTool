@@ -31,7 +31,7 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <!-- LINKS: Tree + Suche -->
+            <!-- LEFT: Tree + Search -->
             <Grid Grid.Column="0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -39,10 +39,10 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <!-- Suche -->
+                <!-- Search -->
                 <TextBox Grid.Row="0"
                          Text="{Binding TreeSearchText, UpdateSourceTrigger=PropertyChanged}"
-                         Tag="Suche Plugin/Item..."
+                         Tag="Search Plugin/Item..."
                          Background="#222"
                          Foreground="White"
                          BorderBrush="#555"
@@ -908,10 +908,11 @@
 
                                                                         <!-- Remove -->
                                                                         <Button Grid.Column="4"
-                                                                            Command="{Binding DataContext.RemoveConditionCommand,
+                                                                            Command="{Binding DataContext.RemoveCraftingConditionCommand,
                                                                                       RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                                             CommandParameter="{Binding}"
-                                                                            Style="{StaticResource RemoveButtonStyle}" />
+                                                                            Style="{StaticResource RemoveButtonStyle}" 
+                                                                            ToolTip="Remove Condition"/>
                                                                     </Grid>
                                                                 </DataTemplate>
                                                             </ItemsControl.ItemTemplate>
@@ -919,7 +920,7 @@
 
                                                         <Button Command="{Binding AddCraftingConditionCommand}"
                                                                 Style="{StaticResource AddButtonStyle}"
-                                                                ToolTip="Add Material" />
+                                                                ToolTip="Add Condition" />
                                                     </StackPanel>
 
 
@@ -964,7 +965,7 @@
                                                 </ItemsControl>
                                                 <Button
                                                 Command="{Binding AddIngredientCommand}"
-                                                ToolTip="Add Material"
+                                                ToolTip="Add Material/Recipe"
                                                 Style="{StaticResource AddButtonStyle}"/>
                                             </StackPanel>
                                         </GroupBox>
@@ -1046,37 +1047,128 @@
                                                             </ToolTip>
                                                         </Button.ToolTip>
                                                     </Button>
-                                                    <!-- Perk -->
-                                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Perk: " Style="{StaticResource ItemLabelStyle}"/>
+                                                    <!-- Conditions -->
+                                                    <StackPanel Grid.Row="2" Grid.ColumnSpan="3" Width="Auto">
+                                                        <TextBlock Text="Conditions:" Style="{StaticResource ItemLabelStyle}" />
 
+                                                        <ItemsControl ItemsSource="{Binding TemperConditions}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Grid Margin="0,5">
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="200" />
+                                                                            <!-- Type -->
+                                                                            <ColumnDefinition Width="*" />
+                                                                            <!-- Target -->
+                                                                            <ColumnDefinition Width="*" />
+                                                                            <!-- Value -->
+                                                                            <ColumnDefinition Width="200" />
+                                                                            <!-- RunOn -->
+                                                                            <ColumnDefinition Width="Auto" />
+                                                                            <!-- Remove -->
+                                                                        </Grid.ColumnDefinitions>
 
-                                                    <ComboBox Grid.Row="2" Grid.Column="1"
-                                                      Style="{StaticResource ItemComboBoxStyle}"
-                                                      ItemsSource="{Binding FilteredTemperPerks}"
-                                                      SelectedItem="{Binding SelectedTemperPerk, Mode=TwoWay}"
-                                                      Text="{Binding TemperPerkSearchText}"
-                                                      IsEditable="True"
-                                                      IsTextSearchEnabled="False"
-                                                      StaysOpenOnEdit="True"
-                                                      TextSearch.TextPath="Name">
-                                                        <ComboBox.ItemTemplate>
-                                                            <DataTemplate>
-                                                                <TextBlock Text="{Binding Name}" ToolTip="{Binding Key}"/>
-                                                            </DataTemplate>
-                                                        </ComboBox.ItemTemplate>
-                                                    </ComboBox>
+                                                                        <!-- Condition Type -->
+                                                                        <DockPanel Grid.Column="0" VerticalAlignment="Center">
+                                                                            <TextBlock Text="Type:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
+                                                                            <ComboBox Grid.Column="0"
+                                                                                  ItemsSource="{Binding ConditionTypes}"
+                                                                                  SelectedItem="{Binding Type, Mode=TwoWay}"
+                                                                                  Style="{StaticResource ItemComboBoxStyle}" />
+                                                                        </DockPanel>
 
+                                                                        <!-- Target -->
+                                                                        <DockPanel Grid.Column="1" VerticalAlignment="Center">
+                                                                            <TextBlock Text="Target:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
+                                                                            <ContentControl Content="{Binding}">
+                                                                                <ContentControl.Resources>
 
-                                                    <Button Grid.Row="2" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
-                                                        <Button.ToolTip>
-                                                            <ToolTip Style="{StaticResource InfoTooltipStyle}">
-                                                                <StackPanel>
-                                                                    <TextBlock Text="The perk needed to improve the item beyond basic levels. Example: SteelSmithing allows higher tempering tiers for steel items."
-                                                                    Style="{StaticResource ToolTipTitelStyle}"/>
-                                                                </StackPanel>
-                                                            </ToolTip>
-                                                        </Button.ToolTip>
-                                                    </Button>
+                                                                                    <!-- HasPerk -->
+                                                                                    <DataTemplate DataType="{x:Type local:PerkConditionViewModel}">
+                                                                                        <ComboBox ItemsSource="{Binding DataContext.FilteredCraftingPerks,
+                                                                                                RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                                              SelectedItem="{Binding SelectedPerk}"
+                                                                                              IsEditable="True"
+                                                                                              Text="{Binding PerkSearchText}"
+                                                                                              Style="{StaticResource ItemComboBoxStyle}" />
+                                                                                    </DataTemplate>
+
+                                                                                    <!-- GetIsSex -->
+                                                                                    <DataTemplate DataType="{x:Type local:SexConditionViewModel}">
+                                                                                        <ComboBox SelectedItem="{Binding TargetGender}"
+                                                                                              ItemsSource="{Binding Genders}"
+                                                                                              Style="{StaticResource ItemComboBoxStyle}" />
+                                                                                    </DataTemplate>
+
+                                                                                    <!-- GetActorValue -->
+                                                                                    <DataTemplate DataType="{x:Type local:ActorValueConditionViewModel}">
+                                                                                        <ComboBox SelectedItem="{Binding SelectedSkill}"
+                                                                                              ItemsSource="{Binding ActorValueWhitelist}"
+                                                                                              Style="{StaticResource ItemComboBoxStyle}" />
+                                                                                    </DataTemplate>
+
+                                                                                    <!-- GetLevel -->
+                                                                                    <DataTemplate DataType="{x:Type local:LevelConditionViewModel}">
+                                                                                        <TextBox Text="{Binding RequiredLevel}"
+                                                                                            Style="{StaticResource ItemTextBoxStyle}" />
+                                                                                    </DataTemplate>
+
+                                                                                    <!-- GetStageDone -->
+                                                                                    <DataTemplate DataType="{x:Type local:QuestStageConditionViewModel}">
+                                                                                        <Grid>
+                                                                                            <Grid.ColumnDefinitions>
+                                                                                                <ColumnDefinition Width="*"/>
+                                                                                                <ColumnDefinition Width="60"/>
+                                                                                            </Grid.ColumnDefinitions>
+
+                                                                                            <ComboBox Grid.Column="0"
+                                                                                                  ItemsSource="{Binding DataContext.FilteredQuests,
+                                                                                                        RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                                                  SelectedItem="{Binding SelectedQuest}"
+                                                                                                  Style="{StaticResource ItemComboBoxStyle}" />
+
+                                                                                            <TextBox Grid.Column="1"
+                                                                                                     Text="{Binding Stage}"
+                                                                                                     Style="{StaticResource ItemTextBoxStyle}" />
+                                                                                        </Grid>
+                                                                                    </DataTemplate>
+
+                                                                                </ContentControl.Resources>
+                                                                            </ContentControl>
+                                                                        </DockPanel>
+
+                                                                        <!-- Value -->
+                                                                        <DockPanel Grid.Column="2" VerticalAlignment="Center">
+                                                                            <TextBlock Text="Value:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
+                                                                            <TextBox
+                                                                                 Text="{Binding ComparisonValue}"
+                                                                                 Style="{StaticResource ItemTextBoxStyle}" />
+                                                                        </DockPanel>
+                                                                        <!-- RunOn -->
+                                                                        <DockPanel Grid.Column="3" VerticalAlignment="Center">
+                                                                            <TextBlock Text="Run On:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
+                                                                            <ComboBox
+                                                                                  ItemsSource="{Binding RunOnOptions}"
+                                                                                  SelectedItem="{Binding RunOn}"
+                                                                                  Style="{StaticResource ItemComboBoxStyle}" />
+                                                                        </DockPanel>
+
+                                                                        <!-- Remove -->
+                                                                        <Button Grid.Column="4"
+                                                                            Command="{Binding DataContext.RemoveTemperConditionCommand,
+                                                                                      RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                            CommandParameter="{Binding}"
+                                                                            Style="{StaticResource RemoveButtonStyle}" 
+                                                                            ToolTip="Remove Condition"/>
+                                                                    </Grid>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+
+                                                        <Button Command="{Binding AddTemperConditionCommand}"
+                                                            Style="{StaticResource AddButtonStyle}"
+                                                            ToolTip="Add Condition" />
+                                                    </StackPanel>
                                                 </Grid>
                                                 <Border BorderBrush="Gray" BorderThickness="0,0,0,1" Margin="0,5,0,5"/>
                                                 <ItemsControl ItemsSource="{Binding TemperIngredients}">
@@ -1116,7 +1208,7 @@
                                                 </ItemsControl>
                                                 <Button
                                                 Command="{Binding AddTemperIngredientCommand}"
-                                                ToolTip="Add Material"
+                                                ToolTip="Add Material/Recipe"
                                                 Style="{StaticResource AddButtonStyle}"/>
                                             </StackPanel>
                                         </GroupBox>
@@ -1180,7 +1272,8 @@
                                                                 RelativeSource={RelativeSource AncestorType=UserControl}, 
                                                                 Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                          Style="{StaticResource ItemTextSearchBoxStyle}"
-                                                         Margin="0,0,0,6"/>
+                                                         Margin="0,0,0,6"
+                                                         />
 
                                                 <!-- Expert toggle -->
                                                 <Button Content="{Binding DataContext.ShowExpertContainers, 
@@ -1193,7 +1286,8 @@
 
                                                 <TextBlock Text="Containers"
                                                    Style="{StaticResource ItemLabelStyle}"
-                                                   Margin="0,0,0,6"/>
+                                                   Margin="0,0,0,6"
+                                                   />
 
                                                 <ScrollViewer Height="180" VerticalScrollBarVisibility="Auto">
                                                     <ItemsControl ItemsSource="{Binding DataContext.FilteredContainers, 
@@ -1205,7 +1299,7 @@
                                                                         Background="{StaticResource ColorBackgroundControl}"
                                                                         CornerRadius="4">
                                                                     <DockPanel>
-                                                                        <TextBlock Text="{Binding Name}"
+                                                                            <TextBlock Text="{Binding Name}"
                                                                                Foreground="{StaticResource ColorTextPrimary}"
                                                                                VerticalAlignment="Center"/>
 

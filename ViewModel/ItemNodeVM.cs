@@ -632,6 +632,8 @@ namespace SkyrimCraftingTool.ViewModel
                     _temperWorkbenchKey = value?.WorkbenchKeywordKey ?? "";
                     _temperPerkKey = value?.PerkKey ?? "";
 
+                    TemperConditions = value?.Conditions ?? new ObservableCollection<BaseConditionViewModel>();
+
                     OnPropertyChanged(nameof(TemperWorkbenchKey));
                     OnPropertyChanged(nameof(TemperPerkKey));
                     SelectedTemperPerk =

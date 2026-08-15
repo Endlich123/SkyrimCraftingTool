@@ -39,7 +39,7 @@ namespace SkyrimCraftingTool.ViewModel
             var keywordService = new Services.KeywordService();
 
             ContentVM = new MainContentVM(itemService, fileService, formIdService, null, null, keywordService);
-            EnchantVM = new EnchantmentMenuVM(_itemDB, keywordService);
+            EnchantVM = new EnchantmentMenuVM(_itemDB, keywordService, new List<PluginInfo>());
             CategoriesVM = new CategoriesConfigVM();
 
             // Commands
