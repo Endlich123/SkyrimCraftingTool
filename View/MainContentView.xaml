@@ -1,0 +1,1678 @@
+﻿<UserControl x:Class="SkyrimCraftingTool.View.MainContentView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:SkyrimCraftingTool.ViewModel"
+             xmlns:model="clr-namespace:SkyrimCraftingTool.Model"
+             xmlns:views="clr-namespace:SkyrimCraftingTool.View"
+             Loaded="MainContentView_Loaded">
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Oben: Debug / Aktionen -->
+        <StackPanel Orientation="Vertical"
+                    DockPanel.Dock="Top"
+                    Margin="6"
+                    Width="250"
+                    HorizontalAlignment="Left">
+            <StackPanel Orientation="Horizontal">
+            <Button Content="Scan/Rescan"
+                    Command="{Binding ScanModsCommand}"
+                    Style="{StaticResource ActionButtonGreenStyle}"/>
+            <Button Content="Export"
+                    Command="{Binding ExportAllCommand}"
+                    Style="{StaticResource ActionButtonStyle}"/>
+            <Button Content="Import"
+                    Command="{Binding ImportAllCommand}"
+                    Style="{StaticResource ActionButtonWarmStyle}"/>
+            
+            </StackPanel>
+            <TextBlock Foreground="{StaticResource ColorWarning}"
+                       Margin="5,0,10,0"
+                       Text="{Binding FilteredTree.Count, StringFormat=TreeCount: {0}}" />
+            <StackPanel Orientation="Horizontal" Margin="5,2,0,0">
+                <CheckBox Content="Only edited"
+                          IsChecked="{Binding ShowOnlyEditedItems}"
+                          Foreground="{StaticResource ColorTextPrimary}"
+                          VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding EditedItemCount, StringFormat=({0} edited)}"
+                           Foreground="{StaticResource ColorTextSecondary}"
+                           VerticalAlignment="Center"
+                           Margin="8,0,0,0"/>
+            </StackPanel>
+        </StackPanel>
+
+        <Grid Margin="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="250" MinWidth="150" />
+                <ColumnDefinition Width="5" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- LEFT: Tree + Search -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Search -->
+                <TextBox Grid.Row="0"
+                         Text="{Binding TreeSearchText, UpdateSourceTrigger=PropertyChanged}"
+                         Tag="Search Plugin/Item..."
+                         Background="{StaticResource ColorBackgroundControl}"
+                         Foreground="{StaticResource ColorTextPrimary}"
+                         BorderBrush="{StaticResource ColorBorder}"
+                         Padding="5"
+                         Margin="0,0,0,5" />
+
+                <!-- Expand / Collapse -->
+                <UniformGrid Grid.Row="1"
+                             Columns="1"
+                             Margin="0,0,0,5">
+                    <Button Content="Collapse all [-]"
+                            Command="{Binding CollapseAllCommand}"
+                            Margin="0,0,2,0"
+                            Background="{StaticResource ColorBackgroundHighlight}"
+                            Foreground="{StaticResource ColorTextPrimary}" />
+                </UniformGrid>
+
+                <!-- TreeView -->
+                <TreeView Grid.Row="2"
+                          x:Name="MainTreeView"
+                          ItemsSource="{Binding FilteredTree}"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          SelectedItemChanged="MainTreeView_SelectedItemChanged"
+                          Background="{StaticResource ColorBackgroundBase}">
+
+                    <!-- Container-Style -->
+                    <TreeView.ItemContainerStyle>
+                        <Style TargetType="TreeViewItem" BasedOn="{x:Null}">
+                            <Setter Property="Padding" Value="2" />
+                            <Setter Property="HorizontalContentAlignment" Value="Left" />
+                            <Setter Property="VerticalContentAlignment" Value="Center" />
+
+                            <Style.Resources>
+                                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="{Binding Source={StaticResource ColorBackgroundHighlight}, Path=Color}"/>
+                                <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="{Binding Source={StaticResource ColorBorder}, Path=Color}"/>
+                            </Style.Resources>
+                        </Style>
+                    </TreeView.ItemContainerStyle>
+
+                    <!-- Header-Templates -->
+                    <TreeView.Resources>
+
+                        <!-- Plugin -->
+                        <HierarchicalDataTemplate DataType="{x:Type local:PluginNodeVM}"
+                                                  ItemsSource="{Binding Categories}">
+                            <TextBlock Text="{Binding PluginName}"
+                                       FontWeight="Bold"
+                                       Foreground="White"
+                                       IsHitTestVisible="False" />
+                        </HierarchicalDataTemplate>
+
+                        <!-- Kategorie -->
+                        <HierarchicalDataTemplate DataType="{x:Type local:CategoryNodeVM}"
+                                                  ItemsSource="{Binding Items}">
+                            <TextBlock Text="{Binding CategoryName}"
+                                       Foreground="LightSteelBlue"
+                                       IsHitTestVisible="False" />
+
+                            <!-- Container style for the item level (this template's children): clicks
+                                 get intercepted here directly (Ctrl/Shift multi-select) instead of
+                                 going through TreeView.SelectedItem - see MainContentVM.HandleItemNodeClick.
+                                 Plugin/category level stays with normal single-select behavior. -->
+                            <HierarchicalDataTemplate.ItemContainerStyle>
+                                <Style TargetType="TreeViewItem" BasedOn="{x:Null}">
+                                    <Setter Property="Padding" Value="2" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Left" />
+                                    <Setter Property="VerticalContentAlignment" Value="Center" />
+                                    <EventSetter Event="PreviewMouseLeftButtonDown" Handler="ItemNode_PreviewMouseLeftButtonDown"/>
+                                </Style>
+                            </HierarchicalDataTemplate.ItemContainerStyle>
+                        </HierarchicalDataTemplate>
+
+                        <!-- Item -->
+                        <DataTemplate DataType="{x:Type local:ItemNodeVM}">
+                            <Border x:Name="ItemHighlight" Background="Transparent" Padding="2,0">
+                                <StackPanel Orientation="Horizontal" IsHitTestVisible="False">
+                                    <TextBlock x:Name="EditedDot"
+                                               Text="&#x25CF;  "
+                                               Foreground="{StaticResource ColorWarning}"
+                                               Visibility="Collapsed"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="EditorIdText"
+                                               Text="{Binding EditorID}"
+                                               Foreground="LightGray"/>
+                                </StackPanel>
+                            </Border>
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                    <Setter TargetName="ItemHighlight" Property="Background"
+                                            Value="{StaticResource ColorBackgroundHighlight}"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsEdited}" Value="True">
+                                    <Setter TargetName="EditedDot" Property="Visibility" Value="Visible"/>
+                                    <Setter TargetName="EditorIdText" Property="Foreground" Value="{StaticResource ColorTextPrimary}"/>
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+
+                    </TreeView.Resources>
+                </TreeView>
+            </Grid>
+
+            <!-- Splitter -->
+            <GridSplitter Grid.Column="1"
+                          HorizontalAlignment="Stretch"
+                          Background="#444" />
+
+            <!-- RECHTS: Detailansicht -->
+            <Grid Grid.Column="2" Margin="10,0,0,0">
+            <ContentPresenter Content="{Binding SelectedNode}"
+                              Width="Auto">
+                <ContentPresenter.Resources>
+
+                    <!-- ITEM-DETAIL -->
+                    <DataTemplate DataType="{x:Type local:ItemNodeVM}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <Grid >
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <!-- Presets -->
+                                        <RowDefinition Height="Auto"/>
+                                        <!-- Item Details -->
+                                        <RowDefinition Height="Auto"/>
+                                        <!-- Armor/Weapon Details -->
+                                        <RowDefinition Height="Auto"/>
+                                        <!-- Keywords -->
+                                        <RowDefinition Height="Auto"/>
+                                        <!-- Materials -->
+                                        <RowDefinition Height="Auto"/>
+                                        <!-- Temper -->
+                                        <RowDefinition Height="Auto"/>
+                                        <!-- Container -->
+                                    </Grid.RowDefinitions>
+
+                                    <!-- Preset-Zeile -->
+                                    <Border Grid.Row="0"
+                                        Background="{StaticResource ColorBackgroundBase}"
+                                        Padding="0"
+                                        Margin="0,0,0,0">
+                                        <DockPanel LastChildFill="False">
+                                            <ComboBox ItemsSource="{Binding ConfigPresets}"
+                                              SelectedItem="{Binding SelectedConfigPreset}"
+                                              DisplayMemberPath="PresetName"
+                                              Width="180"
+                                              Style="{StaticResource ItemComboBoxStyle}"/>
+                                            <Button Content="Apply"
+                                            Command="{Binding ApplyPresetCommand}"
+                                            Style="{StaticResource StandardButtonStyle}"/>
+
+                                            <Button Content="Export"
+                                                Command="{Binding ExportItemCommand}"
+                                                Style="{StaticResource ActionButtonStyle}"/>
+                                            <Button Content="Import"
+                                                Command="{Binding ImportItemCommand}"
+                                                Style="{StaticResource ActionButtonWarmStyle}"/>
+                                        </DockPanel>
+                                    </Border>
+
+                                    <!-- Item Details -->
+                                    <GroupBox Grid.Row="1" Margin="0,0,0,15" Padding="10" Style="{StaticResource DarkGroupBoxStyle}">
+                                        <GroupBox.Header>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Item Details"
+                                                    Style="{StaticResource TitelStyle}"/>
+
+                                                <Button Margin="10,0,0,0" Style="{StaticResource InfoButtonStyle}">
+                                                    <Button.ToolTip>
+                                                        <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                            <StackPanel>
+                                                                <TextBlock Text="Shows the fundamental properties of an item."
+                                                                    Style="{StaticResource ToolTipTitelStyle}"/>
+                                                            </StackPanel>
+                                                        </ToolTip>
+                                                    </Button.ToolTip>
+                                                </Button>
+
+                                                <Button Content="Reset Changes"
+                                                    Margin="15,0,0,0"
+                                                    Style="{StaticResource StandardButtonStyle}"
+                                                    Command="{Binding ResetChangesCommand}"
+                                                    IsEnabled="{Binding HasAnyChanges}">
+                                                    <Button.ToolTip>
+                                                        <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                            <StackPanel>
+                                                                <TextBlock Text="Reverts Name/Cost/Weight/Armor-Weapon-Details/Keywords/Container on this item back to how they looked when it was loaded, undoing any edits made since then."
+                                                                    Style="{StaticResource ToolTipTitelStyle}"/>
+                                                            </StackPanel>
+                                                        </ToolTip>
+                                                    </Button.ToolTip>
+                                                </Button>
+
+                                                <Button Content="Reset ALL"
+                                                    Margin="8,0,0,0"
+                                                    Style="{StaticResource StandardButtonStyle}"
+                                                    Command="{Binding ResetAllChangesCommand}"
+                                                    IsEnabled="{Binding HasAnyItemOrRecipeChanges}">
+                                                    <Button.ToolTip>
+                                                        <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                            <StackPanel>
+                                                                <TextBlock Text="Reverts EVERYTHING on this item - fields, crafting recipe and temper recipe - back to the scanned state. Asks for confirmation first."
+                                                                    Style="{StaticResource ToolTipTitelStyle}"/>
+                                                            </StackPanel>
+                                                        </ToolTip>
+                                                    </Button.ToolTip>
+                                                </Button>
+                                            </StackPanel>
+                                        </GroupBox.Header>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+
+
+
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <!-- EditorID -->
+                                                <RowDefinition Height="Auto" />
+                                                <!-- Key -->
+                                                <RowDefinition Height="Auto" />
+                                                <!-- Name -->
+                                                <RowDefinition Height="Auto" />
+                                                <!-- Cost -->
+                                                <RowDefinition Height="Auto" />
+                                                <!-- Weight -->
+                                            </Grid.RowDefinitions>
+
+                                            <!-- EditorID -->
+                                            <TextBlock Grid.Row="0"
+                                           Text="EditorID:"
+                                           Style="{StaticResource ItemLabelStyle}"/>
+
+                                            <TextBox Grid.Row="0"
+                                             Grid.Column="1"
+                                             Text="{Binding EditorID}"
+                                             IsEnabled="False"
+                                             IsReadOnly="True"
+                                             Style="{StaticResource ItemTextBoxStyle}"/>
+
+                                            <Button Grid.Row="0" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                                <Button.ToolTip>
+                                                    <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                        <StackPanel>
+                                                            <TextBlock Text="Internal name used by the Creation Engine. Not relevant for gameplay."
+                                                                Style="{StaticResource ToolTipTitelStyle}"/>
+                                                        </StackPanel>
+                                                    </ToolTip>
+                                                </Button.ToolTip>
+                                            </Button>
+
+
+                                            <!-- Key -->
+                                            <TextBlock Grid.Row="1"
+                                               Text="Key:"
+                                               Style="{StaticResource ItemLabelStyle}"/>
+
+                                            <TextBox Grid.Row="1"
+                                             Grid.Column="1"
+                                             Text="{Binding Key}"
+                                             IsEnabled="False"
+                                             IsReadOnly="True" 
+                                             Style="{StaticResource ItemTextBoxStyle}"
+                                             />
+
+                                            <Button Grid.Row="1" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                                <Button.ToolTip>
+                                                    <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                        <StackPanel>
+                                                            <TextBlock Text="Generated as MasterPluginName|FormID. Similar to the FormKey"
+                                                                    Style="{StaticResource ToolTipTitelStyle}"/>
+                                                        </StackPanel>
+                                                    </ToolTip>
+                                                </Button.ToolTip>
+                                            </Button>
+
+                                            <!-- Name -->
+                                            <TextBlock Grid.Row="2"
+                                           Text="Name:"
+                                           Style="{StaticResource ItemLabelStyle}"/>
+
+                                            <TextBox Grid.Row="2"
+                                                 Grid.Column="1"
+                                                 Text="{Binding Name}"
+                                                 BorderBrush="{Binding IsNameChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                                 Style="{StaticResource ItemTextBoxStyle}"/>
+
+                                            <Button Grid.Row="2" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                                <Button.ToolTip>
+                                                    <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                        <StackPanel>
+                                                            <TextBlock Text="The in‑game display name of the item."
+                                                                Style="{StaticResource ToolTipTitelStyle}"/>
+                                                        </StackPanel>
+                                                    </ToolTip>
+                                                </Button.ToolTip>
+                                            </Button>
+
+                                            <!-- Cost -->
+                                            <TextBlock Grid.Row="3"
+                                               Text="Cost:"
+                                               Style="{StaticResource ItemLabelStyle}"/>
+
+                                            <TextBox Grid.Row="3"
+                                             Grid.Column="1"
+                                             Text="{Binding Value}"
+                                             BorderBrush="{Binding IsValueChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                             model:NumericTextBoxBehavior.Mode="Integer"
+                                             Style="{StaticResource ItemTextBoxStyle}"/>
+
+                                            <Button Grid.Row="3" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                                <Button.ToolTip>
+                                                    <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                        <StackPanel>
+                                                            <TextBlock Text="The base monetary value. The final price depends on your Speech skill, perks, buffs, and debuffs."
+                                                                Style="{StaticResource ToolTipTitelStyle}"/>
+                                                        </StackPanel>
+                                                    </ToolTip>
+                                                </Button.ToolTip>
+                                            </Button>
+
+                                            <!-- Weight -->
+                                            <TextBlock Grid.Row="4"
+                                           Text="Weight:"
+                                           Style="{StaticResource ItemLabelStyle}"/>
+
+                                            <TextBox Grid.Row="4"
+                                                 Grid.Column="1"
+                                                 Text="{Binding Weight}"
+                                                 BorderBrush="{Binding IsWeightChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                                 model:NumericTextBoxBehavior.Mode="Decimal"
+                                                 Style="{StaticResource ItemTextBoxStyle}"/>
+
+                                            <Button Grid.Row="4" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                                <Button.ToolTip>
+                                                    <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                        <StackPanel>
+                                                            <TextBlock Text="How heavy the item is."
+                                                                Style="{StaticResource ToolTipTitelStyle}"/>
+                                                        </StackPanel>
+                                                    </ToolTip>
+                                                </Button.ToolTip>
+                                            </Button>
+                                        </Grid>
+                                    </GroupBox>
+
+                                    <!-- Armor / Weapon Specific Details -->
+                                    <Expander Grid.Row="2" Style="{StaticResource DarkExpanderStyle}" Header="Expand Armor / Weapon Specific Details" IsExpanded="False">
+                                        <GroupBox
+                                        Style="{StaticResource DarkGroupBoxStyle}"
+                                        Margin="0,0,0,15"
+                                        Padding="10">
+                                            <GroupBox.Header>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="Armor / Weapon Specific Details"
+                                                    Style="{StaticResource TitelStyle}"/>
+
+                                                    <Button Margin="10,0,0,0" Style="{StaticResource InfoButtonStyle}">
+                                                        <Button.ToolTip>
+                                                            <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                                <StackPanel>
+                                                                    <TextBlock Text="This Block shows the Armor / Weapon Specific Details of an item."
+                                                                        Style="{StaticResource ToolTipTitelStyle}"/>
+                                                                </StackPanel>
+                                                            </ToolTip>
+                                                        </Button.ToolTip>
+                                                    </Button>
+                                                </StackPanel>
+                                            </GroupBox.Header>
+
+                                            <VirtualizingStackPanel>
+
+                                                <!-- ARMOR -->
+                                                <StackPanel Visibility="{Binding IsArmor, Converter={StaticResource BoolToVis}}">
+
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto" />
+                                                        </Grid.RowDefinitions>
+
+                                                        <!-- ArmorRating -->
+                                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Armor Rating:" Style="{StaticResource ItemLabelStyle}"/>
+
+                                                        <TextBox Grid.Row="0" Grid.Column="1"
+                                                         Text="{Binding ArmorRating}"
+                                                         BorderBrush="{Binding IsArmorRatingChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                                         model:NumericTextBoxBehavior.Mode="Decimal"
+                                                         Style="{StaticResource ItemTextBoxStyle}"/>
+
+                                                        <Button Grid.Row="0" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                                            <Button.ToolTip>
+                                                                <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="How much incoming physical damage is reduced."
+                                                                        Style="{StaticResource ToolTipTitelStyle}"/>
+                                                                    </StackPanel>
+                                                                </ToolTip>
+                                                            </Button.ToolTip>
+                                                        </Button>
+                                                    </Grid>
+
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto" />
+                                                            <RowDefinition Height="Auto" />
+                                                        </Grid.RowDefinitions>
+
+                                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Body Slots:" Style="{StaticResource ItemLabelStyle}"/>
+
+                                                        <Button Grid.Row="0" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                                            <Button.ToolTip>
+                                                                <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="Defines where the item is equipped. Items can use multiple slots. If two items share a slot, you cannot equip both at the same time."
+                                                                        Style="{StaticResource ToolTipTitelStyle}"/>
+                                                                    </StackPanel>
+                                                                </ToolTip>
+                                                            </Button.ToolTip>
+                                                        </Button>
+
+                                                        <Border Grid.Row="1" Grid.ColumnSpan="3"
+                                                                BorderBrush="{Binding IsBodySlotMaskChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                                                BorderThickness="0,0,0,2" Margin="0,2,0,5"
+                                                                ToolTip="A colored line here means the Body Slots differ from how they looked when this item was loaded."/>
+                                                    </Grid>
+
+                                                    <ItemsControl ItemsSource="{Binding SlotOptions}">
+                                                        <ItemsControl.ItemsPanel>
+                                                            <ItemsPanelTemplate>
+                                                                <WrapPanel Orientation="Horizontal"/>
+                                                            </ItemsPanelTemplate>
+                                                        </ItemsControl.ItemsPanel>
+
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border CornerRadius="4"
+                                                                        Padding="5"
+                                                                        Margin="3"
+                                                                        Background="{Binding IsSelected, Converter={StaticResource BoolToBrushConverter}}">
+
+                                                                    <Border.InputBindings>
+                                                                        <MouseBinding MouseAction="LeftClick"
+                                                                          Command="{Binding ToggleSelectedCommand}" />
+                                                                    </Border.InputBindings>
+
+                                                                    <TextBlock Text="{Binding DisplayName}"
+                                                                   Foreground="White"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+
+                                                </StackPanel>
+
+                                                <!-- WEAPON -->
+                                                <StackPanel Visibility="{Binding IsWeapon, Converter={StaticResource BoolToVis}}">
+                                                    <Grid Margin="0,0,0,10">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <!-- Label -->
+                                                            <ColumnDefinition Width="*"/>
+                                                            <!-- Value -->
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <!-- Info Button -->
+                                                        </Grid.ColumnDefinitions>
+
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto" />
+                                                            <RowDefinition Height="Auto" />
+                                                            <RowDefinition Height="Auto" />
+                                                            <RowDefinition Height="Auto" />
+                                                        </Grid.RowDefinitions>
+
+                                                        <!-- DAMAGE -->
+                                                        <TextBlock Grid.Column="0" Grid.Row="0" Text="Damage:" Style="{StaticResource ItemLabelStyle}"/>
+                                                        <TextBox Grid.Column="1"
+                                                         Text="{Binding Damage}"
+                                                         BorderBrush="{Binding IsDamageChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                                         model:NumericTextBoxBehavior.Mode="Integer"
+                                                         Style="{StaticResource ItemTextBoxStyle}"/>
+                                                        <Button Grid.Row="0" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                                            <Button.ToolTip>
+                                                                <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="The weapon’s base damage before modifiers. Temper improvements, skills, perks, and debuffs modify this value."
+                                                                        Style="{StaticResource ToolTipTitelStyle}"/>
+                                                                    </StackPanel>
+                                                                </ToolTip>
+                                                            </Button.ToolTip>
+                                                        </Button>
+
+                                                        <!-- SPEED -->
+                                                        <TextBlock Grid.Column="0" Grid.Row="1" Text="Speed:" Style="{StaticResource ItemLabelStyle}"/>
+                                                        <TextBox Grid.Column="1" Grid.Row="1"
+                                                         Text="{Binding Speed}"
+                                                         BorderBrush="{Binding IsSpeedChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                                         model:NumericTextBoxBehavior.Mode="Decimal"
+                                                         model:NumericTextBoxBehavior.Max="10"
+                                                         Style="{StaticResource ItemTextBoxStyle}"/>
+                                                        <Button Grid.Row="1" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                                            <Button.ToolTip>
+                                                                <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="How fast the weapon swings."
+                                                                        Style="{StaticResource ToolTipTitelStyle}"/>
+                                                                    </StackPanel>
+                                                                </ToolTip>
+                                                            </Button.ToolTip>
+                                                        </Button>
+
+                                                        <!-- REACH -->
+                                                        <TextBlock Grid.Column="0" Grid.Row="2" Text="Reach:" Style="{StaticResource ItemLabelStyle}"/>
+                                                        <TextBox Grid.Column="1" Grid.Row="2"
+                                                         Text="{Binding Reach}"
+                                                         BorderBrush="{Binding IsReachChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                                         model:NumericTextBoxBehavior.Mode="Decimal"
+                                                         model:NumericTextBoxBehavior.Max="10"
+                                                         Style="{StaticResource ItemTextBoxStyle}"/>
+                                                        <Button Grid.Row="2" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                                            <Button.ToolTip>
+                                                                <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="How far the weapon can hit. Changing this usually feels unnatural unless you know exactly what you're doing."
+                                                                        Style="{StaticResource ToolTipTitelStyle}"/>
+                                                                    </StackPanel>
+                                                                </ToolTip>
+                                                            </Button.ToolTip>
+                                                        </Button>
+
+                                                        <!-- STAGGER -->
+                                                        <TextBlock Grid.Column="0" Grid.Row="3" Text="Stagger:" Style="{StaticResource ItemLabelStyle}"/>
+                                                        <TextBox Grid.Column="1" Grid.Row="3"
+                                                     Text="{Binding Stagger}"
+                                                     BorderBrush="{Binding IsStaggerChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                                     model:NumericTextBoxBehavior.Mode="Decimal"
+                                                     model:NumericTextBoxBehavior.Max="10"
+                                                     Style="{StaticResource ItemTextBoxStyle}"/>
+                                                        <Button Grid.Row="3" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                                            <Button.ToolTip>
+                                                                <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="Controls how much stagger the weapon inflicts on hit."
+                                                                           Style="{StaticResource ToolTipTitelStyle}"/>
+                                                                    </StackPanel>
+                                                                </ToolTip>
+                                                            </Button.ToolTip>
+                                                        </Button>
+                                                    </Grid>
+                                                </StackPanel>
+
+
+                                            </VirtualizingStackPanel>
+                                        </GroupBox>
+                                    </Expander>
+
+
+                                    <!-- Keywords -->
+                                    <!-- Top View -->
+                                    <Expander Grid.Row="3" Style="{StaticResource DarkExpanderStyle}" Header="Keywords" IsExpanded="False">
+                                        <StackPanel>
+                                            <Grid Margin="0,10,5,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+
+                                                <!-- Titel -->
+                                                <TextBlock Grid.Column="0" Text="Search:"
+                                               Style="{StaticResource ItemLabelStyle}"/>
+
+                                                <TextBox Grid.Column="1" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource ItemTextSearchBoxStyle}"
+                                                 />
+
+                                                <CheckBox Grid.Column="2"
+                                                  Style="{StaticResource ItemCheckBoxStyle}"
+                                                  Content="All Keywords (Expert)"
+                                                  IsChecked="{Binding ShowAllKeywords}"
+                                                      Margin="0,0,0,5"/>
+
+                                            </Grid>
+
+                                            <GroupBox
+                                            Style="{StaticResource DarkGroupBoxStyle}"
+                                            BorderBrush="{Binding IsKeywordsChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                            BorderThickness="2"
+                                            Margin="0,0,0,10"
+                                            Padding="10">
+
+                                                <GroupBox.Header>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="Selected Keywords"
+                                                       Style="{StaticResource TitelStyle}"/>
+
+                                                        <Button Margin="10,0,0,0" Style="{StaticResource InfoButtonStyle}">
+                                                            <Button.ToolTip>
+                                                                <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="Shows which keywords are currently applied to the item."
+                                                                        Style="{StaticResource ToolTipTitelStyle}"/>
+
+                                                                        <StackPanel>
+                                                                            <TextBlock Text="Rules:"
+                                                                                    Style="{StaticResource ToolTipTextStyle}"/>
+                                                                            <TextBlock Text="•  You can only select one of this Keywords: ArmorLight, ArmorHeavy, ArmorClothing"
+                                                                                    Style="{StaticResource ToolTipTextStyle}"/>
+                                                                            <TextBlock Text="•  ArmorLight, ArmorHeavy: Blocks all Clothing keywords"
+                                                                                    Style="{StaticResource ToolTipTextStyle}"/>
+                                                                            <TextBlock Text="•  ArmorClothing: Blocks all Armor keywords"
+                                                                                    Style="{StaticResource ToolTipTextStyle}"/>
+                                                                            <TextBlock Text="•  You can not change WeapType Keywords or select them!"
+                                                                                    Style="{StaticResource ToolTipTextStyle}"/>
+                                                                        </StackPanel>
+                                                                    </StackPanel>
+                                                                </ToolTip>
+                                                            </Button.ToolTip>
+                                                        </Button>
+                                                    </StackPanel>
+                                                </GroupBox.Header>
+
+                                                <ItemsControl ItemsSource="{Binding SelectedKeywordsView}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <WrapPanel Orientation="Horizontal"/>
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border CornerRadius="4"
+                                                        Padding="5"
+                                                        Margin="3"
+                                                        Background="{Binding IsSelected, Converter={StaticResource BoolToBrushConverter}}">
+
+                                                                <Border.InputBindings>
+                                                                    <MouseBinding MouseAction="LeftClick"
+                                                                Command="{Binding ToggleSelectedCommand}" />
+                                                                </Border.InputBindings>
+
+                                                                <TextBlock Text="{Binding Name}"
+                                                            Foreground="White"
+                                                            TextTrimming="CharacterEllipsis"/>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+
+                                            </GroupBox>
+                                            <!-- Bottom View -->
+
+                                            <GroupBox
+                                        Style="{StaticResource DarkGroupBoxStyle}"
+                                        Margin="0,0,0,15"
+                                        Padding="10">
+
+                                                <GroupBox.Header>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="Keywords"
+                                                        Style="{StaticResource TitelStyle}"/>
+
+                                                        <Button
+                                                        Margin="10,0,0,0"
+                                                        Style="{StaticResource InfoButtonStyle}">
+                                                            <Button.ToolTip>
+                                                                <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="Shows all available keywords."
+                                                                        Style="{StaticResource ToolTipTitelStyle}"/>
+
+                                                                        <StackPanel>
+                                                                            <TextBlock Text="•  Click to select, click again to unselect."
+                                                                            Style="{StaticResource ToolTipTextStyle}"/>
+                                                                            <TextBlock Text="•  Standard View: Only commonly used keywords for weapons/armor."
+                                                                            Style="{StaticResource ToolTipTextStyle}"/>
+                                                                            <TextBlock Text="•  Expert View: Loads all keywords from your entire modlist."
+                                                                            Style="{StaticResource ToolTipTextStyle}"/>
+                                                                            <TextBlock Text="•  Only recommended if you know exactly what each keyword does."
+                                                                            Style="{StaticResource ToolTipTextStyle}"/>
+                                                                        </StackPanel>
+                                                                    </StackPanel>
+                                                                </ToolTip>
+                                                            </Button.ToolTip>
+                                                        </Button>
+                                                    </StackPanel>
+                                                </GroupBox.Header>
+
+                                                <ItemsControl ItemsSource="{Binding FilteredKeywordsView}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <WrapPanel Orientation="Horizontal"/>
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border CornerRadius="4"
+                                                                Padding="5"
+                                                                Margin="3"
+                                                                ToolTip="{Binding Key}">
+
+                                                                <Border.Style>
+                                                                    <Style TargetType="Border">
+                                                                        <Setter Property="Background" Value="{Binding IsSelected, Converter={StaticResource BoolToBrushConverter}}"/>
+                                                                        <Style.Triggers>
+                                                                            <!-- Weapon-type keywords: visually highlight and make read-only -->
+                                                                            <DataTrigger Binding="{Binding IsReadOnly}" Value="True">
+                                                                                <Setter Property="Background" Value="#8B0000"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Border.Style>
+
+                                                                <Border.InputBindings>
+                                                                    <MouseBinding MouseAction="LeftClick"
+                                                                Command="{Binding ToggleSelectedCommand}" />
+                                                                </Border.InputBindings>
+
+                                                                <TextBlock Text="{Binding Name}"
+                                                            FontSize="{Binding DataContext.KeywordFontSize,
+                                                                               RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                            Foreground="White"
+                                                            HorizontalAlignment="Center"
+                                                            TextTrimming="CharacterEllipsis"/>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </GroupBox>
+                                        </StackPanel>
+                                    </Expander>
+
+                                    <!-- Crafting / Recipe -->
+                                    <Expander Grid.Row="4" Style="{StaticResource DarkExpanderStyle}" Header="Crafting Recipe" IsExpanded="False">
+                                        <GroupBox
+                                                Style="{StaticResource DarkGroupBoxStyle}"
+                                                Padding="10">
+                                            <GroupBox.Header>
+                                                <DockPanel LastChildFill="False">
+                                                    <TextBlock Text="Crafting Recipe"
+                                                    Style="{StaticResource TitelStyle}"/>
+
+                                                    <Button Margin="10,0,0,0" Style="{StaticResource InfoButtonStyle}">
+                                                        <Button.ToolTip>
+                                                            <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                                <StackPanel>
+                                                                    <TextBlock Text="Shows the crafting recipe for creating the item."
+                                                                        Style="{StaticResource ToolTipTitelStyle}"/>
+                                                                </StackPanel>
+                                                            </ToolTip>
+                                                        </Button.ToolTip>
+                                                    </Button>
+
+                                                    <Button Content="Reset Changes"
+                                                        Margin="15,0,0,0"
+                                                        Style="{StaticResource StandardButtonStyle}"
+                                                        Command="{Binding ResetCraftingRecipeCommand}"
+                                                        IsEnabled="{Binding HasCraftingChanges}">
+                                                        <Button.ToolTip>
+                                                            <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                                <StackPanel>
+                                                                    <TextBlock Text="Reverts Workbench, Ingredients, and Conditions back to how they looked when this recipe was loaded, undoing any edits made since then."
+                                                                        Style="{StaticResource ToolTipTitelStyle}"/>
+                                                                </StackPanel>
+                                                            </ToolTip>
+                                                        </Button.ToolTip>
+                                                    </Button>
+
+                                                </DockPanel>
+                                            </GroupBox.Header>
+                                            <StackPanel>
+                                                <TextBlock Text="⚠ This recipe has no workbench set - it can't be crafted in-game."
+                                                           Foreground="{StaticResource ColorWarning}"
+                                                           TextWrapping="Wrap" Margin="0,0,0,4"
+                                                           Visibility="{Binding CraftingRecipeMissingWorkbench, Converter={StaticResource BoolToVis}}"/>
+                                                <TextBlock Text="⚠ This recipe has no ingredients - it will be free to craft."
+                                                           Foreground="{StaticResource ColorWarning}"
+                                                           TextWrapping="Wrap" Margin="0,0,0,4"
+                                                           Visibility="{Binding CraftingRecipeMissingIngredients, Converter={StaticResource BoolToVis}}"/>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto" />
+                                                        <!-- COBJ Origin Key -->
+                                                        <RowDefinition Height="Auto" />
+                                                        <!-- Workbench -->
+                                                        <RowDefinition Height="Auto" />
+                                                        <!-- Perk -->
+                                                    </Grid.RowDefinitions>
+
+                                                    <!-- COBJ Origin Key -->
+                                                    <TextBlock Grid.Row="0" Grid.Column="0"
+                                                       Text="COBJ Origin Key: "
+                                                       Style="{StaticResource ItemLabelStyle}"/>
+
+                                                    <TextBox Grid.Row="0" Grid.Column="1"
+                                                         Text="{Binding CraftingEditorID, Mode=OneWay}"
+                                                         Style="{StaticResource ItemTextBoxStyle}"
+                                                         IsEnabled="False"/>
+
+                                                    <Button Grid.Row="0" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                                        <Button.ToolTip>
+                                                            <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                                <StackPanel>
+                                                                    <TextBlock Text="The key of the original recipe: MasterPluginName | FormID."
+                                                                    Style="{StaticResource ToolTipTitelStyle}"/>
+                                                                </StackPanel>
+                                                            </ToolTip>
+                                                        </Button.ToolTip>
+                                                    </Button>
+
+
+                                                    <!-- Workbench -->
+                                                    <TextBlock Grid.Row="1" Grid.Column="0"
+                                                   Text="Workbench:"
+                                                   Style="{StaticResource ItemLabelStyle}"/>
+
+                                                    <ComboBox Grid.Row="1" Grid.Column="1"
+                                                      ItemsSource="{Binding FilteredCraftingWorkbenches}"
+                                                      SelectedItem="{Binding SelectedWorkbench, Mode=TwoWay}"
+                                                      Text="{Binding CraftingWorkbenchSearchText}"
+                                                      IsEditable="True"
+                                                      IsTextSearchEnabled="False"
+                                                      IsSynchronizedWithCurrentItem="False"
+                                                      StaysOpenOnEdit="True"
+                                                      TextSearch.TextPath="Name">
+                                                        <ComboBox.Style>
+                                                            <!-- Dead-reference red wins over edited-amber -->
+                                                            <Style TargetType="ComboBox" BasedOn="{StaticResource ItemComboBoxStyle}">
+                                                                <Setter Property="BorderBrush" Value="{Binding IsCraftingWorkbenchChanged, Converter={StaticResource BoolToChangedBorderConverter}}"/>
+                                                                <Setter Property="ToolTip" Value="{Binding SelectedValue, RelativeSource={RelativeSource Self}}"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsCraftingWorkbenchDeadRef}" Value="True">
+                                                                        <Setter Property="BorderBrush" Value="#C0392B"/>
+                                                                        <Setter Property="ToolTip" Value="This workbench keyword is not in the active load order."/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </ComboBox.Style>
+                                                        <ComboBox.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <TextBlock Text="{Binding Name}" ToolTip="{Binding Key}"/>
+                                                            </DataTemplate>
+                                                        </ComboBox.ItemTemplate>
+                                                    </ComboBox>
+
+                                                    <Button Grid.Row="1" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                                        <Button.ToolTip>
+                                                            <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                                <StackPanel>
+                                                                    <TextBlock Text="The crafting station where the item can be created. Recommended: SkyrimSmithingForge (the standard forge)."
+                                                                    Style="{StaticResource ToolTipTitelStyle}"/>
+                                                                </StackPanel>
+                                                            </ToolTip>
+                                                        </Button.ToolTip>
+                                                    </Button>
+
+
+                                                    <!-- Conditions -->
+                                                    <StackPanel Grid.Row="2" Grid.ColumnSpan="3" Width="Auto">
+                                                        <TextBlock Text="Conditions:" Style="{StaticResource ItemLabelStyle}" />
+                                                        <Border BorderBrush="{Binding IsCraftingConditionsChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                                                BorderThickness="0,0,0,2" Margin="0,0,0,5"
+                                                                ToolTip="A colored line here means the Conditions differ from how they looked when this recipe was loaded."/>
+
+                                                        <ItemsControl ItemsSource="{Binding CraftingConditions}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Grid Margin="0,5">
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="200" />
+                                                                            <!-- Type -->
+                                                                            <ColumnDefinition Width="*" />
+                                                                            <!-- Target -->
+                                                                            <ColumnDefinition Width="*" />
+                                                                            <!-- Value -->
+                                                                            <ColumnDefinition Width="200" />
+                                                                            <!-- RunOn -->
+                                                                            <ColumnDefinition Width="Auto" />
+                                                                            <!-- Remove -->
+                                                                        </Grid.ColumnDefinitions>
+
+                                                                        <!-- Condition Type -->
+                                                                        <DockPanel Grid.Column="0" VerticalAlignment="Center">
+                                                                            <TextBlock Text="Type:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
+                                                                            <ComboBox Grid.Column="0"
+                                                                          ItemsSource="{Binding ConditionTypes}"
+                                                                          SelectedItem="{Binding Type, Mode=TwoWay}"
+                                                                          Style="{StaticResource ItemComboBoxStyle}" />
+                                                                        </DockPanel>
+
+                                                                        <!-- Target -->
+                                                                        <DockPanel Grid.Column="1" VerticalAlignment="Center">
+                                                                            <TextBlock Text="Target:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
+                                                                            <ContentControl Content="{Binding}">
+                                                                            <ContentControl.Resources>
+
+                                                                                <!-- HasPerk -->
+                                                                                <DataTemplate DataType="{x:Type local:PerkConditionViewModel}">
+                                                                                    <ComboBox ItemsSource="{Binding DataContext.FilteredCraftingPerks,
+                                                                                            RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                                          SelectedItem="{Binding SelectedPerk}" IsSynchronizedWithCurrentItem="False" BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
+                                                                                          IsEditable="True"
+                                                                                          Text="{Binding PerkSearchText}"
+                                                                                          Style="{StaticResource ItemComboBoxStyle}" />
+                                                                                </DataTemplate>
+
+                                                                                <!-- GetIsSex -->
+                                                                                <DataTemplate DataType="{x:Type local:SexConditionViewModel}">
+                                                                                    <ComboBox SelectedItem="{Binding TargetGender}"
+                                                                                      ItemsSource="{Binding Genders}"
+                                                                                      Style="{StaticResource ItemComboBoxStyle}" />
+                                                                                </DataTemplate>
+
+                                                                                <!-- GetActorValue -->
+                                                                                <DataTemplate DataType="{x:Type local:ActorValueConditionViewModel}">
+                                                                                    <ComboBox SelectedItem="{Binding SelectedSkill}"
+                                                                                      ItemsSource="{Binding ActorValueWhitelist}"
+                                                                                      Style="{StaticResource ItemComboBoxStyle}" />
+                                                                                </DataTemplate>
+
+                                                                                <!-- GetLevel: no real "Target" for this condition type (it only compares the
+                                                                                     player's level) - RequiredLevel IS ComparisonValue (see
+                                                                                     LevelConditionViewModel), edited via the "Value" column instead. Styled
+                                                                                     as a visibly muted/disabled-looking box (not a plain TextBlock - that
+                                                                                     read as blank/broken instead of "intentionally not editable here"; not
+                                                                                     a normal or IsReadOnly TextBox either - both looked just like a live
+                                                                                     input field) so it still reads as a field at a glance, just a disabled
+                                                                                     one. Keeps the column instead of hiding it, so Type/Target/Value/RunOn
+                                                                                     stay aligned across every condition type in the list. -->
+                                                                                <DataTemplate DataType="{x:Type local:LevelConditionViewModel}">
+                                                                                    <Border Background="{StaticResource ColorBackgroundControl}"
+                                                                                            BorderBrush="{StaticResource ColorDivider}"
+                                                                                            BorderThickness="1"
+                                                                                            Padding="4"
+                                                                                            Margin="0,0,5,5"
+                                                                                            Opacity="0.5"
+                                                                                            ToolTip="Edit via the Value field - Target isn't used for this condition type.">
+                                                                                        <TextBlock Text="{Binding RequiredLevel}"
+                                                                                            Foreground="{StaticResource ColorTextMuted}"
+                                                                                            FontSize="11"/>
+                                                                                    </Border>
+                                                                                </DataTemplate>
+
+                                                                                <!-- GetStageDone -->
+                                                                                <DataTemplate DataType="{x:Type local:QuestStageConditionViewModel}">
+                                                                                        <Grid>
+                                                                                            <Grid.ColumnDefinitions>
+                                                                                                <ColumnDefinition Width="*"/>
+                                                                                                <ColumnDefinition Width="60"/>
+                                                                                            </Grid.ColumnDefinitions>
+
+                                                                                            <ComboBox Grid.Column="0"
+                                                                                                  ItemsSource="{Binding DataContext.FilteredQuests,
+                                                                                                        RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                                                  SelectedItem="{Binding SelectedQuest}" IsSynchronizedWithCurrentItem="False" BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
+                                                                                                  Style="{StaticResource ItemComboBoxStyle}" />
+
+                                                                                            <TextBox Grid.Column="1"
+                                                                                                 Text="{Binding Stage}"
+                                                                                                 Style="{StaticResource ItemTextBoxStyle}" />
+                                                                                        </Grid>
+                                                                                    </DataTemplate>
+
+                                                                            </ContentControl.Resources>
+                                                                        </ContentControl>
+                                                                        </DockPanel>
+
+                                                                        <!-- Value -->
+                                                                        <DockPanel Grid.Column="2" VerticalAlignment="Center">
+                                                                            <TextBlock Text="Value:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
+                                                                            <TextBox
+                                                                             Text="{Binding ComparisonValue}"
+                                                                             Style="{StaticResource ItemTextBoxStyle}" />
+                                                                        </DockPanel>
+                                                                        <!-- RunOn -->
+                                                                        <DockPanel Grid.Column="3" VerticalAlignment="Center">
+                                                                            <TextBlock Text="Run On:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
+                                                                            <ComboBox
+                                                                                  ItemsSource="{Binding RunOnOptions}"
+                                                                                  SelectedItem="{Binding RunOn}"
+                                                                                  Style="{StaticResource ItemComboBoxStyle}" />
+                                                                        </DockPanel>
+
+                                                                        <!-- Remove -->
+                                                                        <Button Grid.Column="4"
+                                                                            Command="{Binding DataContext.RemoveCraftingConditionCommand,
+                                                                                      RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                            CommandParameter="{Binding}"
+                                                                            Style="{StaticResource RemoveButtonStyle}" 
+                                                                            ToolTip="Remove Condition"/>
+                                                                    </Grid>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+
+                                                        <Button Command="{Binding AddCraftingConditionCommand}"
+                                                                Style="{StaticResource AddButtonStyle}"
+                                                                ToolTip="Add Condition" />
+                                                    </StackPanel>
+
+
+                                                </Grid>
+
+                                                <Border BorderBrush="{Binding IsCraftingIngredientsChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                                        BorderThickness="0,0,0,2" Margin="0,5,0,5"
+                                                        ToolTip="A colored line here means the Ingredients list differs from how it looked when this recipe was loaded."/>
+                                                <ItemsControl ItemsSource="{Binding CraftingIngredients}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Grid Margin="0,5">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*" />
+                                                                    <ColumnDefinition Width="60" />
+                                                                    <ColumnDefinition Width="Auto" />
+                                                                </Grid.ColumnDefinitions>
+
+                                                                <ComboBox Grid.Column="0"
+                                                                  ItemsSource="{Binding LocalMaterialsView}"
+                                                                  SelectedItem="{Binding SelectedMaterial}" IsSynchronizedWithCurrentItem="False" BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
+                                                                  Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                                  ToolTip="{Binding Key}"
+                                                                  DisplayMemberPath="Name"
+                                                                  IsEditable="True"
+                                                                  IsTextSearchEnabled="False"
+                                                                  StaysOpenOnEdit="True"
+                                                                  Style="{StaticResource ItemComboBoxStyle}"/>
+
+                                                                <TextBox Grid.Column="1"
+                                                                 TextAlignment="Center"
+                                                                 ToolTip="Amount"
+                                                                 Text="{Binding Count, UpdateSourceTrigger=PropertyChanged}"
+                                                                 model:NumericTextBoxBehavior.Mode="Integer"
+                                                                 model:NumericTextBoxBehavior.Min="1"
+                                                                 Style="{StaticResource ItemTextBoxStyle}"/>
+
+                                                                <Button Grid.Column="2"
+                                                                Command="{Binding DataContext.RemoveIngredientCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                CommandParameter="{Binding}"
+                                                                ToolTip="Remove Material"
+                                                                Style="{StaticResource RemoveButtonStyle}"/>
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                                <Button
+                                                Command="{Binding AddIngredientCommand}"
+                                                ToolTip="Add Material/Recipe"
+                                                Style="{StaticResource AddButtonStyle}"/>
+                                            </StackPanel>
+                                        </GroupBox>
+                                    </Expander>
+
+                                    <!-- Temper Recipe -->
+                                    <Expander Grid.Row="5" Style="{StaticResource DarkExpanderStyle}" Header="Temper Recipe" IsExpanded="False">
+                                        <GroupBox
+                                        Style="{StaticResource DarkGroupBoxStyle}"
+                                        Margin="0,15,0,0"
+                                        Padding="10">
+                                            <GroupBox.Header>
+                                                <DockPanel LastChildFill="False">
+                                                    <TextBlock Text="Temper Recipe"
+                                                    Style="{StaticResource TitelStyle}"/>
+                                                    <Button Margin="10,0,0,0" Style="{StaticResource InfoButtonStyle}">
+                                                        <Button.ToolTip>
+                                                            <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                                <StackPanel>
+                                                                    <TextBlock Text="Shows the recipe used to improve (temper) the item."
+                                                                        Style="{StaticResource ToolTipTitelStyle}"/>
+                                                                </StackPanel>
+                                                            </ToolTip>
+                                                        </Button.ToolTip>
+                                                    </Button>
+
+                                                    <Button Content="Reset Changes"
+                                                        Margin="15,0,0,0"
+                                                        Style="{StaticResource StandardButtonStyle}"
+                                                        Command="{Binding ResetTemperRecipeCommand}"
+                                                        IsEnabled="{Binding HasTemperChanges}">
+                                                        <Button.ToolTip>
+                                                            <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                                <StackPanel>
+                                                                    <TextBlock Text="Reverts Ingredients and Conditions back to how they looked when this recipe was loaded, undoing any edits made since then."
+                                                                        Style="{StaticResource ToolTipTitelStyle}"/>
+                                                                </StackPanel>
+                                                            </ToolTip>
+                                                        </Button.ToolTip>
+                                                    </Button>
+                                                </DockPanel>
+                                            </GroupBox.Header>
+
+                                            <StackPanel>
+                                                <TextBlock Text="⚠ This temper recipe has no ingredients - tempering will be free."
+                                                           Foreground="{StaticResource ColorWarning}"
+                                                           TextWrapping="Wrap" Margin="0,0,0,4"
+                                                           Visibility="{Binding TemperRecipeMissingIngredients, Converter={StaticResource BoolToVis}}"/>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto" />
+                                                        <!-- COBJ Origin Key -->
+                                                        <RowDefinition Height="Auto" />
+                                                        <!-- Workbench -->
+                                                        <RowDefinition Height="Auto" />
+                                                        <!-- Perk -->
+                                                    </Grid.RowDefinitions>
+
+                                                    <!-- COBJ Origin Key -->
+                                                    <TextBlock Grid.Row="0" Grid.Column="0"
+                                                        Text="COBJ Origin Key: "
+                                                        Style="{StaticResource ItemLabelStyle}"
+                                                        />
+                                                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding TemperEditorID, Mode=OneWay}"
+                                                         IsEnabled="False"
+                                                       Style="{StaticResource ItemTextBoxStyle}"/>
+                                                    <Button Grid.Row="0" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                                        <Button.ToolTip>
+                                                            <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                                <StackPanel>
+                                                                    <TextBlock Text="The key of the original temper recipe: MasterPluginName | FormID."
+                                                                    Style="{StaticResource ToolTipTitelStyle}"/>
+                                                                </StackPanel>
+                                                            </ToolTip>
+                                                        </Button.ToolTip>
+                                                    </Button>
+
+                                                    <!-- Workbench -->
+
+                                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Workbench: " Style="{StaticResource ItemLabelStyle}"/>
+
+                                                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding TemperWorkbenchKey, Mode=OneWay}"
+                                                     IsEnabled="False"
+                                                     BorderBrush="{Binding IsTemperWorkbenchDeadRef, Converter={StaticResource BoolToDeadRefBorderConverter}}"
+                                                   Style="{StaticResource ItemTextBoxStyle}"/>
+                                                    <Button Grid.Row="1" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                                        <Button.ToolTip>
+                                                            <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                                <StackPanel>
+                                                                    <TextBlock Text="Tempering uses only two workbenches: Sharpening Wheel (Weapons), Armor Workbench (Armor). This is handled automatically."
+                                                                    Style="{StaticResource ToolTipTitelStyle}"/>
+                                                                </StackPanel>
+                                                            </ToolTip>
+                                                        </Button.ToolTip>
+                                                    </Button>
+                                                    <!-- Conditions -->
+                                                    <StackPanel Grid.Row="2" Grid.ColumnSpan="3" Width="Auto">
+                                                        <TextBlock Text="Conditions:" Style="{StaticResource ItemLabelStyle}" />
+                                                        <Border BorderBrush="{Binding IsTemperConditionsChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                                                BorderThickness="0,0,0,2" Margin="0,0,0,5"
+                                                                ToolTip="A colored line here means the Conditions differ from how they looked when this recipe was loaded."/>
+
+                                                        <ItemsControl ItemsSource="{Binding TemperConditions}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Grid Margin="0,5">
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="200" />
+                                                                            <!-- Type -->
+                                                                            <ColumnDefinition Width="*" />
+                                                                            <!-- Target -->
+                                                                            <ColumnDefinition Width="*" />
+                                                                            <!-- Value -->
+                                                                            <ColumnDefinition Width="200" />
+                                                                            <!-- RunOn -->
+                                                                            <ColumnDefinition Width="Auto" />
+                                                                            <!-- Remove -->
+                                                                        </Grid.ColumnDefinitions>
+
+                                                                        <!-- Condition Type -->
+                                                                        <DockPanel Grid.Column="0" VerticalAlignment="Center">
+                                                                            <TextBlock Text="Type:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
+                                                                            <ComboBox Grid.Column="0"
+                                                                                  ItemsSource="{Binding ConditionTypes}"
+                                                                                  SelectedItem="{Binding Type, Mode=TwoWay}"
+                                                                                  Style="{StaticResource ItemComboBoxStyle}" />
+                                                                        </DockPanel>
+
+                                                                        <!-- Target -->
+                                                                        <DockPanel Grid.Column="1" VerticalAlignment="Center">
+                                                                            <TextBlock Text="Target:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
+                                                                            <ContentControl Content="{Binding}">
+                                                                                <ContentControl.Resources>
+
+                                                                                    <!-- HasPerk -->
+                                                                                    <DataTemplate DataType="{x:Type local:PerkConditionViewModel}">
+                                                                                        <ComboBox ItemsSource="{Binding DataContext.FilteredCraftingPerks,
+                                                                                                RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                                              SelectedItem="{Binding SelectedPerk}" IsSynchronizedWithCurrentItem="False" BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
+                                                                                              IsEditable="True"
+                                                                                              Text="{Binding PerkSearchText}"
+                                                                                              Style="{StaticResource ItemComboBoxStyle}" />
+                                                                                    </DataTemplate>
+
+                                                                                    <!-- GetIsSex -->
+                                                                                    <DataTemplate DataType="{x:Type local:SexConditionViewModel}">
+                                                                                        <ComboBox SelectedItem="{Binding TargetGender}"
+                                                                                              ItemsSource="{Binding Genders}"
+                                                                                              Style="{StaticResource ItemComboBoxStyle}" />
+                                                                                    </DataTemplate>
+
+                                                                                    <!-- GetActorValue -->
+                                                                                    <DataTemplate DataType="{x:Type local:ActorValueConditionViewModel}">
+                                                                                        <ComboBox SelectedItem="{Binding SelectedSkill}"
+                                                                                              ItemsSource="{Binding ActorValueWhitelist}"
+                                                                                              Style="{StaticResource ItemComboBoxStyle}" />
+                                                                                    </DataTemplate>
+
+                                                                                    <!-- GetLevel: no real "Target" for this condition type (it only compares the
+                                                                                         player's level) - RequiredLevel IS ComparisonValue (see
+                                                                                         LevelConditionViewModel), edited via the "Value" column instead. Styled
+                                                                                         as a visibly muted/disabled-looking box (not a plain TextBlock - that
+                                                                                         read as blank/broken instead of "intentionally not editable here"; not
+                                                                                         a normal or IsReadOnly TextBox either - both looked just like a live
+                                                                                         input field) so it still reads as a field at a glance, just a disabled
+                                                                                         one. Keeps the column instead of hiding it, so Type/Target/Value/RunOn
+                                                                                         stay aligned across every condition type in the list. -->
+                                                                                    <DataTemplate DataType="{x:Type local:LevelConditionViewModel}">
+                                                                                        <Border Background="{StaticResource ColorBackgroundControl}"
+                                                                                                BorderBrush="{StaticResource ColorDivider}"
+                                                                                                BorderThickness="1"
+                                                                                                Padding="4"
+                                                                                                Margin="0,0,5,5"
+                                                                                                Opacity="0.5"
+                                                                                                ToolTip="Edit via the Value field - Target isn't used for this condition type.">
+                                                                                            <TextBlock Text="{Binding RequiredLevel}"
+                                                                                                Foreground="{StaticResource ColorTextMuted}"
+                                                                                                FontSize="11"/>
+                                                                                        </Border>
+                                                                                    </DataTemplate>
+
+                                                                                    <!-- GetStageDone -->
+                                                                                    <DataTemplate DataType="{x:Type local:QuestStageConditionViewModel}">
+                                                                                        <Grid>
+                                                                                            <Grid.ColumnDefinitions>
+                                                                                                <ColumnDefinition Width="*"/>
+                                                                                                <ColumnDefinition Width="60"/>
+                                                                                            </Grid.ColumnDefinitions>
+
+                                                                                            <ComboBox Grid.Column="0"
+                                                                                                  ItemsSource="{Binding DataContext.FilteredQuests,
+                                                                                                        RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                                                  SelectedItem="{Binding SelectedQuest}" IsSynchronizedWithCurrentItem="False" BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
+                                                                                                  Style="{StaticResource ItemComboBoxStyle}" />
+
+                                                                                            <TextBox Grid.Column="1"
+                                                                                                     Text="{Binding Stage}"
+                                                                                                     Style="{StaticResource ItemTextBoxStyle}" />
+                                                                                        </Grid>
+                                                                                    </DataTemplate>
+
+                                                                                </ContentControl.Resources>
+                                                                            </ContentControl>
+                                                                        </DockPanel>
+
+                                                                        <!-- Value -->
+                                                                        <DockPanel Grid.Column="2" VerticalAlignment="Center">
+                                                                            <TextBlock Text="Value:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
+                                                                            <TextBox
+                                                                                 Text="{Binding ComparisonValue}"
+                                                                                 Style="{StaticResource ItemTextBoxStyle}" />
+                                                                        </DockPanel>
+                                                                        <!-- RunOn -->
+                                                                        <DockPanel Grid.Column="3" VerticalAlignment="Center">
+                                                                            <TextBlock Text="Run On:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
+                                                                            <ComboBox
+                                                                                  ItemsSource="{Binding RunOnOptions}"
+                                                                                  SelectedItem="{Binding RunOn}"
+                                                                                  Style="{StaticResource ItemComboBoxStyle}" />
+                                                                        </DockPanel>
+
+                                                                        <!-- Remove -->
+                                                                        <Button Grid.Column="4"
+                                                                            Command="{Binding DataContext.RemoveTemperConditionCommand,
+                                                                                      RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                            CommandParameter="{Binding}"
+                                                                            Style="{StaticResource RemoveButtonStyle}" 
+                                                                            ToolTip="Remove Condition"/>
+                                                                    </Grid>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+
+                                                        <Button Command="{Binding AddTemperConditionCommand}"
+                                                            Style="{StaticResource AddButtonStyle}"
+                                                            ToolTip="Add Condition" />
+                                                    </StackPanel>
+                                                </Grid>
+                                                <Border BorderBrush="{Binding IsTemperIngredientsChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                                        BorderThickness="0,0,0,2" Margin="0,5,0,5"
+                                                        ToolTip="A colored line here means the Ingredients list differs from how it looked when this recipe was loaded."/>
+                                                <ItemsControl ItemsSource="{Binding TemperIngredients}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Grid Margin="0,5">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*" />
+                                                                    <ColumnDefinition Width="60" />
+                                                                    <ColumnDefinition Width="Auto" />
+                                                                </Grid.ColumnDefinitions>
+
+                                                                <ComboBox Grid.Column="0"
+                                                            ItemsSource="{Binding LocalMaterialsView}"
+                                                            SelectedItem="{Binding SelectedMaterial}" IsSynchronizedWithCurrentItem="False" BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
+                                                            Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                            ToolTip="{Binding Key}"
+                                                            DisplayMemberPath="Name"
+                                                            IsEditable="True"
+                                                            IsTextSearchEnabled="False"
+                                                            StaysOpenOnEdit="True"
+                                                            Style="{StaticResource ItemComboBoxStyle}"/>
+
+                                                                <TextBox Grid.Column="1"
+                                                           TextAlignment="Center"
+                                                           Text="{Binding Count, UpdateSourceTrigger=PropertyChanged}"
+                                                                 model:NumericTextBoxBehavior.Mode="Integer"
+                                                                 model:NumericTextBoxBehavior.Min="1"
+                                                           Style="{StaticResource ItemTextBoxStyle}"/>
+
+                                                                <Button Grid.Column="2"
+                                                            ToolTip="Remove Material"
+                                                            Command="{Binding DataContext.RemoveTemperIngredientCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                            CommandParameter="{Binding}"
+                                                            Style="{StaticResource RemoveButtonStyle}"/>
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                                <Button
+                                                Command="{Binding AddTemperIngredientCommand}"
+                                                ToolTip="Add Material/Recipe"
+                                                Style="{StaticResource AddButtonStyle}"/>
+                                            </StackPanel>
+                                        </GroupBox>
+                                    </Expander>
+                                    <!-- Container Section -->
+                                    <Expander Grid.Row="6" Style="{StaticResource DarkExpanderStyle}" Header="Container" IsExpanded="False">
+                                        <GroupBox
+                                          Style="{StaticResource DarkGroupBoxStyle}"
+                                          Margin="0,15,0,0"
+                                          Padding="10">
+
+                                        <GroupBox.Header>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Container"
+                                                       Style="{StaticResource TitelStyle}"/>
+
+                                                <Button Margin="10,0,0,0"  Style="{StaticResource InfoButtonStyle}">
+                                                    <Button.ToolTip>
+                                                        <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                            <StackPanel>
+                                                                <TextBlock Text="Shows where the item can appear in containers or merchant inventories."
+                                                                    Style="{StaticResource ToolTipTitelStyle}"/>
+
+                                                                <StackPanel>
+                                                                    <TextBlock Text="•  Click to select, click again to unselect."
+                                                                            Style="{StaticResource ToolTipTextStyle}"/>
+                                                                    <TextBlock Text="•  A Container can be a chest, NPC inventory, or merchant."
+                                                                            Style="{StaticResource ToolTipTextStyle}"/>
+                                                                    <TextBlock Text="•  Standard View: Only merchants are shown."
+                                                                            Style="{StaticResource ToolTipTextStyle}"/>
+                                                                    <TextBlock Text="•  Expert View: All containers in your modlist are displayed."
+                                                                            Style="{StaticResource ToolTipTextStyle}"/>
+                                                                    <TextBlock Text="Selecting a container shows its details on the right side."
+                                                                            Style="{StaticResource ToolTipTextStyle}"/>
+                                                                    <TextBlock Text="If the container uses Leveled Item Lists, you can add the item there as well."
+                                                                            Style="{StaticResource ToolTipTextStyle}"/>
+                                                                    <TextBlock Text="Use the level slider to define at which player level the item becomes available."
+                                                                            Style="{StaticResource ToolTipTextStyle}"/>
+                                                                </StackPanel>
+                                                            </StackPanel>
+                                                        </ToolTip>
+                                                    </Button.ToolTip>
+                                                </Button>
+
+                                            </StackPanel>
+                                        </GroupBox.Header>
+
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="2*" />
+                                                <ColumnDefinition Width="10" />
+                                                <ColumnDefinition Width="3*" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <!-- LEFT SIDE -->
+                                            <StackPanel Grid.Column="0">
+
+                                                <!-- Search -->
+                                                <TextBox Text="{Binding DataContext.ContainerSearchText, 
+                                                                RelativeSource={RelativeSource AncestorType=UserControl}, 
+                                                                Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                         Style="{StaticResource ItemTextSearchBoxStyle}"
+                                                         Margin="0,0,0,6"
+                                                         />
+
+                                                <!-- Expert toggle -->
+                                                <Button Content="{Binding DataContext.ShowExpertContainers, 
+                                                              RelativeSource={RelativeSource AncestorType=UserControl},
+                                                              Converter={StaticResource BoolToExpertTextConverter}}"
+                                                    Command="{Binding DataContext.ToggleExpertContainersCommand, 
+                                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    Style="{StaticResource StandardButtonStyle}"
+                                                    Margin="0,0,0,10"/>
+
+                                                <TextBlock Text="Containers"
+                                                   Style="{StaticResource ItemLabelStyle}"
+                                                   Margin="0,0,0,6"
+                                                   />
+
+                                                <ScrollViewer Height="180" VerticalScrollBarVisibility="Auto">
+                                                    <ItemsControl ItemsSource="{Binding DataContext.FilteredContainers, 
+                                                                RelativeSource={RelativeSource AncestorType=UserControl}}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border Padding="6"
+                                                                        Margin="0,0,0,6"
+                                                                        Background="{StaticResource ColorBackgroundControl}"
+                                                                        CornerRadius="4">
+                                                                    <DockPanel>
+                                                                            <TextBlock Text="{Binding Name}"
+                                                                               Foreground="{StaticResource ColorTextPrimary}"
+                                                                               VerticalAlignment="Center"/>
+
+                                                                        <Button Width="70"
+                                                                            HorizontalAlignment="Right"
+                                                                            Style="{StaticResource StandardButtonStyle}"
+                                                                            Command="{Binding DataContext.ToggleContainerForSelectedItemCommand, 
+                                                                                      RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                            CommandParameter="{Binding ContainerKey}"
+                                                                            Content="{Binding IsSelected, 
+                                                                                      Converter={StaticResource BoolToSelectTextConverter}}"/>
+                                                                    </DockPanel>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </ScrollViewer>
+                                            </StackPanel>
+
+                                            <!-- SPLITTER -->
+                                            <GridSplitter Grid.Column="1"
+                                                  Width="6"
+                                                  HorizontalAlignment="Stretch"
+                                                  Background="{StaticResource ColorDivider}"/>
+
+                                            <!-- RIGHT SIDE -->
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="Selected Containers (for this item)"
+                                                       Style="{StaticResource ItemLabelStyle}"
+                                                       Margin="0,0,0,6"/>
+
+                                                <ItemsControl ItemsSource="{Binding ContainerSelection.SelectedContainers}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border Padding="8"
+                                                                Margin="0,0,0,8"
+                                                                Background="{StaticResource ColorBackgroundControl}"
+                                                                CornerRadius="4">
+
+                                                                <StackPanel>
+
+                                                                    <!-- Header -->
+                                                                    <Grid>
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="*" />
+                                                                            <ColumnDefinition Width="Auto" />
+                                                                        </Grid.ColumnDefinitions>
+
+                                                                        <TextBlock Grid.Column="0"
+                                                                               Text="{Binding Name}"
+                                                                               Foreground="{StaticResource ColorTextPrimary}"
+                                                                               FontWeight="Bold"
+                                                                               VerticalAlignment="Center"/>
+
+                                                                        <Button Grid.Column="1"
+                                                                            Content="Remove"
+                                                                            Style="{StaticResource StandardButtonStyle}"
+                                                                            Command="{Binding ToggleSelectedCommand}"
+                                                                            Margin="8,0,0,0"/>
+                                                                    </Grid>
+
+                                                                    <!-- LVLi Entries -->
+                                                                    <ItemsControl ItemsSource="{Binding LVLiEntries}">
+                                                                        <ItemsControl.ItemTemplate>
+                                                                            <DataTemplate>
+                                                                                <Grid Margin="0,6,0,6">
+                                                                                    <Grid.ColumnDefinitions>
+                                                                                        <ColumnDefinition Width="*" />
+                                                                                        <ColumnDefinition Width="180" />
+                                                                                    </Grid.ColumnDefinitions>
+
+                                                                                    <TextBlock Grid.Column="0"
+                                                                                           Text="{Binding LVLiName}"
+                                                                                           Foreground="{StaticResource ColorTextPrimary}"
+                                                                                           VerticalAlignment="Center"/>
+
+                                                                                    <StackPanel Grid.Column="1"
+                                                                                            Orientation="Horizontal"
+                                                                                            VerticalAlignment="Center">
+
+                                                                                        <Slider Minimum="0"
+                                                                                            Maximum="100"
+                                                                                            Value="{Binding LevelDouble, Mode=TwoWay, UpdateSourceTrigger=Explicit}"
+                                                                                            SmallChange="1"
+                                                                                            LargeChange="1"
+                                                                                            TickFrequency="1"
+                                                                                            Width="120"
+                                                                                            Thumb.DragCompleted="Slider_ThumbDragCompleted"/>
+
+                                                                                        <TextBlock Text="{Binding Level}"
+                                                                                           Foreground="{StaticResource ColorTextPrimary}"
+                                                                                           Margin="8,0,0,0"
+                                                                                           VerticalAlignment="Center"/>
+                                                                                    </StackPanel>
+                                                                                </Grid>
+                                                                            </DataTemplate>
+                                                                        </ItemsControl.ItemTemplate>
+                                                                    </ItemsControl>
+
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+
+                                                <StackPanel Orientation="Horizontal"
+                                                        HorizontalAlignment="Right"
+                                                        Margin="0,8,0,0">
+                                                    <Button Content="Clear Selection"
+                                                        Width="120"
+                                                        Style="{StaticResource StandardButtonStyle}"
+                                                        Command="{Binding DataContext.ClearContainerSelectionCommand, 
+                                                                  RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                                                </StackPanel>
+                                            </StackPanel>
+
+                                        </Grid>
+                                    </GroupBox>
+                                    </Expander>
+                                </Grid>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </DataTemplate>
+
+
+                    <!-- PLUGIN-DETAIL -->
+                    <DataTemplate DataType="{x:Type local:PluginNodeVM}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="20">
+                                <TextBlock Text="{Binding PluginName}"
+                                           FontSize="20"
+                                           FontWeight="Bold"
+                                           Foreground="#FFD700"
+                                           Margin="0,0,0,20" />
+
+                                <!-- Same simple Preset row as the single-item detail view above -
+                                     Apply here runs the preset against every item in this plugin. -->
+                                <DockPanel LastChildFill="False" Margin="0,0,0,15">
+                                    <ComboBox ItemsSource="{Binding ConfigPresets}"
+                                              SelectedItem="{Binding SelectedConfigPreset}"
+                                              DisplayMemberPath="PresetName"
+                                              Width="180"
+                                              Style="{StaticResource ItemComboBoxStyle}"/>
+                                    <Button Content="Apply"
+                                            Command="{Binding ApplyPresetCommand}"
+                                            Style="{StaticResource StandardButtonStyle}"/>
+
+                                    <Button Content="Export"
+                                        Command="{Binding ExportPluginCommand}"
+                                        Style="{StaticResource ActionButtonStyle}"/>
+                                    <Button Content="Import"
+                                        Command="{Binding ImportPluginCommand}"
+                                        Style="{StaticResource ActionButtonWarmStyle}"/>
+                                </DockPanel>
+
+                            </StackPanel>
+                        </ScrollViewer>
+                    </DataTemplate>
+
+                </ContentPresenter.Resources>
+            </ContentPresenter>
+
+            <!-- Border carries the Visibility (still binds against MainContentVM); DataContext only
+                 switches over on the child element - otherwise IsMultiSelectActive would resolve
+                 against MultiSelectVM instead of MainContentVM and the binding would come up empty. -->
+            <Border Visibility="{Binding IsMultiSelectActive, Converter={StaticResource BoolToVis}}">
+                <views:MultiSelectDetailView DataContext="{Binding MultiSelectVM}"/>
+            </Border>
+            </Grid>
+        </Grid>
+    </DockPanel>
+</UserControl>

@@ -1,0 +1,109 @@
+﻿<Window x:Class="SkyrimCraftingTool.View.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:SkyrimCraftingTool.ViewModel"
+        xmlns:views="clr-namespace:SkyrimCraftingTool.View"
+        Title="Skyrim Crafting Tool"
+        MinWidth="900" MinHeight="700"
+        Background="{StaticResource ColorBackgroundBase}">
+
+    <Window.Resources>
+
+        <DataTemplate DataType="{x:Type vm:MainContentVM}">
+            <views:MainContentView />
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type vm:EnchantmentMenuVM}">
+            <views:EnchantmentMenuView />
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type vm:PresetsConfigVM}">
+            <views:PresetsConfigView />
+        </DataTemplate>
+
+    </Window.Resources>
+
+
+    <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Background="{StaticResource ColorBackgroundBase}">
+            <Button Content="Items"
+                    Command="{Binding OpenMainContentCommand}"
+                    Style="{StaticResource NavTabButtonStyle}"
+                    Tag="{Binding IsMainContentActive}"
+                    Margin="12,10,10,0"/>
+            <Button Content="Enchantments"
+                    Command="{Binding OpenEnchantmentMenuCommand}"
+                    Style="{StaticResource NavTabButtonStyle}"
+                    Tag="{Binding IsEnchantmentActive}"
+                    Margin="0,10,10,0"/>
+
+            <Button Content="Presets"
+                    Command="{Binding OpenPresetsConfigCommand}"
+                    Style="{StaticResource NavTabButtonStyle}"
+                    Tag="{Binding IsPresetsActive}"
+                    Margin="0,10,10,0"/>
+        </StackPanel>
+
+        <Border DockPanel.Dock="Top"
+            BorderBrush="{StaticResource ColorBorder}"
+            BorderThickness="0,0,0,1"
+            Height="1"
+            Margin="0,5,0,5"/>
+
+        <!-- Issue status strip: only visible when there is something to show. Click the summary to
+             expand the list; "Clear" empties it. Fed by IssueHub.Current. -->
+        <Border DockPanel.Dock="Bottom"
+                Background="{StaticResource ColorBackgroundControl}"
+                BorderBrush="{StaticResource ColorBorder}"
+                BorderThickness="0,1,0,0"
+                Padding="8,3"
+                Visibility="{Binding Issues.HasIssues, Converter={StaticResource BoolToVis}}">
+            <DockPanel>
+                <Button DockPanel.Dock="Right"
+                        Content="Clear"
+                        Command="{Binding ClearIssuesCommand}"
+                        Style="{StaticResource StandardButtonStyle}"/>
+
+                <ToggleButton x:Name="IssueToggle"
+                              HorizontalAlignment="Left"
+                              Background="Transparent"
+                              BorderThickness="0"
+                              Foreground="{StaticResource ColorWarning}"
+                              Content="{Binding Issues.Summary, StringFormat=⚠ {0}}"/>
+
+                <Popup IsOpen="{Binding IsChecked, ElementName=IssueToggle}"
+                       PlacementTarget="{Binding ElementName=IssueToggle}"
+                       Placement="Top"
+                       StaysOpen="False"
+                       AllowsTransparency="True"
+                       MaxWidth="640"
+                       MaxHeight="320">
+                    <Border Background="{StaticResource ColorBackgroundBase}"
+                            BorderBrush="{StaticResource ColorBorder}"
+                            BorderThickness="1"
+                            Padding="6">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding Issues.Issues}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,3">
+                                            <TextBlock Text="{Binding Message}"
+                                                       Foreground="{StaticResource ColorTextPrimary}"
+                                                       TextWrapping="Wrap"/>
+                                            <TextBlock Text="{Binding Context}"
+                                                       Foreground="{StaticResource ColorTextSecondary}"
+                                                       FontSize="11"
+                                                       TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Border>
+                </Popup>
+            </DockPanel>
+        </Border>
+
+        <ContentControl Content="{Binding CurrentView}" />
+    </DockPanel>
+</Window>

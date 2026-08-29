@@ -1,0 +1,50 @@
+<Window x:Class="SkyrimCraftingTool.View.ImportConflictWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Import Conflicts"
+        Width="720" Height="480"
+        Background="{StaticResource ColorBackgroundBase}"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Style="{StaticResource TitelStyle}" Margin="0,0,0,10"
+                   Text="These items were edited locally more recently than in the import file. Please decide per item:"
+                   TextWrapping="Wrap"/>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
+            <Button Content="All: Keep Local" Style="{StaticResource StandardButtonStyle}" Width="160" Click="KeepAllLocal_Click"/>
+            <Button Content="All: Use Import" Style="{StaticResource StandardButtonStyle}" Width="160" Click="UseAllFile_Click"/>
+        </StackPanel>
+
+        <Border Grid.Row="2" BorderBrush="{StaticResource ColorBorder}" BorderThickness="1" Background="{StaticResource ColorBackgroundPanel}">
+            <DataGrid ItemsSource="{Binding Rows}"
+                      AutoGenerateColumns="False"
+                      CanUserAddRows="False"
+                      HeadersVisibility="Column"
+                      Background="{StaticResource ColorBackgroundPanel}"
+                      Foreground="{StaticResource ColorTextPrimary}"
+                      RowBackground="{StaticResource ColorBackgroundPanel}"
+                      GridLinesVisibility="Horizontal">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Table" Binding="{Binding Table}" Width="90" IsReadOnly="True"/>
+                    <DataGridTextColumn Header="Item" Binding="{Binding DisplayName}" Width="*" IsReadOnly="True"/>
+                    <DataGridTextColumn Header="Locally Changed" Binding="{Binding LocalLastChanged}" Width="160" IsReadOnly="True"/>
+                    <DataGridTextColumn Header="File Changed" Binding="{Binding FileLastChanged}" Width="160" IsReadOnly="True"/>
+                    <DataGridCheckBoxColumn Header="Use Import" Binding="{Binding UseFileVersion, Mode=TwoWay}" Width="130"/>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button Content="Cancel" Style="{StaticResource StandardButtonStyle}" Width="100" Click="Cancel_Click"/>
+            <Button Content="Apply" Style="{StaticResource StandardButtonStyle}" Width="100" Click="Confirm_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

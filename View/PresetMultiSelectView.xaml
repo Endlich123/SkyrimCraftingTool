@@ -1,0 +1,398 @@
+<UserControl x:Class="SkyrimCraftingTool.View.PresetMultiSelectView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:SkyrimCraftingTool.ViewModel"
+             xmlns:model="clr-namespace:SkyrimCraftingTool.Model">
+
+    <!-- DataContext is PresetMultiSelectVM (see PresetsConfigView.xaml). The PresetRecipeVM
+         DataTemplate below is copied verbatim from PresetsConfigView.xaml's single-slot editor so
+         the Crafting/Temper editors behave identically here - same pattern MultiSelectDetailView
+         uses for the item side. -->
+    <UserControl.Resources>
+
+        <!-- One Craft- or Temper-Recipe editor (shared template; HasWorkbench toggles the Workbench row) -->
+        <DataTemplate DataType="{x:Type local:PresetRecipeVM}">
+            <StackPanel Margin="0,10,0,10">
+
+                <Grid Visibility="{Binding HasWorkbench, Converter={StaticResource BoolToVis}}" Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <CheckBox Grid.Column="0" IsChecked="{Binding WorkbenchEnabled}" Style="{StaticResource ItemCheckBoxStyle}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBlock Grid.Column="1" Text="Workbench:" Style="{StaticResource ItemLabelStyle}"/>
+                    <ComboBox Grid.Column="2"
+                              Style="{StaticResource ItemComboBoxStyle}"
+                              ItemsSource="{Binding FilteredWorkbenches}"
+                              SelectedItem="{Binding SelectedWorkbench, Mode=TwoWay}"
+                              IsSynchronizedWithCurrentItem="False"
+                              Text="{Binding WorkbenchSearchText}"
+                              IsEditable="True"
+                              IsTextSearchEnabled="False"
+                              StaysOpenOnEdit="True"
+                              TextSearch.TextPath="Name">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Name}" ToolTip="{Binding Key}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </Grid>
+
+                <CheckBox Content="Include Conditions" IsChecked="{Binding ConditionsEnabled}" Style="{StaticResource ItemCheckBoxStyle}" Margin="0,0,0,5"/>
+                <ItemsControl ItemsSource="{Binding Conditions}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="180" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="150" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <DockPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock Text="Type:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
+                                    <ComboBox ItemsSource="{Binding ConditionTypes}"
+                                              SelectedItem="{Binding Type, Mode=TwoWay}"
+                                              Style="{StaticResource ItemComboBoxStyle}" />
+                                </DockPanel>
+
+                                <DockPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="Target:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
+                                    <ContentControl Content="{Binding}">
+                                        <ContentControl.Resources>
+                                            <DataTemplate DataType="{x:Type local:PerkConditionViewModel}">
+                                                <ComboBox ItemsSource="{Binding DataContext.FilteredPerks, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                          SelectedItem="{Binding SelectedPerk}" IsSynchronizedWithCurrentItem="False"
+                                                          IsEditable="True"
+                                                          Text="{Binding PerkSearchText}"
+                                                          Style="{StaticResource ItemComboBoxStyle}" />
+                                            </DataTemplate>
+                                            <DataTemplate DataType="{x:Type local:SexConditionViewModel}">
+                                                <ComboBox SelectedItem="{Binding TargetGender}"
+                                                          ItemsSource="{Binding Genders}"
+                                                          Style="{StaticResource ItemComboBoxStyle}" />
+                                            </DataTemplate>
+                                            <DataTemplate DataType="{x:Type local:ActorValueConditionViewModel}">
+                                                <ComboBox SelectedItem="{Binding SelectedSkill}"
+                                                          ItemsSource="{Binding ActorValueWhitelist}"
+                                                          Style="{StaticResource ItemComboBoxStyle}" />
+                                            </DataTemplate>
+                                            <DataTemplate DataType="{x:Type local:LevelConditionViewModel}">
+                                                <TextBox Text="{Binding RequiredLevel}" model:NumericTextBoxBehavior.Mode="Decimal" Style="{StaticResource ItemTextBoxStyle}" />
+                                            </DataTemplate>
+                                            <DataTemplate DataType="{x:Type local:QuestStageConditionViewModel}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="60"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <ComboBox Grid.Column="0"
+                                                              ItemsSource="{Binding DataContext.FilteredQuests, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                              SelectedItem="{Binding SelectedQuest}" IsSynchronizedWithCurrentItem="False"
+                                                              Style="{StaticResource ItemComboBoxStyle}" />
+                                                    <TextBox Grid.Column="1" Text="{Binding Stage}" model:NumericTextBoxBehavior.Mode="Integer" Style="{StaticResource ItemTextBoxStyle}" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ContentControl.Resources>
+                                    </ContentControl>
+                                </DockPanel>
+
+                                <DockPanel Grid.Column="2" VerticalAlignment="Center">
+                                    <TextBlock Text="Value:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
+                                    <TextBox Text="{Binding ComparisonValue}" model:NumericTextBoxBehavior.Mode="Decimal" Style="{StaticResource ItemTextBoxStyle}" />
+                                </DockPanel>
+
+                                <DockPanel Grid.Column="3" VerticalAlignment="Center">
+                                    <TextBlock Text="Run On:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
+                                    <ComboBox ItemsSource="{Binding RunOnOptions}" SelectedItem="{Binding RunOn}" Style="{StaticResource ItemComboBoxStyle}" />
+                                </DockPanel>
+
+                                <Button Grid.Column="4"
+                                        Command="{Binding DataContext.RemoveConditionCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding}"
+                                        Style="{StaticResource RemoveButtonStyle}"
+                                        ToolTip="Remove Condition"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Command="{Binding AddConditionCommand}" Style="{StaticResource AddButtonStyle}" ToolTip="Add Condition" HorizontalAlignment="Left"/>
+
+                <Border BorderBrush="Gray" BorderThickness="0,0,0,1" Margin="0,10,0,10"/>
+
+                <CheckBox Content="Include Ingredients" IsChecked="{Binding IngredientsEnabled}" Style="{StaticResource ItemCheckBoxStyle}" Margin="0,0,0,5"/>
+                <ItemsControl ItemsSource="{Binding Ingredients}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="60" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ComboBox Grid.Column="0"
+                                          ItemsSource="{Binding LocalMaterialsView}"
+                                          SelectedItem="{Binding SelectedMaterial}" IsSynchronizedWithCurrentItem="False"
+                                          Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                          ToolTip="{Binding Key}"
+                                          DisplayMemberPath="Name"
+                                          IsEditable="True"
+                                          IsTextSearchEnabled="False"
+                                          StaysOpenOnEdit="True"
+                                          Style="{StaticResource ItemComboBoxStyle}"/>
+                                <TextBox Grid.Column="1"
+                                         TextAlignment="Center"
+                                         ToolTip="Amount"
+                                         Text="{Binding Count, UpdateSourceTrigger=PropertyChanged}"
+                                         model:NumericTextBoxBehavior.Mode="Integer"
+                                         model:NumericTextBoxBehavior.Min="1"
+                                         Style="{StaticResource ItemTextBoxStyle}"/>
+                                <Button Grid.Column="2"
+                                        Command="{Binding DataContext.RemoveIngredientCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding}"
+                                        ToolTip="Remove Material"
+                                        Style="{StaticResource RemoveButtonStyle}"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Command="{Binding AddIngredientCommand}" ToolTip="Add Material" Style="{StaticResource AddButtonStyle}" HorizontalAlignment="Left"/>
+
+            </StackPanel>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="0,0,10,0">
+
+            <TextBlock Text="{Binding SelectedSlots.Count, StringFormat={}{0} slots selected}"
+                       Style="{StaticResource TitelStyle}"
+                       FontWeight="Bold"
+                       Margin="0,0,0,6"/>
+
+            <ItemsControl ItemsSource="{Binding SelectedSlots}" Margin="0,0,0,6">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type local:PresetSlotNodeVM}">
+                        <Border Background="{StaticResource ColorBackgroundControl}"
+                                CornerRadius="3" Padding="6,2" Margin="0,0,4,4">
+                            <TextBlock Text="{Binding DisplayName}"
+                                       Foreground="{StaticResource ColorTextSecondary}"
+                                       FontSize="11"/>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <TextBlock Text="{Binding StatusMessage}"
+                       Foreground="{StaticResource ColorWarning}"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,10"/>
+
+            <!-- Values: each ticked field is written to every selected slot. ArmorRating only lands
+                 on Armor slots; Damage/Speed/Reach/Stagger only on Weapon types. -->
+            <Expander Style="{StaticResource DarkExpanderStyle}" Header="Values" IsExpanded="False">
+                <StackPanel Margin="0,10,0,0">
+
+                    <Grid Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <CheckBox Grid.Column="0" IsChecked="{Binding WeightEnabled}" Style="{StaticResource ItemCheckBoxStyle}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Grid.Column="1" Text="Weight:" Style="{StaticResource ItemLabelStyle}"/>
+                        <TextBox Grid.Column="2" Text="{Binding Weight}" IsEnabled="{Binding WeightEnabled}" model:NumericTextBoxBehavior.Mode="Decimal" Style="{StaticResource ItemTextBoxStyle}"/>
+                    </Grid>
+
+                    <Grid Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <CheckBox Grid.Column="0" IsChecked="{Binding ValueEnabled}" Style="{StaticResource ItemCheckBoxStyle}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Grid.Column="1" Text="Cost:" Style="{StaticResource ItemLabelStyle}"/>
+                        <TextBox Grid.Column="2" Text="{Binding Value}" IsEnabled="{Binding ValueEnabled}" model:NumericTextBoxBehavior.Mode="Integer" Style="{StaticResource ItemTextBoxStyle}"/>
+                    </Grid>
+
+                    <TextBlock Text="Armor slots only" Foreground="{StaticResource ColorTextSecondary}" FontSize="10" Margin="0,6,0,2"/>
+                    <Grid Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <CheckBox Grid.Column="0" IsChecked="{Binding ArmorRatingEnabled}" Style="{StaticResource ItemCheckBoxStyle}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Grid.Column="1" Text="Armor Rating:" Style="{StaticResource ItemLabelStyle}"/>
+                        <TextBox Grid.Column="2" Text="{Binding ArmorRating}" IsEnabled="{Binding ArmorRatingEnabled}" model:NumericTextBoxBehavior.Mode="Decimal" Style="{StaticResource ItemTextBoxStyle}"/>
+                    </Grid>
+
+                    <TextBlock Text="Weapon types only" Foreground="{StaticResource ColorTextSecondary}" FontSize="10" Margin="0,6,0,2"/>
+                    <Grid Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <CheckBox Grid.Column="0" IsChecked="{Binding DamageEnabled}" Style="{StaticResource ItemCheckBoxStyle}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Grid.Column="1" Text="Damage:" Style="{StaticResource ItemLabelStyle}"/>
+                        <TextBox Grid.Column="2" Text="{Binding Damage}" IsEnabled="{Binding DamageEnabled}" model:NumericTextBoxBehavior.Mode="Integer" Style="{StaticResource ItemTextBoxStyle}"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <CheckBox Grid.Column="0" IsChecked="{Binding SpeedEnabled}" Style="{StaticResource ItemCheckBoxStyle}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Grid.Column="1" Text="Speed:" Style="{StaticResource ItemLabelStyle}"/>
+                        <TextBox Grid.Column="2" Text="{Binding Speed}" IsEnabled="{Binding SpeedEnabled}" model:NumericTextBoxBehavior.Mode="Decimal" model:NumericTextBoxBehavior.Max="10" Style="{StaticResource ItemTextBoxStyle}"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <CheckBox Grid.Column="0" IsChecked="{Binding ReachEnabled}" Style="{StaticResource ItemCheckBoxStyle}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Grid.Column="1" Text="Reach:" Style="{StaticResource ItemLabelStyle}"/>
+                        <TextBox Grid.Column="2" Text="{Binding Reach}" IsEnabled="{Binding ReachEnabled}" model:NumericTextBoxBehavior.Mode="Decimal" model:NumericTextBoxBehavior.Max="10" Style="{StaticResource ItemTextBoxStyle}"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <CheckBox Grid.Column="0" IsChecked="{Binding StaggerEnabled}" Style="{StaticResource ItemCheckBoxStyle}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Grid.Column="1" Text="Stagger:" Style="{StaticResource ItemLabelStyle}"/>
+                        <TextBox Grid.Column="2" Text="{Binding Stagger}" IsEnabled="{Binding StaggerEnabled}" model:NumericTextBoxBehavior.Mode="Decimal" model:NumericTextBoxBehavior.Max="10" Style="{StaticResource ItemTextBoxStyle}"/>
+                    </Grid>
+
+                    <Button Content="Apply Values to selection"
+                            Command="{Binding ApplyValuesCommand}"
+                            Style="{StaticResource ActionButtonStyle}"
+                            HorizontalAlignment="Left"
+                            Margin="0,8,0,0"/>
+                </StackPanel>
+            </Expander>
+
+            <!-- Keywords: the picked set replaces each selected slot's keyword list (and its
+                 "Include Keywords" flag). -->
+            <Expander Style="{StaticResource DarkExpanderStyle}" Header="Keywords" IsExpanded="False">
+                <StackPanel>
+                    <CheckBox Content="Include Keywords" IsChecked="{Binding KeywordsEnabled}" Style="{StaticResource ItemCheckBoxStyle}" Margin="0,10,0,5"/>
+
+                    <Grid Margin="0,0,5,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Search:" Style="{StaticResource ItemLabelStyle}"/>
+                        <TextBox Grid.Column="1" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ItemTextSearchBoxStyle}"/>
+                        <CheckBox Grid.Column="2" Style="{StaticResource ItemCheckBoxStyle}" Content="All Keywords (Expert)" IsChecked="{Binding ShowAllKeywords}" Margin="0,0,0,5"/>
+                    </Grid>
+
+                    <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Margin="0,10,0,10" Padding="10">
+                        <GroupBox.Header>
+                            <TextBlock Text="Selected Keywords" Style="{StaticResource TitelStyle}"/>
+                        </GroupBox.Header>
+                        <ItemsControl ItemsSource="{Binding SelectedKeywordsView}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border CornerRadius="4" Padding="5" Margin="3"
+                                            Background="{Binding IsSelected, Converter={StaticResource BoolToBrushConverter}}">
+                                        <Border.InputBindings>
+                                            <MouseBinding MouseAction="LeftClick" Command="{Binding ToggleSelectedCommand}" />
+                                        </Border.InputBindings>
+                                        <TextBlock Text="{Binding Name}" Foreground="White" TextTrimming="CharacterEllipsis"/>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </GroupBox>
+
+                    <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Padding="10">
+                        <GroupBox.Header>
+                            <TextBlock Text="Keywords" Style="{StaticResource TitelStyle}"/>
+                        </GroupBox.Header>
+                        <ItemsControl ItemsSource="{Binding FilteredKeywordsView}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border CornerRadius="4" Padding="5" Margin="3" ToolTip="{Binding Key}">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="{Binding IsSelected, Converter={StaticResource BoolToBrushConverter}}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsReadOnly}" Value="True">
+                                                        <Setter Property="Background" Value="#8B0000"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <Border.InputBindings>
+                                            <MouseBinding MouseAction="LeftClick" Command="{Binding ToggleSelectedCommand}" />
+                                        </Border.InputBindings>
+                                        <TextBlock Text="{Binding Name}" Foreground="White" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </GroupBox>
+
+                    <Button Content="Apply Keywords to selection"
+                            Command="{Binding ApplyKeywordsCommand}"
+                            Style="{StaticResource ActionButtonStyle}"
+                            HorizontalAlignment="Left"
+                            Margin="0,10,0,0"/>
+                </StackPanel>
+            </Expander>
+
+            <!-- Crafting Recipe: whole recipe (Workbench/Conditions/Ingredients + their Include
+                 flags) is copied onto every selected slot. -->
+            <Expander Style="{StaticResource DarkExpanderStyle}" Header="Crafting Recipe" IsExpanded="False">
+                <StackPanel>
+                    <ContentControl Content="{Binding CraftRecipe}"/>
+                    <Button Content="Apply Crafting Recipe to selection"
+                            Command="{Binding ApplyCraftingCommand}"
+                            Style="{StaticResource ActionButtonStyle}"
+                            HorizontalAlignment="Left"
+                            Margin="0,10,0,0"/>
+                </StackPanel>
+            </Expander>
+
+            <!-- Temper Recipe: same, minus Workbench (auto-derived at COBJ-creation time). -->
+            <Expander Style="{StaticResource DarkExpanderStyle}" Header="Temper Recipe" IsExpanded="False">
+                <StackPanel>
+                    <ContentControl Content="{Binding TemperRecipe}"/>
+                    <Button Content="Apply Temper Recipe to selection"
+                            Command="{Binding ApplyTemperCommand}"
+                            Style="{StaticResource ActionButtonStyle}"
+                            HorizontalAlignment="Left"
+                            Margin="0,10,0,0"/>
+                </StackPanel>
+            </Expander>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
