@@ -1,10 +1,14 @@
 using SkyrimCraftingTool.Model;
+using SkyrimCraftingTool.Services;
 using SkyrimCraftingTool.ViewModel;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using System.Windows;
+using System.Windows.Interop;
+using System.Windows.Media;
 
 namespace SkyrimCraftingTool.View
 {
@@ -45,6 +49,16 @@ namespace SkyrimCraftingTool.View
             foreach (var c in conflicts)
                 Rows.Add(new ConflictRowVM(c));
             DataContext = this;
+            SourceInitialized += ImportConflictWindow_SourceInitialized;
+        }
+
+        // Recolor the native title bar to match the dark theme, same as MainWindow.
+        private void ImportConflictWindow_SourceInitialized(object? sender, EventArgs e)
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            var captionColor = ((SolidColorBrush)FindResource("ColorBackgroundBase")).Color;
+            var textColor = ((SolidColorBrush)FindResource("ColorTextPrimary")).Color;
+            DwmTitleBarService.ApplyAccentCaption(hwnd, captionColor, textColor);
         }
 
         // Returns the set of "Table|Key" identifiers the user chose to overwrite with the imported

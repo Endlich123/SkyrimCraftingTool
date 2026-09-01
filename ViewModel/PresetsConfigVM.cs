@@ -236,7 +236,7 @@ namespace SkyrimCraftingTool.ViewModel
 
                 armorBranch.Children.Add(new PresetSlotNodeVM(config, true, displayName,
                     allKeywords, allWorkbenches, allMaterials, allPerks, allQuests, allContainers,
-                    () => OnSlotChanged(file, file.ArmorSlots, config)));
+                    () => OnSlotChanged(file, file.ArmorSlots, config), _main?.References));
             }
 
             foreach (var weapType in GetOrderedWeaponTypeKeywords(allKeywords))
@@ -246,7 +246,7 @@ namespace SkyrimCraftingTool.ViewModel
 
                 weaponBranch.Children.Add(new PresetSlotNodeVM(config, false, weapType.Name,
                     allKeywords, allWorkbenches, allMaterials, allPerks, allQuests, allContainers,
-                    () => OnSlotChanged(file, file.WeaponTypes, config)));
+                    () => OnSlotChanged(file, file.WeaponTypes, config), _main?.References));
             }
 
             return new PresetNodeVM(file, armorBranch, weaponBranch, RenamePreset, DeletePreset);

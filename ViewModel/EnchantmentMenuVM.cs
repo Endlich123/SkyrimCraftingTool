@@ -421,9 +421,8 @@ namespace SkyrimCraftingTool.ViewModel
                 return newRoot;
             }
 
-            // Treffer im Item?
-            if (root.Enchantment != null &&
-                root.Enchantment.EditorID.ToLowerInvariant().Contains(search))
+            // Treffer im Item? (EditorID, Name oder Key inkl. Plugin-Prefix)
+            if (root.Enchantment != null && EnchantmentMatches(root.Enchantment, search))
             {
                 newRoot.IsExpanded = true;
                 return newRoot;
@@ -431,6 +430,11 @@ namespace SkyrimCraftingTool.ViewModel
 
             return null;
         }
+
+        private static bool EnchantmentMatches(EnchantmentRecord e, string lowerSearch) =>
+            (e.EditorID?.ToLowerInvariant().Contains(lowerSearch) ?? false)
+            || (e.Name?.ToLowerInvariant().Contains(lowerSearch) ?? false)
+            || (e.Key?.ToLowerInvariant().Contains(lowerSearch) ?? false);
 
         private void UpdateEnchantmentFilteredTree(List<EnchantmentTreeNode> nodes)
         {

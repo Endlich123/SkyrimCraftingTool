@@ -2,6 +2,7 @@
 using SkyrimCraftingTool.Model;
 using SkyrimCraftingTool.Services;
 using SkyrimCraftingTool.Services.Adapters;
+using SkyrimCraftingTool.Services.PatchGen;
 using SkyrimCraftingTool.Services.SavePipline;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -368,6 +369,24 @@ namespace SkyrimCraftingTool.ViewModel
 
         public RelayCommand ToggleExpertContainersCommand { get; }
 
+        // --- Generate Patch options (session-only, like the container toggles) ---
+
+        private bool _splitPatchPerPlugin;
+        public bool SplitPatchPerPlugin
+        {
+            get => _splitPatchPerPlugin;
+            set => SetProperty(ref _splitPatchPerPlugin, value);
+        }
+
+        // When set, the patch is written next to the app (SKSE\... and the .esp at the tool root)
+        // so the tool folder itself works as an MO2 mod. Otherwise it goes under Output\.
+        private bool _patchIntoAppFolder;
+        public bool PatchIntoAppFolder
+        {
+            get => _patchIntoAppFolder;
+            set => SetProperty(ref _patchIntoAppFolder, value);
+        }
+
 
         // limited list (e.g. only 20 containers)
         public ObservableCollection<ContainerEntryVM> LimitedContainerVMs { get; } = new();
@@ -390,6 +409,7 @@ namespace SkyrimCraftingTool.ViewModel
         public RelayCommand ClearContainerSelectionCommand { get; }
         public RelayCommand ExportAllCommand { get; }
         public RelayCommand ImportAllCommand { get; }
+        public RelayCommand GeneratePatchCommand { get; }
 
         private void Log(string msg)
         {
@@ -455,6 +475,7 @@ namespace SkyrimCraftingTool.ViewModel
 
             ExportAllCommand = new RelayCommand(ExportAll);
             ImportAllCommand = new RelayCommand(async () => await ImportAllAsync());
+            GeneratePatchCommand = new RelayCommand(async () => await GeneratePatchAsync());
 
             RefreshAvailablePresets();
         }
@@ -525,6 +546,89 @@ namespace SkyrimCraftingTool.ViewModel
             System.Windows.MessageBox.Show(
                 $"{items.Count} item(s) exported to{Environment.NewLine}{ExportFileStore.ExportsRoot}",
                 "Export Successful", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+        }
+
+        // Writes the full patch:
+        //  - SkyPatcher INIs for every edited armor/weapon field
+        //    (Output\SKSE\Plugins\SkyPatcher\{armor,weapon}\zzz_SkyrimCraftingTool\<Plugin>.esp.ini)
+        //  - one SkyrimCraftingTool.esp for created / edited COBJ recipes
+        // See docs/PatchGenerator-Plan.md.
+        private async Task GeneratePatchAsync()
+        {
+            await FlushPendingSavesAsync();
+
+            var options = new PatchGenOptions
+            {
+                CobjSplitMode = SplitPatchPerPlugin
+                    ? PatchCobjSplitMode.PerSourcePlugin
+                    : PatchCobjSplitMode.Global,
+                OutputRoot = PatchIntoAppFolder
+                    ? GlobalState.Tool.ModFolder
+                    : GlobalState.Tool.OutputFolder,
+            };
+            PatchGenReport report;
+            try
+            {
+                var svc = new PatchGeneratorService(references: References);
+                report = await Task.Run(() => svc.Generate(options));
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError("MainContentVM.GeneratePatchAsync failed", ex);
+                System.Windows.MessageBox.Show($"Patch generation failed:{Environment.NewLine}{ex.Message}",
+                    "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                return;
+            }
+
+            if (!report.AnythingGenerated)
+            {
+                System.Windows.MessageBox.Show("No edited armor, weapon or recipe found - nothing to patch.",
+                    "Generate Patch", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            var msg = new System.Text.StringBuilder();
+            msg.AppendLine(report.Summary);
+            msg.AppendLine();
+            foreach (var f in report.WrittenFiles)
+                msg.AppendLine("  " + MakeRelative(options.OutputRoot, f));
+            if (report.CobjMasters.Count > 0)
+            {
+                msg.AppendLine();
+                msg.AppendLine($"ESP masters: {string.Join(", ", report.CobjMasters)}");
+            }
+            if (report.Warnings.Count > 0)
+            {
+                msg.AppendLine();
+                msg.AppendLine($"Warnings ({report.Warnings.Count}):");
+                foreach (var w in report.Warnings.Take(15))
+                    msg.AppendLine("  " + w);
+                if (report.Warnings.Count > 15)
+                    msg.AppendLine($"  ... and {report.Warnings.Count - 15} more (see log).");
+            }
+            msg.AppendLine();
+            msg.Append("Open the output folder?");
+
+            var choice = System.Windows.MessageBox.Show(msg.ToString(), "Patch generated",
+                System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Information);
+
+            if (choice == System.Windows.MessageBoxResult.Yes)
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo("explorer.exe", $"\"{options.OutputRoot}\"") { UseShellExecute = true });
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.LogError("Opening the patch output folder failed", ex);
+                }
+            }
+        }
+
+        private static string MakeRelative(string root, string path)
+        {
+            try { return Path.GetRelativePath(root, path); }
+            catch { return path; }
         }
 
         private async Task ImportAllAsync()

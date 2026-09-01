@@ -21,6 +21,7 @@ namespace SkyrimCraftingTool.ViewModel
         private readonly List<FormIDRecord> _allMaterials;
         private readonly List<FormIDRecord> _allPerks;
         private readonly List<FormIDRecord> _allQuests;
+        private readonly IReferenceResolver? _references;
 
         public bool IsLoading { get; private set; }
         public bool HasWorkbench { get; }
@@ -38,7 +39,8 @@ namespace SkyrimCraftingTool.ViewModel
 
         public PresetRecipeVM(RecipeConfig config, bool hasWorkbench,
             List<FormIDRecord> allWorkbenches, List<FormIDRecord> allMaterials,
-            List<FormIDRecord> allPerks, List<FormIDRecord> allQuests, Action onChanged)
+            List<FormIDRecord> allPerks, List<FormIDRecord> allQuests, Action onChanged,
+            IReferenceResolver? references = null)
         {
             _config = config;
             HasWorkbench = hasWorkbench;
@@ -47,6 +49,7 @@ namespace SkyrimCraftingTool.ViewModel
             _allPerks = allPerks ?? new List<FormIDRecord>();
             _allQuests = allQuests ?? new List<FormIDRecord>();
             _onChanged = onChanged;
+            _references = references;
 
             AddIngredientCommand = new RelayCommand(AddIngredient);
             RemoveIngredientCommand = new RelayCommand<PresetIngredientEntryVM>(RemoveIngredient);
@@ -76,6 +79,7 @@ namespace SkyrimCraftingTool.ViewModel
                 _config.WorkbenchKey.Enabled = value;
                 OnPropertyChanged();
                 NotifyChanged();
+                RaiseWorkbenchFlags();
             }
         }
 
@@ -91,8 +95,29 @@ namespace SkyrimCraftingTool.ViewModel
                     if (value != null && string.IsNullOrEmpty(WorkbenchSearchText))
                         WorkbenchSearchText = value.Name;
                     NotifyChanged();
+                    RaiseWorkbenchFlags();
                 }
             }
+        }
+
+        // Crafting only. Red-bordered when a workbench key is set but doesn't resolve in the scan.
+        public bool IsWorkbenchDeadRef =>
+            HasWorkbench
+            && !string.IsNullOrEmpty(_config.WorkbenchKey.Value)
+            && _references is { } r && !r.IsActive(_config.WorkbenchKey.Value);
+
+        // The Workbench "Include" box is ticked but no workbench is chosen - it won't be applied.
+        public bool WorkbenchEnabledButEmpty =>
+            HasWorkbench && WorkbenchEnabled && string.IsNullOrEmpty(_config.WorkbenchKey.Value);
+
+        // Ingredients "Include" is ticked but every row is empty - it won't be applied.
+        public bool IngredientsEnabledButEmpty =>
+            IngredientsEnabled && !Ingredients.Any(i => !string.IsNullOrEmpty(i.Key));
+
+        private void RaiseWorkbenchFlags()
+        {
+            OnPropertyChanged(nameof(IsWorkbenchDeadRef));
+            OnPropertyChanged(nameof(WorkbenchEnabledButEmpty));
         }
 
         private string _workbenchSearchText = "";
@@ -123,12 +148,13 @@ namespace SkyrimCraftingTool.ViewModel
                 _config.Ingredients.Enabled = value;
                 OnPropertyChanged();
                 NotifyChanged();
+                OnPropertyChanged(nameof(IngredientsEnabledButEmpty));
             }
         }
 
         private void AddIngredient()
         {
-            var entry = new PresetIngredientEntryVM(SyncIngredientsAndNotify, () => IsLoading, () => Ingredients);
+            var entry = new PresetIngredientEntryVM(SyncIngredientsAndNotify, () => IsLoading, () => Ingredients, _references);
             entry.InitializeMaterials(_allMaterials);
             Ingredients.Add(entry);
             SyncIngredientsAndNotify();
@@ -152,6 +178,7 @@ namespace SkyrimCraftingTool.ViewModel
                 .Select(g => new IngredientEntry { Key = g.Key, Count = g.Sum(i => i.Count) })
                 .ToList();
             NotifyChanged();
+            OnPropertyChanged(nameof(IngredientsEnabledButEmpty));
         }
 
         // --------------------
@@ -281,7 +308,7 @@ namespace SkyrimCraftingTool.ViewModel
 
             foreach (var key in keyOrder)
             {
-                var entry = new PresetIngredientEntryVM(SyncIngredientsAndNotify, () => IsLoading, () => Ingredients);
+                var entry = new PresetIngredientEntryVM(SyncIngredientsAndNotify, () => IsLoading, () => Ingredients, _references);
                 entry.InitializeMaterials(_allMaterials);
 
                 var mat = _allMaterials.FirstOrDefault(m => m.Key == key);
@@ -302,6 +329,9 @@ namespace SkyrimCraftingTool.ViewModel
                 Conditions.Add(vm);
             }
             OnPropertyChanged(nameof(ConditionsEnabled));
+
+            RaiseWorkbenchFlags();
+            OnPropertyChanged(nameof(IngredientsEnabledButEmpty));
         }
 
         private void NotifyChanged()

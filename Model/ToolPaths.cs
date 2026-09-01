@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 
 namespace SkyrimCraftingTool.Model;
 
@@ -7,11 +7,11 @@ public class ToolPaths
     public string ModFolder { get; }
     public string InputFolder { get; }
     public string OutputFolder { get; }
+
+    // Root of the generated SkyPatcher tree. The per-category subfolders (armor/, weapon/, ...) and
+    // the zzz_SkyrimCraftingTool priority folder inside them are created on demand by
+    // Services.PatchGen.PatchGeneratorService — not here.
     public string SkyPatcherFolder { get; }
-    public string SkyPatcherWeaponsFolder { get; }
-    public string SkyPatcherConstructibleObjectFolder { get; }
-    public string SkyPatcherContainerFolder { get; }
-    public string SkyPatcherEnchantmentFolder { get; }
 
     public ToolPaths()
     {
@@ -19,40 +19,9 @@ public class ToolPaths
 
         InputFolder = Path.Combine(ModFolder, "Input");
         OutputFolder = Path.Combine(ModFolder, "Output");
+        SkyPatcherFolder = Path.Combine(OutputFolder, "SKSE", "Plugins", "SkyPatcher");
 
-        SkyPatcherFolder = Path.Combine(
-            OutputFolder,
-            "SKSE",
-            "Plugins",
-            "SkyPatcher"
-        );
-
-        SkyPatcherWeaponsFolder = Path.Combine(
-            SkyPatcherFolder,
-            "weapons"
-        );
-
-        SkyPatcherConstructibleObjectFolder = Path.Combine(
-            SkyPatcherFolder,
-            "constructibleObject"
-        );
-
-        SkyPatcherContainerFolder = Path.Combine(
-            SkyPatcherFolder,
-            "container"
-        );
-
-        SkyPatcherEnchantmentFolder = Path.Combine(
-            SkyPatcherFolder,
-            "enchantment"
-        );
-
-        // Create folders directly
         Directory.CreateDirectory(InputFolder);
-        Directory.CreateDirectory(SkyPatcherFolder);
-        Directory.CreateDirectory(SkyPatcherWeaponsFolder);
-        Directory.CreateDirectory(SkyPatcherConstructibleObjectFolder);
-        Directory.CreateDirectory(SkyPatcherContainerFolder);
-        Directory.CreateDirectory(SkyPatcherEnchantmentFolder);
+        Directory.CreateDirectory(OutputFolder);
     }
 }

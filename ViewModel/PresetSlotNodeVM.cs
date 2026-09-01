@@ -47,6 +47,7 @@ namespace SkyrimCraftingTool.ViewModel
         private readonly List<FormIDRecord> _allPerks;
         private readonly List<FormIDRecord> _allQuests;
         private readonly List<ContainerRecord> _allContainers;
+        private readonly Services.IReferenceResolver? _references;
 
         private bool _loaded;
 
@@ -67,12 +68,14 @@ namespace SkyrimCraftingTool.ViewModel
             List<FormIDRecord> allKeywords, List<FormIDRecord> allWorkbenches,
             List<FormIDRecord> allMaterials, List<FormIDRecord> allPerks, List<FormIDRecord> allQuests,
             List<ContainerRecord> allContainers,
-            Action onChanged)
+            Action onChanged,
+            Services.IReferenceResolver? references = null)
         {
             _config = config;
             IsArmor = isArmor;
             DisplayName = displayName;
             _onChanged = onChanged;
+            _references = references;
 
             _allKeywords = allKeywords ?? new List<FormIDRecord>();
             _allWorkbenches = allWorkbenches ?? new List<FormIDRecord>();
@@ -93,8 +96,8 @@ namespace SkyrimCraftingTool.ViewModel
             if (_loaded) return;
             _loaded = true;
 
-            _craftRecipe = new PresetRecipeVM(_config.CraftRecipe, true, _allWorkbenches, _allMaterials, _allPerks, _allQuests, _onChanged);
-            _temperRecipe = new PresetRecipeVM(_config.TemperRecipe, false, _allWorkbenches, _allMaterials, _allPerks, _allQuests, _onChanged);
+            _craftRecipe = new PresetRecipeVM(_config.CraftRecipe, true, _allWorkbenches, _allMaterials, _allPerks, _allQuests, _onChanged, _references);
+            _temperRecipe = new PresetRecipeVM(_config.TemperRecipe, false, _allWorkbenches, _allMaterials, _allPerks, _allQuests, _onChanged, _references);
 
             _allKeywordVMs = new ObservableCollection<KeywordSelectionVM>(
                 _allKeywords.Select(k => new KeywordSelectionVM(k.Key, k.Name, false, OnKeywordToggled)));

@@ -1,4 +1,5 @@
 using SkyrimCraftingTool.Model;
+using SkyrimCraftingTool.Services;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -15,14 +16,22 @@ namespace SkyrimCraftingTool.ViewModel
         private readonly Action _onChanged;
         private readonly Func<bool> _isLoading;
         private readonly Func<IEnumerable<PresetIngredientEntryVM>>? _siblings;
+        private readonly IReferenceResolver? _references;
 
         public PresetIngredientEntryVM(Action onChanged, Func<bool> isLoading,
-            Func<IEnumerable<PresetIngredientEntryVM>>? siblings = null)
+            Func<IEnumerable<PresetIngredientEntryVM>>? siblings = null,
+            IReferenceResolver? references = null)
         {
             _onChanged = onChanged;
             _isLoading = isLoading;
             _siblings = siblings;
+            _references = references;
         }
+
+        // Key set but doesn't resolve against the current scan (see IngredientEntryVM.IsDeadReference).
+        public bool IsDeadReference =>
+            !string.IsNullOrEmpty(_key)
+            && _references is { } r && !r.IsActive(_key);
 
         private IEnumerable<PresetIngredientEntryVM> Siblings =>
             _siblings?.Invoke() ?? Enumerable.Empty<PresetIngredientEntryVM>();
@@ -75,6 +84,7 @@ namespace SkyrimCraftingTool.ViewModel
                 if (SetProperty(ref _key, value))
                 {
                     NotifyChanged();
+                    OnPropertyChanged(nameof(IsDeadReference));
                     RefreshSiblingMaterialFilters();
                 }
             }
@@ -143,6 +153,7 @@ namespace SkyrimCraftingTool.ViewModel
             OnPropertyChanged(nameof(Key));
             OnPropertyChanged(nameof(MaterialName));
             OnPropertyChanged(nameof(SearchText));
+            OnPropertyChanged(nameof(IsDeadReference));
             // No sibling refresh: silent load path (see IngredientEntryVM).
         }
 

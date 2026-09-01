@@ -180,8 +180,26 @@ namespace SkyrimCraftingTool.Model
             foreach (var kw in mod.Keywords.Records)
                 result.Keywords.Add(($"{kw.FormKey.ModKey.FileName}|{kw.FormKey.ID:X6}", kw.EditorID));
 
+            // "Materials" for us = anything a COBJ recipe can list as an ingredient. MISC covers
+            // ingots/leather/etc., but vanilla + mods also use INGR (Daedra Heart, salt, …), AMMO
+            // (arrows/bolts), SLGM (soul gems) and occasionally ALCH (food/potions). Without these,
+            // such ingredients don't resolve and get flagged as dead references.
             foreach (var misc in mod.MiscItems.Records)
                 result.Materials.Add(($"{misc.FormKey.ModKey.FileName}|{misc.FormKey.ID:X6}", misc.EditorID));
+
+            // Non-MISC records get a " (TYPE)" suffix so they can be told apart in the material
+            // picker (MISC, the common case, stays clean). Cosmetic only - the Key is what's stored.
+            foreach (var ingr in mod.Ingredients.Records)
+                result.Materials.Add(($"{ingr.FormKey.ModKey.FileName}|{ingr.FormKey.ID:X6}", $"{ingr.EditorID} (INGR)"));
+
+            foreach (var ammo in mod.Ammunitions.Records)
+                result.Materials.Add(($"{ammo.FormKey.ModKey.FileName}|{ammo.FormKey.ID:X6}", $"{ammo.EditorID} (AMMO)"));
+
+            foreach (var slgm in mod.SoulGems.Records)
+                result.Materials.Add(($"{slgm.FormKey.ModKey.FileName}|{slgm.FormKey.ID:X6}", $"{slgm.EditorID} (SLGM)"));
+
+            foreach (var alch in mod.Ingestibles.Records)
+                result.Materials.Add(($"{alch.FormKey.ModKey.FileName}|{alch.FormKey.ID:X6}", $"{alch.EditorID} (ALCH)"));
 
             foreach (var perk in mod.Perks.Records)
                 result.Perks.Add(($"{perk.FormKey.ModKey.FileName}|{perk.FormKey.ID:X6}", perk.EditorID));

@@ -60,8 +60,8 @@ namespace SkyrimCraftingTool.ViewModel
             var allPerks = main?.AllAvailablePerks ?? new List<FormIDRecord>();
             var allQuests = main?.AllAvailableQuests ?? new List<FormIDRecord>();
 
-            CraftRecipe = new PresetRecipeVM(_template.CraftRecipe, true, allWorkbenches, allMaterials, allPerks, allQuests, () => { });
-            TemperRecipe = new PresetRecipeVM(_template.TemperRecipe, false, allWorkbenches, allMaterials, allPerks, allQuests, () => { });
+            CraftRecipe = new PresetRecipeVM(_template.CraftRecipe, true, allWorkbenches, allMaterials, allPerks, allQuests, () => { }, main?.References);
+            TemperRecipe = new PresetRecipeVM(_template.TemperRecipe, false, allWorkbenches, allMaterials, allPerks, allQuests, () => { }, main?.References);
 
             _allKeywordVMs = new ObservableCollection<KeywordSelectionVM>(
                 allKeywords.Select(k => new KeywordSelectionVM(k.Key, k.Name, false, OnKeywordToggled)));

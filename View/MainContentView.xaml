@@ -24,8 +24,24 @@
             <Button Content="Import"
                     Command="{Binding ImportAllCommand}"
                     Style="{StaticResource ActionButtonWarmStyle}"/>
-            
+
             </StackPanel>
+            <Button Content="Generate Patch"
+                    Command="{Binding GeneratePatchCommand}"
+                    Style="{StaticResource ActionButtonStyle}"
+                    HorizontalAlignment="Left"
+                    Margin="0,4,0,0"
+                    ToolTip="SkyPatcher INIs for every edited armor/weapon field + SkyrimCraftingTool.esp for created/edited recipes."/>
+            <CheckBox Content="One ESP per source plugin"
+                      IsChecked="{Binding SplitPatchPerPlugin}"
+                      Foreground="{StaticResource ColorTextSecondary}"
+                      Margin="2,4,0,0"
+                      ToolTip="Off: one SkyrimCraftingTool.esp. On: SkyrimCraftingTool - &lt;Plugin&gt;.esp per source mod."/>
+            <CheckBox Content="Write next to the app (tool folder = MO2 mod)"
+                      IsChecked="{Binding PatchIntoAppFolder}"
+                      Foreground="{StaticResource ColorTextSecondary}"
+                      Margin="2,2,0,0"
+                      ToolTip="Off: patch goes under Output\. On: SKSE\ and the .esp are written at the tool root, so the tool folder can be enabled directly as an MO2 mod."/>
             <TextBlock Foreground="{StaticResource ColorWarning}"
                        Margin="5,0,10,0"
                        Text="{Binding FilteredTree.Count, StringFormat=TreeCount: {0}}" />

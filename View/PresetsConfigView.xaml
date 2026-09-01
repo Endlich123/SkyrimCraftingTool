@@ -405,6 +405,13 @@
                     <DataTemplate DataType="{x:Type local:PresetRecipeVM}">
                         <StackPanel Margin="0,10,0,10">
 
+                            <TextBlock Text="&#x26A0; Workbench is enabled but none is chosen - it won't be applied."
+                                       Foreground="{StaticResource ColorWarning}" TextWrapping="Wrap" Margin="0,0,0,4"
+                                       Visibility="{Binding WorkbenchEnabledButEmpty, Converter={StaticResource BoolToVis}}"/>
+                            <TextBlock Text="&#x26A0; Ingredients is enabled but the list is empty - it won't be applied."
+                                       Foreground="{StaticResource ColorWarning}" TextWrapping="Wrap" Margin="0,0,0,4"
+                                       Visibility="{Binding IngredientsEnabledButEmpty, Converter={StaticResource BoolToVis}}"/>
+
                             <Grid Visibility="{Binding HasWorkbench, Converter={StaticResource BoolToVis}}" Margin="0,0,0,10">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
@@ -416,7 +423,7 @@
                                 <ComboBox Grid.Column="2"
                                           Style="{StaticResource ItemComboBoxStyle}"
                                           ItemsSource="{Binding FilteredWorkbenches}"
-                                          SelectedItem="{Binding SelectedWorkbench, Mode=TwoWay}"
+                                          SelectedItem="{Binding SelectedWorkbench, Mode=TwoWay}" BorderBrush="{Binding IsWorkbenchDeadRef, Converter={StaticResource BoolToDeadRefBorderConverter}}"
                                           IsSynchronizedWithCurrentItem="False"
                                           Text="{Binding WorkbenchSearchText}"
                                           IsEditable="True"
@@ -457,7 +464,7 @@
                                                     <ContentControl.Resources>
                                                         <DataTemplate DataType="{x:Type local:PerkConditionViewModel}">
                                                             <ComboBox ItemsSource="{Binding DataContext.FilteredPerks, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                                      SelectedItem="{Binding SelectedPerk}" IsSynchronizedWithCurrentItem="False"
+                                                                      SelectedItem="{Binding SelectedPerk}" IsSynchronizedWithCurrentItem="False" BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
                                                                       IsEditable="True"
                                                                       Text="{Binding PerkSearchText}"
                                                                       Style="{StaticResource ItemComboBoxStyle}" />
@@ -483,7 +490,7 @@
                                                                 </Grid.ColumnDefinitions>
                                                                 <ComboBox Grid.Column="0"
                                                                           ItemsSource="{Binding DataContext.FilteredQuests, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                                          SelectedItem="{Binding SelectedQuest}" IsSynchronizedWithCurrentItem="False"
+                                                                          SelectedItem="{Binding SelectedQuest}" IsSynchronizedWithCurrentItem="False" BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
                                                                           Style="{StaticResource ItemComboBoxStyle}" />
                                                                 <TextBox Grid.Column="1" Text="{Binding Stage}" model:NumericTextBoxBehavior.Mode="Integer" Style="{StaticResource ItemTextBoxStyle}" />
                                                             </Grid>
@@ -527,7 +534,7 @@
                                             </Grid.ColumnDefinitions>
                                             <ComboBox Grid.Column="0"
                                                       ItemsSource="{Binding LocalMaterialsView}"
-                                                      SelectedItem="{Binding SelectedMaterial}" IsSynchronizedWithCurrentItem="False"
+                                                      SelectedItem="{Binding SelectedMaterial}" IsSynchronizedWithCurrentItem="False" BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
                                                       Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                                                       ToolTip="{Binding Key}"
                                                       DisplayMemberPath="Name"
