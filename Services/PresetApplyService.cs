@@ -193,11 +193,12 @@ namespace SkyrimCraftingTool.Services
                 touched.Add(isTemper ? nameof(ItemNodeVM.TemperConditions) : nameof(ItemNodeVM.CraftingConditions));
         }
 
-        // Sums each material's count across every matching slot that has Ingredients enabled (keeps
-        // the "slots addieren" rule) into a single desired total per material, then SETS the item's
-        // count for that material to this total — the preset's computed total replaces whatever was
-        // already on the item (manually set, or left over from an earlier Apply), it does not stack
-        // on top of it.
+        // Builds one desired total per material by summing across every matching slot that has
+        // Ingredients enabled ("slots addieren"), then makes the item's ingredient list EXACTLY that
+        // set: counts are set (not stacked), and any ingredient the preset doesn't include is
+        // removed - same "old gets replaced by new" rule as Conditions and Container.
+        // Exception: if no matching slot enables Ingredients, or every enabled slot's list is empty,
+        // nothing is touched (matches the preset editor's "enabled but empty - won't be applied").
         private static bool MergeIngredients(ItemNodeVM item, ObservableCollection<IngredientEntryVM> target,
             List<PresetSlotConfig> matches, Func<PresetSlotConfig, RecipeConfig> select, bool isTemper)
         {
@@ -208,10 +209,26 @@ namespace SkyrimCraftingTool.Services
                 if (!recipe.Ingredients.Enabled) continue;
 
                 foreach (var ing in recipe.Ingredients.Value ?? new List<IngredientEntry>())
+                {
+                    if (string.IsNullOrEmpty(ing.Key)) continue;
                     desiredCounts[ing.Key] = desiredCounts.TryGetValue(ing.Key, out var c) ? c + ing.Count : ing.Count;
+                }
             }
 
+            if (desiredCounts.Count == 0) return false;
+
             bool changed = false;
+
+            // Drop what the preset doesn't want.
+            for (int i = target.Count - 1; i >= 0; i--)
+            {
+                if (!desiredCounts.ContainsKey(target[i].Key))
+                {
+                    target.RemoveAt(i);
+                    changed = true;
+                }
+            }
+
             foreach (var (key, count) in desiredCounts)
             {
                 var existing = target.FirstOrDefault(i => i.Key == key);
