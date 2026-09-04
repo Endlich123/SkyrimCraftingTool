@@ -18,12 +18,20 @@ using static System.Net.Mime.MediaTypeNames;
 
 namespace SkyrimCraftingTool.Model
 {
-    public class ItemDBHandler
+    public partial class ItemDBHandler
     {
         private string ItemFolder => Path.Combine(GlobalState.Tool.InputFolder, "Item");
         private string ItemdbPath => Path.Combine(ItemFolder, "item.db");
         public static string ConnString
         => $"Data Source={Path.Combine(GlobalState.Tool.InputFolder, "Item", "item.db")}";
+
+        // The static read helpers below can run before any scan has created the DB
+        // (EnchantmentMenuVM ctor -> RefreshData -> RefreshWornRestrictionListChoices). If
+        // Input\Item\ doesn't exist yet, opening a connection throws SQLITE_CANTOPEN (error 14,
+        // "unable to open database file") instead of creating the file — the instance Load* methods
+        // all guard with File.Exists(ItemdbPath); these need the same, from a static context.
+        private static bool ItemDbExists
+            => File.Exists(Path.Combine(GlobalState.Tool.InputFolder, "Item", "item.db"));
 
         private readonly FormIDDBHandler _formIDDB = new FormIDDBHandler();
 
@@ -198,1190 +206,6 @@ namespace SkyrimCraftingTool.Model
             }
         }
 
-        // ============================
-        //        DB ERSTELLEN
-        // ============================
-
-        public void PutIntoDataBank(List<PluginInfo> allgamePathfromDB)
-        {
-            Directory.CreateDirectory(ItemFolder);
-
-            using var connection = new SqliteConnection($"Data Source={ItemdbPath}");
-            connection.Open();
-
-            using (var pragma = connection.CreateCommand())
-            {
-                pragma.CommandText = "PRAGMA journal_mode=WAL;";
-                pragma.ExecuteNonQuery();
-            }
-
-            EnsureSchema(connection);
-            CreateTables(connection);
-
-            // Which COBJ/Enchantment records has the user hand-edited Conditions/Effects/
-            // WornRestrictionKeywords for? Unlike Armor/Weapon/COBJ/Enchantment's own fields (which
-            // have IsEdited* shadow columns on the SAME row), these three child tables have no
-            // shadow-column mechanism — a user edit is a full replace of the base child rows. So the
-            // only way to protect a hand-edited child set from being silently overwritten by this scan
-            // is a flag on the PARENT row, checked before we touch its children below.
-            var conditionsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM COBJ WHERE ConditionsEdited = 1;");
-            var effectsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM Enchantments WHERE EffectsEdited = 1;");
-            var keywordsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM Enchantments WHERE KeywordsEdited = 1;");
-
-            using var insertArmor = PrepareUpsert(connection, "Armor", ArmorColumnNames, ArmorParamNames);
-            using var insertWeapon = PrepareUpsert(connection, "Weapons", WeaponColumnNames, WeaponParamNames);
-            using var insertCOBJ = PrepareUpsert(connection, "COBJ", CobjColumnNames, CobjParamNames);
-            using var insertCOBJCondition = PrepareInsert(connection, "COBJ_Conditions", CobjConditionColumnNames, CobjConditionParamNames);
-            using var insertEnch = PrepareUpsert(connection, "Enchantments", EnchantmentColumnNames, EnchantmentParamNames);
-            using var insertEnchEff = PrepareInsert(connection, "EnchantmentEffects", EnchantmentEffectColumnNames, EnchantmentEffectParamNames);
-            using var insertWRK = PrepareInsert(connection, "WornRestrictionKeywords", WornRestrictionKeywordColumnNames, WornRestrictionKeywordParamNames);
-            using var insertContainer = PrepareUpsert(connection, "Container", ContainerColumnNames, ContainerParamNames);
-            using var insertContainerLVLI = PrepareInsert(connection, "ContainerLVLI", ContainerLvliColumnNames, ContainerLvliParamNames);
-            using var insertMagicEffects = PrepareUpsert(connection, "MagicEffects", MagicEffectColumnNames, MagicEffectParamNames);
-
-            // Multi-row "batch" counterparts of the commands above. At the row counts a full scan
-            // produces (100k+), one ExecuteNonQuery() per row was the dominant cost (~140k round
-            // trips). These insert BatchSize rows per statement instead; the tail that doesn't fill a
-            // full batch falls back to the single-row commands above. Row count (<=90) and per-row
-            // column count (<=10) keep every batch statement's parameter count well under SQLite's
-            // historical 999 host-parameter limit and its 500-row multi-VALUES limit.
-            using var insertArmorBatch = PrepareUpsertBatch(connection, "Armor", ArmorColumnNames, ArmorParamNames, BatchSize);
-            using var insertWeaponBatch = PrepareUpsertBatch(connection, "Weapons", WeaponColumnNames, WeaponParamNames, BatchSize);
-            using var insertCOBJBatch = PrepareUpsertBatch(connection, "COBJ", CobjColumnNames, CobjParamNames, BatchSize);
-            using var insertCOBJConditionBatch = PrepareInsertBatch(connection, "COBJ_Conditions", CobjConditionColumnNames, CobjConditionParamNames, BatchSize);
-            using var insertEnchBatch = PrepareUpsertBatch(connection, "Enchantments", EnchantmentColumnNames, EnchantmentParamNames, BatchSize);
-            using var insertEnchEffBatch = PrepareInsertBatch(connection, "EnchantmentEffects", EnchantmentEffectColumnNames, EnchantmentEffectParamNames, BatchSize);
-            using var insertWRKBatch = PrepareInsertBatch(connection, "WornRestrictionKeywords", WornRestrictionKeywordColumnNames, WornRestrictionKeywordParamNames, BatchSize);
-            using var insertContainerBatch = PrepareUpsertBatch(connection, "Container", ContainerColumnNames, ContainerParamNames, BatchSize);
-            using var insertContainerLVLIBatch = PrepareInsertBatch(connection, "ContainerLVLI", ContainerLvliColumnNames, ContainerLvliParamNames, BatchSize);
-            using var insertMagicEffectsBatch = PrepareUpsertBatch(connection, "MagicEffects", MagicEffectColumnNames, MagicEffectParamNames, BatchSize);
-
-            using var transaction = connection.BeginTransaction();
-            insertArmor.Transaction = transaction;
-            insertWeapon.Transaction = transaction;
-            insertCOBJ.Transaction = transaction;
-            insertCOBJCondition.Transaction = transaction;
-            insertEnch.Transaction = transaction;
-            insertEnchEff.Transaction = transaction;
-            insertWRK.Transaction = transaction;
-            insertContainer.Transaction = transaction;
-            insertContainerLVLI.Transaction = transaction;
-            insertMagicEffects.Transaction = transaction;
-            insertArmorBatch.Transaction = transaction;
-            insertWeaponBatch.Transaction = transaction;
-            insertCOBJBatch.Transaction = transaction;
-            insertCOBJConditionBatch.Transaction = transaction;
-            insertEnchBatch.Transaction = transaction;
-            insertEnchEffBatch.Transaction = transaction;
-            insertWRKBatch.Transaction = transaction;
-            insertContainerBatch.Transaction = transaction;
-            insertContainerLVLIBatch.Transaction = transaction;
-            insertMagicEffectsBatch.Transaction = transaction;
-
-            // Parse phase runs in parallel across plugins (CPU-bound, no DB access); a second,
-            // strictly sequential phase then does all SQLite writes (one connection/transaction).
-            //
-            // Results go into an array indexed by plugin position, not a ConcurrentBag: with
-            // "INSERT OR REPLACE", the last write for a given key wins, so override precedence
-            // between plugins depends on write order matching allgamePathfromDB's load order
-            // exactly. Parallel.For writes each result into its own reserved slot, preserving that
-            // order regardless of thread scheduling.
-            _formIDDB.EnsureCacheLoaded();
-
-            var pluginFiles = allgamePathfromDB
-                .SelectMany(plugin => plugin.FullPaths.Select(fullPath => (plugin.FileName, fullPath)))
-                .ToList();
-
-            var parseSw = Stopwatch.StartNew();
-            var parsedPlugins = new ParsedPluginData[pluginFiles.Count];
-            Parallel.For(0, pluginFiles.Count, i =>
-            {
-                parsedPlugins[i] = ParsePluginForItemDB(pluginFiles[i].FileName, pluginFiles[i].fullPath);
-            });
-            parseSw.Stop();
-
-            int armorCount = 0, weaponCount = 0, cobjCount = 0, condCount = 0, enchCount = 0, effCount = 0, containerCount = 0, lvliCount = 0, mgefCount = 0;
-            foreach (var p in parsedPlugins)
-            {
-                armorCount += p.ArmorRows.Count;
-                weaponCount += p.WeaponRows.Count;
-                cobjCount += p.Cobjs.Count;
-                condCount += p.Cobjs.Sum(c => c.ConditionRows.Count);
-                enchCount += p.Enchantments.Count;
-                effCount += p.Enchantments.Sum(e => e.EffectRows.Count);
-                containerCount += p.Containers.Count;
-                lvliCount += p.Containers.Sum(c => c.LvliRows.Count);
-                mgefCount += p.MagicEffectRows.Count;
-            }
-            Debug.WriteLine($"[ItemDB] Parse phase: {parseSw.ElapsedMilliseconds} ms ({pluginFiles.Count} plugins, " +
-                $"Armor={armorCount} Weapon={weaponCount} COBJ={cobjCount} COBJCond={condCount} " +
-                $"Ench={enchCount} EnchEff={effCount} Container={containerCount} LVLI={lvliCount} MGEF={mgefCount})");
-
-            // --- Flatten: gather every row across all plugins per table before writing ---
-            // parsedPlugins is index-ordered (see above), so this walks plugins in exactly
-            // allgamePathfromDB's given order — matching the original single-threaded loop's write
-            // order, which is what "INSERT OR REPLACE" override resolution (last write for a given
-            // key wins) depends on for records overridden by more than one plugin.
-            //
-            // COBJ/Enchantment/Container each own a set of child rows (Conditions/Effects+
-            // WornRestrictionKeywords/LVLI). A Bethesda plugin override replaces a record as a whole
-            // — including its child rows — not incrementally, so when more than one plugin touches
-            // the same parent key, only the LAST plugin's full child set should survive. Naively
-            // AddRange-ing every plugin's child rows here doesn't do that: for COBJ_Conditions (no
-            // matching unique constraint on its columns, only a meaningless autoincrement Id) it
-            // straight up duplicates every earlier plugin's conditions alongside the new ones; for
-            // the other three tables (which do have a composite key matching child identity) it
-            // still leaves rows behind that a later plugin's version had actually removed, since nothing
-            // ever deletes a child row that simply stops reappearing. So COBJ/Enchantment/Container are
-            // reduced to "last plugin per parent key" first, and only that plugin's child rows are used.
-            var allArmor = new List<object[]>();
-            var allWeapon = new List<object[]>();
-            var allMagicEffects = new List<object[]>();
-
-            var latestCobjByKey = new Dictionary<string, ParsedCobj>();
-            var latestEnchantmentByKey = new Dictionary<string, ParsedEnchantment>();
-            var latestContainerByKey = new Dictionary<string, ParsedContainer>();
-
-            foreach (var parsed in parsedPlugins)
-            {
-                allArmor.AddRange(parsed.ArmorRows);
-                allWeapon.AddRange(parsed.WeaponRows);
-                allMagicEffects.AddRange(parsed.MagicEffectRows);
-
-                foreach (var cobj in parsed.Cobjs)
-                    latestCobjByKey[(string)cobj.Values[0]] = cobj;
-
-                foreach (var ench in parsed.Enchantments)
-                    latestEnchantmentByKey[(string)ench.Values[0]] = ench;
-
-                foreach (var container in parsed.Containers)
-                    latestContainerByKey[(string)container.Values[0]] = container;
-            }
-
-            // Records whose ConditionsEdited/EffectsEdited/KeywordsEdited flag is set keep their
-            // existing child rows untouched — excluded from both the rewrite-key lists (used for the
-            // DELETE below) and the flattened row lists (so nothing gets added back either).
-            var allCobj = new List<object[]>();
-            var allCobjConditions = new List<object[]>();
-            var cobjConditionRewriteKeys = new List<string>();
-            foreach (var kv in latestCobjByKey)
-            {
-                allCobj.Add(kv.Value.Values);
-                if (conditionsEditedKeys.Contains(kv.Key))
-                    continue;
-                cobjConditionRewriteKeys.Add(kv.Key);
-                allCobjConditions.AddRange(kv.Value.ConditionRows);
-            }
-
-            var allEnchantments = new List<object[]>();
-            var allWornRestrictionKeywords = new List<object[]>();
-            var seenWornRestrictionKeywordRows = new HashSet<(string ListKey, string KeywordKey)>();
-            var allEnchantmentEffects = new List<object[]>();
-            var latestEffectRow = new Dictionary<(string EnchantmentKey, string MagicEffectKey), object[]>();
-            var enchantmentEffectRewriteKeys = new List<string>();
-            var wornRestrictionListKeysToRewrite = new List<string>();
-            foreach (var kv in latestEnchantmentByKey)
-            {
-                allEnchantments.Add(kv.Value.Values);
-
-                if (!keywordsEditedKeys.Contains(kv.Key))
-                {
-                    // EnchantmentColumnNames[6] is WornRestrictionListKey — WornRestrictionKeywords is
-                    // keyed by that list key, not by the enchantment's own key. Multiple enchantments
-                    // commonly share the same list (FLST), so the same (ListKey, KeywordKey) row would
-                    // otherwise be queued once per enchantment that references it — dedupe here since
-                    // this table has a real PRIMARY KEY(ListKey, KeywordKey) and is written via plain
-                    // INSERT.
-                    var listKey = (string)kv.Value.Values[6];
-                    if (!string.IsNullOrEmpty(listKey))
-                        wornRestrictionListKeysToRewrite.Add(listKey);
-                    foreach (var row in kv.Value.WornRestrictionKeywordRows)
-                    {
-                        if (seenWornRestrictionKeywordRows.Add(((string)row[0], (string)row[1])))
-                            allWornRestrictionKeywords.Add(row);
-                    }
-                }
-
-                if (!effectsEditedKeys.Contains(kv.Key))
-                {
-                    enchantmentEffectRewriteKeys.Add(kv.Key);
-                    // A single enchantment record's own Effects list can legitimately reference the
-                    // same base MagicEffect more than once (e.g. two entries with different
-                    // magnitude/duration) — this table has PRIMARY KEY(EnchantmentKey, MagicEffectKey),
-                    // which can't represent that distinction. Dedupe here (last entry in the record's
-                    // own list wins), matching what the previous INSERT OR REPLACE write path did
-                    // silently instead of the plain INSERT crashing on the collision.
-                    foreach (var row in kv.Value.EffectRows)
-                        latestEffectRow[((string)row[0], (string)row[1])] = row;
-                }
-            }
-            allEnchantmentEffects.AddRange(latestEffectRow.Values);
-
-            var allContainers = new List<object[]>();
-            var allContainerLvli = new List<object[]>();
-            var latestLvliRow = new Dictionary<(string ContainerKey, string LvliKey), object[]>();
-            foreach (var container in latestContainerByKey.Values)
-            {
-                allContainers.Add(container.Values);
-                // Same rationale as EnchantmentEffects above — ContainerLVLI has
-                // PRIMARY KEY(ContainerKey, LVLiKey), but a container's own item list can list the same
-                // leveled item more than once (e.g. duplicate entries from a patch).
-                foreach (var row in container.LvliRows)
-                    latestLvliRow[((string)row[0], (string)row[1])] = row;
-            }
-            allContainerLvli.AddRange(latestLvliRow.Values);
-
-            // --- Write phase: strictly sequential — do not parallelize SQLite writes ---
-            var writeSw = Stopwatch.StartNew();
-
-            // Child tables: delete existing rows for the parent keys we're about to rewrite, then
-            // insert the freshly parsed set. Necessary because COBJ_Conditions has no unique
-            // constraint to upsert against, and even for the two tables that do (EnchantmentEffects,
-            // WornRestrictionKeywords) an upsert alone would never remove a row a later plugin's
-            // version had actually dropped. Keys protected by an *Edited flag were already excluded
-            // above, so their rows are never deleted or reinserted here.
-            DeleteChildRowsForKeys(connection, transaction, "COBJ_Conditions", "COBJKey", cobjConditionRewriteKeys);
-            DeleteChildRowsForKeys(connection, transaction, "EnchantmentEffects", "EnchantmentKey", enchantmentEffectRewriteKeys);
-            DeleteChildRowsForKeys(connection, transaction, "WornRestrictionKeywords", "ListKey", wornRestrictionListKeysToRewrite.Distinct().ToList());
-            // Container has no *Edited protection flag (it's a pure reference table), so every
-            // scanned container's LVLI rows are simply cleared and rewritten each scan — otherwise a
-            // rescan's insert collides with the previous scan's still-present rows for the same
-            // (ContainerKey, LVLiKey), and a removed item would linger as a stale row.
-            DeleteChildRowsForKeys(connection, transaction, "ContainerLVLI", "ContainerKey", latestContainerByKey.Keys.ToList());
-
-            ExecuteRowsBatched(insertArmor, insertArmorBatch, ArmorParamNames, allArmor, BatchSize);
-            ExecuteRowsBatched(insertWeapon, insertWeaponBatch, WeaponParamNames, allWeapon, BatchSize);
-            ExecuteRowsBatched(insertCOBJ, insertCOBJBatch, CobjParamNames, allCobj, BatchSize);
-            ExecuteRowsBatched(insertCOBJCondition, insertCOBJConditionBatch, CobjConditionParamNames, allCobjConditions, BatchSize);
-            ExecuteRowsBatched(insertWRK, insertWRKBatch, WornRestrictionKeywordParamNames, allWornRestrictionKeywords, BatchSize);
-            ExecuteRowsBatched(insertEnch, insertEnchBatch, EnchantmentParamNames, allEnchantments, BatchSize);
-            ExecuteRowsBatched(insertEnchEff, insertEnchEffBatch, EnchantmentEffectParamNames, allEnchantmentEffects, BatchSize);
-            ExecuteRowsBatched(insertContainer, insertContainerBatch, ContainerParamNames, allContainers, BatchSize);
-            ExecuteRowsBatched(insertContainerLVLI, insertContainerLVLIBatch, ContainerLvliParamNames, allContainerLvli, BatchSize);
-            ExecuteRowsBatched(insertMagicEffects, insertMagicEffectsBatch, MagicEffectParamNames, allMagicEffects, BatchSize);
-
-            // Parent tables: anything not touched by this scan is no longer defined by any currently
-            // active plugin — mark it inactive (hidden from Load*) instead of deleting, so its
-            // IsEdited*/Original data survives in case the plugin comes back. COBJ additionally
-            // excludes Original=0 (user-created recipes, which never appear in a scan's key-set by
-            // definition — without this exemption every user recipe would be marked inactive on every
-            // single scan, since nothing ever "scans" them).
-            MarkInactiveExcept(connection, transaction, "Armor", "Key", allArmor.Select(r => (string)r[0]));
-            MarkInactiveExcept(connection, transaction, "Weapons", "Key", allWeapon.Select(r => (string)r[0]));
-            MarkInactiveExcept(connection, transaction, "COBJ", "Key", latestCobjByKey.Keys, extraWhere: "Original = 1");
-            MarkInactiveExcept(connection, transaction, "Enchantments", "Key", latestEnchantmentByKey.Keys);
-            MarkInactiveExcept(connection, transaction, "Container", "ContainerKey", latestContainerByKey.Keys);
-            MarkInactiveExcept(connection, transaction, "MagicEffects", "Key", allMagicEffects.Select(r => (string)r[0]));
-
-            writeSw.Stop();
-            Debug.WriteLine($"[ItemDB] Write phase: {writeSw.ElapsedMilliseconds} ms");
-
-            var commitSw = Stopwatch.StartNew();
-            transaction.Commit();
-            commitSw.Stop();
-            Debug.WriteLine($"[ItemDB] Commit: {commitSw.ElapsedMilliseconds} ms");
-
-            InvalidateCache();
-        }
-
-        private static HashSet<string> ReadFlaggedKeys(SqliteConnection connection, string sql)
-        {
-            var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            using var cmd = connection.CreateCommand();
-            cmd.CommandText = sql;
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
-                keys.Add(reader.GetString(0));
-            return keys;
-        }
-
-        // Creates a fresh TEMP TABLE holding `keys` (one column, "Key") and returns its name. Batches
-        // the inserts (same reasoning as BatchSize elsewhere in this file — one row per statement was
-        // the original scan's dominant cost) so this stays fast even for tens of thousands of keys.
-        // Caller is responsible for dropping the returned table when done with it.
-        private static string PopulateKeyTempTable(SqliteConnection connection, SqliteTransaction transaction, string tempTableName, IReadOnlyList<string> keys)
-        {
-            using (var createCmd = connection.CreateCommand())
-            {
-                createCmd.Transaction = transaction;
-                createCmd.CommandText = $"CREATE TEMP TABLE {tempTableName} (Key TEXT PRIMARY KEY);";
-                createCmd.ExecuteNonQuery();
-            }
-
-            const int chunkSize = 400;
-            for (int i = 0; i < keys.Count; i += chunkSize)
-            {
-                int count = Math.Min(chunkSize, keys.Count - i);
-                var placeholders = string.Join(", ", Enumerable.Range(0, count).Select(r => $"(@k{r})"));
-
-                using var cmd = connection.CreateCommand();
-                cmd.Transaction = transaction;
-                cmd.CommandText = $"INSERT OR IGNORE INTO {tempTableName} (Key) VALUES {placeholders};";
-                for (int r = 0; r < count; r++)
-                    cmd.Parameters.AddWithValue($"@k{r}", keys[i + r]);
-                cmd.ExecuteNonQuery();
-            }
-
-            return tempTableName;
-        }
-
-        private static void DeleteChildRowsForKeys(SqliteConnection connection, SqliteTransaction transaction, string table, string parentKeyColumn, IReadOnlyList<string> keys)
-        {
-            if (keys.Count == 0) return;
-
-            var tempTable = PopulateKeyTempTable(connection, transaction, "_DeleteKeys", keys);
-            try
-            {
-                using var deleteCmd = connection.CreateCommand();
-                deleteCmd.Transaction = transaction;
-                deleteCmd.CommandText = $"DELETE FROM {table} WHERE {parentKeyColumn} IN (SELECT Key FROM {tempTable});";
-                deleteCmd.ExecuteNonQuery();
-            }
-            finally
-            {
-                using var dropCmd = connection.CreateCommand();
-                dropCmd.Transaction = transaction;
-                dropCmd.CommandText = $"DROP TABLE {tempTable};";
-                dropCmd.ExecuteNonQuery();
-            }
-        }
-
-        // Marks rows in `table` inactive when their key wasn't among `scannedKeys` — i.e. no currently
-        // active plugin defines/touches them anymore, whether because the whole plugin was removed or
-        // just that one record was dropped from an updated version of it. Verified against a real
-        // SQLite instance before wiring in (temp table + NOT EXISTS, not a giant IN-list, to stay fast
-        // at the tens-of-thousands-of-keys scale this app's scans run at).
-        private static void MarkInactiveExcept(SqliteConnection connection, SqliteTransaction transaction, string table, string keyColumn, IEnumerable<string> scannedKeys, string extraWhere = null)
-        {
-            var keys = scannedKeys.Distinct().ToList();
-            var tempTable = PopulateKeyTempTable(connection, transaction, "_ActiveKeys", keys);
-            try
-            {
-                var where = $"Active = 1 AND NOT EXISTS (SELECT 1 FROM {tempTable} WHERE {tempTable}.Key = {table}.{keyColumn})";
-                if (!string.IsNullOrEmpty(extraWhere))
-                    where += $" AND {extraWhere}";
-
-                using var updateCmd = connection.CreateCommand();
-                updateCmd.Transaction = transaction;
-                updateCmd.CommandText = $"UPDATE {table} SET Active = 0 WHERE {where};";
-                updateCmd.ExecuteNonQuery();
-            }
-            finally
-            {
-                using var dropCmd = connection.CreateCommand();
-                dropCmd.Transaction = transaction;
-                dropCmd.CommandText = $"DROP TABLE {tempTable};";
-                dropCmd.ExecuteNonQuery();
-            }
-        }
-
-        private sealed class ParsedPluginData
-        {
-            public List<object[]> ArmorRows = new();
-            public List<object[]> WeaponRows = new();
-            public List<ParsedCobj> Cobjs = new();
-            public List<ParsedEnchantment> Enchantments = new();
-            public List<ParsedContainer> Containers = new();
-            public List<object[]> MagicEffectRows = new();
-        }
-
-        private sealed class ParsedCobj
-        {
-            public object[] Values;
-            public List<object[]> ConditionRows = new();
-        }
-
-        private sealed class ParsedEnchantment
-        {
-            public object[] Values;
-            public List<object[]> WornRestrictionKeywordRows = new();
-            public List<object[]> EffectRows = new();
-        }
-
-        private sealed class ParsedContainer
-        {
-            public object[] Values;
-            public List<object[]> LvliRows = new();
-        }
-
-        private static readonly string[] ArmorParamNames =
-            { "@key", "@editorID", "@name", "@weight", "@val", "@armorRating", "@slotMask", "@keywords" };
-        private static readonly string[] WeaponParamNames =
-            { "@key", "@editorID", "@name", "@weight", "@val", "@dmg", "@speed", "@reach", "@stagger", "@keywords" };
-        private static readonly string[] CobjParamNames =
-            { "@key", "@name", "@createdItem", "@workbench", "@ingredients" };
-        private static readonly string[] CobjConditionParamNames =
-            { "@cobjKey", "@extra", "@runOn", "@type", "@target", "@value" };
-        private static readonly string[] EnchantmentParamNames =
-            { "@key", "@editorID", "@name", "@cast", "@target", "@cost", "@wrestr" };
-        private static readonly string[] EnchantmentEffectParamNames =
-            { "@ench", "@mgef", "@editorID", "@name", "@mag", "@dur", "@area" };
-        private static readonly string[] WornRestrictionKeywordParamNames = { "@list", "@kw" };
-        private static readonly string[] ContainerParamNames = { "@key", "@name" };
-        private static readonly string[] ContainerLvliParamNames = { "@containerKey", "@lvliKey", "@lvliName" };
-        private static readonly string[] MagicEffectParamNames =
-            { "@key", "@editorID", "@name", "@hasMag", "@hasDur", "@hasAre", "@castType", "@targetType" };
-
-        // Real table column names, in the same order as the matching *ParamNames array above.
-        // Several of the single-row PrepareInsertX commands bind a parameter name that doesn't match
-        // its column name (e.g. column "Value" <- @val, "BodySlotMask" <- @slotMask) — PrepareBatchInsert
-        // needs the actual column names for its generated INSERT column list; deriving them from the
-        // param names (stripping "@") is wrong wherever they differ and was the cause of the
-        // "table Armor has no column named val" crash.
-        private static readonly string[] ArmorColumnNames =
-            { "Key", "EditorID", "Name", "Weight", "Value", "ArmorRating", "BodySlotMask", "Keywords" };
-        private static readonly string[] WeaponColumnNames =
-            { "Key", "EditorID", "Name", "Weight", "Value", "Damage", "Speed", "Reach", "Stagger", "Keywords" };
-        private static readonly string[] CobjColumnNames =
-            { "Key", "Name", "CreatedItem", "WorkbenchKeyword", "Ingredients" };
-        private static readonly string[] CobjConditionColumnNames =
-            { "COBJKey", "Extra", "RunOn", "ConditionType", "Target", "Value" };
-        private static readonly string[] EnchantmentColumnNames =
-            { "Key", "EditorID", "Name", "CastType", "TargetType", "EnchantmentCost", "WornRestrictionListKey" };
-        private static readonly string[] EnchantmentEffectColumnNames =
-            { "EnchantmentKey", "MagicEffectKey", "EditorID", "Name", "Magnitude", "Duration", "Area" };
-        private static readonly string[] WornRestrictionKeywordColumnNames = { "ListKey", "KeywordKey" };
-        private static readonly string[] ContainerColumnNames = { "ContainerKey", "Name" };
-        private static readonly string[] ContainerLvliColumnNames = { "ContainerKey", "LVLiKey", "LVLiName" };
-        private static readonly string[] MagicEffectColumnNames =
-            { "Key", "EditorID", "Name", "HasMagnitude", "HasDuration", "HasArea", "CastType", "TargetType" };
-
-        private static void ApplyRowAndExecute(SqliteCommand cmd, string[] paramNames, object[] values)
-        {
-            for (int i = 0; i < paramNames.Length; i++)
-                cmd.Parameters[paramNames[i]].Value = values[i] ?? DBNull.Value;
-            cmd.ExecuteNonQuery();
-        }
-
-        // Rows per batch statement. Bounded so that even the widest table (Weapon, 10 columns) stays
-        // at 900 bound parameters — comfortably under SQLite's historical 999 host-parameter limit —
-        // and 90 rows is well under the ~500-row limit for a multi-row VALUES list.
-        private const int BatchSize = 90;
-
-        // Plain multi-row INSERT (no OR REPLACE / no ON CONFLICT) for the 4 child tables
-        // (COBJ_Conditions/EnchantmentEffects/WornRestrictionKeywords/ContainerLVLI). PutIntoDataBank
-        // always DELETEs the parent keys it's about to rewrite children for first (see
-        // DeleteChildRowsForKeys), so a plain insert never conflicts — and if it somehow did, that
-        // would mean a real bug, which a plain INSERT surfaces as an error instead of silently
-        // replacing/duplicating rows the way "OR REPLACE" used to.
-        private static SqliteCommand PrepareInsertBatch(SqliteConnection connection, string table, string[] columnNames, string[] paramNames, int batchSize)
-        {
-            var columns = string.Join(", ", columnNames);
-
-            var rowGroups = new string[batchSize];
-            for (int r = 0; r < batchSize; r++)
-                rowGroups[r] = "(" + string.Join(", ", paramNames.Select(p => $"{p}_{r}")) + ")";
-
-            var cmd = connection.CreateCommand();
-            cmd.CommandText = $"INSERT INTO {table} ({columns}) VALUES {string.Join(", ", rowGroups)}";
-
-            for (int r = 0; r < batchSize; r++)
-                foreach (var p in paramNames)
-                    cmd.Parameters.Add(new SqliteParameter($"{p}_{r}", DBNull.Value));
-
-            return cmd;
-        }
-
-        // Multi-row UPSERT for the 6 "parent" tables (Armor/Weapons/COBJ/Enchantments/Container/
-        // MagicEffects) — columnNames/paramNames only ever list the scanned base columns (never
-        // IsEdited*/Original/*Edited), so the ON CONFLICT DO UPDATE clause built from them can never
-        // touch those columns. That's the whole point: a rescan updates the plugin-derived data and
-        // flips Active back to 1, but never overwrites a user's manual edits. columnNames[0] is always
-        // that table's natural key (Key, or ContainerKey for Container) and is used as the conflict
-        // target. Verified against a real SQLite instance (3.49.1, same as this app) before wiring in.
-        private static SqliteCommand PrepareUpsertBatch(SqliteConnection connection, string table, string[] columnNames, string[] paramNames, int batchSize)
-        {
-            var columns = string.Join(", ", columnNames) + ", Active";
-            var updateSet = string.Join(", ", columnNames.Skip(1).Select(c => $"{c} = excluded.{c}")) + ", Active = 1";
-
-            var rowGroups = new string[batchSize];
-            for (int r = 0; r < batchSize; r++)
-                rowGroups[r] = "(" + string.Join(", ", paramNames.Select(p => $"{p}_{r}")) + ", 1)";
-
-            var cmd = connection.CreateCommand();
-            cmd.CommandText =
-                $"INSERT INTO {table} ({columns}) VALUES {string.Join(", ", rowGroups)} " +
-                $"ON CONFLICT({columnNames[0]}) DO UPDATE SET {updateSet}";
-
-            for (int r = 0; r < batchSize; r++)
-                foreach (var p in paramNames)
-                    cmd.Parameters.Add(new SqliteParameter($"{p}_{r}", DBNull.Value));
-
-            return cmd;
-        }
-
-        // Writes `rows` using `batchCmd` (BatchSize rows per ExecuteNonQuery) for as many full
-        // batches as fit, then falls back to `singleCmd` (the plain one-row-per-call command) for
-        // the remainder — avoids re-preparing a differently-sized batch statement for the tail.
-        private static void ExecuteRowsBatched(SqliteCommand singleCmd, SqliteCommand batchCmd, string[] paramNames, List<object[]> rows, int batchSize)
-        {
-            int i = 0;
-            for (; i + batchSize <= rows.Count; i += batchSize)
-            {
-                for (int r = 0; r < batchSize; r++)
-                {
-                    var row = rows[i + r];
-                    for (int c = 0; c < paramNames.Length; c++)
-                        batchCmd.Parameters[$"{paramNames[c]}_{r}"].Value = row[c] ?? DBNull.Value;
-                }
-                batchCmd.ExecuteNonQuery();
-            }
-
-            for (; i < rows.Count; i++)
-                ApplyRowAndExecute(singleCmd, paramNames, rows[i]);
-        }
-
-        // Pure parsing — no DB access — so this is safe to call concurrently from Parallel.ForEach.
-        // Mirrors the original single-threaded loop body exactly, just capturing values into rows
-        // instead of writing straight to a shared SqliteCommand's parameters.
-        private ParsedPluginData ParsePluginForItemDB(string pluginName, string fullPath)
-        {
-            var result = new ParsedPluginData();
-            var mod = SkyrimMod.CreateFromBinaryOverlay(fullPath, SkyrimRelease.SkyrimSE);
-
-            // ARMOR
-            foreach (var armor in mod.Armors.Records)
-            {
-                string key = KeyFactory.BuildMasterKey(armor.FormKey);
-
-                // BodySlotMask (bitmask) — direct typed access, no reflection
-                uint slotMask = (uint)(armor.BodyTemplate?.FirstPersonFlags ?? 0);
-
-                var kw = (armor.Keywords?
-                    .Select(k =>
-                    {
-                        var fk = k.FormKey;
-                        return $"{fk.ModKey.FileName}|{fk.IDString()}";
-                    })
-                    ?? Enumerable.Empty<string>())
-                    .ToList();
-
-                // Override-order trace, disabled — re-enable (and adjust the keyword suffixes) if a
-                // similar load-order investigation is needed again.
-                //if (kw.Any(k => k.EndsWith("6BBD9", StringComparison.OrdinalIgnoreCase)
-                //              || k.EndsWith("6BBE6", StringComparison.OrdinalIgnoreCase)))
-                //{
-                //    Debug.WriteLine($"[TRACE Armor] plugin={pluginName} key={key} editorID={armor.EditorID} keywords={string.Join(",", kw)}");
-                //}
-
-                result.ArmorRows.Add(new object[]
-                {
-                    key,
-                    armor.EditorID ?? "",
-                    armor.Name?.ToString() ?? "",
-                    (float?)armor.Weight ?? 0f,
-                    (int?)armor.Value ?? 0,
-                    (float?)armor.ArmorRating ?? 0f,
-                    (long)slotMask,
-                    string.Join(",", kw)
-                });
-            }
-
-            // WEAPONS
-            foreach (var weap in mod.Weapons.Records)
-            {
-                string key = KeyFactory.BuildMasterKey(weap.FormKey);
-
-                var kw = weap.Keywords?
-                    .Select(k =>
-                    {
-                        var fk = k.FormKey;
-                        return $"{fk.ModKey.FileName}|{fk.IDString()}";
-                    })
-                    ?? Enumerable.Empty<string>();
-
-                result.WeaponRows.Add(new object[]
-                {
-                    key,
-                    weap.EditorID ?? "",
-                    weap.Name?.ToString() ?? "",
-                    (weap.BasicStats?.Weight) ?? 0f,
-                    (int?)weap.BasicStats?.Value ?? 0,
-                    weap.BasicStats?.Damage ?? 0,
-                    weap.Data?.Speed ?? 0f,
-                    weap.Data?.Reach ?? 0f,
-                    weap.Data?.Stagger ?? 0f,
-                    string.Join(",", kw)
-                });
-            }
-
-            // COBJ
-            foreach (var cobj in mod.ConstructibleObjects.Records)
-            {
-                string key = KeyFactory.BuildMasterKey(cobj.FormKey);
-                string createdKey = KeyFactory.BuildMasterKey(cobj.CreatedObject.FormKey);
-
-                string workbench = "";
-                if (cobj.WorkbenchKeyword != null)
-                {
-                    var fk = cobj.WorkbenchKeyword.FormKey;
-                    workbench = $"{fk.ModKey.FileName}|{fk.IDString()}";
-                }
-
-                var ingredients = cobj.Items?
-                    .Select(e =>
-                    {
-                        var fk = e.Item.Item.FormKey;
-                        return $"{fk.ModKey.FileName}|{fk.IDString()}*{e.Item.Count}";
-                    })
-                    ?? Enumerable.Empty<string>();
-
-                var parsedCobj = new ParsedCobj
-                {
-                    Values = new object[] { key, cobj.EditorID ?? "", createdKey, workbench, string.Join(",", ingredients) }
-                };
-
-                // --------------------------------
-                // Conditions → COBJ_Conditions
-                // --------------------------------
-                foreach (var cond in cobj.Conditions)
-                {
-                    // ConditionFloat compares against a fixed float value, ConditionGlobal compares
-                    // against a Global. Both get produced by ESP/ESL/ESM files, so we need to read
-                    // both. When reading from plugin files, Mutagen returns overlay types (e.g.
-                    // ConditionFloatBinaryOverlay) that only implement the getter interfaces, not the
-                    // concrete classes. So match against the interfaces instead of against
-                    // ConditionFloat/ConditionGlobal.
-                    IConditionDataGetter data;
-                    string comparisonValue;
-
-                    if (cond is IConditionFloatGetter cf)
-                    {
-                        data = cf.Data;
-                        comparisonValue = cf.ComparisonValue.ToString();
-                    }
-                    else if (cond is IConditionGlobalGetter cg)
-                    {
-                        data = cg.Data;
-                        var globalFk = cg.ComparisonValue.FormKey;
-                        comparisonValue = !globalFk.IsNull
-                            ? $"{globalFk.ModKey.FileName}|{globalFk.IDString()}"
-                            : "";
-                    }
-                    else
-                    {
-                        Debug.WriteLine($"Unknown condition type: {cond.GetType().Name}");
-                        continue;
-                    }
-
-                    string extra = ""; // currently unused
-                    string runOn = data.RunOnType.ToString();
-
-                    // HasPerk
-                    if (data is IHasPerkConditionDataGetter perkData)
-                    {
-                        var perkItem = perkData.Perk;
-                        string target = "";
-
-                        if (perkItem.UsesLink())
-                        {
-                            var fk = perkItem.Link.FormKey;
-                            target = $"{fk.ModKey.FileName}|{fk.IDString()}";
-                        }
-
-                        parsedCobj.ConditionRows.Add(new object[] { key, extra, runOn, "HasPerk", target, comparisonValue });
-                        continue;
-                    }
-
-                    // GetIsSex
-                    if (data is IGetIsSexConditionDataGetter sexData)
-                    {
-                        string target = sexData.MaleFemaleGender.ToString(); // Male / Female
-                        parsedCobj.ConditionRows.Add(new object[] { key, extra, runOn, "GetIsSex", target, comparisonValue }); // sollte 1 sein
-                        continue;
-                    }
-
-                    // GetActorValue
-                    if (data is IGetActorValueConditionDataGetter avData)
-                    {
-                        string target = avData.ActorValue.ToString();
-                        parsedCobj.ConditionRows.Add(new object[] { key, extra, runOn, "GetActorValue", target, comparisonValue });
-                        continue;
-                    }
-
-                    // GetLevel
-                    if (data is IGetLevelConditionDataGetter)
-                    {
-                        parsedCobj.ConditionRows.Add(new object[] { key, extra, runOn, "GetLevel", "", comparisonValue }); // no Target
-                        continue;
-                    }
-
-                    // GetStageDone
-                    if (data is IGetStageDoneConditionDataGetter stageData)
-                    {
-                        string target = "";
-                        if (stageData.Quest.UsesLink())
-                        {
-                            var fk = stageData.Quest.Link.FormKey;
-                            target = $"{fk.ModKey.FileName}|{fk.IDString()}";
-                        }
-
-                        parsedCobj.ConditionRows.Add(new object[] { key, extra, runOn, "GetStageDone", target, stageData.Stage.ToString() });
-                        continue;
-                    }
-                }
-
-                result.Cobjs.Add(parsedCobj);
-            }
-
-            // ENCHANTMENTS
-            foreach (var ench in mod.ObjectEffects.Records)
-            {
-                string enchKey = $"{pluginName}|{ench.FormKey.IDString()}";
-                var parsedEnch = new ParsedEnchantment();
-
-                // WornRestrictions (FLST)
-                string listKey = "";
-                if (ench.WornRestrictions != null)
-                {
-                    var fk = ench.WornRestrictions.FormKey;
-                    listKey = $"{fk.ModKey.FileName}|{fk.IDString()}";
-
-                    if (mod.FormLists.TryGetValue(fk, out var flst))
-                    {
-                        foreach (var entry in flst.Items)
-                        {
-                            var kwfk = entry.FormKey;
-                            string kwKey = $"{kwfk.ModKey.FileName}|{kwfk.IDString()}";
-                            parsedEnch.WornRestrictionKeywordRows.Add(new object[] { listKey, kwKey });
-                        }
-                    }
-                }
-
-                parsedEnch.Values = new object[]
-                {
-                    enchKey,
-                    ench.EditorID ?? "",
-                    ench.Name?.ToString() ?? "",
-                    ench.CastType.ToString(),
-                    ench.TargetType.ToString(),
-                    (float)ench.EnchantmentCost,
-                    listKey
-                };
-
-                // Effects
-                foreach (var eff in ench.Effects)
-                {
-                    var fk = eff.BaseEffect.FormKey;
-                    string mgefKey = $"{fk.ModKey.FileName}|{fk.IDString()}";
-
-                    string editorid = "";
-                    string name = "";
-
-                    // MagicEffect
-                    if (mod.MagicEffects.TryGetValue(fk, out var magicEffect))
-                    {
-                        editorid = magicEffect.EditorID ?? "";
-                        name = magicEffect.Name?.ToString() ?? "";
-                    }
-
-                    parsedEnch.EffectRows.Add(new object[]
-                    {
-                        enchKey, mgefKey, editorid, name,
-                        eff.Data?.Magnitude ?? 0,
-                        eff.Data?.Duration ?? 0,
-                        eff.Data?.Area ?? 0
-                    });
-                }
-
-                result.Enchantments.Add(parsedEnch);
-            }
-
-            // CONTAINER + LVLI
-            foreach (var container in mod.Containers.Records)
-            {
-                string containerKey = KeyFactory.BuildMasterKey(container.FormKey);
-                var parsedContainer = new ParsedContainer
-                {
-                    Values = new object[] { containerKey, container.EditorID ?? "" }
-                };
-
-                // LVLI inside Container
-                if (container.Items != null)
-                {
-                    foreach (var entry in container.Items)
-                    {
-                        var fk = entry.Item.Item.FormKey;
-                        string lvliKey = KeyFactory.BuildMasterKey(fk);
-
-                        // Check whether the LVLI exists
-                        var lvliRecord = _formIDDB.GetByKey(lvliKey);
-                        if (lvliRecord != null && lvliRecord.Type == "LVLi")
-                        {
-                            parsedContainer.LvliRows.Add(new object[] { containerKey, lvliKey, lvliRecord.Name });
-                        }
-                    }
-                }
-
-                result.Containers.Add(parsedContainer);
-            }
-
-            // MAGIC EFFECTS
-            foreach (var mgef in mod.MagicEffects.Records)
-            {
-                string mgefKey = $"{pluginName}|{mgef.FormKey.IDString()}";
-
-                bool hasMagnitude = !mgef.Flags.HasFlag(MagicEffect.Flag.NoMagnitude);
-                bool hasDuration = !mgef.Flags.HasFlag(MagicEffect.Flag.NoDuration);
-                int hasArea = (mgef.TargetType == TargetType.Aimed || mgef.TargetType == TargetType.TargetLocation) ? 1 : 0;
-
-                result.MagicEffectRows.Add(new object[]
-                {
-                    mgefKey,
-                    mgef.EditorID ?? "",
-                    mgef.Name?.ToString() ?? "",
-                    hasMagnitude ? 1 : 0,
-                    hasDuration ? 1 : 0,
-                    hasArea,
-                    mgef.CastType.ToString(),
-                    mgef.TargetType.ToString()
-                });
-            }
-
-            return result;
-        }
-        public struct ParsedIngredient
-        {
-            public string Plugin;
-            public string FormID;
-            public int Count;
-        }
-        public static ParsedIngredient ParseIngredient(string raw)
-        {
-            // raw = "Skyrim.esm|05ACE5*2"
-
-            var parts = raw.Split('*');
-            string key = parts[0];          // "Skyrim.esm|05ACE5"
-            int count = parts.Length > 1 ? int.Parse(parts[1]) : 1;
-
-            var keyParts = key.Split('|');
-            string plugin = keyParts[0];
-            string formID = keyParts[1];
-
-            return new ParsedIngredient
-            {
-                Plugin = plugin,
-                FormID = formID,
-                Count = count
-            };
-        }
-
-        // CreateTables() only CREATE TABLE IF NOT EXISTS's; this method ALTER TABLEs in any column
-        // a table is still missing, via ADD COLUMN with a DEFAULT. Idempotent, safe on every scan —
-        // deliberately not a DROP+rebuild, since that would wipe every IsEdited*/Original value (the
-        // only place manual user edits live) and destroy user-created COBJ recipes (Original=0,
-        // never present in any scanned plugin) on every single rescan.
-        private static void EnsureSchema(SqliteConnection connection)
-        {
-            AddColumnIfMissing(connection, "Armor", "Active", "INTEGER NOT NULL DEFAULT 1");
-            AddColumnIfMissing(connection, "Weapons", "Active", "INTEGER NOT NULL DEFAULT 1");
-            AddColumnIfMissing(connection, "COBJ", "Active", "INTEGER NOT NULL DEFAULT 1");
-            AddColumnIfMissing(connection, "COBJ", "ConditionsEdited", "INTEGER NOT NULL DEFAULT 0");
-            AddColumnIfMissing(connection, "Enchantments", "Active", "INTEGER NOT NULL DEFAULT 1");
-            AddColumnIfMissing(connection, "Enchantments", "EffectsEdited", "INTEGER NOT NULL DEFAULT 0");
-            AddColumnIfMissing(connection, "Enchantments", "KeywordsEdited", "INTEGER NOT NULL DEFAULT 0");
-            AddColumnIfMissing(connection, "Container", "Active", "INTEGER NOT NULL DEFAULT 1");
-            AddColumnIfMissing(connection, "MagicEffects", "Active", "INTEGER NOT NULL DEFAULT 1");
-
-            // LastChanged/LastPatched are only meaningful on the 4 tables with live IsEdited* tracking.
-            // LastChanged is set by every user-edit write path (UpdateField, SaveCOBJConditions,
-            // SaveEnchantmentEffects, SaveWornRestrictionKeywords, CreateNewCOBJRecordForItem) and is
-            // deliberately excluded from the UPSERT column lists below so a rescan never touches it.
-            // LastPatched is a schema placeholder for a future patch-export feature — not written yet.
-            foreach (var table in new[] { "Armor", "Weapons", "COBJ", "Enchantments" })
-            {
-                AddColumnIfMissing(connection, table, "LastChanged", "TEXT");
-                AddColumnIfMissing(connection, table, "LastPatched", "TEXT");
-            }
-
-            // ContainerString used to be written directly to the base column (UpdateArmor/
-            // WeaponContainerString), bypassing the shadow-column protection every other editable
-            // field has — it never set IsEdited/LastChanged, so a container assignment alone never
-            // marked the item as "edited" and Import/Export silently never saw it. Brought in line
-            // with the rest of Armor/Weapons here.
-            AddColumnIfMissing(connection, "Armor", "IsEditedContainerString", "TEXT");
-            AddColumnIfMissing(connection, "Weapons", "IsEditedContainerString", "TEXT");
-        }
-
-        private static void AddColumnIfMissing(SqliteConnection connection, string table, string column, string columnDefSql)
-        {
-            // sqlite_master only has an entry for a table once it exists — on a brand-new DB file,
-            // CreateTables() (called right after this) creates it with the column already present, so
-            // there's nothing to migrate and this is a safe no-op.
-            using (var existsCmd = connection.CreateCommand())
-            {
-                existsCmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=@table;";
-                existsCmd.Parameters.AddWithValue("@table", table);
-                if (Convert.ToInt64(existsCmd.ExecuteScalar()) == 0)
-                    return;
-            }
-
-            using (var pragmaCmd = connection.CreateCommand())
-            {
-                pragmaCmd.CommandText = $"PRAGMA table_info({table});";
-                using var reader = pragmaCmd.ExecuteReader();
-                while (reader.Read())
-                {
-                    // column 1 = column name
-                    if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
-                        return;
-                }
-            }
-
-            using var alterCmd = connection.CreateCommand();
-            alterCmd.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {columnDefSql};";
-            alterCmd.ExecuteNonQuery();
-        }
-
-        private void CreateTables(SqliteConnection connection)
-        {
-            using var cmd = connection.CreateCommand();
-            cmd.CommandText =
-            @"
-                CREATE TABLE IF NOT EXISTS Armor (
-                    Key TEXT PRIMARY KEY,
-                    EditorID TEXT NOT NULL,
-                    Name TEXT,
-                    Weight REAL,
-                    Value INTEGER,
-                    ArmorRating REAL,
-                    BodySlotMask INTEGER,
-                    Keywords TEXT,
-                    ContainerString TEXT,
-
-                    IsEditedName Text,
-                    IsEditedWeight REAL,
-                    IsEditedValue INTEGER,
-                    IsEditedArmorRating REAL,
-                    IsEditedBodySlotMask INTEGER,
-                    IsEditedKeywords TEXT,
-                    IsEditedContainerString TEXT,
-
-                    IsEdited INTEGER DEFAULT 0,
-                    Active INTEGER NOT NULL DEFAULT 1,
-                    LastChanged TEXT,
-                    LastPatched TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS Weapons (
-                    Key TEXT PRIMARY KEY,
-                    EditorID TEXT NOT NULL,
-                    Name TEXT,
-                    Weight REAL,
-                    Value INTEGER,
-                    Damage INTEGER,
-                    Speed REAL,
-                    Reach REAL,
-                    Stagger REAL,
-                    Keywords TEXT,
-                    ContainerString TEXT,
-
-                    IsEditedName Text,
-                    IsEditedWeight REAL,
-                    IsEditedValue INTEGER,
-                    IsEditedDamage INTEGER,
-                    IsEditedSpeed REAL,
-                    IsEditedReach REAL,
-                    IsEditedStagger REAL,
-                    IsEditedKeywords TEXT,
-                    IsEditedContainerString TEXT,
-
-                    IsEdited INTEGER DEFAULT 0,
-                    Active INTEGER NOT NULL DEFAULT 1,
-                    LastChanged TEXT,
-                    LastPatched TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS COBJ (
-                    Key TEXT PRIMARY KEY,
-                    Original INTEGER NOT NULL DEFAULT 1,
-                    Name TEXT NOT NULL,
-                    CreatedItem TEXT NOT NULL,
-                    WorkbenchKeyword TEXT,
-                    Ingredients TEXT,
-
-                    IsEditedName TEXT,
-                    IsEditedCreatedItem TEXT,
-                    IsEditedWorkbenchKeyword TEXT,
-                    IsEditedIngredients TEXT,
-
-                    IsEdited INTEGER DEFAULT 0,
-                    Active INTEGER NOT NULL DEFAULT 1,
-                    ConditionsEdited INTEGER NOT NULL DEFAULT 0,
-                    LastChanged TEXT,
-                    LastPatched TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS COBJ_Conditions (
-                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    COBJKey TEXT NOT NULL,
-                    ConditionType TEXT NOT NULL,
-
-                    Target TEXT,
-                    Value TEXT,
-                    Extra TEXT,
-                    RunOn TEXT,
-
-                    IsEditedTarget TEXT,
-                    IsEditedValue TEXT,
-                    IsEditedExtra TEXT,
-                    IsEditedRunOn TEXT,
-
-                    IsEdited INTEGER DEFAULT 0,
-
-                    FOREIGN KEY (COBJKey) REFERENCES COBJ(Key)
-                );
-
-                -- Lazily-populated, permanently-frozen snapshot of a COBJ's conditions as they
-                -- looked right before the first user edit (see SaveCOBJConditions) - COBJ_Conditions
-                -- itself is destructively DELETE+INSERTed on every save, so there is nothing else to
-                -- revert to once the user has edited a condition. No Id/IsEdited* columns: this table
-                -- is only ever bulk-replaced per COBJKey, never updated in place.
-                CREATE TABLE IF NOT EXISTS COBJ_Conditions_Original (
-                    COBJKey TEXT NOT NULL,
-                    ConditionType TEXT NOT NULL,
-                    Target TEXT,
-                    Value TEXT,
-                    Extra TEXT,
-                    RunOn TEXT
-                );
-
-
-                CREATE TABLE IF NOT EXISTS Enchantments (
-                    Key TEXT PRIMARY KEY,
-                    EditorID TEXT NOT NULL,
-                    Name TEXT,
-                    CastType TEXT,
-                    TargetType TEXT,
-                    EnchantmentCost REAL,
-                    WornRestrictionListKey TEXT,
-
-                    IsEditedName TEXT,
-                    IsEditedCastType TEXT,
-                    IsEditedTargetType TEXT,
-                    IsEditedEnchantmentCost REAL,
-                    IsEditedWornRestrictionListKey TEXT,
-
-                    IsEdited INTEGER DEFAULT 0,
-                    Active INTEGER NOT NULL DEFAULT 1,
-                    EffectsEdited INTEGER NOT NULL DEFAULT 0,
-                    KeywordsEdited INTEGER NOT NULL DEFAULT 0,
-                    LastChanged TEXT,
-                    LastPatched TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS EnchantmentEffects (
-                    EnchantmentKey TEXT NOT NULL,
-                    MagicEffectKey TEXT NOT NULL,
-                    EditorID TEXT,
-                    Name TEXT,
-                    Magnitude REAL,
-                    Duration INTEGER,
-                    Area INTEGER,
-
-                    IsEditedMagnitude REAL,
-                    IsEditedDuration INTEGER,
-                    IsEditedArea INTEGER,
-
-                    IsEdited INTEGER DEFAULT 0,
-
-                    PRIMARY KEY (EnchantmentKey, MagicEffectKey)
-                );
-
-                -- Same lazy-snapshot pattern as COBJ_Conditions_Original - see that table's comment.
-                CREATE TABLE IF NOT EXISTS EnchantmentEffects_Original (
-                    EnchantmentKey TEXT NOT NULL,
-                    MagicEffectKey TEXT NOT NULL,
-                    EditorID TEXT,
-                    Name TEXT,
-                    Magnitude REAL,
-                    Duration INTEGER,
-                    Area INTEGER
-                );
-
-                CREATE TABLE IF NOT EXISTS WornRestrictionKeywords (
-                    ListKey TEXT NOT NULL,
-                    KeywordKey TEXT NOT NULL,
-
-                    IsEditedKeywordKey TEXT,
-
-                    IsEdited INTEGER DEFAULT 0,
-
-                    PRIMARY KEY (ListKey, KeywordKey)
-                );
-
-                -- Same lazy-snapshot pattern as COBJ_Conditions_Original - see that table's comment.
-                CREATE TABLE IF NOT EXISTS WornRestrictionKeywords_Original (
-                    ListKey TEXT NOT NULL,
-                    KeywordKey TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS Container (
-                    ContainerKey TEXT PRIMARY KEY,
-                    Name TEXT NOT NULL,
-                    Active INTEGER NOT NULL DEFAULT 1
-                );
-
-                CREATE TABLE IF NOT EXISTS ContainerLVLI (
-                    ContainerKey TEXT NOT NULL,
-                    LVLiKey TEXT NOT NULL,
-                    LVLiName TEXT,
-                    PRIMARY KEY (ContainerKey, LVLiKey)
-                );
-
-                CREATE TABLE IF NOT EXISTS MagicEffects (
-                    Key TEXT PRIMARY KEY,
-                    EditorID TEXT,
-                    Name TEXT NOT NULL,
-                    HasMagnitude INTEGER,
-                    HasDuration INTEGER,
-                    HasArea INTEGER,
-                    CastType TEXT,
-                    TargetType TEXT,
-                    Active INTEGER NOT NULL DEFAULT 1
-                );
-            ";
-            cmd.ExecuteNonQuery();
-
-        }
-
-        // Single-row UPSERT for the 6 "parent" tables — same semantics as PrepareUpsertBatch, used
-        // for the tail of rows that doesn't fill a full batch. Driven by the same ColumnNames/
-        // ParamNames arrays as the batch versions, so there's exactly one place that knows each
-        // table's real columns (an "INSERT OR REPLACE" here would delete+reinsert the whole row,
-        // wiping IsEdited*/Original on every conflict).
-        private static SqliteCommand PrepareUpsert(SqliteConnection connection, string table, string[] columnNames, string[] paramNames)
-        {
-            var columns = string.Join(", ", columnNames) + ", Active";
-            var values = string.Join(", ", paramNames) + ", 1";
-            var updateSet = string.Join(", ", columnNames.Skip(1).Select(c => $"{c} = excluded.{c}")) + ", Active = 1";
-
-            var cmd = connection.CreateCommand();
-            cmd.CommandText =
-                $"INSERT INTO {table} ({columns}) VALUES ({values}) " +
-                $"ON CONFLICT({columnNames[0]}) DO UPDATE SET {updateSet}";
-
-            foreach (var p in paramNames)
-                cmd.Parameters.Add(new SqliteParameter(p, DBNull.Value));
-
-            return cmd;
-        }
-
-        // Single-row plain INSERT for the 4 child tables — see PrepareInsertBatch for why "plain"
-        // (no OR REPLACE) is correct here: callers always DELETE the relevant parent keys' rows first.
-        private static SqliteCommand PrepareInsert(SqliteConnection connection, string table, string[] columnNames, string[] paramNames)
-        {
-            var columns = string.Join(", ", columnNames);
-            var values = string.Join(", ", paramNames);
-
-            var cmd = connection.CreateCommand();
-            cmd.CommandText = $"INSERT INTO {table} ({columns}) VALUES ({values})";
-
-            foreach (var p in paramNames)
-                cmd.Parameters.Add(new SqliteParameter(p, DBNull.Value));
-
-            return cmd;
-        }
 
         // ============================
         //        LOAD FROM DB
@@ -1632,7 +456,9 @@ namespace SkyrimCraftingTool.Model
                     CASE WHEN IsEdited = 1 AND IsEditedRunOn IS NOT NULL 
                          THEN IsEditedRunOn
                          ELSE RunOn 
-                    END AS RunOn
+                    END AS RunOn,
+                    CompareOperator,
+                    Flags
                 FROM COBJ_Conditions;";
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
@@ -1644,7 +470,9 @@ namespace SkyrimCraftingTool.Model
                     Target = reader.IsDBNull(2) ? "" : reader.GetString(2),
                     Value = reader.IsDBNull(3) ? "" : reader.GetString(3),
                     Extra = reader.IsDBNull(4) ? "" : reader.GetString(4),
-                    RunOn = reader.IsDBNull(5) ? "" : reader.GetString(5)
+                    RunOn = reader.IsDBNull(5) ? "" : reader.GetString(5),
+                    CompareOperator = reader.IsDBNull(6) ? "" : reader.GetString(6),
+                    Flags = reader.IsDBNull(7) ? "" : reader.GetString(7)
                 });
             }
             return list;
@@ -1691,8 +519,8 @@ namespace SkyrimCraftingTool.Model
                 {
                     using var snapshotCmd = connection.CreateCommand();
                     snapshotCmd.Transaction = transaction;
-                    snapshotCmd.CommandText = @"INSERT INTO COBJ_Conditions_Original (COBJKey, ConditionType, Target, Value, Extra, RunOn)
-                                                 SELECT COBJKey, ConditionType, Target, Value, Extra, RunOn
+                    snapshotCmd.CommandText = @"INSERT INTO COBJ_Conditions_Original (COBJKey, ConditionType, Target, Value, Extra, RunOn, CompareOperator, Flags)
+                                                 SELECT COBJKey, ConditionType, Target, Value, Extra, RunOn, CompareOperator, Flags
                                                  FROM COBJ_Conditions WHERE COBJKey = @cobjKey";
                     snapshotCmd.Parameters.AddWithValue("@cobjKey", cobjKey);
                     snapshotCmd.ExecuteNonQuery();
@@ -1720,6 +548,8 @@ namespace SkyrimCraftingTool.Model
                     insertCmd.Parameters["@value"].Value = cond.Value ?? "";
                     insertCmd.Parameters["@extra"].Value = cond.Extra ?? "";
                     insertCmd.Parameters["@runOn"].Value = cond.RunOn ?? "";
+                    insertCmd.Parameters["@op"].Value = cond.CompareOperator ?? "";
+                    insertCmd.Parameters["@flags"].Value = cond.Flags ?? "";
                     insertCmd.ExecuteNonQuery();
                 }
             }
@@ -1771,7 +601,7 @@ namespace SkyrimCraftingTool.Model
 
             var table = conditionsEdited ? "COBJ_Conditions_Original" : "COBJ_Conditions";
             using var cmd = connection.CreateCommand();
-            cmd.CommandText = $"SELECT ConditionType, Target, Value, Extra, RunOn FROM {table} WHERE COBJKey = @key";
+            cmd.CommandText = $"SELECT ConditionType, Target, Value, Extra, RunOn, CompareOperator, Flags FROM {table} WHERE COBJKey = @key";
             cmd.Parameters.AddWithValue("@key", cobjKey);
 
             using var reader = cmd.ExecuteReader();
@@ -1785,6 +615,8 @@ namespace SkyrimCraftingTool.Model
                     Value = reader.IsDBNull(2) ? "" : reader.GetString(2),
                     Extra = reader.IsDBNull(3) ? "" : reader.GetString(3),
                     RunOn = reader.IsDBNull(4) ? "" : reader.GetString(4),
+                    CompareOperator = reader.IsDBNull(5) ? "" : reader.GetString(5),
+                    Flags = reader.IsDBNull(6) ? "" : reader.GetString(6),
                 });
             }
             return list;
@@ -1824,8 +656,8 @@ namespace SkyrimCraftingTool.Model
                 using (var restoreCmd = connection.CreateCommand())
                 {
                     restoreCmd.Transaction = transaction;
-                    restoreCmd.CommandText = @"INSERT INTO COBJ_Conditions (COBJKey, ConditionType, Target, Value, Extra, RunOn)
-                                                SELECT COBJKey, ConditionType, Target, Value, Extra, RunOn
+                    restoreCmd.CommandText = @"INSERT INTO COBJ_Conditions (COBJKey, ConditionType, Target, Value, Extra, RunOn, CompareOperator, Flags)
+                                                SELECT COBJKey, ConditionType, Target, Value, Extra, RunOn, CompareOperator, Flags
                                                 FROM COBJ_Conditions_Original WHERE COBJKey = @key";
                     restoreCmd.Parameters.AddWithValue("@key", cobjKey);
                     restoreCmd.ExecuteNonQuery();
@@ -1897,10 +729,18 @@ namespace SkyrimCraftingTool.Model
                          THEN IsEditedEnchantmentCost
                          ELSE EnchantmentCost 
                     END AS EnchantmentCost,
-                    CASE WHEN IsEdited = 1 AND IsEditedWornRestrictionListKey IS NOT NULL 
+                    CASE WHEN IsEdited = 1 AND IsEditedWornRestrictionListKey IS NOT NULL
                          THEN IsEditedWornRestrictionListKey
-                         ELSE WornRestrictionListKey 
-                    END AS WornRestrictionListKey
+                         ELSE WornRestrictionListKey
+                    END AS WornRestrictionListKey,
+                    -- Read-only scan value (no shadow column) — drives the derived tree tag + filter.
+                    BaseEnchantmentKey,
+                    -- Currently-edited, NOT ever-touched: the flags are cleared by the reset paths,
+                    -- whereas LastChanged is left non-null by them. E3: KeywordsEdited dropped — a
+                    -- worn-restriction-list content edit marks the LIST (WornRestrictionListState),
+                    -- not the enchantments pointing at it.
+                    CASE WHEN IsEdited = 1 OR EffectsEdited = 1
+                         THEN 1 ELSE 0 END AS IsEditedFlag
                 FROM Enchantments WHERE Active = 1;";
 
             using var reader = cmd.ExecuteReader();
@@ -1914,7 +754,9 @@ namespace SkyrimCraftingTool.Model
                     CastType = reader.IsDBNull(3) ? "" : reader.GetString(3),
                     TargetType = reader.IsDBNull(4) ? "" : reader.GetString(4),
                     EnchantmentCost = reader.IsDBNull(5) ? 0f : (float)reader.GetDouble(5),
-                    WornRestrictionListKey = reader.IsDBNull(6) ? "" : reader.GetString(6)
+                    WornRestrictionListKey = reader.IsDBNull(6) ? "" : reader.GetString(6),
+                    BaseEnchantmentKey = reader.IsDBNull(7) ? "" : reader.GetString(7),
+                    IsEdited = !reader.IsDBNull(8) && reader.GetInt64(8) == 1,
                 });
             }
 
@@ -2148,13 +990,14 @@ namespace SkyrimCraftingTool.Model
             // 3. load keyword
             var wornKeywords = LoadWornRestrictionKeywords();
 
-            // 4. match effect
+            // 4. match effect — index once instead of re-scanning the whole effect list per
+            // enchantment (that was O(enchantments × effects); ~1200 × ~4000 on a big load order).
+            // Default (ordinal) comparer on purpose — the replaced "e.EnchantmentKey == ench.Key"
+            // was case-sensitive too, and _effectsByEnchantment in LoadCacheCore groups the same way.
+            var effectsByEnchantment = effects.ToLookup(e => e.EnchantmentKey);
             foreach (var ench in enchantments)
             {
-                var enchEffects = effects
-                    .Where(e => e.EnchantmentKey == ench.Key);
-
-                foreach (var eff in enchEffects)
+                foreach (var eff in effectsByEnchantment[ench.Key])
                     ench.Effects.Add(eff);
             }
 
@@ -2183,6 +1026,43 @@ namespace SkyrimCraftingTool.Model
         // compared (DB writes, JSON export, import conflict resolution) — must stay identical
         // everywhere or import conflict detection breaks (see plan risk 1).
         internal static string NowIso() => DateTime.UtcNow.ToString("o");
+
+        // --- Reset: the shadow columns each editable table carries ---
+        //
+        // Every Reset*Edits below is the same statement: NULL every IsEdited* shadow, clear the
+        // IsEdited flag, stamp LastChanged. LastChanged is deliberately SET (not cleared) — it feeds
+        // the import conflict check ("local is newer than this export file"). What counts as
+        // "currently edited" is the IsEdited flag, which is why GetEdited* filters on that.
+        private static readonly string[] ArmorShadowColumns =
+            { "IsEditedName", "IsEditedWeight", "IsEditedValue", "IsEditedArmorRating", "IsEditedBodySlotMask", "IsEditedKeywords", "IsEditedContainerString" };
+        private static readonly string[] WeaponShadowColumns =
+            { "IsEditedName", "IsEditedWeight", "IsEditedValue", "IsEditedDamage", "IsEditedSpeed", "IsEditedReach", "IsEditedStagger", "IsEditedKeywords", "IsEditedContainerString" };
+        private static readonly string[] CobjShadowColumns =
+            { "IsEditedName", "IsEditedCreatedItem", "IsEditedWorkbenchKeyword", "IsEditedIngredients" };
+        // CastType/TargetType have no UI edit path but ARE importable (AllowedImportFields), so they
+        // must be cleared too — otherwise a later edit revives the orphaned shadow.
+        private static readonly string[] EnchantmentShadowColumns =
+            { "IsEditedName", "IsEditedCastType", "IsEditedTargetType", "IsEditedEnchantmentCost", "IsEditedWornRestrictionListKey" };
+
+        private static void ResetEditShadows(string table, string[] shadowColumns, string key)
+        {
+            try
+            {
+                using var connection = new SqliteConnection(ConnString);
+                connection.Open();
+                using var cmd = connection.CreateCommand();
+                var sets = string.Join(", ", shadowColumns.Select(c => $"{c} = NULL"));
+                cmd.CommandText = $"UPDATE {table} SET {sets}, IsEdited = 0, LastChanged = @now WHERE Key = @key";
+                cmd.Parameters.AddWithValue("@key", key);
+                cmd.Parameters.AddWithValue("@now", NowIso());
+                cmd.ExecuteNonQuery();
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError($"ResetEditShadows failed (table={table}, key={key})", ex);
+                throw;
+            }
+        }
 
         private static void UpdateField(string table, string column, string key, object value)
         {
@@ -2387,30 +1267,7 @@ namespace SkyrimCraftingTool.Model
         }
 
         public void ResetCOBJEdits(string key)
-        {
-            try
-            {
-                using var connection = new SqliteConnection(ConnString);
-                connection.Open();
-                using var cmd = connection.CreateCommand();
-                cmd.CommandText = @"UPDATE COBJ SET
-                                        IsEditedName = NULL,
-                                        IsEditedCreatedItem = NULL,
-                                        IsEditedWorkbenchKeyword = NULL,
-                                        IsEditedIngredients = NULL,
-                                        IsEdited = 0,
-                                        LastChanged = @now
-                                     WHERE Key = @key";
-                cmd.Parameters.AddWithValue("@key", key);
-                cmd.Parameters.AddWithValue("@now", NowIso());
-                cmd.ExecuteNonQuery();
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogError($"ResetCOBJEdits failed (key={key})", ex);
-                throw;
-            }
-        }
+            => ResetEditShadows("COBJ", CobjShadowColumns, key);
 
         // -------------------------------------------------
         // COBJ: Delete (only ever valid for a user-created recipe - Original stays 0 forever for
@@ -2659,64 +1516,49 @@ namespace SkyrimCraftingTool.Model
         }
 
         public static void ResetArmorEdits(string key)
+            => ResetEditShadows("Armor", ArmorShadowColumns, key);
+
+        // Armor/Weapons rows that still carry ACTIVE edits (IsEdited = 1) but whose plugin dropped
+        // out of the last scan (Active = 0). Feeds the orphaned-edits cleanup window. IsEdited, not
+        // "LastChanged IS NOT NULL": a row that was edited, reset, then had its plugin removed has
+        // LastChanged set but nothing to clean up — it's not an orphaned *edit*.
+        public static List<OrphanedEdit> GetOrphanedItemEdits()
         {
-            try
+            var list = new List<OrphanedEdit>();
+            using var connection = new SqliteConnection(ConnString);
+            connection.Open();
+
+            foreach (var table in new[] { "Armor", "Weapons" })
             {
-                using var connection = new SqliteConnection(ConnString);
-                connection.Open();
                 using var cmd = connection.CreateCommand();
-                cmd.CommandText = @"UPDATE Armor SET
-                                        IsEditedName = NULL,
-                                        IsEditedWeight = NULL,
-                                        IsEditedValue = NULL,
-                                        IsEditedArmorRating = NULL,
-                                        IsEditedBodySlotMask = NULL,
-                                        IsEditedKeywords = NULL,
-                                        IsEditedContainerString = NULL,
-                                        IsEdited = 0,
-                                        LastChanged = @now
-                                     WHERE Key = @key";
-                cmd.Parameters.AddWithValue("@key", key);
-                cmd.Parameters.AddWithValue("@now", NowIso());
-                cmd.ExecuteNonQuery();
+                cmd.CommandText = $@"SELECT Key, COALESCE(NULLIF(Name, ''), EditorID, Key), LastChanged
+                                     FROM {table}
+                                     WHERE IsEdited = 1 AND Active = 0";
+                using var r = cmd.ExecuteReader();
+                while (r.Read())
+                    list.Add(new OrphanedEdit(table, r.GetString(0), r.GetString(1),
+                        r.IsDBNull(2) ? "" : r.GetString(2)));
             }
-            catch (Exception ex)
-            {
-                AppLogger.LogError($"ResetArmorEdits failed (key={key})", ex);
-                throw;
-            }
+            return list;
+        }
+
+        // Hard-deletes a single Armor/Weapons row (used to clear an orphaned edit). If the plugin
+        // ever returns, the next scan recreates the row fresh.
+        public static void DeleteItemRow(string table, string key)
+        {
+            if (table is not ("Armor" or "Weapons"))
+                throw new ArgumentException($"Unsupported table: {table}", nameof(table));
+
+            using var connection = new SqliteConnection(ConnString);
+            connection.Open();
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = $"DELETE FROM {table} WHERE Key = @key";
+            cmd.Parameters.AddWithValue("@key", key);
+            cmd.ExecuteNonQuery();
         }
 
         public static void ResetWeaponEdits(string key)
-        {
-            try
-            {
-                using var connection = new SqliteConnection(ConnString);
-                connection.Open();
-                using var cmd = connection.CreateCommand();
-                cmd.CommandText = @"UPDATE Weapons SET
-                                        IsEditedName = NULL,
-                                        IsEditedWeight = NULL,
-                                        IsEditedValue = NULL,
-                                        IsEditedDamage = NULL,
-                                        IsEditedSpeed = NULL,
-                                        IsEditedReach = NULL,
-                                        IsEditedStagger = NULL,
-                                        IsEditedKeywords = NULL,
-                                        IsEditedContainerString = NULL,
-                                        IsEdited = 0,
-                                        LastChanged = @now
-                                     WHERE Key = @key";
-                cmd.Parameters.AddWithValue("@key", key);
-                cmd.Parameters.AddWithValue("@now", NowIso());
-                cmd.ExecuteNonQuery();
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogError($"ResetWeaponEdits failed (key={key})", ex);
-                throw;
-            }
-        }
+            => ResetEditShadows("Weapons", WeaponShadowColumns, key);
 
         internal System.Collections.Generic.IList<object> SearchByType(string type)
         {
@@ -2733,6 +1575,14 @@ namespace SkyrimCraftingTool.Model
             // For other types, return an empty list.
             return new System.Collections.Generic.List<object>();
         }
+
+        // FLST identity map (Plugin|FormID -> EditorID), from formid.db's FormLists name table
+        // (scanned from every mod.FormLists record). Used by the worn-restriction picker to show a
+        // real FLST name instead of a raw FormID. Read directly (not via _formIDDB's cache, which is
+        // loaded once per session and never refreshed after a rescan). Empty until the first scan
+        // with FormLists support has run.
+        public Dictionary<string, string> GetFormListNamesByKey()
+            => _formIDDB.GetFormListNamesDirect();
 
         // -------------------------------------------------
         // Enchantment: Updates
@@ -2767,7 +1617,7 @@ namespace SkyrimCraftingTool.Model
             using var connection = new SqliteConnection(ConnString);
             connection.Open();
             using var cmd = connection.CreateCommand();
-            cmd.CommandText = "SELECT EditorID, Name, EnchantmentCost FROM Enchantments WHERE Key = @key";
+            cmd.CommandText = "SELECT EditorID, Name, EnchantmentCost, WornRestrictionListKey FROM Enchantments WHERE Key = @key";
             cmd.Parameters.AddWithValue("@key", key);
 
             using var reader = cmd.ExecuteReader();
@@ -2779,35 +1629,12 @@ namespace SkyrimCraftingTool.Model
                 EditorID = reader.IsDBNull(0) ? "" : reader.GetString(0),
                 Name = reader.IsDBNull(1) ? "" : reader.GetString(1),
                 EnchantmentCost = reader.IsDBNull(2) ? 0f : (float)reader.GetDouble(2),
+                WornRestrictionListKey = reader.IsDBNull(3) ? "" : reader.GetString(3),
             };
         }
 
         public static void ResetEnchantmentEdits(string key)
-        {
-            try
-            {
-                using var connection = new SqliteConnection(ConnString);
-                connection.Open();
-                using var cmd = connection.CreateCommand();
-                cmd.CommandText = @"UPDATE Enchantments SET
-                                        IsEditedName = NULL,
-                                        IsEditedEnchantmentCost = NULL,
-                                        IsEdited = CASE WHEN IsEditedCastType IS NOT NULL
-                                                         OR IsEditedTargetType IS NOT NULL
-                                                         OR IsEditedWornRestrictionListKey IS NOT NULL
-                                                    THEN 1 ELSE 0 END,
-                                        LastChanged = @now
-                                     WHERE Key = @key";
-                cmd.Parameters.AddWithValue("@key", key);
-                cmd.Parameters.AddWithValue("@now", NowIso());
-                cmd.ExecuteNonQuery();
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogError($"ResetEnchantmentEdits failed (key={key})", ex);
-                throw;
-            }
-        }
+            => ResetEditShadows("Enchantments", EnchantmentShadowColumns, key);
 
         public static void SaveEnchantmentEffects(string enchantmentKey, List<EnchantmentEffectRecord> effects)
         {
@@ -2884,24 +1711,28 @@ namespace SkyrimCraftingTool.Model
 
         public static void SaveWornRestrictionKeywords(string listKey, List<string> keywordKeys)
         {
+            // The flag UPDATE below is "WHERE WornRestrictionListKey = @listKey". An FLST-less
+            // enchantment's key is "" or "Null|000000" (shared by ~1100 rows) - writing for one of
+            // those would mass-mark every FLST-less enchantment. Never write for an unset key.
+            if (KeyFactory.IsUnsetKey(listKey))
+                return;
+
             try
             {
                 using var conn = new SqliteConnection(ConnString);
                 conn.Open();
                 using var transaction = conn.BeginTransaction();
 
-                // First edit ever for this worn-restriction list: freeze the current (still
-                // pristine) rows into WornRestrictionKeywords_Original before the delete+insert below
-                // destroys them. Gated on whether any Enchantments row referencing this ListKey
-                // already has KeywordsEdited=1 rather than "does _Original already have rows" - see
-                // SaveCOBJConditions' comment for why (a list whose true original has zero keywords
-                // would otherwise be indistinguishable from "never snapshotted yet"). Checking via the
-                // referencing enchantments (rather than a flag on this table, which has none) mirrors
-                // how the flag itself is written further below - by ListKey, not by a single Key.
-                using (var checkCmd = new SqliteCommand("SELECT COUNT(*) FROM Enchantments WHERE WornRestrictionListKey = @key AND KeywordsEdited = 1", conn, transaction))
+                // First edit ever for this list: freeze the current (still pristine) rows into
+                // WornRestrictionKeywords_Original before the delete+insert below destroys them.
+                // Gated on WornRestrictionListState.IsEdited (E3 — was "any referencing Enchantments
+                // row has KeywordsEdited=1"), so "true original has zero members" is still
+                // distinguishable from "never snapshotted yet". See SaveCOBJConditions' comment.
+                using (var checkCmd = new SqliteCommand("SELECT IsEdited FROM WornRestrictionListState WHERE ListKey = @key", conn, transaction))
                 {
                     checkCmd.Parameters.AddWithValue("@key", listKey);
-                    bool alreadyEdited = Convert.ToInt64(checkCmd.ExecuteScalar()) > 0;
+                    var res = checkCmd.ExecuteScalar();
+                    bool alreadyEdited = res != null && res != DBNull.Value && Convert.ToInt64(res) == 1;
                     if (!alreadyEdited)
                     {
                         using var snapshotCmd = new SqliteCommand(
@@ -2930,14 +1761,15 @@ namespace SkyrimCraftingTool.Model
                     insertCmd.ExecuteNonQuery();
                 }
 
-                // Marks the enchantment(s) referencing this worn-restriction list as user-edited so a
-                // rescan leaves its keywords untouched (see PutIntoDataBank). WornRestrictionKeywords
-                // is keyed by ListKey, not by an enchantment's own Key, hence the WHERE below.
-                using (var flagCmd = new SqliteCommand("UPDATE Enchantments SET KeywordsEdited = 1, LastChanged = @now WHERE WornRestrictionListKey = @listKey", conn, transaction))
+                // E3: the edit is recorded on the LIST, not smeared onto every enchantment that
+                // references it. Enchantments.KeywordsEdited is left untouched (deprecated).
+                using (var stateCmd = new SqliteCommand(
+                    @"INSERT INTO WornRestrictionListState (ListKey, IsEdited, LastChanged) VALUES (@key, 1, @now)
+                      ON CONFLICT(ListKey) DO UPDATE SET IsEdited = 1, LastChanged = @now", conn, transaction))
                 {
-                    flagCmd.Parameters.AddWithValue("@listKey", listKey);
-                    flagCmd.Parameters.AddWithValue("@now", NowIso());
-                    flagCmd.ExecuteNonQuery();
+                    stateCmd.Parameters.AddWithValue("@key", listKey);
+                    stateCmd.Parameters.AddWithValue("@now", NowIso());
+                    stateCmd.ExecuteNonQuery();
                 }
 
                 transaction.Commit();
@@ -3059,18 +1891,20 @@ namespace SkyrimCraftingTool.Model
         public static List<string> GetOriginalWornRestrictionKeywords(string listKey)
         {
             var list = new List<string>();
+            if (!ItemDbExists) return list;
+
             using var connection = new SqliteConnection(ConnString);
             connection.Open();
 
             // Same "not edited yet -> read the live table instead" reasoning as
-            // GetOriginalCOBJConditions - see its comment. Checked via referencing enchantments
-            // (this table has no edited flag of its own), same as the SaveWornRestrictionKeywords gate.
+            // GetOriginalCOBJConditions. E3: gated on the per-list WornRestrictionListState flag.
             bool keywordsEdited;
             using (var flagCmd = connection.CreateCommand())
             {
-                flagCmd.CommandText = "SELECT COUNT(*) FROM Enchantments WHERE WornRestrictionListKey = @key AND KeywordsEdited = 1";
+                flagCmd.CommandText = "SELECT IsEdited FROM WornRestrictionListState WHERE ListKey = @key";
                 flagCmd.Parameters.AddWithValue("@key", listKey);
-                keywordsEdited = Convert.ToInt64(flagCmd.ExecuteScalar()) > 0;
+                var res = flagCmd.ExecuteScalar();
+                keywordsEdited = res != null && res != DBNull.Value && Convert.ToInt64(res) == 1;
             }
 
             var table = keywordsEdited ? "WornRestrictionKeywords_Original" : "WornRestrictionKeywords";
@@ -3084,8 +1918,113 @@ namespace SkyrimCraftingTool.Model
             return list;
         }
 
+        // E3.5: is this FLST's content user-edited (drives the list-scoped "Reset list" button)?
+        public static bool IsWornRestrictionListEdited(string listKey)
+        {
+            if (KeyFactory.IsUnsetKey(listKey) || !ItemDbExists) return false;
+            using var connection = new SqliteConnection(ConnString);
+            connection.Open();
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "SELECT IsEdited FROM WornRestrictionListState WHERE ListKey = @key";
+            cmd.Parameters.AddWithValue("@key", listKey);
+            var res = cmd.ExecuteScalar();
+            return res != null && res != DBNull.Value && Convert.ToInt64(res) == 1;
+        }
+
+        // E3.5: how many enchantments reference this FLST as their worn-restriction list — the
+        // "changes affect all of them" hint. Counts the scanned base column (the picker's shadow
+        // reassignments are per-enchantment and don't change what the list itself is used for).
+        public static int CountEnchantmentsUsingWornRestrictionList(string listKey)
+        {
+            if (KeyFactory.IsUnsetKey(listKey) || !ItemDbExists) return 0;
+            using var connection = new SqliteConnection(ConnString);
+            connection.Open();
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM Enchantments WHERE WornRestrictionListKey = @key AND Active = 1";
+            cmd.Parameters.AddWithValue("@key", listKey);
+            return Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        // Live (not "original") content of one FLST — used to populate the keyword panel right after
+        // the user attaches an enchantment to an existing list via the picker.
+        public static List<string> GetWornRestrictionKeywordsForList(string listKey)
+        {
+            var list = new List<string>();
+            if (KeyFactory.IsUnsetKey(listKey) || !ItemDbExists) return list;
+
+            using var connection = new SqliteConnection(ConnString);
+            connection.Open();
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "SELECT KeywordKey FROM WornRestrictionKeywords WHERE ListKey = @key";
+            cmd.Parameters.AddWithValue("@key", listKey);
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+                list.Add(reader.IsDBNull(0) ? "" : reader.GetString(0));
+            return list;
+        }
+
+        // Every FLST the scan found members for, with those member keys — the assignable set for the
+        // worn-restriction-list picker (the tool never creates new FLSTs, only attaches an
+        // enchantment to one that already exists in the load order).
+        //
+        // IsEdited says the user has hand-edited this list's contents (WornRestrictionListState).
+        // The picker needs it for two reasons: a list the user deliberately emptied has NO rows in
+        // WornRestrictionKeywords at all and would otherwise vanish from the dropdown, and a
+        // user-curated list must not be dropped by the picker's "members must look like keywords"
+        // heuristic.
+        public static List<(string ListKey, List<string> KeywordKeys, bool IsEdited)> GetKnownWornRestrictionLists()
+        {
+            var result = new List<(string, List<string>, bool)>();
+            if (!ItemDbExists) return result;
+
+            var byList = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            var edited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            using var connection = new SqliteConnection(ConnString);
+            connection.Open();
+
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText = @"SELECT ListKey, KeywordKey FROM WornRestrictionKeywords
+                                     WHERE ListKey IS NOT NULL AND ListKey <> '' AND ListKey NOT LIKE 'Null|%'
+                                     ORDER BY ListKey";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                {
+                    var listKey = reader.GetString(0);
+                    var kwKey = reader.IsDBNull(1) ? "" : reader.GetString(1);
+                    if (!byList.TryGetValue(listKey, out var kws))
+                        byList[listKey] = kws = new List<string>();
+                    kws.Add(kwKey);
+                }
+            }
+
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText = @"SELECT ListKey FROM WornRestrictionListState
+                                     WHERE IsEdited = 1
+                                       AND ListKey IS NOT NULL AND ListKey <> '' AND ListKey NOT LIKE 'Null|%'";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                {
+                    var listKey = reader.GetString(0);
+                    edited.Add(listKey);
+                    // Deliberately emptied list: no member rows left, but it must stay pickable.
+                    if (!byList.ContainsKey(listKey))
+                        byList[listKey] = new List<string>();
+                }
+            }
+
+            foreach (var kv in byList)
+                result.Add((kv.Key, kv.Value, edited.Contains(kv.Key)));
+            return result;
+        }
+
         public static void ResetWornRestrictionKeywords(string listKey)
         {
+            if (KeyFactory.IsUnsetKey(listKey))
+                return; // see SaveWornRestrictionKeywords - an unset key must never drive a mass UPDATE
+
             try
             {
                 using var conn = new SqliteConnection(ConnString);
@@ -3093,15 +2032,16 @@ namespace SkyrimCraftingTool.Model
                 using var transaction = conn.BeginTransaction();
 
                 // ResetEnchantmentCommand calls this unconditionally whenever the user resets an
-                // enchantment that has a WornRestrictionListKey, even if the Keywords specifically
-                // were never touched - in which case WornRestrictionKeywords_Original was never
-                // populated, and blindly restoring "from" it would DELETE the still-pristine live
-                // keywords and replace them with nothing. Bail out here if there's nothing to revert -
-                // see ResetCOBJConditions' identical guard.
-                using (var checkCmd = new SqliteCommand("SELECT COUNT(*) FROM Enchantments WHERE WornRestrictionListKey = @key AND KeywordsEdited = 1", conn, transaction))
+                // enchantment that has a WornRestrictionListKey, even if the list content was never
+                // touched - in which case WornRestrictionKeywords_Original was never populated, and
+                // blindly restoring "from" it would DELETE the still-pristine live keywords and
+                // replace them with nothing. Bail out here if there's nothing to revert - see
+                // ResetCOBJConditions' identical guard. E3: gated on the per-list state flag.
+                using (var checkCmd = new SqliteCommand("SELECT IsEdited FROM WornRestrictionListState WHERE ListKey = @key", conn, transaction))
                 {
                     checkCmd.Parameters.AddWithValue("@key", listKey);
-                    bool wasEdited = Convert.ToInt64(checkCmd.ExecuteScalar()) > 0;
+                    var res = checkCmd.ExecuteScalar();
+                    bool wasEdited = res != null && res != DBNull.Value && Convert.ToInt64(res) == 1;
                     if (!wasEdited) return;
                 }
 
@@ -3127,11 +2067,13 @@ namespace SkyrimCraftingTool.Model
                     clearCmd.ExecuteNonQuery();
                 }
 
-                using (var flagCmd = new SqliteCommand("UPDATE Enchantments SET KeywordsEdited = 0, LastChanged = @now WHERE WornRestrictionListKey = @listKey", conn, transaction))
+                // E3: the edit flag lives on the list. Clear its state row entirely (it's now back to
+                // the pristine scanned content). Enchantments.KeywordsEdited is left untouched
+                // (deprecated - RepairBlankWornRestrictionEdits clears any legacy value).
+                using (var stateCmd = new SqliteCommand("DELETE FROM WornRestrictionListState WHERE ListKey = @listKey", conn, transaction))
                 {
-                    flagCmd.Parameters.AddWithValue("@listKey", listKey);
-                    flagCmd.Parameters.AddWithValue("@now", NowIso());
-                    flagCmd.ExecuteNonQuery();
+                    stateCmd.Parameters.AddWithValue("@listKey", listKey);
+                    stateCmd.ExecuteNonQuery();
                 }
 
                 transaction.Commit();
@@ -3143,562 +2085,5 @@ namespace SkyrimCraftingTool.Model
             }
         }
 
-        // ===================================================
-        // Import/Export
-        // ===================================================
-
-        private static string SafeStr(SqliteDataReader reader, int ordinal) => reader.IsDBNull(ordinal) ? "" : reader.GetString(ordinal);
-
-        private static string BuildScopeWhere(ExportScope scope, string scopeValue, SqliteCommand cmd)
-        {
-            switch (scope)
-            {
-                case ExportScope.Item:
-                    cmd.Parameters.AddWithValue("@scopeKey", scopeValue);
-                    return " AND Key = @scopeKey";
-                case ExportScope.Plugin:
-                    cmd.Parameters.AddWithValue("@scopePrefix", scopeValue + "|%");
-                    return " AND Key LIKE @scopePrefix";
-                default:
-                    return "";
-            }
-        }
-
-        public List<EditedItemDto> GetEditedItems(ExportScope scope, string scopeValue = null)
-        {
-            var items = new List<EditedItemDto>();
-            using var connection = new SqliteConnection(ConnString);
-            connection.Open();
-
-            items.AddRange(GetEditedArmorOrWeapons(connection, "Armor",
-                new[] { "IsEditedName", "IsEditedWeight", "IsEditedValue", "IsEditedArmorRating", "IsEditedBodySlotMask", "IsEditedKeywords", "IsEditedContainerString" },
-                scope, scopeValue));
-            items.AddRange(GetEditedArmorOrWeapons(connection, "Weapons",
-                new[] { "IsEditedName", "IsEditedWeight", "IsEditedValue", "IsEditedDamage", "IsEditedSpeed", "IsEditedReach", "IsEditedStagger", "IsEditedKeywords", "IsEditedContainerString" },
-                scope, scopeValue));
-            items.AddRange(GetEditedCOBJ(connection, scope, scopeValue));
-            items.AddRange(GetEditedEnchantments(connection, scope, scopeValue));
-
-            return items;
-        }
-
-        private static List<EditedItemDto> GetEditedArmorOrWeapons(SqliteConnection connection, string table, string[] editedColumns, ExportScope scope, string scopeValue)
-        {
-            var result = new List<EditedItemDto>();
-            using var cmd = connection.CreateCommand();
-            var columns = "Key, LastChanged, Name, " + string.Join(", ", editedColumns);
-            cmd.CommandText = $"SELECT {columns} FROM {table} WHERE LastChanged IS NOT NULL" + BuildScopeWhere(scope, scopeValue, cmd);
-
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
-            {
-                var dto = new EditedItemDto { Table = table, Key = reader.GetString(0), LastChanged = reader.GetString(1), DisplayName = SafeStr(reader, 2) };
-                for (int i = 0; i < editedColumns.Length; i++)
-                {
-                    int ordinal = 3 + i;
-                    if (!reader.IsDBNull(ordinal))
-                        dto.Fields[editedColumns[i]] = reader.GetValue(ordinal).ToString();
-                }
-                result.Add(dto);
-            }
-            return result;
-        }
-
-        private static List<EditedItemDto> GetEditedCOBJ(SqliteConnection connection, ExportScope scope, string scopeValue)
-        {
-            var rows = new List<(string Key, bool ConditionsEdited, EditedItemDto Dto)>();
-            using (var cmd = connection.CreateCommand())
-            {
-                cmd.CommandText = @"SELECT Key, LastChanged, Original, ConditionsEdited,
-                        Name, CreatedItem, WorkbenchKeyword, Ingredients,
-                        IsEditedName, IsEditedCreatedItem, IsEditedWorkbenchKeyword, IsEditedIngredients
-                    FROM COBJ WHERE LastChanged IS NOT NULL" + BuildScopeWhere(scope, scopeValue, cmd);
-
-                using var reader = cmd.ExecuteReader();
-                while (reader.Read())
-                {
-                    string key = reader.GetString(0);
-                    int original = reader.GetInt32(2);
-                    bool conditionsEdited = reader.GetInt32(3) == 1;
-
-                    var dto = new EditedItemDto { Table = "COBJ", Key = key, LastChanged = reader.GetString(1), Original = original };
-
-                    if (original == 0)
-                    {
-                        // User-created: no scan to fall back to, so export the full effective row
-                        // (shadow value if set, else the base value) rather than just the shadow diff.
-                        dto.Fields["Name"] = reader.IsDBNull(8) ? SafeStr(reader, 4) : reader.GetString(8);
-                        dto.Fields["CreatedItem"] = reader.IsDBNull(9) ? SafeStr(reader, 5) : reader.GetString(9);
-                        dto.Fields["WorkbenchKeyword"] = reader.IsDBNull(10) ? SafeStr(reader, 6) : reader.GetString(10);
-                        dto.Fields["Ingredients"] = reader.IsDBNull(11) ? SafeStr(reader, 7) : reader.GetString(11);
-                        dto.DisplayName = dto.Fields["Name"];
-                    }
-                    else
-                    {
-                        if (!reader.IsDBNull(8)) dto.Fields["IsEditedName"] = reader.GetString(8);
-                        if (!reader.IsDBNull(9)) dto.Fields["IsEditedCreatedItem"] = reader.GetString(9);
-                        if (!reader.IsDBNull(10)) dto.Fields["IsEditedWorkbenchKeyword"] = reader.GetString(10);
-                        if (!reader.IsDBNull(11)) dto.Fields["IsEditedIngredients"] = reader.GetString(11);
-                        dto.DisplayName = SafeStr(reader, 4);
-                    }
-
-                    rows.Add((key, conditionsEdited, dto));
-                }
-            }
-
-            var result = new List<EditedItemDto>();
-            foreach (var row in rows)
-            {
-                if (row.ConditionsEdited)
-                    row.Dto.ConditionRows = GetCOBJConditionRowsForExport(connection, row.Key);
-                result.Add(row.Dto);
-            }
-            return result;
-        }
-
-        private static List<Dictionary<string, string>> GetCOBJConditionRowsForExport(SqliteConnection connection, string cobjKey)
-        {
-            var rows = new List<Dictionary<string, string>>();
-            using var cmd = connection.CreateCommand();
-            cmd.CommandText = "SELECT ConditionType, Target, Value, Extra, RunOn FROM COBJ_Conditions WHERE COBJKey = @key";
-            cmd.Parameters.AddWithValue("@key", cobjKey);
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
-            {
-                rows.Add(new Dictionary<string, string>
-                {
-                    ["ConditionType"] = SafeStr(reader, 0),
-                    ["Target"] = SafeStr(reader, 1),
-                    ["Value"] = SafeStr(reader, 2),
-                    ["Extra"] = SafeStr(reader, 3),
-                    ["RunOn"] = SafeStr(reader, 4),
-                });
-            }
-            return rows;
-        }
-
-        private static List<EditedItemDto> GetEditedEnchantments(SqliteConnection connection, ExportScope scope, string scopeValue)
-        {
-            var rows = new List<(string Key, bool EffectsEdited, bool KeywordsEdited, string EffectiveListKey, EditedItemDto Dto)>();
-            string[] editedCols = { "IsEditedName", "IsEditedCastType", "IsEditedTargetType", "IsEditedEnchantmentCost", "IsEditedWornRestrictionListKey" };
-
-            using (var cmd = connection.CreateCommand())
-            {
-                cmd.CommandText = @"SELECT Key, LastChanged, EffectsEdited, KeywordsEdited,
-                        Name, WornRestrictionListKey,
-                        IsEditedName, IsEditedCastType, IsEditedTargetType, IsEditedEnchantmentCost, IsEditedWornRestrictionListKey
-                    FROM Enchantments WHERE LastChanged IS NOT NULL" + BuildScopeWhere(scope, scopeValue, cmd);
-
-                using var reader = cmd.ExecuteReader();
-                while (reader.Read())
-                {
-                    string key = reader.GetString(0);
-                    bool effectsEdited = reader.GetInt32(2) == 1;
-                    bool keywordsEdited = reader.GetInt32(3) == 1;
-                    string baseListKey = SafeStr(reader, 5);
-
-                    var dto = new EditedItemDto { Table = "Enchantments", Key = key, LastChanged = reader.GetString(1), DisplayName = SafeStr(reader, 4) };
-                    for (int i = 0; i < editedCols.Length; i++)
-                    {
-                        int ordinal = 6 + i;
-                        if (!reader.IsDBNull(ordinal))
-                            dto.Fields[editedCols[i]] = reader.GetValue(ordinal).ToString();
-                    }
-
-                    string effectiveListKey = dto.Fields.TryGetValue("IsEditedWornRestrictionListKey", out var editedListKey) ? editedListKey : baseListKey;
-
-                    rows.Add((key, effectsEdited, keywordsEdited, effectiveListKey, dto));
-                }
-            }
-
-            var result = new List<EditedItemDto>();
-            foreach (var row in rows)
-            {
-                if (row.EffectsEdited)
-                    row.Dto.EffectRows = GetEnchantmentEffectRowsForExport(connection, row.Key);
-                if (row.KeywordsEdited && !string.IsNullOrEmpty(row.EffectiveListKey))
-                    row.Dto.WornRestrictionKeywords = GetWornRestrictionKeywordsForExport(connection, row.EffectiveListKey);
-                result.Add(row.Dto);
-            }
-            return result;
-        }
-
-        private static List<Dictionary<string, string>> GetEnchantmentEffectRowsForExport(SqliteConnection connection, string enchantmentKey)
-        {
-            var rows = new List<Dictionary<string, string>>();
-            using var cmd = connection.CreateCommand();
-            cmd.CommandText = "SELECT MagicEffectKey, EditorID, Name, Magnitude, Duration, Area FROM EnchantmentEffects WHERE EnchantmentKey = @key";
-            cmd.Parameters.AddWithValue("@key", enchantmentKey);
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
-            {
-                rows.Add(new Dictionary<string, string>
-                {
-                    ["MagicEffectKey"] = SafeStr(reader, 0),
-                    ["EditorID"] = SafeStr(reader, 1),
-                    ["Name"] = SafeStr(reader, 2),
-                    ["Magnitude"] = reader.IsDBNull(3) ? "0" : reader.GetValue(3).ToString(),
-                    ["Duration"] = reader.IsDBNull(4) ? "0" : reader.GetValue(4).ToString(),
-                    ["Area"] = reader.IsDBNull(5) ? "0" : reader.GetValue(5).ToString(),
-                });
-            }
-            return rows;
-        }
-
-        private static List<string> GetWornRestrictionKeywordsForExport(SqliteConnection connection, string listKey)
-        {
-            var list = new List<string>();
-            using var cmd = connection.CreateCommand();
-            cmd.CommandText = "SELECT KeywordKey FROM WornRestrictionKeywords WHERE ListKey = @key";
-            cmd.Parameters.AddWithValue("@key", listKey);
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
-                list.Add(reader.GetString(0));
-            return list;
-        }
-
-        // Real DateTime comparison (not string comparison) so minor formatting differences between
-        // export runs can't cause a false conflict/mismatch — see plan risk 1.
-        private static int CompareIso(string a, string b)
-        {
-            var da = DateTime.Parse(a, null, System.Globalization.DateTimeStyles.RoundtripKind);
-            var db = DateTime.Parse(b, null, System.Globalization.DateTimeStyles.RoundtripKind);
-            return da.CompareTo(db);
-        }
-
-        public ImportPlan PreviewImport(List<EditedItemDto> fileItems)
-        {
-            var plan = new ImportPlan();
-            using var connection = new SqliteConnection(ConnString);
-            connection.Open();
-
-            foreach (var item in fileItems)
-            {
-                // item.Table comes straight from an imported file — an untrusted or corrupted one —
-                // and gets interpolated into SQL below (table names can't be bound as parameters).
-                // Reject anything outside the 4 known tables before it ever reaches a query.
-                if (!AllowedImportFields.ContainsKey(item.Table))
-                    continue;
-
-                using var cmd = connection.CreateCommand();
-                cmd.CommandText = $"SELECT LastChanged FROM {item.Table} WHERE Key = @key";
-                cmd.Parameters.AddWithValue("@key", item.Key);
-                var localResult = cmd.ExecuteScalar();
-
-                // ExecuteScalar returns C# null only when the query matched zero rows (no local row
-                // at all). A row that exists but has never been edited still matches — its LastChanged
-                // column is SQL NULL, which ExecuteScalar surfaces as DBNull.Value, not null. Treating
-                // both cases the same here previously misrouted every never-before-edited row (the
-                // normal case for a first-time import) into ToSkipMissing, so imports onto Armor/
-                // Weapons/Enchantments silently did nothing whenever the target had no prior edits.
-                if (localResult == null)
-                {
-                    // No local row at all. A user-created (Original=0) COBJ recipe carries its own
-                    // full data and needs no scanned base row to attach to, so it's always safe to
-                    // insert fresh. Everything else has no scan to build a real row from — skip it
-                    // (see plan risk: missing item usually means the owning plugin isn't installed).
-                    if (item.Table == "COBJ" && item.Original == 0)
-                        plan.ToApply.Add(item);
-                    else
-                        plan.ToSkipMissing.Add(item);
-                    continue;
-                }
-
-                string localLastChanged = localResult as string;
-                if (string.IsNullOrEmpty(localLastChanged))
-                {
-                    // Row exists but was never edited locally (LastChanged IS NULL) — nothing to
-                    // conflict with.
-                    plan.ToApply.Add(item);
-                    continue;
-                }
-
-                int cmp = CompareIso(item.LastChanged, localLastChanged);
-                if (cmp == 0)
-                    plan.ToSkipEqual.Add(item);
-                else if (cmp > 0)
-                    plan.ToApply.Add(item);
-                else
-                    plan.Conflicts.Add(new ImportConflict { FileItem = item, LocalLastChanged = localLastChanged });
-            }
-
-            return plan;
-        }
-
-        public ImportResult ApplyImport(ImportPlan plan, HashSet<string> conflictKeysToUseFileVersion)
-        {
-            var result = new ImportResult
-            {
-                SkippedEqual = plan.ToSkipEqual.Count,
-                SkippedMissing = plan.ToSkipMissing
-            };
-
-            var toWrite = new List<EditedItemDto>(plan.ToApply);
-            foreach (var conflict in plan.Conflicts)
-            {
-                if (conflictKeysToUseFileVersion.Contains(conflict.FileItem.Table + "|" + conflict.FileItem.Key))
-                {
-                    toWrite.Add(conflict.FileItem);
-                    result.ConflictsUsedFile++;
-                }
-                else
-                {
-                    result.ConflictsKeptLocal++;
-                }
-            }
-
-            using (var connection = new SqliteConnection(ConnString))
-            {
-                connection.Open();
-                using var transaction = connection.BeginTransaction();
-
-                foreach (var item in toWrite)
-                {
-                    ApplyImportedItem(connection, transaction, item);
-                    result.Applied++;
-                }
-
-                transaction.Commit();
-            }
-
-            // The in-memory caches (armor/weapon/COBJ/enchantment lists this handler serves to the
-            // rest of the app) are now stale — force the next read to reload from the DB, same as
-            // PutIntoDataBank already does after a rescan.
-            InvalidateCache();
-
-            return result;
-        }
-
-        private void ApplyImportedItem(SqliteConnection connection, SqliteTransaction transaction, EditedItemDto item)
-        {
-            switch (item.Table)
-            {
-                case "Armor":
-                case "Weapons":
-                    ApplySimpleFieldItem(connection, transaction, item.Table, item);
-                    break;
-                case "COBJ":
-                    ApplyCobjItem(connection, transaction, item);
-                    break;
-                case "Enchantments":
-                    ApplyEnchantmentItem(connection, transaction, item);
-                    break;
-            }
-        }
-
-        private static bool RowExists(SqliteConnection connection, SqliteTransaction transaction, string table, string key)
-        {
-            using var cmd = connection.CreateCommand();
-            cmd.Transaction = transaction;
-            cmd.CommandText = $"SELECT COUNT(*) FROM {table} WHERE Key = @key";
-            cmd.Parameters.AddWithValue("@key", key);
-            return Convert.ToInt64(cmd.ExecuteScalar()) > 0;
-        }
-
-        // Field-name whitelist per table. item.Fields keys come straight out of an imported JSON file
-        // — an untrusted or corrupted one — and would otherwise be interpolated directly into the
-        // UPDATE's SET clause below (SQLite parameters can only bind values, not column names). Any
-        // key not on this list is silently dropped instead of reaching the SQL text.
-        private static readonly Dictionary<string, HashSet<string>> AllowedImportFields = new()
-        {
-            ["Armor"] = new HashSet<string> { "IsEditedName", "IsEditedWeight", "IsEditedValue", "IsEditedArmorRating", "IsEditedBodySlotMask", "IsEditedKeywords", "IsEditedContainerString" },
-            ["Weapons"] = new HashSet<string> { "IsEditedName", "IsEditedWeight", "IsEditedValue", "IsEditedDamage", "IsEditedSpeed", "IsEditedReach", "IsEditedStagger", "IsEditedKeywords", "IsEditedContainerString" },
-            ["COBJ"] = new HashSet<string> { "IsEditedName", "IsEditedCreatedItem", "IsEditedWorkbenchKeyword", "IsEditedIngredients" },
-            ["Enchantments"] = new HashSet<string> { "IsEditedName", "IsEditedCastType", "IsEditedTargetType", "IsEditedEnchantmentCost", "IsEditedWornRestrictionListKey" },
-        };
-
-        private static void ApplyFieldUpdate(SqliteConnection connection, SqliteTransaction transaction, string table, string key, string lastChanged, Dictionary<string, string> fields)
-        {
-            var allowed = AllowedImportFields[table];
-            var setClauses = new List<string> { "IsEdited = 1", "LastChanged = @now" };
-            using var cmd = connection.CreateCommand();
-            cmd.Transaction = transaction;
-            int i = 0;
-            foreach (var kv in fields)
-            {
-                if (!allowed.Contains(kv.Key))
-                    continue;
-                var p = $"@f{i++}";
-                setClauses.Add($"{kv.Key} = {p}");
-                cmd.Parameters.AddWithValue(p, kv.Value);
-            }
-            cmd.CommandText = $"UPDATE {table} SET {string.Join(", ", setClauses)} WHERE Key = @key";
-            cmd.Parameters.AddWithValue("@now", lastChanged);
-            cmd.Parameters.AddWithValue("@key", key);
-            cmd.ExecuteNonQuery();
-        }
-
-        private static void ApplySimpleFieldItem(SqliteConnection connection, SqliteTransaction transaction, string table, EditedItemDto item)
-        {
-            // Preview already routed missing keys to ToSkipMissing — this is just a defensive guard.
-            if (!RowExists(connection, transaction, table, item.Key))
-                return;
-
-            ApplyFieldUpdate(connection, transaction, table, item.Key, item.LastChanged, item.Fields);
-        }
-
-        private static void ApplyCobjItem(SqliteConnection connection, SqliteTransaction transaction, EditedItemDto item)
-        {
-            bool exists = RowExists(connection, transaction, "COBJ", item.Key);
-
-            if (item.Original == 0 && !exists)
-            {
-                using var insertCmd = connection.CreateCommand();
-                insertCmd.Transaction = transaction;
-                insertCmd.CommandText = @"INSERT INTO COBJ (Key, Original, Name, CreatedItem, WorkbenchKeyword, Ingredients, IsEdited, LastChanged)
-                                           VALUES (@key, 0, @name, @created, @wbk, @ingr, 1, @now)";
-                insertCmd.Parameters.AddWithValue("@key", item.Key);
-                insertCmd.Parameters.AddWithValue("@name", item.Fields.GetValueOrDefault("Name", ""));
-                insertCmd.Parameters.AddWithValue("@created", item.Fields.GetValueOrDefault("CreatedItem", ""));
-                insertCmd.Parameters.AddWithValue("@wbk", item.Fields.GetValueOrDefault("WorkbenchKeyword", ""));
-                insertCmd.Parameters.AddWithValue("@ingr", item.Fields.GetValueOrDefault("Ingredients", ""));
-                insertCmd.Parameters.AddWithValue("@now", item.LastChanged);
-                insertCmd.ExecuteNonQuery();
-            }
-            else if (!exists)
-            {
-                return; // Original==1 but missing locally — Preview already routes this to ToSkipMissing.
-            }
-            else if (item.Original == 0)
-            {
-                // Existing user-created recipe: overwrite base columns directly — a rescan never
-                // touches Original=0 rows, so there is no shadow/base split to preserve here.
-                using var updateCmd = connection.CreateCommand();
-                updateCmd.Transaction = transaction;
-                updateCmd.CommandText = @"UPDATE COBJ SET Name = @name, CreatedItem = @created, WorkbenchKeyword = @wbk,
-                                           Ingredients = @ingr, IsEdited = 1, LastChanged = @now WHERE Key = @key";
-                updateCmd.Parameters.AddWithValue("@name", item.Fields.GetValueOrDefault("Name", ""));
-                updateCmd.Parameters.AddWithValue("@created", item.Fields.GetValueOrDefault("CreatedItem", ""));
-                updateCmd.Parameters.AddWithValue("@wbk", item.Fields.GetValueOrDefault("WorkbenchKeyword", ""));
-                updateCmd.Parameters.AddWithValue("@ingr", item.Fields.GetValueOrDefault("Ingredients", ""));
-                updateCmd.Parameters.AddWithValue("@now", item.LastChanged);
-                updateCmd.Parameters.AddWithValue("@key", item.Key);
-                updateCmd.ExecuteNonQuery();
-            }
-            else
-            {
-                ApplyFieldUpdate(connection, transaction, "COBJ", item.Key, item.LastChanged, item.Fields);
-            }
-
-            if (item.ConditionRows != null)
-            {
-                using (var deleteCmd = connection.CreateCommand())
-                {
-                    deleteCmd.Transaction = transaction;
-                    deleteCmd.CommandText = "DELETE FROM COBJ_Conditions WHERE COBJKey = @key";
-                    deleteCmd.Parameters.AddWithValue("@key", item.Key);
-                    deleteCmd.ExecuteNonQuery();
-                }
-                foreach (var cond in item.ConditionRows)
-                {
-                    using var insertCmd = connection.CreateCommand();
-                    insertCmd.Transaction = transaction;
-                    insertCmd.CommandText = @"INSERT INTO COBJ_Conditions (COBJKey, ConditionType, Target, Value, Extra, RunOn)
-                                               VALUES (@key, @type, @target, @value, @extra, @runOn)";
-                    insertCmd.Parameters.AddWithValue("@key", item.Key);
-                    insertCmd.Parameters.AddWithValue("@type", cond.GetValueOrDefault("ConditionType", ""));
-                    insertCmd.Parameters.AddWithValue("@target", cond.GetValueOrDefault("Target", ""));
-                    insertCmd.Parameters.AddWithValue("@value", cond.GetValueOrDefault("Value", ""));
-                    insertCmd.Parameters.AddWithValue("@extra", cond.GetValueOrDefault("Extra", ""));
-                    insertCmd.Parameters.AddWithValue("@runOn", cond.GetValueOrDefault("RunOn", ""));
-                    insertCmd.ExecuteNonQuery();
-                }
-                using (var flagCmd = connection.CreateCommand())
-                {
-                    flagCmd.Transaction = transaction;
-                    flagCmd.CommandText = "UPDATE COBJ SET ConditionsEdited = 1 WHERE Key = @key";
-                    flagCmd.Parameters.AddWithValue("@key", item.Key);
-                    flagCmd.ExecuteNonQuery();
-                }
-            }
-        }
-
-        private static void ApplyEnchantmentItem(SqliteConnection connection, SqliteTransaction transaction, EditedItemDto item)
-        {
-            // Preview already routed missing keys to ToSkipMissing — this is just a defensive guard.
-            if (!RowExists(connection, transaction, "Enchantments", item.Key))
-                return;
-
-            ApplyFieldUpdate(connection, transaction, "Enchantments", item.Key, item.LastChanged, item.Fields);
-
-            if (item.EffectRows != null)
-            {
-                using (var deleteCmd = connection.CreateCommand())
-                {
-                    deleteCmd.Transaction = transaction;
-                    deleteCmd.CommandText = "DELETE FROM EnchantmentEffects WHERE EnchantmentKey = @key";
-                    deleteCmd.Parameters.AddWithValue("@key", item.Key);
-                    deleteCmd.ExecuteNonQuery();
-                }
-                foreach (var eff in item.EffectRows)
-                {
-                    using var insertCmd = connection.CreateCommand();
-                    insertCmd.Transaction = transaction;
-                    insertCmd.CommandText = @"INSERT INTO EnchantmentEffects (EnchantmentKey, MagicEffectKey, EditorID, Name, Magnitude, Duration, Area)
-                                               VALUES (@key, @mgef, @editorId, @name, @magnitude, @duration, @area)";
-                    insertCmd.Parameters.AddWithValue("@key", item.Key);
-                    insertCmd.Parameters.AddWithValue("@mgef", eff.GetValueOrDefault("MagicEffectKey", ""));
-                    insertCmd.Parameters.AddWithValue("@editorId", eff.GetValueOrDefault("EditorID", ""));
-                    insertCmd.Parameters.AddWithValue("@name", eff.GetValueOrDefault("Name", ""));
-                    insertCmd.Parameters.AddWithValue("@magnitude", eff.GetValueOrDefault("Magnitude", "0"));
-                    insertCmd.Parameters.AddWithValue("@duration", eff.GetValueOrDefault("Duration", "0"));
-                    insertCmd.Parameters.AddWithValue("@area", eff.GetValueOrDefault("Area", "0"));
-                    insertCmd.ExecuteNonQuery();
-                }
-                using (var flagCmd = connection.CreateCommand())
-                {
-                    flagCmd.Transaction = transaction;
-                    flagCmd.CommandText = "UPDATE Enchantments SET EffectsEdited = 1 WHERE Key = @key";
-                    flagCmd.Parameters.AddWithValue("@key", item.Key);
-                    flagCmd.ExecuteNonQuery();
-                }
-            }
-
-            if (item.WornRestrictionKeywords != null)
-            {
-                // Resolve the effective WornRestrictionListKey the same way GetEditedEnchantments did
-                // at export time: an edited shadow value on this item wins, else the base column.
-                string listKey = item.Fields.TryGetValue("IsEditedWornRestrictionListKey", out var editedListKey)
-                    ? editedListKey
-                    : GetScalarString(connection, transaction, "SELECT WornRestrictionListKey FROM Enchantments WHERE Key = @key", item.Key);
-
-                if (!string.IsNullOrEmpty(listKey))
-                {
-                    using (var deleteCmd = connection.CreateCommand())
-                    {
-                        deleteCmd.Transaction = transaction;
-                        deleteCmd.CommandText = "DELETE FROM WornRestrictionKeywords WHERE ListKey = @listKey";
-                        deleteCmd.Parameters.AddWithValue("@listKey", listKey);
-                        deleteCmd.ExecuteNonQuery();
-                    }
-                    foreach (var kw in item.WornRestrictionKeywords)
-                    {
-                        using var insertCmd = connection.CreateCommand();
-                        insertCmd.Transaction = transaction;
-                        insertCmd.CommandText = "INSERT INTO WornRestrictionKeywords (ListKey, KeywordKey) VALUES (@listKey, @kw)";
-                        insertCmd.Parameters.AddWithValue("@listKey", listKey);
-                        insertCmd.Parameters.AddWithValue("@kw", kw);
-                        insertCmd.ExecuteNonQuery();
-                    }
-                    using (var flagCmd = connection.CreateCommand())
-                    {
-                        flagCmd.Transaction = transaction;
-                        flagCmd.CommandText = "UPDATE Enchantments SET KeywordsEdited = 1 WHERE WornRestrictionListKey = @listKey";
-                        flagCmd.Parameters.AddWithValue("@listKey", listKey);
-                        flagCmd.ExecuteNonQuery();
-                    }
-                }
-            }
-        }
-
-        private static string GetScalarString(SqliteConnection connection, SqliteTransaction transaction, string sql, string key)
-        {
-            using var cmd = connection.CreateCommand();
-            cmd.Transaction = transaction;
-            cmd.CommandText = sql;
-            cmd.Parameters.AddWithValue("@key", key);
-            var result = cmd.ExecuteScalar();
-            return result == null || result == DBNull.Value ? null : (string)result;
-        }
     }
 }

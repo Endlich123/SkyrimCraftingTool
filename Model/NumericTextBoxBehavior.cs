@@ -2,10 +2,9 @@ using System;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
-using WpfTextBox = System.Windows.Controls.TextBox;
-using WpfDataObject = System.Windows.DataObject;
 
 namespace SkyrimCraftingTool.Model
 {
@@ -28,8 +27,8 @@ namespace SkyrimCraftingTool.Model
     // a value pushed in programmatically. Set NumericTextBoxBehavior.Max on a field where a tighter
     // ceiling makes sense (e.g. weapon Speed).
     //
-    // Uses a WpfTextBox alias because this project also references System.Windows.Forms (for the
-    // folder-picker dialog), which makes the bare "TextBox" name ambiguous.
+    // (Bare "TextBox" = System.Windows.Controls.TextBox now that the project no longer references
+    // System.Windows.Forms — the folder picker uses Microsoft.Win32.OpenFolderDialog.)
     public static class NumericTextBoxBehavior
     {
         public static readonly DependencyProperty ModeProperty =
@@ -66,7 +65,7 @@ namespace SkyrimCraftingTool.Model
 
         private static void OnModeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         {
-            if (d is not WpfTextBox textBox) return;
+            if (d is not TextBox textBox) return;
             if ((NumericMode)e.NewValue == NumericMode.None) return;
 
             textBox.PreviewTextInput -= OnPreviewTextInput;
@@ -75,19 +74,19 @@ namespace SkyrimCraftingTool.Model
             textBox.LostFocus -= OnLostFocus;
             textBox.LostFocus += OnLostFocus;
 
-            WpfDataObject.RemovePastingHandler(textBox, OnPaste);
-            WpfDataObject.AddPastingHandler(textBox, OnPaste);
+            DataObject.RemovePastingHandler(textBox, OnPaste);
+            DataObject.AddPastingHandler(textBox, OnPaste);
         }
 
         private static void OnPreviewTextInput(object sender, TextCompositionEventArgs e)
         {
-            var textBox = (WpfTextBox)sender;
+            var textBox = (TextBox)sender;
             e.Handled = !IsValid(textBox, GetProposedText(textBox, e.Text));
         }
 
         private static void OnPaste(object sender, DataObjectPastingEventArgs e)
         {
-            var textBox = (WpfTextBox)sender;
+            var textBox = (TextBox)sender;
 
             if (!e.DataObject.GetDataPresent(typeof(string)))
             {
@@ -102,7 +101,7 @@ namespace SkyrimCraftingTool.Model
 
         private static void OnLostFocus(object sender, RoutedEventArgs e)
         {
-            var textBox = (WpfTextBox)sender;
+            var textBox = (TextBox)sender;
             var mode = GetMode(textBox);
             if (mode == NumericMode.None) return;
 
@@ -112,7 +111,7 @@ namespace SkyrimCraftingTool.Model
             textBox.Text = normalized;
             // The bound property may already have been updated with the bad value (UpdateSourceTrigger
             // defaults to LostFocus) - force the corrected value through regardless of handler order.
-            textBox.GetBindingExpression(WpfTextBox.TextProperty)?.UpdateSource();
+            textBox.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
         }
 
         // Parses text as a number (empty / garbage / NaN / Infinity -> Min), clamps into [Min, Max]
@@ -135,13 +134,13 @@ namespace SkyrimCraftingTool.Model
                 : value.ToString(CultureInfo.InvariantCulture);
         }
 
-        private static string GetProposedText(WpfTextBox textBox, string input)
+        private static string GetProposedText(TextBox textBox, string input)
         {
             var text = textBox.Text;
             return text[..textBox.SelectionStart] + input + text[(textBox.SelectionStart + textBox.SelectionLength)..];
         }
 
-        private static bool IsValid(WpfTextBox textBox, string proposedText)
+        private static bool IsValid(TextBox textBox, string proposedText)
         {
             var pattern = GetMode(textBox) == NumericMode.Decimal ? DecimalRegex : IntegerRegex;
             return pattern.IsMatch(proposedText);

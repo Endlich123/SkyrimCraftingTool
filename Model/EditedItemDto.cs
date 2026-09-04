@@ -51,6 +51,12 @@ namespace SkyrimCraftingTool.Model
         public List<EditedItemDto> ToApply { get; set; } = new();
         public List<EditedItemDto> ToSkipEqual { get; set; } = new();
         public List<EditedItemDto> ToSkipMissing { get; set; } = new();
+
+        // Unusable payload rather than a missing target — currently an unparsable LastChanged
+        // timestamp. Kept separate from ToSkipMissing so the summary doesn't blame a missing plugin
+        // for what is actually a corrupt export file.
+        public List<EditedItemDto> ToSkipInvalid { get; set; } = new();
+
         public List<ImportConflict> Conflicts { get; set; } = new();
     }
 
@@ -59,6 +65,7 @@ namespace SkyrimCraftingTool.Model
         public int Applied { get; set; }
         public int SkippedEqual { get; set; }
         public List<EditedItemDto> SkippedMissing { get; set; } = new();
+        public int SkippedInvalid { get; set; }
         public int ConflictsKeptLocal { get; set; }
         public int ConflictsUsedFile { get; set; }
     }

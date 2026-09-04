@@ -54,8 +54,15 @@ namespace SkyrimCraftingTool.Model
             _cache.AddRange(LoadTable("Keywords", "Keyword"));
             _cache.AddRange(LoadTable("Materials", "Material"));
             _cache.AddRange(LoadTable("Perks", "Perk"));
-            _cache.AddRange(LoadTable("Quests", "Quest"));
+            _cache.AddRange(LoadQuestsWithStages());
             _cache.AddRange(LoadTable("LVLi", "LVLi"));
+
+            // FormLists was added after the other name tables. formid.db is fully DROP+CREATEd on
+            // every scan, so it's present after any rescan — but an un-rescanned db from before this
+            // change has no FormLists table and LoadTable would throw "no such table". Degrade to no
+            // FLST names until the next scan (same spirit as LoadQuestsWithStages' catch).
+            try { _cache.AddRange(LoadTable("FormLists", "FormList")); }
+            catch (SqliteException) { }
 
             // Dictionary lookup, not a linear scan: GetByKey is called once per container item across
             // every plugin (ItemDBHandler.PutIntoDataBank), so a linear scan is O(items * cacheSize)
@@ -64,6 +71,76 @@ namespace SkyrimCraftingTool.Model
             _cacheByKey = _cache
                 .GroupBy(r => r.Key, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        }
+
+        // Same as LoadTable("Quests", "Quest") plus the Stages column parsed onto FormIDRecord.Stages.
+        private List<FormIDRecord> LoadQuestsWithStages()
+        {
+            var list = LoadTable("Quests", "Quest");
+            var byKey = list.ToDictionary(r => r.Key, StringComparer.OrdinalIgnoreCase);
+
+            try
+            {
+                using var connection = new SqliteConnection($"Data Source={FormIDdbPath}");
+                connection.Open();
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "SELECT Key, Stages FROM Quests;";
+
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                {
+                    if (reader.IsDBNull(1)) continue;
+                    if (!byKey.TryGetValue(reader.GetString(0), out var rec)) continue;
+
+                    var stages = reader.GetString(1)
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(s => int.TryParse(s.Trim(), out var v) ? v : (int?)null)
+                        .Where(v => v.HasValue)
+                        .Select(v => v!.Value)
+                        .ToList();
+
+                    if (stages.Count > 0)
+                        rec.Stages = stages;
+                }
+            }
+            catch (SqliteException)
+            {
+                // Pre-existing formid.db from before the Stages column — degrades to no stage list
+                // until the next scan (which drops + recreates the table).
+            }
+
+            return list;
+        }
+
+        // FLST Key -> EditorID, read straight from formid.db (NOT the in-memory cache). The cache on
+        // this instance is loaded once and never invalidated after a rescan, so a cache read would
+        // keep returning the pre-rescan set (empty, on a db from before the FormLists table existed).
+        // This table is small and read rarely (worn-restriction picker refresh), so a direct query
+        // is fine and always current.
+        public Dictionary<string, string> GetFormListNamesDirect()
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (!File.Exists(FormIDdbPath)) return map;
+
+            try
+            {
+                using var connection = new SqliteConnection($"Data Source={FormIDdbPath}");
+                connection.Open();
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "SELECT Key, Name FROM FormLists;";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                {
+                    var key = reader.GetString(0);
+                    if (!map.ContainsKey(key))
+                        map[key] = reader.IsDBNull(1) ? "" : reader.GetString(1);
+                }
+            }
+            catch (SqliteException)
+            {
+                // formid.db from before the FormLists table — no names until the next scan.
+            }
+            return map;
         }
 
         private List<FormIDRecord> LoadTable(string table, string type)
@@ -123,8 +200,9 @@ namespace SkyrimCraftingTool.Model
             using var insertKeyword = PrepareInsert(connection, "Keywords");
             using var insertMaterial = PrepareInsert(connection, "Materials");
             using var insertPerk = PrepareInsert(connection, "Perks");
-            using var insertQuest = PrepareInsert(connection, "Quests");
+            using var insertQuest = PrepareQuestInsert(connection);
             using var insertLVLI = PrepareInsert(connection, "LVLi");
+            using var insertFormList = PrepareInsert(connection, "FormLists");
 
             using var transaction = connection.BeginTransaction();
             insertKeyword.Transaction = transaction;
@@ -132,6 +210,7 @@ namespace SkyrimCraftingTool.Model
             insertPerk.Transaction = transaction;
             insertQuest.Transaction = transaction;
             insertLVLI.Transaction = transaction;
+            insertFormList.Transaction = transaction;
 
             // Parse phase runs in parallel across plugins; the write phase below stays sequential
             // (see ItemDBHandler.PutIntoDataBank for the same split). PrepareInsert uses
@@ -154,8 +233,9 @@ namespace SkyrimCraftingTool.Model
                 foreach (var (key, name) in parsed.Keywords) ApplyKeyNameAndExecute(insertKeyword, key, name);
                 foreach (var (key, name) in parsed.Materials) ApplyKeyNameAndExecute(insertMaterial, key, name);
                 foreach (var (key, name) in parsed.Perks) ApplyKeyNameAndExecute(insertPerk, key, name);
-                foreach (var (key, name) in parsed.Quests) ApplyKeyNameAndExecute(insertQuest, key, name);
+                foreach (var (key, name, stages) in parsed.Quests) ApplyQuestRowAndExecute(insertQuest, key, name, stages);
                 foreach (var (key, name) in parsed.LVLi) ApplyKeyNameAndExecute(insertLVLI, key, name);
+                foreach (var (key, name) in parsed.FormLists) ApplyKeyNameAndExecute(insertFormList, key, name);
             }
 
             transaction.Commit();
@@ -167,8 +247,9 @@ namespace SkyrimCraftingTool.Model
             public List<(string key, string name)> Keywords = new();
             public List<(string key, string name)> Materials = new();
             public List<(string key, string name)> Perks = new();
-            public List<(string key, string name)> Quests = new();
+            public List<(string key, string name, string stages)> Quests = new();
             public List<(string key, string name)> LVLi = new();
+            public List<(string key, string name)> FormLists = new();
         }
 
         // Pure parsing — no DB access — so this is safe to call concurrently from Parallel.ForEach.
@@ -205,10 +286,21 @@ namespace SkyrimCraftingTool.Model
                 result.Perks.Add(($"{perk.FormKey.ModKey.FileName}|{perk.FormKey.ID:X6}", perk.EditorID));
 
             foreach (var quest in mod.Quests.Records)
-                result.Quests.Add(($"{quest.FormKey.ModKey.FileName}|{quest.FormKey.ID:X6}", quest.EditorID));
+            {
+                var stages = string.Join(",", quest.Stages
+                    .Select(s => s.Index)
+                    .Distinct()
+                    .OrderBy(i => i));
+                result.Quests.Add(($"{quest.FormKey.ModKey.FileName}|{quest.FormKey.ID:X6}", quest.EditorID, stages));
+            }
 
             foreach (var lvi in mod.LeveledItems.Records)
                 result.LVLi.Add(($"{lvi.FormKey.ModKey.FileName}|{lvi.FormKey.ID:X6}", lvi.EditorID));
+
+            // Every FLST in the plugin — not just enchant-referenced ones (decision #1). Members are
+            // scanned into item.db by ItemDBHandler; this table is only the FLST's own identity/name.
+            foreach (var fl in mod.FormLists.Records)
+                result.FormLists.Add(($"{fl.FormKey.ModKey.FileName}|{fl.FormKey.ID:X6}", fl.EditorID));
 
             return result;
         }
@@ -217,6 +309,26 @@ namespace SkyrimCraftingTool.Model
         {
             cmd.Parameters["@key"].Value = key;
             cmd.Parameters["@name"].Value = name ?? "";
+            cmd.ExecuteNonQuery();
+        }
+
+        // Quests carry an extra comma-separated stage-index list (see FormIDRecord.Stages).
+        private static SqliteCommand PrepareQuestInsert(SqliteConnection connection)
+        {
+            var cmd = new SqliteCommand(
+                "INSERT OR IGNORE INTO Quests (Key, Name, Stages) VALUES (@key, @name, @stages)",
+                connection);
+            cmd.Parameters.Add("@key", SqliteType.Text);
+            cmd.Parameters.Add("@name", SqliteType.Text);
+            cmd.Parameters.Add("@stages", SqliteType.Text);
+            return cmd;
+        }
+
+        private static void ApplyQuestRowAndExecute(SqliteCommand cmd, string key, string name, string stages)
+        {
+            cmd.Parameters["@key"].Value = key;
+            cmd.Parameters["@name"].Value = name ?? "";
+            cmd.Parameters["@stages"].Value = stages ?? "";
             cmd.ExecuteNonQuery();
         }
 
@@ -230,6 +342,7 @@ namespace SkyrimCraftingTool.Model
                 DROP TABLE IF EXISTS Perks;
                 DROP TABLE IF EXISTS Quests;
                 DROP TABLE IF EXISTS LVLi;
+                DROP TABLE IF EXISTS FormLists;
             ";
             cmd.ExecuteNonQuery();
         }
@@ -256,10 +369,16 @@ namespace SkyrimCraftingTool.Model
 
             CREATE TABLE Quests (
                 Key TEXT PRIMARY KEY,
-                Name TEXT NOT NULL
+                Name TEXT NOT NULL,
+                Stages TEXT
             );
 
             CREATE TABLE LVLi(
+                Key TEXT PRIMARY KEY,
+                Name TEXT NOT NULL
+            );
+
+            CREATE TABLE FormLists (
                 Key TEXT PRIMARY KEY,
                 Name TEXT NOT NULL
             );
