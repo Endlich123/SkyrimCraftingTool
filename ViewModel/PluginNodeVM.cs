@@ -90,9 +90,13 @@ namespace SkyrimCraftingTool.ViewModel
         // Output/Exports/<PluginName>/ — see ExportFileStore for the path convention. Export writes
         // one file per item (same shape as MainContentVM.ExportAllCommand, just scoped to this
         // plugin); Import reads back everything found under this plugin's own folder.
-        public ICommand ExportPluginCommand => new RelayCommand(() =>
+        public ICommand ExportPluginCommand => new RelayCommand(async () =>
         {
             if (Main?.ImportExportService == null) return;
+
+            // See MainContentVM.ExportAllAsync — a pending debounced save must land before we read
+            // the edited set, or it silently misses from the export.
+            await Main.FlushPendingSavesAsync();
 
             List<EditedItemDto> items;
             try

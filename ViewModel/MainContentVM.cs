@@ -369,22 +369,22 @@ namespace SkyrimCraftingTool.ViewModel
 
         public RelayCommand ToggleExpertContainersCommand { get; }
 
-        // --- Generate Patch options (session-only, like the container toggles) ---
+        // --- Generate Patch options (persisted to Input\prefs.json) ---
 
-        private bool _splitPatchPerPlugin;
+        private bool _splitPatchPerPlugin = AppPrefs.GetBool("patch.splitPerPlugin");
         public bool SplitPatchPerPlugin
         {
             get => _splitPatchPerPlugin;
-            set => SetProperty(ref _splitPatchPerPlugin, value);
+            set { if (SetProperty(ref _splitPatchPerPlugin, value)) AppPrefs.SetBool("patch.splitPerPlugin", value); }
         }
 
         // When set, the patch is written next to the app (SKSE\... and the .esp at the tool root)
         // so the tool folder itself works as an MO2 mod. Otherwise it goes under Output\.
-        private bool _patchIntoAppFolder;
+        private bool _patchIntoAppFolder = AppPrefs.GetBool("patch.nextToApp");
         public bool PatchIntoAppFolder
         {
             get => _patchIntoAppFolder;
-            set => SetProperty(ref _patchIntoAppFolder, value);
+            set { if (SetProperty(ref _patchIntoAppFolder, value)) AppPrefs.SetBool("patch.nextToApp", value); }
         }
 
 
@@ -473,9 +473,10 @@ namespace SkyrimCraftingTool.ViewModel
                 ShowExpertContainers = !ShowExpertContainers;
             });
 
-            ExportAllCommand = new RelayCommand(ExportAll);
+            ExportAllCommand = new RelayCommand(async () => await ExportAllAsync());
             ImportAllCommand = new RelayCommand(async () => await ImportAllAsync());
             GeneratePatchCommand = new RelayCommand(async () => await GeneratePatchAsync());
+            ManageOrphanedEditsCommand = new RelayCommand(ManageOrphanedEdits);
 
             RefreshAvailablePresets();
         }
@@ -515,8 +516,13 @@ namespace SkyrimCraftingTool.ViewModel
         // (Output/Exports/<Plugin>/<Item>.json, see ExportFileStore) so Export and Import always
         // agree on where a given item's data is without the user having to pick a location.
 
-        private void ExportAll()
+        private async Task ExportAllAsync()
         {
+            // Same reason as GeneratePatchAsync/ExportEnchantmentsAsync: an edit made inside the
+            // 350ms debounce window isn't in the DB yet, so it would silently be missing from the
+            // export while the dialog still reports success.
+            await FlushPendingSavesAsync();
+
             List<EditedItemDto> items;
             try
             {
@@ -537,14 +543,9 @@ namespace SkyrimCraftingTool.ViewModel
                 return;
             }
 
-            foreach (var item in items)
-            {
-                var path = ExportFileStore.GetItemFilePath(item.Key, item.DisplayName);
-                ExportFileStore.WriteFile(path, new ExportFile { ExportedAt = ItemDBHandler.NowIso(), Items = new List<EditedItemDto> { item } });
-            }
-
+            var (count, root) = ImportExportFlow.ExportItems(items);
             System.Windows.MessageBox.Show(
-                $"{items.Count} item(s) exported to{Environment.NewLine}{ExportFileStore.ExportsRoot}",
+                $"{count} item(s) exported to{Environment.NewLine}{root}",
                 "Export Successful", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
         }
 
@@ -565,6 +566,15 @@ namespace SkyrimCraftingTool.ViewModel
                 OutputRoot = PatchIntoAppFolder
                     ? GlobalState.Tool.ModFolder
                     : GlobalState.Tool.OutputFolder,
+
+                // Real plugin paths in load order. The COBJ builder needs them to deep-copy the
+                // winning record for an override instead of rebuilding it from the tracked fields -
+                // rebuilding drops every field the scan does not read, above all the ~69% of
+                // condition types it cannot represent. GetActivePlugins() is already load-ordered
+                // (FileServiceAdapter maps it to GetActivePluginsInLoadOrder).
+                PluginsInLoadOrder = FileService.GetActivePlugins()
+                    .SelectMany(p => p.FullPaths.Select(fp => (p.FileName, FullPath: fp)))
+                    .ToList(),
             };
             PatchGenReport report;
             try
@@ -582,7 +592,7 @@ namespace SkyrimCraftingTool.ViewModel
 
             if (!report.AnythingGenerated)
             {
-                System.Windows.MessageBox.Show("No edited armor, weapon or recipe found - nothing to patch.",
+                System.Windows.MessageBox.Show("No edited armor, weapon, recipe or enchantment found - nothing to patch.",
                     "Generate Patch", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
                 return;
             }
@@ -592,6 +602,21 @@ namespace SkyrimCraftingTool.ViewModel
             msg.AppendLine();
             foreach (var f in report.WrittenFiles)
                 msg.AppendLine("  " + MakeRelative(options.OutputRoot, f));
+
+            // Deliberately above the masters and warnings: an ESP override is not an error, but it
+            // is a consequence the user should take in knowingly rather than find later.
+            if (report.StaleScanNotice != null)
+            {
+                msg.AppendLine();
+                msg.AppendLine("ACTION NEEDED");
+                msg.AppendLine("  " + report.StaleScanNotice);
+            }
+            if (report.EspOverrideNotice != null)
+            {
+                msg.AppendLine();
+                msg.AppendLine("NOTE");
+                msg.AppendLine("  " + report.EspOverrideNotice);
+            }
             if (report.CobjMasters.Count > 0)
             {
                 msg.AppendLine();
@@ -633,8 +658,8 @@ namespace SkyrimCraftingTool.ViewModel
 
         private async Task ImportAllAsync()
         {
-            var files = ExportFileStore.FindAllFiles();
-            if (files.Count == 0)
+            var allItems = ImportExportFlow.ReadAllExportedItems();
+            if (allItems.Count == 0)
             {
                 System.Windows.MessageBox.Show(
                     $"No export files found under{Environment.NewLine}{ExportFileStore.ExportsRoot}",
@@ -642,26 +667,12 @@ namespace SkyrimCraftingTool.ViewModel
                 return;
             }
 
-            var allItems = new List<EditedItemDto>();
-            foreach (var path in files)
-            {
-                try
-                {
-                    var file = ExportFileStore.ReadFile(path);
-                    if (file?.Items != null)
-                        allItems.AddRange(file.Items);
-                }
-                catch (Exception ex)
-                {
-                    AppLogger.LogError($"MainContentVM.ImportAllAsync: failed reading {path}", ex);
-                }
-            }
-
             await RunImportAsync(allItems);
         }
 
         // Shared Preview -> conflict resolution -> Apply -> refresh -> summary flow, used by both
-        // ImportAllCommand and ItemNodeVM.ImportItemCommand (via Main.RunImportAsync).
+        // ImportAllCommand and ItemNodeVM.ImportItemCommand (via Main.RunImportAsync). Core is
+        // Services.ImportExportFlow; the item-tree refresh afterwards is what stays here.
         public async Task RunImportAsync(List<EditedItemDto> items)
         {
             if (items == null || items.Count == 0)
@@ -671,40 +682,25 @@ namespace SkyrimCraftingTool.ViewModel
                 return;
             }
 
-            ImportPlan plan;
+            // Must run BEFORE the import: a still-pending debounced save would otherwise fire ~350ms
+            // later and write the pre-import UI value straight back over what was just imported.
+            await FlushPendingSavesAsync();
+
+            ImportResult? result;
             try
             {
-                plan = _importExportService.PreviewImport(items);
+                result = ImportExportFlow.RunImport(_importExportService, items);
             }
             catch (Exception ex)
             {
-                AppLogger.LogError("MainContentVM.RunImportAsync (PreviewImport) failed", ex);
+                AppLogger.LogError("MainContentVM.RunImportAsync (ImportExportFlow) failed", ex);
                 System.Windows.MessageBox.Show($"Import failed:{Environment.NewLine}{ex.Message}",
                     "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
                 return;
             }
 
-            var useFileVersion = new HashSet<string>();
-            if (plan.Conflicts.Count > 0)
-            {
-                var resolved = View.ImportConflictWindow.ShowDialog(plan.Conflicts);
-                if (resolved == null)
-                    return; // user cancelled — abort, leaving conflicting items untouched
-                useFileVersion = resolved;
-            }
-
-            ImportResult result;
-            try
-            {
-                result = _importExportService.ApplyImport(plan, useFileVersion);
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogError("MainContentVM.RunImportAsync (ApplyImport) failed", ex);
-                System.Windows.MessageBox.Show($"Import failed:{Environment.NewLine}{ex.Message}",
-                    "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
-                return;
-            }
+            if (result == null)
+                return; // user cancelled the conflict dialog — conflicting items left untouched
 
             try
             {
@@ -715,14 +711,7 @@ namespace SkyrimCraftingTool.ViewModel
                 AppLogger.LogError("MainContentVM.RunImportAsync (refresh) failed", ex);
             }
 
-            var summary =
-                $"Updated: {result.Applied}{Environment.NewLine}" +
-                $"Skipped (identical): {result.SkippedEqual}{Environment.NewLine}" +
-                $"Skipped (not present locally): {result.SkippedMissing.Count}{Environment.NewLine}" +
-                $"Conflicts - used import: {result.ConflictsUsedFile}{Environment.NewLine}" +
-                $"Conflicts - kept local: {result.ConflictsKeptLocal}";
-
-            System.Windows.MessageBox.Show(summary, "Import Complete",
+            System.Windows.MessageBox.Show(ImportExportFlow.SummaryText(result), "Import Complete",
                 System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
         }
 
@@ -917,8 +906,27 @@ namespace SkyrimCraftingTool.ViewModel
                                 Category: "scan"));
                         }
 
-                        System.Windows.MessageBox.Show(FormatScanReport(report), "Scan complete",
-                            System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                        if (report.OrphanedEdits.Count > 0)
+                        {
+                            var choice = System.Windows.MessageBox.Show(
+                                FormatScanReport(report) + Environment.NewLine + "Review the orphaned edits now?",
+                                "Scan complete",
+                                System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Information);
+                            if (choice == System.Windows.MessageBoxResult.Yes)
+                            {
+                                var orphans = report.OrphanedEdits
+                                    .Select(o => new OrphanedEdit(o.Table, o.Key, o.DisplayName, o.LastChanged))
+                                    .ToList();
+                                View.OrphanedEditsWindow.ShowDialog(orphans, ItemService);
+                                RefreshOrphanedEditCount();
+                                if (!HasOrphanedEdits) IssueHub.Current.Clear("scan");
+                            }
+                        }
+                        else
+                        {
+                            System.Windows.MessageBox.Show(FormatScanReport(report), "Scan complete",
+                                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                        }
                     }
                     else
                     {
@@ -1142,7 +1150,61 @@ namespace SkyrimCraftingTool.ViewModel
                     LimitedContainerVMs.Add(vm);
                 }
 
+            RefreshOrphanedEditCount();
+
             Log("ApplyCacheSnapshot END");
+        }
+
+        // --- Orphaned edits ---
+
+        private int _orphanedEditCount;
+        public int OrphanedEditCount
+        {
+            get => _orphanedEditCount;
+            private set
+            {
+                if (SetProperty(ref _orphanedEditCount, value))
+                    OnPropertyChanged(nameof(HasOrphanedEdits));
+            }
+        }
+
+        public bool HasOrphanedEdits => OrphanedEditCount > 0;
+
+        internal void RefreshOrphanedEditCount()
+        {
+            try { OrphanedEditCount = ItemService.GetOrphanedItemEdits().Count; }
+            catch (Exception ex) { AppLogger.LogError("RefreshOrphanedEditCount failed", ex); }
+        }
+
+        public RelayCommand ManageOrphanedEditsCommand { get; }
+
+        private void ManageOrphanedEdits()
+        {
+            List<OrphanedEdit> orphans;
+            try
+            {
+                orphans = ItemService.GetOrphanedItemEdits();
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError("Loading orphaned edits failed", ex);
+                System.Windows.MessageBox.Show($"Could not read orphaned edits:{Environment.NewLine}{ex.Message}",
+                    "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                return;
+            }
+
+            if (orphans.Count == 0)
+            {
+                System.Windows.MessageBox.Show("No orphaned edits.", "Orphaned Edits",
+                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                OrphanedEditCount = 0;
+                return;
+            }
+
+            int deleted = View.OrphanedEditsWindow.ShowDialog(orphans, ItemService);
+            RefreshOrphanedEditCount();
+            if (deleted > 0 && !HasOrphanedEdits)
+                IssueHub.Current.Clear("scan");
         }
 
         // --- Item selection ---

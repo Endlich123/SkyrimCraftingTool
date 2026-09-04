@@ -486,13 +486,20 @@
                                                             <Grid>
                                                                 <Grid.ColumnDefinitions>
                                                                     <ColumnDefinition Width="*"/>
-                                                                    <ColumnDefinition Width="60"/>
+                                                                    <ColumnDefinition Width="80"/>
                                                                 </Grid.ColumnDefinitions>
                                                                 <ComboBox Grid.Column="0"
                                                                           ItemsSource="{Binding DataContext.FilteredQuests, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                                           SelectedItem="{Binding SelectedQuest}" IsSynchronizedWithCurrentItem="False" BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
                                                                           Style="{StaticResource ItemComboBoxStyle}" />
-                                                                <TextBox Grid.Column="1" Text="{Binding Stage}" model:NumericTextBoxBehavior.Mode="Integer" Style="{StaticResource ItemTextBoxStyle}" />
+                                                                <ComboBox Grid.Column="1"
+                                                                          IsEditable="True"
+                                                                          IsSynchronizedWithCurrentItem="False"
+                                                                          ItemsSource="{Binding AvailableStages}"
+                                                                          Text="{Binding Stage, UpdateSourceTrigger=LostFocus}"
+                                                                          ToolTip="Stages defined by the selected quest — or type one."
+                                                                          Style="{StaticResource CompactComboBoxStyle}"
+                                                                          Margin="0,0,5,5" />
                                                             </Grid>
                                                         </DataTemplate>
                                                     </ContentControl.Resources>
@@ -514,6 +521,52 @@
                                                     CommandParameter="{Binding}"
                                                     Style="{StaticResource RemoveButtonStyle}"
                                                     ToolTip="Remove Condition"/>
+
+                                                                        <!-- Read-only condition overlay.
+                                                                             A condition type the tool preserves verbatim but cannot edit
+                                                                             (GetItemCount, EPTemperingItemIsEnchanted, GetGlobalValue, ...).
+                                                                             Before these were scanned they were simply discarded, which cost
+                                                                             69% of all COBJ conditions. Now they are kept, so the row has to
+                                                                             show something - and must not offer the normal editors, which have
+                                                                             no way to represent the parameter.
+                                                                             It covers the whole row instead of hiding each control separately;
+                                                                             ReadOnlyConditionViewModel.Type is pinned too, so keyboard focus on
+                                                                             a covered picker still can't change anything.
+                                                                             Collapsed by default + DataTrigger, NOT a Visibility converter
+                                                                             binding: a converter binding that resolves to UnsetValue falls
+                                                                             back to Visible, which would cover every ordinary row. -->
+                                                                        <Border Grid.Column="0" Grid.ColumnSpan="5" Panel.ZIndex="10"
+                                                                                Background="{StaticResource ColorBackgroundControl}"
+                                                                                BorderBrush="{StaticResource ColorDivider}"
+                                                                                BorderThickness="1" Padding="6,4"
+                                                                                ToolTip="{Binding Explanation}">
+                                                                            <Border.Style>
+                                                                                <Style TargetType="Border">
+                                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                                    <Style.Triggers>
+                                                                                        <DataTrigger Binding="{Binding Type}" Value="ReadOnly">
+                                                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                                                        </DataTrigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </Border.Style>
+                                                                            <StackPanel Orientation="Horizontal">
+                                                                                <TextBlock Text="Locked:" FontWeight="SemiBold"
+                                                                                           VerticalAlignment="Center"
+                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
+                                                                                <TextBlock Text="{Binding FunctionName}" Margin="6,0,0,0"
+                                                                                           FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                                                <TextBlock Text="{Binding TargetDisplay}" Margin="10,0,0,0"
+                                                                                           VerticalAlignment="Center"
+                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
+                                                                                <TextBlock Text="{Binding ValueDisplay}" Margin="10,0,0,0"
+                                                                                           VerticalAlignment="Center"
+                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
+                                                                                <TextBlock Text="(preserved, not editable)" Margin="14,0,0,0"
+                                                                                           FontStyle="Italic" VerticalAlignment="Center"
+                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
+                                                                            </StackPanel>
+                                                                        </Border>
                                         </Grid>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>

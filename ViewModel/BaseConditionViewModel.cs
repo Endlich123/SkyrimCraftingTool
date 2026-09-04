@@ -11,7 +11,12 @@ namespace SkyrimCraftingTool.ViewModel
         GetIsSex,
         GetActorValue,
         GetLevel,
-        GetStageDone
+        GetStageDone,
+
+        // Scanned and written back verbatim, but NOT editable - see ReadOnlyConditionViewModel.
+        // Excluded from the ConditionTypes picker below: turning one into an editable type would
+        // throw away a parameter the tool cannot re-create.
+        ReadOnly
     }
 
     public abstract class BaseConditionViewModel : ViewModelBase
@@ -21,7 +26,9 @@ namespace SkyrimCraftingTool.ViewModel
         // which only looks at instance members - static properties are
         // silently invisible to it, leaving the bound ComboBox empty.
         public IEnumerable<CustomConditionType> ConditionTypes =>
-            Enum.GetValues(typeof(CustomConditionType)).Cast<CustomConditionType>();
+            Enum.GetValues(typeof(CustomConditionType))
+                .Cast<CustomConditionType>()
+                .Where(t => t != CustomConditionType.ReadOnly);
 
         public IEnumerable<string> RunOnOptions { get; } = new[] { "Subject", "Target" };
 

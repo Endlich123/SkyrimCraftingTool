@@ -25,24 +25,50 @@
 
 
     <DockPanel>
-        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Background="{StaticResource ColorBackgroundBase}">
-            <Button Content="Items"
-                    Command="{Binding OpenMainContentCommand}"
-                    Style="{StaticResource NavTabButtonStyle}"
-                    Tag="{Binding IsMainContentActive}"
-                    Margin="12,10,10,0"/>
-            <Button Content="Enchantments"
-                    Command="{Binding OpenEnchantmentMenuCommand}"
-                    Style="{StaticResource NavTabButtonStyle}"
-                    Tag="{Binding IsEnchantmentActive}"
-                    Margin="0,10,10,0"/>
+        <!-- Shell toolbar: nav tabs on the left, app-wide actions on the right.
+             "Generate Patch" lives here rather than in the Items view because it covers everything -
+             armor, weapons, recipes, enchantments and form lists. It binds through to ContentVM,
+             which still owns the command (services + autosave flush live there). -->
+        <DockPanel DockPanel.Dock="Top" Background="{StaticResource ColorBackgroundBase}">
 
-            <Button Content="Presets"
-                    Command="{Binding OpenPresetsConfigCommand}"
-                    Style="{StaticResource NavTabButtonStyle}"
-                    Tag="{Binding IsPresetsActive}"
-                    Margin="0,10,10,0"/>
-        </StackPanel>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="0,10,12,0">
+                <CheckBox Content="One ESP per plugin"
+                          IsChecked="{Binding ContentVM.SplitPatchPerPlugin}"
+                          Foreground="{StaticResource ColorTextSecondary}"
+                          VerticalAlignment="Center"
+                          Margin="0,0,14,0"
+                          ToolTip="Off: one SkyrimCraftingTool.esp. On: SkyrimCraftingTool - &lt;Plugin&gt;.esp per source mod."/>
+                <CheckBox Content="Write patch next to app"
+                          IsChecked="{Binding ContentVM.PatchIntoAppFolder}"
+                          Foreground="{StaticResource ColorTextSecondary}"
+                          VerticalAlignment="Center"
+                          Margin="0,0,14,0"
+                          ToolTip="Off: patch goes under Output\. On: SKSE\ and the .esp are written at the tool root, so the tool folder can be enabled directly as an MO2 mod."/>
+                <Button Content="Generate Patch"
+                        Command="{Binding ContentVM.GeneratePatchCommand}"
+                        Style="{StaticResource ActionButtonStyle}"
+                        ToolTip="SkyPatcher INIs for every edited armor, weapon, enchantment and form list, plus SkyrimCraftingTool.esp for created/edited recipes and re-pointed worn-restriction lists."/>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal">
+                <Button Content="Items"
+                        Command="{Binding OpenMainContentCommand}"
+                        Style="{StaticResource NavTabButtonStyle}"
+                        Tag="{Binding IsMainContentActive}"
+                        Margin="12,10,10,0"/>
+                <Button Content="Enchantments"
+                        Command="{Binding OpenEnchantmentMenuCommand}"
+                        Style="{StaticResource NavTabButtonStyle}"
+                        Tag="{Binding IsEnchantmentActive}"
+                        Margin="0,10,10,0"/>
+
+                <Button Content="Presets"
+                        Command="{Binding OpenPresetsConfigCommand}"
+                        Style="{StaticResource NavTabButtonStyle}"
+                        Tag="{Binding IsPresetsActive}"
+                        Margin="0,10,10,0"/>
+            </StackPanel>
+        </DockPanel>
 
         <Border DockPanel.Dock="Top"
             BorderBrush="{StaticResource ColorBorder}"

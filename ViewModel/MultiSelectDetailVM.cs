@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -56,6 +57,10 @@ namespace SkyrimCraftingTool.ViewModel
         }
 
         public ICommand ApplyPresetCommand { get; }
+
+        // --- Numeric fields: set / add / subtract on every selected item ---
+        public ObservableCollection<NumericBulkFieldVM> NumericFields { get; } = new();
+        public ICommand ApplyNumericFieldsCommand { get; }
 
         // --- Keywords (additive) ---
         public ObservableCollection<KeywordRowVM> KeywordRows { get; } = new();
@@ -235,6 +240,25 @@ namespace SkyrimCraftingTool.ViewModel
             _keywordRowsView = CollectionViewSource.GetDefaultView(KeywordRows);
             _keywordRowsView.Filter = FilterKeywordRow;
 
+            // Field catalog. Max values mirror the single-item editor (Speed/Reach/Stagger capped at
+            // 10, everything else only floored at 0). Read/Write go through the same ItemNodeVM
+            // property the single-item editor binds to, so change-tracking / autosave behave identically.
+            NumericFields.Add(new NumericBulkFieldVM("Value", "Cost", isInteger: true, min: 0, max: double.MaxValue,
+                applies: i => i.IsArmor || i.IsWeapon, read: i => i.Value, write: (i, v) => i.Value = (int)Math.Round(v)));
+            NumericFields.Add(new NumericBulkFieldVM("Weight", "Weight", isInteger: false, min: 0, max: double.MaxValue,
+                applies: i => i.IsArmor || i.IsWeapon, read: i => i.Weight, write: (i, v) => i.Weight = (float)v));
+            NumericFields.Add(new NumericBulkFieldVM("ArmorRating", "Armor Rating", isInteger: false, min: 0, max: double.MaxValue,
+                applies: i => i.IsArmor, read: i => i.ArmorRating, write: (i, v) => i.ArmorRating = (float)v));
+            NumericFields.Add(new NumericBulkFieldVM("Damage", "Damage", isInteger: true, min: 0, max: double.MaxValue,
+                applies: i => i.IsWeapon, read: i => i.Damage, write: (i, v) => i.Damage = (int)Math.Round(v)));
+            NumericFields.Add(new NumericBulkFieldVM("Speed", "Speed", isInteger: false, min: 0, max: 10,
+                applies: i => i.IsWeapon, read: i => i.Speed, write: (i, v) => i.Speed = (float)v));
+            NumericFields.Add(new NumericBulkFieldVM("Reach", "Reach", isInteger: false, min: 0, max: 10,
+                applies: i => i.IsWeapon, read: i => i.Reach, write: (i, v) => i.Reach = (float)v));
+            NumericFields.Add(new NumericBulkFieldVM("Stagger", "Stagger", isInteger: false, min: 0, max: 10,
+                applies: i => i.IsWeapon, read: i => i.Stagger, write: (i, v) => i.Stagger = (float)v));
+            RefreshNumericFieldRelevance();
+
             // ContainerEntryVM.ToggleSelectedCommand only fires an event (intended for the "Remove"
             // button in the single-item editor) instead of flipping IsSelected itself - own, simple
             // toggle logic here instead of repurposing that event pattern.
@@ -252,6 +276,7 @@ namespace SkyrimCraftingTool.ViewModel
             ApplyTemperRecipeCommand = new RelayCommand(async () => await ApplyRecipeAsync(isTemper: true));
             ApplyContainersCommand = new RelayCommand(async () => await ApplyContainersAsync());
             ApplyPresetCommand = new RelayCommand(async () => await ApplyPresetAsync());
+            ApplyNumericFieldsCommand = new RelayCommand(async () => await ApplyNumericFieldsAsync());
 
             AddCraftingConditionCommand = new RelayCommand(() => CraftingConditionsTemplate.Add(new PerkConditionViewModel()));
             RemoveCraftingConditionCommand = new RelayCommand<BaseConditionViewModel>(c => { if (c != null) CraftingConditionsTemplate.Remove(c); });
@@ -432,7 +457,75 @@ namespace SkyrimCraftingTool.ViewModel
             {
                 RefreshKeywordRows();
                 _keywordRowsView.Refresh();
+                RefreshNumericFieldRelevance();
             });
+        }
+
+        // A numeric field row is only shown when at least one selected item actually has that field
+        // (Damage/Speed/… for weapons, ArmorRating for armor).
+        private void RefreshNumericFieldRelevance()
+        {
+            foreach (var f in NumericFields)
+                f.IsRelevant = SelectedItems.Any(f.Applies);
+        }
+
+        private async Task ApplyNumericFieldsAsync()
+        {
+            var enabled = NumericFields.Where(f => f.Include).ToList();
+            var fields = enabled.Where(f => f.TryParseValue(out _)).ToList();
+
+            // Name the ticked-but-unparsable fields instead of silently dropping them — otherwise
+            // the run reports success while that field did nothing.
+            var invalid = enabled.Where(f => !f.TryParseValue(out _)).Select(f => f.Label).ToList();
+            string invalidNote = invalid.Count == 0
+                ? ""
+                : $" Ignored (not a number): {string.Join(", ", invalid)}.";
+
+            if (fields.Count == 0)
+            {
+                StatusMessage = invalid.Count > 0
+                    ? $"Nothing applied.{invalidNote}"
+                    : "Enable at least one numeric field and enter a number.";
+                return;
+            }
+
+            int changedItems = 0;
+            foreach (var item in SelectedItems.ToList())
+            {
+                _main.EnsureItemHydrated(item);
+
+                bool touched = false;
+                foreach (var f in fields)
+                {
+                    if (!f.Applies(item)) continue;
+
+                    f.TryParseValue(out double operand);
+                    double current = f.Read(item);
+                    double result = f.Op switch
+                    {
+                        NumericBulkOp.Add => current + operand,
+                        NumericBulkOp.Subtract => current - operand,
+                        _ => operand,
+                    };
+                    result = Math.Clamp(result, f.Min, f.Max);
+                    if (f.IsInteger) result = Math.Round(result);
+
+                    // Skip no-ops so an unchanged item isn't marked edited / re-saved.
+                    if (Math.Abs(result - current) < (f.IsInteger ? 0.5 : 0.0001))
+                        continue;
+
+                    f.Write(item, result);
+                    await _main.PersistFieldAsync(item, f.FieldName);
+                    touched = true;
+                }
+
+                if (touched)
+                    changedItems++;
+            }
+
+            StatusMessage = (changedItems == 0
+                ? "No change (values already matched, or no selected item has those fields)."
+                : $"Numeric field(s) applied to {changedItems} item(s).") + invalidNote;
         }
 
         // Counts ONCE per refresh how many of the selected items have each keyword set
@@ -747,6 +840,74 @@ namespace SkyrimCraftingTool.ViewModel
                 ? $"Preset '{SelectedPreset.PresetName}' didn't match any of the selected items (no matching slots/types, or no fields enabled)."
                 : $"Preset '{SelectedPreset.PresetName}' applied to {applied} item(s).";
         }
+    }
+
+    public enum NumericBulkOp { Set, Add, Subtract }
+
+    // One editable numeric-field row in the multi-select "Numeric Fields" panel: which field,
+    // whether it's included in the apply, the op (= / + / -) and the operand. Read/Write bridge to
+    // the matching ItemNodeVM property.
+    public sealed class NumericBulkFieldVM : ViewModelBase
+    {
+        public string FieldName { get; }   // matches nameof(ItemNodeVM.Value) etc. for PersistFieldAsync
+        public string Label { get; }
+        public bool IsInteger { get; }
+        public double Min { get; }
+        public double Max { get; }
+        public Func<ItemNodeVM, bool> Applies { get; }
+
+        private readonly Func<ItemNodeVM, double> _read;
+        private readonly Action<ItemNodeVM, double> _write;
+
+        public NumericBulkFieldVM(string fieldName, string label, bool isInteger, double min, double max,
+            Func<ItemNodeVM, bool> applies, Func<ItemNodeVM, double> read, Action<ItemNodeVM, double> write)
+        {
+            FieldName = fieldName;
+            Label = label;
+            IsInteger = isInteger;
+            Min = min;
+            Max = max;
+            Applies = applies;
+            _read = read;
+            _write = write;
+            _selectedOpChoice = OpChoices[0];
+        }
+
+        public IReadOnlyList<string> OpChoices { get; } = new[] { "=  set", "+  add", "−  subtract" };
+
+        private string _selectedOpChoice;
+        public string SelectedOpChoice
+        {
+            get => _selectedOpChoice;
+            set { if (SetProperty(ref _selectedOpChoice, value)) OnPropertyChanged(nameof(Op)); }
+        }
+
+        public NumericBulkOp Op =>
+            _selectedOpChoice.StartsWith("+") ? NumericBulkOp.Add
+            : _selectedOpChoice.StartsWith("−") ? NumericBulkOp.Subtract
+            : NumericBulkOp.Set;
+
+        private bool _include;
+        public bool Include { get => _include; set => SetProperty(ref _include, value); }
+
+        private bool _isRelevant = true;
+        public bool IsRelevant { get => _isRelevant; set => SetProperty(ref _isRelevant, value); }
+
+        private string _valueText = string.Empty;
+        public string ValueText { get => _valueText; set => SetProperty(ref _valueText, value); }
+
+        // CurrentCulture first, InvariantCulture as fallback: on a de-DE machine the user types
+        // "2,5" but may also paste "2.5" — invariant-only silently dropped the whole field from the
+        // apply while the status line still reported success for the others.
+        public bool TryParseValue(out double value)
+        {
+            var text = (_valueText ?? string.Empty).Trim();
+            return double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value)
+                || double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+        }
+
+        public double Read(ItemNodeVM item) => _read(item);
+        public void Write(ItemNodeVM item, double value) => _write(item, value);
     }
 
     public class KeywordRowVM : ViewModelBase

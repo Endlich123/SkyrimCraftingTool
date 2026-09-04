@@ -25,17 +25,26 @@
         </StackPanel>
 
         <DataGrid Grid.Row="2"
+                  x:Name="ConflictGrid"
                   Style="{StaticResource DarkDataGridStyle}"
                   ItemsSource="{Binding Rows}"
-                  IsReadOnly="False">
+                  IsReadOnly="True">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="Table" Binding="{Binding Table}" Width="80" MinWidth="60" IsReadOnly="True"/>
-                <DataGridTextColumn Header="Item" Binding="{Binding DisplayName}" Width="*" MinWidth="140" IsReadOnly="True"/>
-                <DataGridTextColumn Header="Locally Changed" Binding="{Binding LocalLastChanged}" Width="170" MinWidth="120" IsReadOnly="True"/>
-                <DataGridTextColumn Header="File Changed" Binding="{Binding FileLastChanged}" Width="170" MinWidth="120" IsReadOnly="True"/>
-                <DataGridCheckBoxColumn Header="Use Import" Binding="{Binding UseFileVersion, Mode=TwoWay}" Width="110" MinWidth="90"
-                                        ElementStyle="{StaticResource DataGridCheckBoxCellStyle}"
-                                        EditingElementStyle="{StaticResource DataGridCheckBoxCellStyle}"/>
+                <DataGridTextColumn Header="Table" Binding="{Binding Table}" Width="80" MinWidth="60"/>
+                <DataGridTextColumn Header="Item" Binding="{Binding DisplayName}" Width="*" MinWidth="140"/>
+                <DataGridTextColumn Header="Locally Changed" Binding="{Binding LocalLastChanged}" Width="170" MinWidth="120"/>
+                <DataGridTextColumn Header="File Changed" Binding="{Binding FileLastChanged}" Width="170" MinWidth="120"/>
+                <!-- Real templated CheckBox (not DataGridCheckBoxColumn): the latter needs the cell to
+                     enter edit mode and then commit on row-exit, so ticking a box and clicking Apply
+                     straight away lost the choice. This writes to the source on the single click. -->
+                <DataGridTemplateColumn Header="Use Import" Width="110" MinWidth="90">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <CheckBox IsChecked="{Binding UseFileVersion, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
             </DataGrid.Columns>
         </DataGrid>
 

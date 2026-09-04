@@ -1,0 +1,46 @@
+<Window x:Class="SkyrimCraftingTool.View.OrphanedEditsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Orphaned Edits"
+        Width="720" Height="460"
+        Background="{StaticResource ColorBackgroundBase}"
+        TextElement.Foreground="{StaticResource ColorTextPrimary}"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Style="{StaticResource TitelStyle}" Margin="0,0,0,12"
+                   TextWrapping="Wrap"
+                   Text="These items were edited, but their plugin is no longer in the scanned load order. The edits stay in the database and apply to nothing. Tick the ones to delete permanently."/>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
+            <Button Content="Select all" Style="{StaticResource StandardButtonStyle}" Width="90" Click="SelectAll_Click"/>
+            <Button Content="Select none" Style="{StaticResource StandardButtonStyle}" Width="90" Click="SelectNone_Click"/>
+        </StackPanel>
+
+        <DataGrid Grid.Row="2"
+                  Style="{StaticResource DarkDataGridStyle}"
+                  ItemsSource="{Binding Rows}"
+                  IsReadOnly="False">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Table" Binding="{Binding Table}" Width="90" MinWidth="70" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Item" Binding="{Binding DisplayName}" Width="*" MinWidth="160" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Last Changed" Binding="{Binding LastChanged}" Width="190" MinWidth="120" IsReadOnly="True"/>
+                <DataGridCheckBoxColumn Header="Delete" Binding="{Binding Delete, Mode=TwoWay}" Width="90" MinWidth="70"
+                                        ElementStyle="{StaticResource DataGridCheckBoxCellStyle}"
+                                        EditingElementStyle="{StaticResource DataGridCheckBoxCellStyle}"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Content="Close" Style="{StaticResource StandardButtonStyle}" Width="100" Click="Close_Click"/>
+            <Button Content="Delete selected" Style="{StaticResource ActionButtonWarmStyle}" Width="130" Margin="6,0,0,5" Click="DeleteSelected_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

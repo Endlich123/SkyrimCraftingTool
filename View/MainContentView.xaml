@@ -8,13 +8,10 @@
 
     <DockPanel LastChildFill="True">
 
-        <!-- Oben: Debug / Aktionen -->
-        <StackPanel Orientation="Vertical"
+        <!-- Top toolbar: global actions -->
+        <StackPanel Orientation="Horizontal"
                     DockPanel.Dock="Top"
-                    Margin="6"
-                    Width="250"
-                    HorizontalAlignment="Left">
-            <StackPanel Orientation="Horizontal">
+                    Margin="6,6,6,4">
             <Button Content="Scan/Rescan"
                     Command="{Binding ScanModsCommand}"
                     Style="{StaticResource ActionButtonGreenStyle}"/>
@@ -25,39 +22,20 @@
                     Command="{Binding ImportAllCommand}"
                     Style="{StaticResource ActionButtonWarmStyle}"/>
 
-            </StackPanel>
-            <Button Content="Generate Patch"
-                    Command="{Binding GeneratePatchCommand}"
-                    Style="{StaticResource ActionButtonStyle}"
-                    HorizontalAlignment="Left"
-                    Margin="0,4,0,0"
-                    ToolTip="SkyPatcher INIs for every edited armor/weapon field + SkyrimCraftingTool.esp for created/edited recipes."/>
-            <CheckBox Content="One ESP per source plugin"
-                      IsChecked="{Binding SplitPatchPerPlugin}"
-                      Foreground="{StaticResource ColorTextSecondary}"
-                      Margin="2,4,0,0"
-                      ToolTip="Off: one SkyrimCraftingTool.esp. On: SkyrimCraftingTool - &lt;Plugin&gt;.esp per source mod."/>
-            <CheckBox Content="Write next to the app (tool folder = MO2 mod)"
-                      IsChecked="{Binding PatchIntoAppFolder}"
-                      Foreground="{StaticResource ColorTextSecondary}"
-                      Margin="2,2,0,0"
-                      ToolTip="Off: patch goes under Output\. On: SKSE\ and the .esp are written at the tool root, so the tool folder can be enabled directly as an MO2 mod."/>
-            <TextBlock Foreground="{StaticResource ColorWarning}"
-                       Margin="5,0,10,0"
-                       Text="{Binding FilteredTree.Count, StringFormat=TreeCount: {0}}" />
-            <StackPanel Orientation="Horizontal" Margin="5,2,0,0">
-                <CheckBox Content="Only edited"
-                          IsChecked="{Binding ShowOnlyEditedItems}"
-                          Foreground="{StaticResource ColorTextPrimary}"
-                          VerticalAlignment="Center"/>
-                <TextBlock Text="{Binding EditedItemCount, StringFormat=({0} edited)}"
-                           Foreground="{StaticResource ColorTextSecondary}"
-                           VerticalAlignment="Center"
-                           Margin="8,0,0,0"/>
-            </StackPanel>
+            <!-- "Generate Patch" and its two options used to sit here. They are app-wide (armor,
+                 weapons, recipes, enchantments, form lists), not item-view actions, so they now live
+                 in the shell toolbar next to the nav tabs - see MainWindow.xaml. The command itself
+                 stays on MainContentVM, which owns the services and the autosave flush. -->
+
+            <Button Content="{Binding OrphanedEditCount, StringFormat=⚠ Orphaned edits ({0})}"
+                    Command="{Binding ManageOrphanedEditsCommand}"
+                    Style="{StaticResource ActionButtonWarmStyle}"
+                    Margin="14,0,0,5"
+                    Visibility="{Binding HasOrphanedEdits, Converter={StaticResource BoolToVis}}"
+                    ToolTip="Items you edited whose plugin left the load order. Review and delete the stale edits."/>
         </StackPanel>
 
-        <Grid Margin="10">
+        <Grid Margin="10,4,10,10">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="250" MinWidth="150" />
                 <ColumnDefinition Width="5" />
@@ -69,11 +47,28 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
+                <!-- Tree filters -->
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,5">
+                    <CheckBox Content="Only edited"
+                              IsChecked="{Binding ShowOnlyEditedItems}"
+                              Foreground="{StaticResource ColorTextPrimary}"
+                              VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding EditedItemCount, StringFormat=({0} edited)}"
+                               Foreground="{StaticResource ColorTextSecondary}"
+                               VerticalAlignment="Center"
+                               Margin="6,0,0,0"/>
+                    <TextBlock Text="{Binding FilteredTree.Count, StringFormat=· {0} plugins}"
+                               Foreground="{StaticResource ColorTextTertiary}"
+                               VerticalAlignment="Center"
+                               Margin="10,0,0,0"/>
+                </StackPanel>
+
                 <!-- Search -->
-                <TextBox Grid.Row="0"
+                <TextBox Grid.Row="1"
                          Text="{Binding TreeSearchText, UpdateSourceTrigger=PropertyChanged}"
                          Tag="Search Plugin/Item..."
                          Background="{StaticResource ColorBackgroundControl}"
@@ -83,7 +78,7 @@
                          Margin="0,0,0,5" />
 
                 <!-- Expand / Collapse -->
-                <UniformGrid Grid.Row="1"
+                <UniformGrid Grid.Row="2"
                              Columns="1"
                              Margin="0,0,0,5">
                     <Button Content="Collapse all [-]"
@@ -94,7 +89,7 @@
                 </UniformGrid>
 
                 <!-- TreeView -->
-                <TreeView Grid.Row="2"
+                <TreeView Grid.Row="3"
                           x:Name="MainTreeView"
                           ItemsSource="{Binding FilteredTree}"
                           VirtualizingPanel.IsVirtualizing="True"
@@ -1044,7 +1039,7 @@
                                                                                         <Grid>
                                                                                             <Grid.ColumnDefinitions>
                                                                                                 <ColumnDefinition Width="*"/>
-                                                                                                <ColumnDefinition Width="60"/>
+                                                                                                <ColumnDefinition Width="80"/>
                                                                                             </Grid.ColumnDefinitions>
 
                                                                                             <ComboBox Grid.Column="0"
@@ -1053,9 +1048,14 @@
                                                                                                   SelectedItem="{Binding SelectedQuest}" IsSynchronizedWithCurrentItem="False" BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
                                                                                                   Style="{StaticResource ItemComboBoxStyle}" />
 
-                                                                                            <TextBox Grid.Column="1"
-                                                                                                 Text="{Binding Stage}"
-                                                                                                 Style="{StaticResource ItemTextBoxStyle}" />
+                                                                                            <ComboBox Grid.Column="1"
+                                                                                                  IsEditable="True"
+                                                                                                  IsSynchronizedWithCurrentItem="False"
+                                                                                                  ItemsSource="{Binding AvailableStages}"
+                                                                                                  Text="{Binding Stage, UpdateSourceTrigger=LostFocus}"
+                                                                                                  ToolTip="Stages defined by the selected quest — or type one."
+                                                                                                  Style="{StaticResource CompactComboBoxStyle}"
+                                                                                                  Margin="0,0,5,5" />
                                                                                         </Grid>
                                                                                     </DataTemplate>
 
@@ -1086,6 +1086,52 @@
                                                                             CommandParameter="{Binding}"
                                                                             Style="{StaticResource RemoveButtonStyle}" 
                                                                             ToolTip="Remove Condition"/>
+
+                                                                        <!-- Read-only condition overlay.
+                                                                             A condition type the tool preserves verbatim but cannot edit
+                                                                             (GetItemCount, EPTemperingItemIsEnchanted, GetGlobalValue, ...).
+                                                                             Before these were scanned they were simply discarded, which cost
+                                                                             69% of all COBJ conditions. Now they are kept, so the row has to
+                                                                             show something - and must not offer the normal editors, which have
+                                                                             no way to represent the parameter.
+                                                                             It covers the whole row instead of hiding each control separately;
+                                                                             ReadOnlyConditionViewModel.Type is pinned too, so keyboard focus on
+                                                                             a covered picker still can't change anything.
+                                                                             Collapsed by default + DataTrigger, NOT a Visibility converter
+                                                                             binding: a converter binding that resolves to UnsetValue falls
+                                                                             back to Visible, which would cover every ordinary row. -->
+                                                                        <Border Grid.Column="0" Grid.ColumnSpan="5" Panel.ZIndex="10"
+                                                                                Background="{StaticResource ColorBackgroundControl}"
+                                                                                BorderBrush="{StaticResource ColorDivider}"
+                                                                                BorderThickness="1" Padding="6,4"
+                                                                                ToolTip="{Binding Explanation}">
+                                                                            <Border.Style>
+                                                                                <Style TargetType="Border">
+                                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                                    <Style.Triggers>
+                                                                                        <DataTrigger Binding="{Binding Type}" Value="ReadOnly">
+                                                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                                                        </DataTrigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </Border.Style>
+                                                                            <StackPanel Orientation="Horizontal">
+                                                                                <TextBlock Text="Locked:" FontWeight="SemiBold"
+                                                                                           VerticalAlignment="Center"
+                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
+                                                                                <TextBlock Text="{Binding FunctionName}" Margin="6,0,0,0"
+                                                                                           FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                                                <TextBlock Text="{Binding TargetDisplay}" Margin="10,0,0,0"
+                                                                                           VerticalAlignment="Center"
+                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
+                                                                                <TextBlock Text="{Binding ValueDisplay}" Margin="10,0,0,0"
+                                                                                           VerticalAlignment="Center"
+                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
+                                                                                <TextBlock Text="(preserved, not editable)" Margin="14,0,0,0"
+                                                                                           FontStyle="Italic" VerticalAlignment="Center"
+                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
+                                                                            </StackPanel>
+                                                                        </Border>
                                                                     </Grid>
                                                                 </DataTemplate>
                                                             </ItemsControl.ItemTemplate>
@@ -1335,7 +1381,7 @@
                                                                                         <Grid>
                                                                                             <Grid.ColumnDefinitions>
                                                                                                 <ColumnDefinition Width="*"/>
-                                                                                                <ColumnDefinition Width="60"/>
+                                                                                                <ColumnDefinition Width="80"/>
                                                                                             </Grid.ColumnDefinitions>
 
                                                                                             <ComboBox Grid.Column="0"
@@ -1344,9 +1390,14 @@
                                                                                                   SelectedItem="{Binding SelectedQuest}" IsSynchronizedWithCurrentItem="False" BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
                                                                                                   Style="{StaticResource ItemComboBoxStyle}" />
 
-                                                                                            <TextBox Grid.Column="1"
-                                                                                                     Text="{Binding Stage}"
-                                                                                                     Style="{StaticResource ItemTextBoxStyle}" />
+                                                                                            <ComboBox Grid.Column="1"
+                                                                                                  IsEditable="True"
+                                                                                                  IsSynchronizedWithCurrentItem="False"
+                                                                                                  ItemsSource="{Binding AvailableStages}"
+                                                                                                  Text="{Binding Stage, UpdateSourceTrigger=LostFocus}"
+                                                                                                  ToolTip="Stages defined by the selected quest — or type one."
+                                                                                                  Style="{StaticResource CompactComboBoxStyle}"
+                                                                                                  Margin="0,0,5,5" />
                                                                                         </Grid>
                                                                                     </DataTemplate>
 
@@ -1377,6 +1428,52 @@
                                                                             CommandParameter="{Binding}"
                                                                             Style="{StaticResource RemoveButtonStyle}" 
                                                                             ToolTip="Remove Condition"/>
+
+                                                                        <!-- Read-only condition overlay.
+                                                                             A condition type the tool preserves verbatim but cannot edit
+                                                                             (GetItemCount, EPTemperingItemIsEnchanted, GetGlobalValue, ...).
+                                                                             Before these were scanned they were simply discarded, which cost
+                                                                             69% of all COBJ conditions. Now they are kept, so the row has to
+                                                                             show something - and must not offer the normal editors, which have
+                                                                             no way to represent the parameter.
+                                                                             It covers the whole row instead of hiding each control separately;
+                                                                             ReadOnlyConditionViewModel.Type is pinned too, so keyboard focus on
+                                                                             a covered picker still can't change anything.
+                                                                             Collapsed by default + DataTrigger, NOT a Visibility converter
+                                                                             binding: a converter binding that resolves to UnsetValue falls
+                                                                             back to Visible, which would cover every ordinary row. -->
+                                                                        <Border Grid.Column="0" Grid.ColumnSpan="5" Panel.ZIndex="10"
+                                                                                Background="{StaticResource ColorBackgroundControl}"
+                                                                                BorderBrush="{StaticResource ColorDivider}"
+                                                                                BorderThickness="1" Padding="6,4"
+                                                                                ToolTip="{Binding Explanation}">
+                                                                            <Border.Style>
+                                                                                <Style TargetType="Border">
+                                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                                    <Style.Triggers>
+                                                                                        <DataTrigger Binding="{Binding Type}" Value="ReadOnly">
+                                                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                                                        </DataTrigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </Border.Style>
+                                                                            <StackPanel Orientation="Horizontal">
+                                                                                <TextBlock Text="Locked:" FontWeight="SemiBold"
+                                                                                           VerticalAlignment="Center"
+                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
+                                                                                <TextBlock Text="{Binding FunctionName}" Margin="6,0,0,0"
+                                                                                           FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                                                <TextBlock Text="{Binding TargetDisplay}" Margin="10,0,0,0"
+                                                                                           VerticalAlignment="Center"
+                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
+                                                                                <TextBlock Text="{Binding ValueDisplay}" Margin="10,0,0,0"
+                                                                                           VerticalAlignment="Center"
+                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
+                                                                                <TextBlock Text="(preserved, not editable)" Margin="14,0,0,0"
+                                                                                           FontStyle="Italic" VerticalAlignment="Center"
+                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
+                                                                            </StackPanel>
+                                                                        </Border>
                                                                     </Grid>
                                                                 </DataTemplate>
                                                             </ItemsControl.ItemTemplate>

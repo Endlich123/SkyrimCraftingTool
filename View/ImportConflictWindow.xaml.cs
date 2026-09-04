@@ -86,6 +86,10 @@ namespace SkyrimCraftingTool.View
 
         private void Confirm_Click(object sender, RoutedEventArgs e)
         {
+            // Flush any in-flight cell/row edit so a just-ticked "Use Import" box is on the VM before
+            // ShowDialog reads Rows.
+            ConflictGrid.CommitEdit(System.Windows.Controls.DataGridEditingUnit.Cell, true);
+            ConflictGrid.CommitEdit(System.Windows.Controls.DataGridEditingUnit.Row, true);
             DialogResult = true;
             Close();
         }

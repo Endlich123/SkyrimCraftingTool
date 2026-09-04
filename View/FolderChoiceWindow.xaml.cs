@@ -1,6 +1,10 @@
 ﻿using SkyrimCraftingTool.Model;
+using SkyrimCraftingTool.Services;
+using System;
 using System.IO;
 using System.Windows;
+using System.Windows.Interop;
+using System.Windows.Media;
 
 namespace SkyrimCraftingTool.View
 {
@@ -11,6 +15,7 @@ namespace SkyrimCraftingTool.View
         public FolderChoiceWindow()
         {
             InitializeComponent();
+            SourceInitialized += FolderChoiceWindow_SourceInitialized;
 
             try
             {
@@ -27,21 +32,30 @@ namespace SkyrimCraftingTool.View
             PluginsFilePathBox.Text = _settings.PluginsFilePath;
         }
 
+        // Recolor the native title bar to match the dark theme, same as the other windows.
+        private void FolderChoiceWindow_SourceInitialized(object? sender, EventArgs e)
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            var captionColor = ((SolidColorBrush)FindResource("ColorBackgroundBase")).Color;
+            var textColor = ((SolidColorBrush)FindResource("ColorTextPrimary")).Color;
+            DwmTitleBarService.ApplyAccentCaption(hwnd, captionColor, textColor);
+        }
+
         private void SelectGameDataPath_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new System.Windows.Forms.FolderBrowserDialog();
-            if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+            var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Select the game's Data folder" };
+            if (dialog.ShowDialog() == true)
             {
-                GameDataPathBox.Text = dialog.SelectedPath;
+                GameDataPathBox.Text = dialog.FolderName;
             }
         }
 
         private void SelectModDirectoryPath_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new System.Windows.Forms.FolderBrowserDialog();
-            if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+            var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Select the mods folder" };
+            if (dialog.ShowDialog() == true)
             {
-                ModDirectoryPathBox.Text = dialog.SelectedPath;
+                ModDirectoryPathBox.Text = dialog.FolderName;
             }
         }
 

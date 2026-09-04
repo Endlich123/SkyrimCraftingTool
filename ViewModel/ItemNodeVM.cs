@@ -341,9 +341,13 @@ namespace SkyrimCraftingTool.ViewModel
         // recipe (if present), bundled into one file under Output/Exports/<Plugin>/<Item>.json — see
         // ExportFileStore for the path convention. No file dialogs; Import reads back the exact file
         // Export wrote for this same item.
-        public ICommand ExportItemCommand => new RelayCommand(() =>
+        public ICommand ExportItemCommand => new RelayCommand(async () =>
         {
             if (Main?.ImportExportService == null) return;
+
+            // Flush first: this is the likeliest place to hit the 350ms autosave window — the user
+            // edits a field on this very item and immediately hits Export on it.
+            await Main.FlushPendingSavesAsync();
 
             var keys = new List<string> { Key };
             if (CraftingRecipe != null) keys.Add(CraftingRecipe.Key);
@@ -1807,7 +1811,12 @@ namespace SkyrimCraftingTool.ViewModel
 
             TemperRecipe.Ingredients.Remove(ing);
             foreach (var e in TemperRecipe.Ingredients) e.RefreshMaterialFilter(); // freed material reappears
-            TemperIngredients = TemperRecipe.Ingredients;
+
+            // NOT "TemperIngredients = TemperRecipe.Ingredients" — that's the same reference the
+            // property already holds, so SetProperty returns false and the change never registers
+            // (this was the bug: removing a temper material didn't mark the recipe edited, while the
+            // crafting side did). Mirror RemoveCraftingIngredient and notify explicitly.
+            NotifyFieldChanged(nameof(TemperIngredients));
         }
 
         // --------------------

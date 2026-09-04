@@ -61,7 +61,7 @@ namespace SkyrimCraftingTool.ViewModel
             var cacheManager = new Services.CacheManager(itemService, formIdService);
 
             ContentVM = new MainContentVM(itemService, fileService, formIdService, cacheManager, null, keywordService, importExportService);
-            EnchantVM = new EnchantmentMenuVM(_itemDB, keywordService, new List<PluginInfo>(), enchantmentService, cacheManager);
+            EnchantVM = new EnchantmentMenuVM(_itemDB, keywordService, new List<PluginInfo>(), enchantmentService, cacheManager, importExportService);
             PresetsVM = new PresetsConfigVM(ContentVM);
 
             // EnchantmentMenuVM builds its tree from _itemDB at construction time, before any scan
