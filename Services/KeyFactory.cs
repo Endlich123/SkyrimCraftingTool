@@ -17,6 +17,14 @@ namespace SkyrimCraftingTool.Services
         // duplicated as a literal) so every call site that needs to add it to a plugin list agrees.
         public const string UserPluginName = "SkyrimCraftingTool.esp";
 
+        // True for an empty key OR a null-FormKey key ("Null|000000" — what
+        // $"{fk.ModKey.FileName}|{fk.IDString()}" produces for FormKey.Null). Used to reject
+        // "no link" values before they drive a WHERE <sharedColumn> = @key mass-UPDATE.
+        public static bool IsUnsetKey(string? key)
+            => string.IsNullOrWhiteSpace(key)
+               || key == "Null|000000"
+               || key.StartsWith("Null|", StringComparison.OrdinalIgnoreCase);
+
         // masterplugin|formid
         public static string BuildMasterKey(FormKey formKey)
         {

@@ -16,6 +16,16 @@ namespace SkyrimCraftingTool.Services
 
         // Worn restriction list (FLST)
         void UpdateEnchantmentWornRestrictionListKey(string key, string listKey);
+        List<(string ListKey, List<string> KeywordKeys, bool IsEdited)> GetKnownWornRestrictionLists();
+        List<string> GetWornRestrictionKeywordsForList(string listKey);
+
+        // FLST identity map (Plugin|FormID -> EditorID) from the formid.db FormLists name table —
+        // lets the picker show the real list name instead of a raw FormID.
+        Dictionary<string, string> GetFormListNamesByKey();
+
+        // E3.5: worn-restriction-list content state for the list-scoped "Reset list" affordance.
+        bool IsWornRestrictionListEdited(string listKey);
+        int CountEnchantmentsUsingWornRestrictionList(string listKey);
 
         // Effects (full replace)
         void SaveEnchantmentEffects(string enchantmentKey, List<EnchantmentEffectRecord> effects);

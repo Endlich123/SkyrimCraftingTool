@@ -13,6 +13,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
     {
         private readonly PatchDataReader _itemReader;
         private readonly CobjPatchReader _cobjReader;
+        private readonly EnchantmentPatchReader _enchReader;
+        private readonly FormListPatchReader _formListReader;
         private readonly PatchFormIdMapStore _formIdMap;
         private readonly IReferenceResolver? _references;
 
@@ -21,17 +23,26 @@ namespace SkyrimCraftingTool.Services.PatchGen
             IReferenceResolver? references = null,
             PatchDataReader? itemReader = null,
             CobjPatchReader? cobjReader = null,
+            EnchantmentPatchReader? enchReader = null,
+            FormListPatchReader? formListReader = null,
             PatchFormIdMapStore? formIdMap = null)
         {
             _itemReader = itemReader ?? new PatchDataReader(connString);
             _cobjReader = cobjReader ?? new CobjPatchReader(connString);
+            _enchReader = enchReader ?? new EnchantmentPatchReader(connString);
+            _formListReader = formListReader ?? new FormListPatchReader(connString);
             _formIdMap = formIdMap ?? new PatchFormIdMapStore(connString);
             _references = references;
         }
 
+        // Filled by GenerateSkyPatcher (where the enchantment diff happens) and consumed by
+        // GenerateCobj, because both kinds of override share one generated ESP.
+        private readonly List<CobjEspBuilder.EnchantmentEspEntry> _enchantmentEspOverrides = new();
+
         public PatchGenReport Generate(PatchGenOptions options)
         {
             var report = new PatchGenReport();
+            _enchantmentEspOverrides.Clear();
 
             GenerateSkyPatcher(options, report);
 
@@ -61,11 +72,71 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     report.WeaponRuleCount += Add(weaponByPlugin, rule!);
             }
 
+            var enchByPlugin = new Dictionary<string, List<SkyPatcherRule>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in _enchReader.ReadEditedEnchantments())
+            {
+                var rule = EnchantmentRuleBuilder.BuildRule(pair.Original, pair.Edited, out var skip);
+                if (Accept(rule, skip, report))
+                    report.EnchantmentRuleCount += Add(enchByPlugin, rule!);
+
+                // The FLST assignment is the one enchantment edit SkyPatcher cannot express.
+                // Surface it instead of dropping it on the floor - see docs/EnchantmentPatch-Plan.md (E-P4).
+                if (!string.Equals(pair.Original.WornRestrictionListKey ?? "",
+                                   pair.Edited.WornRestrictionListKey ?? "",
+                                   StringComparison.OrdinalIgnoreCase))
+                {
+                    // No SkyPatcher operation exists for this field, so the generated ESP is the
+                    // only route (E-P4). When ESP generation is off it cannot be patched at all -
+                    // saying so is better than dropping it silently.
+                    if (options.GenerateCobj)
+                    {
+                        var target = pair.Edited.WornRestrictionListKey ?? "";
+
+                        // The ESP override never passes through Accept(), so its one reference has
+                        // to be validated here - a list that no longer resolves would otherwise be
+                        // written into the ESP silently.
+                        if (target.Length > 0 && _references != null && !_references.IsActive(target))
+                            report.Warnings.Add(
+                                $"{pair.Edited.Key}: the new worn-restriction list {target} is not in " +
+                                "the current scan (ESP override still written).");
+
+                        _enchantmentEspOverrides.Add(
+                            new CobjEspBuilder.EnchantmentEspEntry(pair.Edited.Key, target));
+                    }
+                    else
+                    {
+                        report.EnchantmentAssignmentChangesUnpatched++;
+                        report.Warnings.Add(
+                            $"{pair.Edited.Key}: worn-restriction list assignment changed " +
+                            $"({Describe(pair.Original.WornRestrictionListKey)} -> {Describe(pair.Edited.WornRestrictionListKey)}) " +
+                            "but SkyPatcher has no operation for it, and ESP generation is off - " +
+                            "NOT written to the patch. Editing the list contents instead does reach the game.");
+                    }
+                }
+            }
+
+            var formListByPlugin = new Dictionary<string, List<SkyPatcherRule>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in _formListReader.ReadEditedFormLists())
+            {
+                var rule = FormListRuleBuilder.BuildRule(pair);
+                if (Accept(rule, null, report))
+                    report.FormListRuleCount += Add(formListByPlugin, rule!);
+            }
+
             if (options.DryRun) return;
 
             WriteCategory(options, "armor", armorByPlugin, report);
             WriteCategory(options, "weapon", weaponByPlugin, report);
+            // "enchantment" is SkyPatcher's own folder name - see the patcher list in
+            // docs/EnchantmentPatch-Plan.md (E-P0). Spelling matters, it is passed through verbatim.
+            WriteCategory(options, "enchantment", enchByPlugin, report);
+            // "formList" is camelCase in SkyPatcher's folder list - a lowercase spelling would
+            // silently create a second folder next to the one other mods use.
+            WriteCategory(options, "formList", formListByPlugin, report);
         }
+
+        private static string Describe(string? listKey) =>
+            string.IsNullOrWhiteSpace(listKey) ? "(none)" : listKey;
 
         private bool Accept(SkyPatcherRule? rule, ItemRuleBuilder.NameSkip? skip, PatchGenReport report)
         {
@@ -79,7 +150,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
             foreach (var keyword in rule.ReferencedKeywordKeys)
                 if (_references != null && !_references.IsActive(keyword))
                     report.Warnings.Add(
-                        $"{rule.TargetPlugin}|{rule.TargetFormId}: keyword {keyword} is not in the " +
+                        $"{rule.TargetPlugin}|{rule.TargetFormId}: reference {keyword} is not in the " +
                         "current scan (rule still written).");
 
             return true;
@@ -132,32 +203,93 @@ namespace SkyrimCraftingTool.Services.PatchGen
         private void GenerateCobj(PatchGenOptions options, PatchGenReport report)
         {
             var entries = _cobjReader.ReadEditedCobj();
-            if (entries.Count == 0) return;
+            var enchOverrides = _enchantmentEspOverrides;
+
+            // Both kinds of override live in the same ESP, so either one on its own is reason enough
+            // to build it.
+            if (entries.Count == 0 && enchOverrides.Count == 0) return;
 
             if (options.DryRun)
             {
                 report.CobjNewCount = entries.Count(e => e.IsNew);
                 report.CobjOverrideCount = entries.Count(e => !e.IsNew);
+                report.EnchantmentEspOverrideCount = enchOverrides.Count;
                 return;
             }
 
             var loadOrder = LoadOrderReader.Read();
             var builder = new CobjEspBuilder();
+
+            // Resolve the winning record for every override up front, so the builder can deep-copy
+            // it instead of assembling one from the few fields item.db tracks. Restricted to the
+            // FormKeys actually being overridden - no point holding the whole load order's records.
+            var wantedCobj = entries
+                .Where(e => !e.IsNew)
+                .Select(e => KeyFactory.ParseFormKey(e.ToolKey))
+                .ToHashSet();
+
+            var wantedEnch = enchOverrides
+                .Select(e => KeyFactory.ParseFormKey(e.EnchantmentKey))
+                .ToHashSet();
+
+            // CRITICAL: never read our own output back in. The generated ESP normally sits in
+            // plugins.txt, and being last it would BE the winning override for every record we
+            // patch - so the builder would deep-copy the previous run's own output and treat that
+            // as the original, permanently. Verified against the real load order, where exactly
+            // this happened (blank EditorID, truncated conditions).
+            var ownEspNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                options.EspFileName,
+                KeyFactory.UserPluginName,
+            };
+            foreach (var e in entries) ownEspNames.Add(options.EspNameFor(e.SourcePlugin));
+            foreach (var e in enchOverrides) ownEspNames.Add(options.EspNameFor(e.SourcePlugin));
+
+            var sourcePlugins = options.PluginsInLoadOrder
+                .Where(p => !ownEspNames.Contains(p.FileName))
+                .ToList();
+
+            using var resolver = WinningRecordResolver.Open(
+                sourcePlugins, wantedCobj, wantedEnch, report.Warnings);
+
             var masters = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
             bool allEsl = true;
             var espPaths = new List<string>();
 
-            var groups = entries
+            // One pass over both sources, keyed by the ESP each record belongs in. With the global
+            // split mode that is a single group; with PerSourcePlugin an enchantment from plugin X
+            // shares a file with X's recipes, which is what the user asked for either way.
+            var cobjByEsp = entries
                 .GroupBy(e => options.EspNameFor(e.SourcePlugin), StringComparer.OrdinalIgnoreCase)
-                .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
+                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
 
-            foreach (var g in groups)
+            var enchByEsp = enchOverrides
+                .GroupBy(e => options.EspNameFor(e.SourcePlugin), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+            var espNames = cobjByEsp.Keys
+                .Concat(enchByEsp.Keys)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(n => n, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var espName in espNames)
             {
+                var cobjForEsp = cobjByEsp.TryGetValue(espName, out var c)
+                    ? c : new List<CobjPatchEntry>();
+                var enchForEsp = enchByEsp.TryGetValue(espName, out var en)
+                    ? en : new List<CobjEspBuilder.EnchantmentEspEntry>();
+
                 var res = builder.Build(
-                    g.ToList(), _formIdMap, loadOrder, options.OutputRoot, g.Key, options.EslWhenPossible);
+                    cobjForEsp, _formIdMap, loadOrder, options.OutputRoot, espName, options.EslWhenPossible,
+                    resolver, enchForEsp);
 
                 report.CobjNewCount += res.NewCount;
                 report.CobjOverrideCount += res.OverrideCount;
+                report.CobjDeepCopiedCount += res.DeepCopiedCount;
+                report.CobjFromScratchCount += res.FromScratchCount;
+                report.CobjConditionRewriteSkippedCount += res.ConditionRewriteSkippedCount;
+                report.StaleConditionDataCount += res.StaleConditionDataCount;
+                report.EnchantmentEspOverrideCount += res.EnchantmentOverrideCount;
                 report.Warnings.AddRange(res.Warnings);
                 report.WrittenFiles.Add(res.OutputPath);
                 espPaths.Add(res.OutputPath);

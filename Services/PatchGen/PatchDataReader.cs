@@ -38,7 +38,13 @@ namespace SkyrimCraftingTool.Services.PatchGen
                        Keywords, IsEditedKeywords,
                        BodySlotMask, IsEditedBodySlotMask
                 FROM Armor
-                WHERE LastChanged IS NOT NULL AND Active = 1";
+                -- IsEdited, NOT ""LastChanged IS NOT NULL"": ResetArmorEdits clears the flag + every
+                -- shadow but deliberately leaves LastChanged set (it feeds the import conflict
+                -- check), so the old filter kept re-reading reset items. It also guarantees the
+                -- shadow-vs-base pick below matches LoadArmor's ""CASE WHEN IsEdited = 1 AND …"" —
+                -- a row with IsEdited = 0 and a leftover shadow would otherwise be patched with a
+                -- value the UI itself doesn't show. Same rule as ItemDBHandler.GetEditedItems.
+                WHERE IsEdited = 1 AND Active = 1";
 
             using var r = cmd.ExecuteReader();
             while (r.Read())
@@ -92,7 +98,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
                        Weight, IsEditedWeight,
                        Keywords, IsEditedKeywords
                 FROM Weapons
-                WHERE LastChanged IS NOT NULL AND Active = 1";
+                -- see ReadEditedArmor for why this is IsEdited and not LastChanged
+                WHERE IsEdited = 1 AND Active = 1";
 
             using var r = cmd.ExecuteReader();
             while (r.Read())

@@ -13,6 +13,26 @@ public static class ConditionMapper
     {
         if (rec == null) throw new ArgumentNullException(nameof(rec));
 
+        // Anything outside the five editable types becomes a ReadOnlyConditionViewModel rather than
+        // an exception. Throwing was survivable only while the scan discarded those rows outright;
+        // now that it keeps them (they are 69% of all COBJ conditions) a throw here would take the
+        // whole item view down the moment a normal vanilla recipe is opened.
+        if (!ConditionCatalog.IsEditable(rec.ConditionType))
+        {
+            return new ReadOnlyConditionViewModel
+            {
+                Type = CustomConditionType.ReadOnly,
+                RunOnPlayer = rec.RunOn == "Subject",
+                RawRunOn = rec.RunOn ?? "",
+                RawConditionType = rec.ConditionType ?? "",
+                RawTarget = rec.Target ?? "",
+                RawValue = rec.Value ?? "",
+                RawExtra = rec.Extra ?? "",
+                RawCompareOperator = rec.CompareOperator ?? "",
+                RawFlags = rec.Flags ?? "",
+            };
+        }
+
         BaseConditionViewModel vm = rec.ConditionType switch
         {
             "HasPerk" => new PerkConditionViewModel(),
@@ -76,6 +96,24 @@ public static class ConditionMapper
     {
         if (vm == null) throw new ArgumentNullException(nameof(vm));
 
+        // Read-only conditions go back exactly as they came in, comparison operator and flags
+        // included. Losing the OR flag here would turn an "either perk" pair into "both perks" and
+        // take the recipe out of the crafting menu.
+        if (vm is ReadOnlyConditionViewModel ro)
+        {
+            return new COBJConditionRecord
+            {
+                COBJKey = cobjKey,
+                ConditionType = ro.RawConditionType,
+                Target = ro.RawTarget,
+                Value = ro.RawValue,
+                Extra = ro.RawExtra,
+                RunOn = ro.RawRunOn,
+                CompareOperator = ro.RawCompareOperator,
+                Flags = ro.RawFlags,
+            };
+        }
+
         var runOn = vm.RunOnPlayer ? "Subject" : "Target";
 
         string conditionType = vm.Type switch
@@ -135,7 +173,7 @@ public static class ConditionMapper
     // GetStageDone with no quest picked. Skipped when persisting a recipe (mirrors the empty-
     // ingredient filter) so a half-built condition doesn't come back as a broken one on reload.
     // GetLevel / GetIsSex / GetActorValue have no free-form target (or always have a value), so
-    // they're always persistable.
+    // they're always persistable. Read-only ones came from a plugin, so they always are too.
     public static bool HasUsableTarget(BaseConditionViewModel vm) => vm switch
     {
         PerkConditionViewModel p => !p.PerkFormKey.IsNull,

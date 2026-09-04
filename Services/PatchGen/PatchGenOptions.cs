@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.IO;
 using SkyrimCraftingTool.Model;
 
@@ -42,6 +44,12 @@ namespace SkyrimCraftingTool.Services.PatchGen
             CobjSplitMode == PatchCobjSplitMode.Global || string.IsNullOrEmpty(sourcePlugin)
                 ? EspFileName
                 : $"SkyrimCraftingTool - {Path.GetFileNameWithoutExtension(sourcePlugin)}.esp";
+
+        // Active plugins in load order with their real file paths. Supplied by the app from
+        // FileDBHandler.GetActivePluginsInLoadOrder(); when empty, CobjEspBuilder falls back to
+        // building overrides from scratch (lossy - see WinningRecordResolver).
+        public IReadOnlyList<(string FileName, string FullPath)> PluginsInLoadOrder { get; init; }
+            = Array.Empty<(string, string)>();
 
         // When true, build + validate the rules and fill the report, but write nothing.
         public bool DryRun { get; init; }

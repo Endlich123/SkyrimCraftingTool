@@ -30,6 +30,21 @@ namespace SkyrimCraftingTool.Services.Adapters
         public void UpdateEnchantmentWornRestrictionListKey(string key, string listKey)
             => ItemDBHandler.UpdateEnchantmentWornRestrictionListKey(key, listKey);
 
+        public List<(string ListKey, List<string> KeywordKeys, bool IsEdited)> GetKnownWornRestrictionLists()
+            => ItemDBHandler.GetKnownWornRestrictionLists();
+
+        public List<string> GetWornRestrictionKeywordsForList(string listKey)
+            => ItemDBHandler.GetWornRestrictionKeywordsForList(listKey);
+
+        public Dictionary<string, string> GetFormListNamesByKey()
+            => _handler.GetFormListNamesByKey();
+
+        public bool IsWornRestrictionListEdited(string listKey)
+            => ItemDBHandler.IsWornRestrictionListEdited(listKey);
+
+        public int CountEnchantmentsUsingWornRestrictionList(string listKey)
+            => ItemDBHandler.CountEnchantmentsUsingWornRestrictionList(listKey);
+
         public void SaveEnchantmentEffects(string enchantmentKey, List<EnchantmentEffectRecord> effects)
             => ItemDBHandler.SaveEnchantmentEffects(enchantmentKey, effects);
 

@@ -56,6 +56,10 @@ namespace SkyrimCraftingTool.Services
         WeaponRecord GetOriginalWeapon(string key);
         void ResetArmorEdits(string key);
         void ResetWeaponEdits(string key);
+
+        // Orphaned edits: Armor/Weapons rows edited but no longer in the scanned load order.
+        List<OrphanedEdit> GetOrphanedItemEdits();
+        void DeleteItemRow(string table, string key);
         COBJRecord GetOriginalCOBJ(string key);
         void ResetCOBJEdits(string key);
         void DeleteCOBJ(string key);

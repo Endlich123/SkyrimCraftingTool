@@ -22,6 +22,10 @@ namespace SkyrimCraftingTool.Services.PatchGen
         public IReadOnlyList<(string Key, int Count)> Ingredients { get; init; } = Array.Empty<(string, int)>();
         public IReadOnlyList<COBJConditionRecord> Conditions { get; init; } = Array.Empty<COBJConditionRecord>();
 
+        // The user replaced this recipe's condition set. Only then may the ESP builder overwrite the
+        // conditions of the record it deep-copied from the load order - see CobjEspBuilder.BuildOne.
+        public bool ConditionsEdited { get; init; }
+
         // The plugin this recipe "belongs to" for per-source-plugin ESP splitting: the overridden
         // COBJ's own plugin for an override, else the created item's plugin.
         public string SourcePlugin =>
@@ -54,17 +58,30 @@ namespace SkyrimCraftingTool.Services.PatchGen
             using var conn = new SqliteConnection(_connString);
             conn.Open();
 
-            var rows = new List<(string Key, bool IsNew, string Name, string Created, string Workbench, string Ingredients)>();
+            var rows = new List<(string Key, bool IsNew, string Name, string Created, string Workbench, string Ingredients, bool ConditionsEdited)>();
             using (var cmd = conn.CreateCommand())
             {
+                // Two corrections over the original query, both about matching what the UI shows:
+                //
+                // 1. Every CASE is gated on IsEdited = 1, exactly like LoadCOBJ. Without it a row
+                //    with IsEdited = 0 and a leftover shadow got PATCHED with a value the editor
+                //    itself never displays.
+                // 2. The WHERE is the same predicate as ItemDBHandler.GetEditedCOBJ instead of
+                //    "LastChanged IS NOT NULL" — the reset paths clear the flags but deliberately
+                //    keep LastChanged (it feeds the import conflict check). Unlike the ARMO/WEAP
+                //    side there is no diff step here: every row read becomes a CobjPatchEntry and
+                //    lands in the ESP, so a reset vanilla recipe used to get a pointless override
+                //    that SkyrimCraftingTool.esp then owns (and wins with over later mods).
+                //    Original = 0 = user-created recipe, always patch-worthy.
                 cmd.CommandText = @"
                     SELECT Key, Original,
-                        CASE WHEN IsEditedName            IS NOT NULL THEN IsEditedName            ELSE Name            END,
-                        CASE WHEN IsEditedCreatedItem     IS NOT NULL THEN IsEditedCreatedItem     ELSE CreatedItem     END,
-                        CASE WHEN IsEditedWorkbenchKeyword IS NOT NULL THEN IsEditedWorkbenchKeyword ELSE WorkbenchKeyword END,
-                        CASE WHEN IsEditedIngredients     IS NOT NULL THEN IsEditedIngredients     ELSE Ingredients     END
+                        CASE WHEN IsEdited = 1 AND IsEditedName             IS NOT NULL THEN IsEditedName             ELSE Name             END,
+                        CASE WHEN IsEdited = 1 AND IsEditedCreatedItem      IS NOT NULL THEN IsEditedCreatedItem      ELSE CreatedItem      END,
+                        CASE WHEN IsEdited = 1 AND IsEditedWorkbenchKeyword IS NOT NULL THEN IsEditedWorkbenchKeyword ELSE WorkbenchKeyword END,
+                        CASE WHEN IsEdited = 1 AND IsEditedIngredients      IS NOT NULL THEN IsEditedIngredients      ELSE Ingredients      END,
+                        ConditionsEdited
                     FROM COBJ
-                    WHERE LastChanged IS NOT NULL AND Active = 1";
+                    WHERE (IsEdited = 1 OR ConditionsEdited = 1 OR Original = 0) AND Active = 1";
 
                 using var r = cmd.ExecuteReader();
                 while (r.Read())
@@ -72,7 +89,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     rows.Add((
                         r.GetString(0),
                         r.GetInt32(1) == 0,
-                        Str(r, 2), Str(r, 3), Str(r, 4), Str(r, 5)));
+                        Str(r, 2), Str(r, 3), Str(r, 4), Str(r, 5),
+                        !r.IsDBNull(6) && r.GetInt32(6) == 1));
                 }
             }
 
@@ -87,6 +105,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     WorkbenchKey = row.Workbench,
                     Ingredients = ParseIngredients(row.Ingredients),
                     Conditions = ReadConditions(conn, row.Key),
+                    ConditionsEdited = row.ConditionsEdited,
                 });
             }
 
@@ -97,7 +116,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
         {
             var list = new List<COBJConditionRecord>();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT ConditionType, Target, Value, Extra, RunOn FROM COBJ_Conditions WHERE COBJKey = @k";
+            cmd.CommandText = "SELECT ConditionType, Target, Value, Extra, RunOn, CompareOperator, Flags FROM COBJ_Conditions WHERE COBJKey = @k";
             cmd.Parameters.AddWithValue("@k", cobjKey);
             using var r = cmd.ExecuteReader();
             while (r.Read())
@@ -110,6 +129,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     Value = Str(r, 2),
                     Extra = Str(r, 3),
                     RunOn = Str(r, 4),
+                    CompareOperator = Str(r, 5),
+                    Flags = Str(r, 6),
                 });
             }
             return list;
