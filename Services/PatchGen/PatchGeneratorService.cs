@@ -35,6 +35,15 @@ namespace SkyrimCraftingTool.Services.PatchGen
             _references = references;
         }
 
+        // SkyPatcher's category folders for the two Container-tab rule kinds. Named constants rather
+        // than literals because they are magic strings with a silent failure mode: a wrong spelling
+        // writes a folder nobody reads instead of raising anything. Both verified against a real
+        // SkyPatcher install and confirmed working in game (2026-09-07) - do not "tidy" the casing.
+        public const string LeveledListFolder = "leveledList";
+
+        // The "all sliders at 0 -> the item goes into the container itself" half.
+        public const string ContainerFolder = "container";
+
         // Filled by GenerateSkyPatcher (where the enchantment diff happens) and consumed by
         // GenerateCobj, because both kinds of override share one generated ESP.
         private readonly List<CobjEspBuilder.EnchantmentEspEntry> _enchantmentEspOverrides = new();
@@ -56,12 +65,24 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
         private void GenerateSkyPatcher(PatchGenOptions options, PatchGenReport report)
         {
+            // Container placements are collected across BOTH item tables and only turned into rules
+            // afterwards, because the rules are keyed by the LEVELED LIST, not by the item - one
+            // list usually collects items from several plugins (see LeveledListRuleBuilder).
+            var lvliNames = _itemReader.ReadLeveledListNames();
+            var containerNames = _itemReader.ReadContainerNames();
+            var placements = new List<LeveledListPlacement>();
+            var containerPlacements = new List<ContainerPlacement>();
+
             var armorByPlugin = new Dictionary<string, List<SkyPatcherRule>>(StringComparer.OrdinalIgnoreCase);
             foreach (var pair in _itemReader.ReadEditedArmor())
             {
                 var rule = ItemRuleBuilder.BuildArmorRule(pair.Original, pair.Edited, out var skip);
                 if (Accept(rule, skip, report))
                     report.ArmorRuleCount += Add(armorByPlugin, rule!);
+
+                LeveledListRuleBuilder.ParsePlacements(
+                    pair.Edited.Key, pair.Edited.EditorID, pair.Edited.ContainerString,
+                    placements, containerPlacements, lvliNames, containerNames);
             }
 
             var weaponByPlugin = new Dictionary<string, List<SkyPatcherRule>>(StringComparer.OrdinalIgnoreCase);
@@ -70,6 +91,10 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 var rule = ItemRuleBuilder.BuildWeaponRule(pair.Original, pair.Edited, out var skip);
                 if (Accept(rule, skip, report))
                     report.WeaponRuleCount += Add(weaponByPlugin, rule!);
+
+                LeveledListRuleBuilder.ParsePlacements(
+                    pair.Edited.Key, pair.Edited.EditorID, pair.Edited.ContainerString,
+                    placements, containerPlacements, lvliNames, containerNames);
             }
 
             var enchByPlugin = new Dictionary<string, List<SkyPatcherRule>>(StringComparer.OrdinalIgnoreCase);
@@ -123,6 +148,30 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     report.FormListRuleCount += Add(formListByPlugin, rule!);
             }
 
+            // Container tab -> leveled lists. Grouped by the LIST's plugin, like formList above:
+            // the rule targets the list, not the item that goes into it.
+            var lvliByPlugin = new Dictionary<string, List<SkyPatcherRule>>(StringComparer.OrdinalIgnoreCase);
+            var lvliRules = LeveledListRuleBuilder.BuildRules(placements, out var levelConflicts);
+            foreach (var rule in lvliRules)
+            {
+                if (Accept(rule, null, report))
+                    report.LeveledListRuleCount += Add(lvliByPlugin, rule);
+            }
+
+            foreach (var c in levelConflicts)
+                report.Warnings.Add(
+                    $"{c.ItemKey} sits in leveled list {c.LvliKey} through more than one container, " +
+                    $"with different levels ({string.Join(", ", c.AllLevels)}) - patched at {c.UsedLevel}.");
+
+            // The other half of the Container tab: a container whose sliders all stayed at 0 means
+            // the item goes into the container itself. Grouped by the container's plugin.
+            var contByPlugin = new Dictionary<string, List<SkyPatcherRule>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var rule in LeveledListRuleBuilder.BuildContainerRules(containerPlacements))
+            {
+                if (Accept(rule, null, report))
+                    report.ContainerRuleCount += Add(contByPlugin, rule);
+            }
+
             if (options.DryRun) return;
 
             WriteCategory(options, "armor", armorByPlugin, report);
@@ -133,6 +182,10 @@ namespace SkyrimCraftingTool.Services.PatchGen
             // "formList" is camelCase in SkyPatcher's folder list - a lowercase spelling would
             // silently create a second folder next to the one other mods use.
             WriteCategory(options, "formList", formListByPlugin, report);
+            // Both spellings verified against a real SkyPatcher install and confirmed working
+            // in game (2026-09-07). Same camelCase rule as formList above.
+            WriteCategory(options, LeveledListFolder, lvliByPlugin, report);
+            WriteCategory(options, ContainerFolder, contByPlugin, report);
         }
 
         private static string Describe(string? listKey) =>
@@ -158,8 +211,11 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
         private static int Add(Dictionary<string, List<SkyPatcherRule>> byPlugin, SkyPatcherRule rule)
         {
-            if (!byPlugin.TryGetValue(rule.TargetPlugin, out var list))
-                byPlugin[rule.TargetPlugin] = list = new List<SkyPatcherRule>();
+            // FileNamePlugin, not TargetPlugin: they are the same for every rule that edits the
+            // record it filters on, and deliberately differ for the Container-tab rules - see
+            // SkyPatcherRule.FilePlugin.
+            if (!byPlugin.TryGetValue(rule.FileNamePlugin, out var list))
+                byPlugin[rule.FileNamePlugin] = list = new List<SkyPatcherRule>();
             list.Add(rule);
             return 1;
         }

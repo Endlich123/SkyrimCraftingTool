@@ -11,6 +11,14 @@ namespace SkyrimCraftingTool.Services.PatchGen
         public int EnchantmentRuleCount { get; set; }
         public int FormListRuleCount { get; set; }
 
+        // Container-tab placements, emitted as filterByLLs/addOnceToLLs rules - one per leveled
+        // list, not per item (see LeveledListRuleBuilder).
+        public int LeveledListRuleCount { get; set; }
+
+        // The other half of the Container tab: containers whose sliders all stayed at 0, emitted as
+        // filterByContainers/addOnceToContainers.
+        public int ContainerRuleCount { get; set; }
+
         // COBJ overrides deep-copied from the winning record vs. rebuilt from tracked fields only.
         public int CobjDeepCopiedCount { get; set; }
         public int CobjFromScratchCount { get; set; }
@@ -44,7 +52,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // Non-fatal issues: dead keyword references, skipped name edits, recipes without output, etc.
         public List<string> Warnings { get; } = new();
 
-        public int SkyPatcherRuleCount => ArmorRuleCount + WeaponRuleCount + EnchantmentRuleCount + FormListRuleCount;
+        public int SkyPatcherRuleCount => ArmorRuleCount + WeaponRuleCount + EnchantmentRuleCount + FormListRuleCount + LeveledListRuleCount + ContainerRuleCount;
         public int CobjRecordCount => CobjNewCount + CobjOverrideCount;
         // Enchantment ESP overrides count too: a run whose only change is a re-pointed worn-
         // restriction list produces no rules and no COBJ records, but it definitely generated something.
@@ -76,7 +84,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 var parts = new List<string>
                 {
                     $"{ArmorRuleCount} armor rule(s), {WeaponRuleCount} weapon rule(s), " +
-                    $"{EnchantmentRuleCount} enchantment rule(s), {FormListRuleCount} form-list rule(s) " +
+                    $"{EnchantmentRuleCount} enchantment rule(s), {FormListRuleCount} form-list rule(s), " +
+                    $"{LeveledListRuleCount} leveled-list rule(s), {ContainerRuleCount} container rule(s) " +
                     $"across {WrittenFiles.Count} file(s)",
                 };
                 if (CobjRecordCount > 0 || CobjEspPath != null)

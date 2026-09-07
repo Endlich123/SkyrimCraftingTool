@@ -15,6 +15,16 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
         public sealed record NameSkip(string Key, string Name);
 
+        // Mutagen ArmorType enum -> SkyPatcher spelling. Anything else (including the empty string
+        // a record without BOD2 scans as) yields null and is skipped rather than guessed at.
+        private static string? SkyPatcherArmorType(string? armorType) => armorType?.Trim().ToLowerInvariant() switch
+        {
+            "lightarmor" => "lightarmor",
+            "heavyarmor" => "heavyarmor",
+            "clothing" => "clothing",
+            _ => null,
+        };
+
         public static SkyPatcherRule? BuildArmorRule(ArmorRecord original, ArmorRecord edited, out NameSkip? nameSkip)
         {
             nameSkip = null;
@@ -29,6 +39,17 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 ops.Add($"value={PatchFormat.Int(edited.Value)}");
             if (!NumEqual(original.Weight, edited.Weight))
                 ops.Add($"weight={PatchFormat.Num(edited.Weight)}");
+
+            // BOD2 ArmorType. This - not the ArmorLight keyword - is what decides whether the game
+            // treats the record as armor or clothing, so it governs the inventory category, whether
+            // an armor rating is shown at all, and whether the item can be tempered. A tester set
+            // every armor keyword on a clothing item, saw the patched rating only in Modex and
+            // nothing in game, and could not temper it: all one missing field.
+            if (!string.Equals(original.ArmorType, edited.ArmorType, StringComparison.OrdinalIgnoreCase)
+                && SkyPatcherArmorType(edited.ArmorType) is { } armorType)
+            {
+                ops.Add($"armorType={armorType}");
+            }
 
             var refKeys = AppendKeywordOps(ops, original.Keywords, edited.Keywords);
             AppendBipedSlotOps(ops, original.BodySlotMask, edited.BodySlotMask);

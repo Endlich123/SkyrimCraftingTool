@@ -11,8 +11,8 @@ namespace SkyrimCraftingTool.Services
         // a Temper recipe's workbench never looks like a dead reference.
         private static readonly (string Key, string Name)[] VanillaTemperWorkbenches =
         {
-            ("Skyrim.esm|0ADB78", "CraftingSmithingSharpeningWheel"),
-            ("Skyrim.esm|088108", "CraftingSmithingArmorTable"),
+            ("Skyrim.esm|0ADB78", "CraftingSmithingArmorTable"),
+            ("Skyrim.esm|088108", "CraftingSmithingSharpeningWheel"),
         };
 
         private Dictionary<string, ReferenceLookup> _byKey = new(StringComparer.Ordinal);

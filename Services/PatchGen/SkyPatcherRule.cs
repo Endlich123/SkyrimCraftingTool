@@ -17,6 +17,20 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // FormID exactly as stored in the DB key (6 hex, no "0x"). The writer left-pads to 8.
         public string TargetFormId { get; init; } = "";
 
+        // Which <Plugin>.ini this rule is written into. Empty means "same as TargetPlugin", which is
+        // right for every rule that EDITS the record it filters on (armor, weapon, enchantment,
+        // formList) - the file name is SkyPatcher's conditional load, so such a rule is only read
+        // when the very plugin owning the record is active.
+        //
+        // The Container-tab rules break that identity: filterByLLs/filterByContainers target a list
+        // or container (usually Skyrim.esm), but the forms they ADD come from the item's plugin.
+        // Filing them under the target would put them in Skyrim.esm.ini - always loaded - and let
+        // SkyPatcher add forms from a mod that may not be installed at all. They set this to the
+        // ITEM's plugin instead, so the rule only exists while the mod providing those items does.
+        public string FilePlugin { get; init; } = "";
+
+        public string FileNamePlugin => string.IsNullOrEmpty(FilePlugin) ? TargetPlugin : FilePlugin;
+
         // Emitted as "; <text>" above the rule. Usually EditorID + name.
         public string? Comment { get; init; }
 

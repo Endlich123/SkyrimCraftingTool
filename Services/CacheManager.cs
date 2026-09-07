@@ -130,6 +130,17 @@ namespace SkyrimCraftingTool.Services
             }
         }
 
+        public void UpdateArmorArmorType(string key, string armorType)
+        {
+            lock (_armorLock)
+            {
+                if (_snapshot.Armor.TryGetValue(key, out var rec))
+                    rec.ArmorType = armorType ?? "";
+                else
+                    _snapshot.Armor[key] = new ArmorRecord { Key = key, ArmorType = armorType ?? "" };
+            }
+        }
+
         public void UpdateArmorKeywords(string key, List<string> keywordKeys)
         {
             lock (_armorLock)

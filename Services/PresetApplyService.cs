@@ -160,14 +160,18 @@ namespace SkyrimCraftingTool.Services
             if (!needed) return;
 
             bool hasRecipe = isTemper ? item.HasTemperRecipe : item.HasCraftingRecipe;
+            bool created = false;
             if (!hasRecipe)
             {
                 // Prerequisite the user flagged during planning: a preset can't set Workbench/Ingredients/
                 // Conditions on an item with no COBJ yet — create one first, the same way the "+" button does.
                 if (isTemper) item.CreateTemperRecipe(); else item.CreateCraftingRecipe();
                 hasRecipe = isTemper ? item.HasTemperRecipe : item.HasCraftingRecipe;
+                created = hasRecipe;
             }
             if (!hasRecipe) return;
+
+            int touchedBefore = touched.Count;
 
             if (!isTemper)
             {
@@ -191,6 +195,22 @@ namespace SkyrimCraftingTool.Services
             var targetConditions = isTemper ? item.TemperConditions : item.CraftingConditions;
             if (MergeConditions(item, targetConditions, matches, select))
                 touched.Add(isTemper ? nameof(ItemNodeVM.TemperConditions) : nameof(ItemNodeVM.CraftingConditions));
+
+            // A recipe created above lives ONLY in the ViewModel until one of ITS OWN fields gets
+            // persisted: CreateCrafting/TemperRecipe builds the COBJRecord in memory, and
+            // "CraftingRecipe"/"TemperRecipe" itself has no save handler (SaveRequestService just
+            // logs "no handler" and drops the request). So whenever every merge above reported "no
+            // change" — an enabled-but-empty ingredient/condition list, or a Workbench value that
+            // already equals the Forge default CreateCraftingRecipe just set — the caller had
+            // nothing to persist for this recipe and the item was left marked as edited with a
+            // recipe no DB row backs. Reset could then never clear it: ResetCrafting/
+            // TemperRecipeEdits looks that row up and used to bail when it wasn't there, so the
+            // button stayed enabled and did nothing until an app restart rebuilt the tree.
+            // Naming the Ingredients field routes the new record through Crafting/TemperSaveHandler,
+            // which inserts it — with its empty ingredient list — exactly like the "+" button's
+            // first save does.
+            if (created && touched.Count == touchedBefore)
+                touched.Add(isTemper ? nameof(ItemNodeVM.TemperIngredients) : nameof(ItemNodeVM.CraftingIngredients));
         }
 
         // Builds one desired total per material by summing across every matching slot that has
