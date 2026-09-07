@@ -20,7 +20,8 @@ namespace SkyrimCraftingTool.ViewModel
         Values = 1,
         Keywords = 2,
         CraftRecipe = 4,
-        TemperRecipe = 8
+        TemperRecipe = 8,
+        Container = 16
     }
 
     // One Armor-Slot or Weapon-Type leaf node in the Presets tree. Doubles as its own detail view,
@@ -500,6 +501,14 @@ namespace SkyrimCraftingTool.ViewModel
 
             if (fields.HasFlag(PresetBulkFields.TemperRecipe))
                 CopyRecipeInto(template.TemperRecipe, _config.TemperRecipe);
+
+            // Container is a plain string field (the same "{ContainerKey: {LVLiKey,Level; ...}}"
+            // format items use), so it copies wholesale like Keywords rather than field by field.
+            if (fields.HasFlag(PresetBulkFields.Container))
+            {
+                _config.Container.Enabled = template.Container.Enabled;
+                _config.Container.Value = template.Container.Value;
+            }
 
             if (_loaded) Unload();
             _onChanged();

@@ -3,6 +3,8 @@ using SkyrimCraftingTool.Model;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -17,9 +19,40 @@ namespace SkyrimCraftingTool.ViewModel
 
         private readonly List<ContainerRecord> _allContainers;
 
+        // Raised whenever an LVLi slider of a selected container changes its level. The sliders bind
+        // straight to LVLiEntryVM.Level, so without this nobody would know to rebuild the owner's
+        // ContainerString - and a level that never reaches the string is a level that never gets
+        // saved or patched. PresetSlotNodeVM already did exactly this subscribing by hand; it is
+        // here now so the item editor gets it too, instead of the view's code-behind guessing at
+        // which mouse gesture counts as "the user changed something".
+        public event Action? LevelChanged;
+
         public ContainerSelectionVM(List<ContainerRecord> allContainers)
         {
             _allContainers = allContainers ?? new List<ContainerRecord>();
+            SelectedContainers.CollectionChanged += OnSelectedContainersChanged;
+        }
+
+        private void OnSelectedContainersChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (e.OldItems != null)
+                foreach (ContainerEntryVM c in e.OldItems)
+                    foreach (var lvli in c.LVLiEntries)
+                        lvli.PropertyChanged -= OnLVLiPropertyChanged;
+
+            if (e.NewItems != null)
+                foreach (ContainerEntryVM c in e.NewItems)
+                    foreach (var lvli in c.LVLiEntries)
+                    {
+                        lvli.PropertyChanged -= OnLVLiPropertyChanged;
+                        lvli.PropertyChanged += OnLVLiPropertyChanged;
+                    }
+        }
+
+        private void OnLVLiPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(LVLiEntryVM.Level))
+                LevelChanged?.Invoke();
         }
 
         public void LoadFromString(string containerString)

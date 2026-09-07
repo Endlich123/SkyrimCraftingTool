@@ -48,6 +48,7 @@ namespace SkyrimCraftingTool.ViewModel
         public ICommand ApplyKeywordsCommand { get; }
         public ICommand ApplyCraftingCommand { get; }
         public ICommand ApplyTemperCommand { get; }
+        public ICommand ApplyContainerCommand { get; }
 
         public PresetMultiSelectVM(PresetsConfigVM owner)
         {
@@ -79,7 +80,74 @@ namespace SkyrimCraftingTool.ViewModel
             ApplyKeywordsCommand = new RelayCommand(() => Apply(PresetBulkFields.Keywords, "Keywords"));
             ApplyCraftingCommand = new RelayCommand(() => Apply(PresetBulkFields.CraftRecipe, "Crafting recipe"));
             ApplyTemperCommand = new RelayCommand(() => Apply(PresetBulkFields.TemperRecipe, "Temper recipe"));
+            ApplyContainerCommand = new RelayCommand(() => Apply(PresetBulkFields.Container, "Container"));
+
+            // Container template. Mirrors the single-slot editor (PresetSlotNodeVM): a catalog to
+            // browse/toggle plus a ContainerSelectionVM holding the picks with their LVLi levels.
+            // The template's string is rebuilt from that selection on every change - both when a
+            // container is toggled and when a level slider moves, which is what LevelChanged is for.
+            var allContainers = main?.AllContainers ?? new List<ContainerRecord>();
+            _containerSelection = new ContainerSelectionVM(allContainers);
+            _containerSelection.SelectedContainers.CollectionChanged += (_, _) => SyncContainerTemplate();
+            _containerSelection.LevelChanged += SyncContainerTemplate;
+
+            foreach (var c in allContainers)
+                CatalogContainers.Add(new ContainerEntryVM(c));
         }
+
+        // --------------------
+        // Container
+        // --------------------
+        private readonly ContainerSelectionVM _containerSelection;
+        public ContainerSelectionVM ContainerSelection => _containerSelection;
+
+        public ObservableCollection<ContainerEntryVM> CatalogContainers { get; } = new();
+
+        public bool ContainerEnabled
+        {
+            get => _template.Container.Enabled;
+            set { if (_template.Container.Enabled == value) return; _template.Container.Enabled = value; OnPropertyChanged(); }
+        }
+
+        private bool _showExpertContainers;
+        public bool ShowExpertContainers
+        {
+            get => _showExpertContainers;
+            set { if (SetProperty(ref _showExpertContainers, value)) OnPropertyChanged(nameof(FilteredContainers)); }
+        }
+
+        private string _containerSearchText = "";
+        public string ContainerSearchText
+        {
+            get => _containerSearchText;
+            set { if (SetProperty(ref _containerSearchText, value)) OnPropertyChanged(nameof(FilteredContainers)); }
+        }
+
+        // Standard view limits to merchant containers, Expert shows everything - same rule and same
+        // wording as the single-slot editor.
+        public IEnumerable<ContainerEntryVM> FilteredContainers =>
+            (ShowExpertContainers ? CatalogContainers : CatalogContainers.Where(c => c.Name.Contains("Merchant", StringComparison.OrdinalIgnoreCase)))
+                .Where(c => string.IsNullOrWhiteSpace(ContainerSearchText) || c.Name.Contains(ContainerSearchText, StringComparison.OrdinalIgnoreCase));
+
+        public ICommand ToggleExpertContainersCommand => new RelayCommand(() => ShowExpertContainers = !ShowExpertContainers);
+
+        public ICommand ToggleContainerCommand => new RelayCommand<string>(key =>
+        {
+            if (key == null) return;
+            _containerSelection.ToggleContainer(key);
+            var catalogEntry = CatalogContainers.FirstOrDefault(c => c.ContainerKey == key);
+            if (catalogEntry != null)
+                catalogEntry.IsSelected = _containerSelection.SelectedContainers.Any(sc => sc.ContainerKey == key);
+        });
+
+        public ICommand ClearContainerSelectionCommand => new RelayCommand(() =>
+        {
+            _containerSelection.Clear();
+            foreach (var c in CatalogContainers)
+                c.IsSelected = false;
+        });
+
+        private void SyncContainerTemplate() => _template.Container.Value = _containerSelection.BuildString();
 
         // --------------------
         // Values

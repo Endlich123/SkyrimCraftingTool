@@ -226,6 +226,9 @@ namespace SkyrimCraftingTool.ViewModel
         public ICommand ApplyTemperRecipeCommand { get; }
         public ICommand ApplyContainersCommand { get; }
 
+        // --- Bulk reset (the only destructive action here - everything else is additive) ---
+        public ICommand ResetSelectionCommand { get; }
+
         private CancellationTokenSource? _keywordSearchCts;
         private CancellationTokenSource? _containerSearchCts;
         private CancellationTokenSource? _selectionRefreshCts;
@@ -277,6 +280,7 @@ namespace SkyrimCraftingTool.ViewModel
             ApplyContainersCommand = new RelayCommand(async () => await ApplyContainersAsync());
             ApplyPresetCommand = new RelayCommand(async () => await ApplyPresetAsync());
             ApplyNumericFieldsCommand = new RelayCommand(async () => await ApplyNumericFieldsAsync());
+            ResetSelectionCommand = new RelayCommand(async () => await ResetSelectionAsync());
 
             AddCraftingConditionCommand = new RelayCommand(() => CraftingConditionsTemplate.Add(new PerkConditionViewModel()));
             RemoveCraftingConditionCommand = new RelayCommand<BaseConditionViewModel>(c => { if (c != null) CraftingConditionsTemplate.Remove(c); });
@@ -780,17 +784,36 @@ namespace SkyrimCraftingTool.ViewModel
 
                 foreach (var templateRow in templateRows)
                 {
-                    if (item.ContainerSelection.SelectedContainers.Any(c => c.ContainerKey == templateRow.ContainerKey))
-                        continue;
-
-                    item.ContainerSelection.ToggleContainer(templateRow.ContainerKey);
-                    changed = true;
-
-                    var added = item.ContainerSelection.SelectedContainers
+                    var target = item.ContainerSelection.SelectedContainers
                         .FirstOrDefault(c => c.ContainerKey == templateRow.ContainerKey);
 
-                    if (added != null && templateRow.LVLiEntries.Count > 0)
-                        added.ApplyLevels(templateRow.LVLiEntries.ToDictionary(l => l.Key, l => l.Level));
+                    // An item that already had this container used to be skipped outright here, so
+                    // the template's LEVELS never reached it: assign a container first, then try to
+                    // set its levels in bulk, and nothing happened at all. Only the container's
+                    // presence is "already done" - its levels still have to be applied, replacing
+                    // whatever was there. Same "old gets replaced by new" rule PresetApplyService.
+                    // ApplyContainer follows for the single-item path.
+                    if (target == null)
+                    {
+                        item.ContainerSelection.ToggleContainer(templateRow.ContainerKey);
+                        target = item.ContainerSelection.SelectedContainers
+                            .FirstOrDefault(c => c.ContainerKey == templateRow.ContainerKey);
+                        changed = true;
+                    }
+
+                    if (target == null) continue;
+
+                    if (templateRow.LVLiEntries.Count > 0)
+                    {
+                        var levels = templateRow.LVLiEntries.ToDictionary(l => l.Key, l => l.Level);
+                        // ApplyLevels zeroes every list the template doesn't name, so compare before
+                        // and after instead of assuming a change - otherwise re-applying the same
+                        // template would report every item as changed and re-save it.
+                        var before = string.Join(";", target.LVLiEntries.Select(l => $"{l.Key},{l.Level}"));
+                        target.ApplyLevels(levels);
+                        var after = string.Join(";", target.LVLiEntries.Select(l => $"{l.Key},{l.Level}"));
+                        if (before != after) changed = true;
+                    }
                 }
 
                 if (!changed)
@@ -839,6 +862,52 @@ namespace SkyrimCraftingTool.ViewModel
             StatusMessage = applied == 0
                 ? $"Preset '{SelectedPreset.PresetName}' didn't match any of the selected items (no matching slots/types, or no fields enabled)."
                 : $"Preset '{SelectedPreset.PresetName}' applied to {applied} item(s).";
+        }
+
+        // Multi-select counterpart of the single-item "Reset ALL" button: reverts item fields plus
+        // crafting and temper recipe on every selected item, via the exact same ItemNodeVM.
+        // ResetAllChanges the single-item button uses. Asks once for the whole selection instead of
+        // once per item - the action isn't undoable, but one dialog per item would be unusable on a
+        // 200-item selection.
+        //
+        // IsEdited is the pre-filter: it comes from the DB's IsEdited* columns at tree-build time
+        // (MainContentVM.BuildTreeFromCacheAsync) and is flipped live on the first change, so an
+        // item without it provably has nothing to revert. That matters because of the hydration
+        // below - a multi-select item may never have been clicked, leaving its CraftingRecipe/
+        // TemperRecipe and the original-values snapshot empty, so all its Has*Changes flags would
+        // read false and real persisted edits would be skipped (same reason as in ApplyPresetAsync).
+        // Hydrating only the flagged items keeps a big selection from loading hundreds of untouched
+        // ones just to find nothing.
+        private async Task ResetSelectionAsync()
+        {
+            // See PluginNodeVM.ResetPluginCommand: a pending debounced save must land before the
+            // shadow columns are cleared, or it fires afterwards and re-marks a just-reset item as
+            // edited. In practice the confirmation dialog below already outlasts the 350 ms save
+            // debounce, but that's timing, not a guarantee.
+            await _main.FlushPendingSavesAsync();
+
+            var candidates = SelectedItems.Where(i => i.IsEdited).ToList();
+            if (candidates.Count == 0)
+            {
+                StatusMessage = "None of the selected items has any edits to reset.";
+                return;
+            }
+
+            var answer = System.Windows.MessageBox.Show(
+                $"Revert ALL edits on {candidates.Count} of the selected item(s) - item fields, crafting recipe and temper recipe - back to the scanned state?\n\nThis cannot be undone.",
+                "Reset selection", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+            if (answer != System.Windows.MessageBoxResult.Yes) return;
+
+            int reset = 0;
+            foreach (var item in candidates)
+            {
+                _main.EnsureItemHydrated(item);
+                if (item.ResetAllChanges()) reset++;
+            }
+
+            StatusMessage = reset == 0
+                ? "No change (the selected items were already at their scanned state)."
+                : $"{reset} item(s) reverted to the scanned state.";
         }
     }
 

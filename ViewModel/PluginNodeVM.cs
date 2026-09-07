@@ -38,11 +38,28 @@ namespace SkyrimCraftingTool.ViewModel
             set => SetProperty(ref _selectedConfigPreset, value);
         }
 
+        // Scope is the WHOLE plugin, independent of the tree filter — same rule as
+        // Export/Import/ResetPluginCommand below, and the reason the item list comes from
+        // Main.ModItemsTree instead of this node's own `Categories`: with a search or "only edited"
+        // active, this node is a filtered COPY (MainContentVM.ApplyFilter → FilterReference), so
+        // running over `Categories` used to apply the preset to just the visible subset without
+        // saying so. Applying to *some* items has its own, explicit home — select them in the tree
+        // and use the multi-selection's Auto-Apply — which is what the dialog points at.
         public ICommand ApplyPresetCommand => new RelayCommand(async () =>
         {
             if (SelectedConfigPreset == null || Main == null) return;
 
-            var items = Categories.SelectMany(c => c.Items).ToList();
+            var source = Main.ModItemsTree.FirstOrDefault(p => p.PluginName == PluginName) ?? this;
+            var items = source.Categories.SelectMany(c => c.Items).ToList();
+
+            // Asks first now that the filter can no longer bound this: on a master like Skyrim.esm
+            // that's 5000+ items, and the count is the only warning the user gets before the run.
+            var answer = System.Windows.MessageBox.Show(
+                $"Apply preset '{SelectedConfigPreset.PresetName}' to all {items.Count} item(s) in '{PluginName}'?" +
+                $"{Environment.NewLine}{Environment.NewLine}This covers the whole plugin, regardless of any active tree filter. To apply a preset to only some items, select them in the tree and use the multi-selection's Auto-Apply instead.",
+                "Auto-Apply", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question);
+            if (answer != System.Windows.MessageBoxResult.Yes) return;
+
             int applied = 0;
             foreach (var item in items)
             {
@@ -64,6 +81,63 @@ namespace SkyrimCraftingTool.ViewModel
                     ? $"Preset '{SelectedConfigPreset.PresetName}' didn't match any of the {items.Count} item(s) in this plugin (no matching slots/types, or no fields enabled)."
                     : $"Preset '{SelectedConfigPreset.PresetName}' applied to {applied} of {items.Count} item(s) in this plugin.",
                 "Auto-Apply", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+        });
+
+        // --------------------
+        // Reset — the inverse of ApplyPresetCommand above.
+        // --------------------
+        // Reverts item fields + crafting + temper on every edited item of this plugin, through the
+        // same ItemNodeVM.ResetAllChanges the single-item and multi-select Reset buttons use.
+        // Auto-Apply can rewrite a whole plugin with one click, so it needs a way back that isn't
+        // "re-select hundreds of items by hand".
+        //
+        // Scope is the WHOLE plugin, deliberately independent of the tree filter — the same rule
+        // every button in this row follows (see ApplyPresetCommand above for why that means reading
+        // Main.ModItemsTree rather than this node's own `Categories`). The dialog says so, because
+        // unlike Apply this one can't be repeated away.
+        public ICommand ResetPluginCommand => new RelayCommand(async () =>
+        {
+            if (Main == null) return;
+
+            // See ExportPluginCommand below: a pending debounced save has to land BEFORE the edited
+            // set is read and the shadow columns are cleared. Otherwise it fires afterwards and
+            // re-marks a just-reset item as edited — with a shadow value that merely matches the
+            // original, which is exactly the state MainContentVM.ResetItemEdits exists to avoid.
+            await Main.FlushPendingSavesAsync();
+
+            var source = Main.ModItemsTree.FirstOrDefault(p => p.PluginName == PluginName) ?? this;
+            var candidates = source.Categories.SelectMany(c => c.Items).Where(i => i.IsEdited).ToList();
+
+            if (candidates.Count == 0)
+            {
+                System.Windows.MessageBox.Show("This plugin has no edited items to reset.",
+                    "Reset plugin", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            var answer = System.Windows.MessageBox.Show(
+                $"Revert ALL edits on {candidates.Count} item(s) in '{PluginName}' - item fields, crafting recipes and temper recipes - back to the scanned state?" +
+                $"{Environment.NewLine}{Environment.NewLine}This covers the whole plugin, regardless of any active tree filter, and cannot be undone.",
+                "Reset plugin", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+            if (answer != System.Windows.MessageBoxResult.Yes) return;
+
+            // Same hydrate-first rule as ApplyPresetCommand above, and the same IsEdited pre-filter
+            // as MultiSelectDetailVM.ResetSelectionAsync: a never-clicked item has no recipe VMs and no
+            // original-values snapshot, so all its change flags would read false and real, persisted
+            // edits would be skipped. Only the flagged items get hydrated, so a plugin with
+            // thousands of untouched records stays cheap.
+            int reset = 0;
+            foreach (var item in candidates)
+            {
+                Main.EnsureItemHydrated(item);
+                if (item.ResetAllChanges()) reset++;
+            }
+
+            System.Windows.MessageBox.Show(
+                reset == 0
+                    ? $"No change - the items in '{PluginName}' were already at their scanned state."
+                    : $"{reset} item(s) in '{PluginName}' reverted to the scanned state.",
+                "Reset plugin", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
         });
 
         /// <summary>

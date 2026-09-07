@@ -47,6 +47,11 @@ namespace SkyrimCraftingTool.ViewModel
         public ICommand OpenEnchantmentMenuCommand { get; }
         public ICommand OpenPresetsConfigCommand { get; }
 
+        // Log viewer + bug-report generator. Offline by design: it builds the report locally and
+        // hands it over via clipboard or file. A modding tool making network calls would rightly
+        // be treated as suspect, and a text file does the job just as well.
+        public ICommand OpenLogViewerCommand { get; }
+
         public MainWindowVM()
         {
             // ViewModels persistent erzeugen
@@ -90,6 +95,15 @@ namespace SkyrimCraftingTool.ViewModel
             });
             OpenEnchantmentMenuCommand = new RelayCommand(() => CurrentView = EnchantVM);
             OpenPresetsConfigCommand = new RelayCommand(() => CurrentView = PresetsVM);
+
+            OpenLogViewerCommand = new RelayCommand(() =>
+            {
+                var window = new View.LogViewerWindow
+                {
+                    Owner = System.Windows.Application.Current?.MainWindow,
+                };
+                window.ShowDialog();
+            });
 
             // Startansicht
             CurrentView = ContentVM;

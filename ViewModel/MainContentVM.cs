@@ -597,40 +597,13 @@ namespace SkyrimCraftingTool.ViewModel
                 return;
             }
 
-            var msg = new System.Text.StringBuilder();
-            msg.AppendLine(report.Summary);
-            msg.AppendLine();
-            foreach (var f in report.WrittenFiles)
-                msg.AppendLine("  " + MakeRelative(options.OutputRoot, f));
+            // Keep a copy on disk before showing the dialog: the ACTION NEEDED / NOTE blocks and the
+            // full warning list are the most useful part of a bug report, and a message box the user
+            // has already clicked away is not recoverable. Picked up by DiagnosticsReport.
+            Services.PatchGen.PatchReportText.SaveLastRun(report, options.OutputRoot);
 
-            // Deliberately above the masters and warnings: an ESP override is not an error, but it
-            // is a consequence the user should take in knowingly rather than find later.
-            if (report.StaleScanNotice != null)
-            {
-                msg.AppendLine();
-                msg.AppendLine("ACTION NEEDED");
-                msg.AppendLine("  " + report.StaleScanNotice);
-            }
-            if (report.EspOverrideNotice != null)
-            {
-                msg.AppendLine();
-                msg.AppendLine("NOTE");
-                msg.AppendLine("  " + report.EspOverrideNotice);
-            }
-            if (report.CobjMasters.Count > 0)
-            {
-                msg.AppendLine();
-                msg.AppendLine($"ESP masters: {string.Join(", ", report.CobjMasters)}");
-            }
-            if (report.Warnings.Count > 0)
-            {
-                msg.AppendLine();
-                msg.AppendLine($"Warnings ({report.Warnings.Count}):");
-                foreach (var w in report.Warnings.Take(15))
-                    msg.AppendLine("  " + w);
-                if (report.Warnings.Count > 15)
-                    msg.AppendLine($"  ... and {report.Warnings.Count - 15} more (see log).");
-            }
+            var msg = new System.Text.StringBuilder();
+            msg.Append(Services.PatchGen.PatchReportText.Render(report, options.OutputRoot, forFile: false));
             msg.AppendLine();
             msg.Append("Open the output folder?");
 
@@ -1370,7 +1343,8 @@ namespace SkyrimCraftingTool.ViewModel
                 var originalArmor = ItemService.GetOriginalArmor(item.Key);
                 if (originalArmor != null)
                     item.CaptureOriginalSnapshot(originalArmor.Name, originalArmor.Value, originalArmor.Weight,
-                        originalArmor.ArmorRating, originalArmor.BodySlotMask, 0, 0, 0, 0, originalArmor.ContainerString, originalArmor.Keywords);
+                        originalArmor.ArmorRating, originalArmor.BodySlotMask, 0, 0, 0, 0, originalArmor.ContainerString, originalArmor.Keywords,
+                        originalArmor.ArmorType);
             }
             else
             {
@@ -1396,7 +1370,15 @@ namespace SkyrimCraftingTool.ViewModel
             {
                 ItemService.ResetArmorEdits(item.Key);
                 var original = ItemService.GetOriginalArmor(item.Key);
-                if (original == null) return;
+                // The DB shadow columns are already cleared at this point, so a missing base row leaves
+                // the ViewModel showing edited values it can no longer revert - silent until the next
+                // restart. Shouldn't happen (the tree is built from this very table), so log it rather
+                // than guess at replacement values.
+                if (original == null)
+                {
+                    AppLogger.LogWarning($"ResetItemEdits: no Armor row for key {item.Key} - fields left as they are.");
+                    return;
+                }
 
                 _cacheManager.UpdateArmorName(item.Key, original.Name);
                 _cacheManager.UpdateArmorWeight(item.Key, original.Weight);
@@ -1404,16 +1386,23 @@ namespace SkyrimCraftingTool.ViewModel
                 _cacheManager.UpdateArmorRating(item.Key, original.ArmorRating);
                 _cacheManager.UpdateArmorBodySlotMask(item.Key, original.BodySlotMask);
                 _cacheManager.UpdateArmorKeywords(item.Key, original.Keywords);
+                _cacheManager.UpdateArmorArmorType(item.Key, original.ArmorType);
                 _cacheManager.UpdateArmorContainerString(item.Key, original.ContainerString);
 
                 item.ApplyResetValues(original.Name, original.Value, original.Weight,
-                    original.ArmorRating, original.BodySlotMask, 0, 0, 0, 0, original.ContainerString, original.Keywords);
+                    original.ArmorRating, original.BodySlotMask, 0, 0, 0, 0, original.ContainerString, original.Keywords,
+                    original.ArmorType);
             }
             else
             {
                 ItemService.ResetWeaponEdits(item.Key);
                 var original = ItemService.GetOriginalWeapon(item.Key);
-                if (original == null) return;
+                // See the Armor branch above.
+                if (original == null)
+                {
+                    AppLogger.LogWarning($"ResetItemEdits: no Weapons row for key {item.Key} - fields left as they are.");
+                    return;
+                }
 
                 _cacheManager.UpdateWeaponName(item.Key, original.Name);
                 _cacheManager.UpdateWeaponWeight(item.Key, original.Weight);
@@ -1435,6 +1424,37 @@ namespace SkyrimCraftingTool.ViewModel
         // pristine plugin-scanned values, same shape as ResetItemEdits above. Conditions revert via
         // ResetCOBJConditions, which restores COBJ_Conditions from the lazily-snapshotted
         // COBJ_Conditions_Original table (see Model/ItemDBHandler.cs's schema comment there).
+        // Removes a recipe entirely - from the DB (when a row exists), from both caches and from the
+        // item's ViewModel - instead of restoring it to some earlier state. Used by both reset paths
+        // for the two cases where there is nothing to restore TO: a user-created recipe
+        // (rowExists: true, Original == 0 - never in any plugin, so the only honest "undo" is
+        // deletion) and a recipe with no DB row at all (rowExists: false - ViewModel-only, so
+        // there's nothing to delete either, just state to clear).
+        //
+        // Clearing the snapshot is the part that matters for the Reset button: without it,
+        // _craftingRecipeIsUserCreated / _hasCraftingSnapshot keep HasCraftingChanges true and the
+        // item stays stuck as "edited" with a button that no longer does anything.
+        private void DropRecipeFromViewModel(ItemNodeVM item, string key, bool isTemper, bool rowExists)
+        {
+            if (rowExists)
+                ItemService.DeleteCOBJ(key);
+
+            _cacheManager.RemoveRecipe(key);
+
+            // See RegisterNewRecipe's comment: this item's entry here holds a plain List<COBJRecord>
+            // that only RegisterNewRecipe/this method ever touch, unrelated to _cacheManager's own
+            // snapshot - leaving the dropped rec behind would let the next LoadSelectedItemDetails
+            // resurrect it as a phantom recipe with a Key that no longer exists in the DB.
+            if (RecipeCacheByCreatedItem.TryGetValue(item.Key, out var recipes))
+                recipes.RemoveAll(r => r.Key == key);
+
+            item.IsLoading = true;
+            if (isTemper) item.TemperRecipe = null; else item.CraftingRecipe = null;
+            item.IsLoading = false;
+
+            if (isTemper) item.ClearTemperSnapshot(); else item.ClearCraftingSnapshot();
+        }
+
         internal void ResetCraftingRecipeEdits(ItemNodeVM item)
         {
             if (!item.HasCraftingRecipe) return;
@@ -1442,7 +1462,19 @@ namespace SkyrimCraftingTool.ViewModel
 
             ItemService.ResetCOBJEdits(key);
             var original = ItemService.GetOriginalCOBJ(key);
-            if (original == null) return;
+
+            // No COBJ row behind this recipe at all - it exists only in the ViewModel. This used to
+            // just `return`, which left the item marked as edited with change flags that NOTHING
+            // could clear: HasCraftingChanges stayed true, so the Reset button stayed enabled and
+            // did nothing on every further click, on every level, until a restart rebuilt the tree
+            // from the DB. Dropping the phantom instead puts the item into the state the DB already
+            // says it's in. See PresetApplyService.ApplyRecipe for how one got created.
+            if (original == null)
+            {
+                AppLogger.LogWarning($"ResetCraftingRecipeEdits: no COBJ row for key {key} (item {item.Key}) - dropping the ViewModel-only recipe.");
+                DropRecipeFromViewModel(item, key, isTemper: false, rowExists: false);
+                return;
+            }
 
             // A user-created recipe (Original stays 0 forever for these, see ItemDBHandler.
             // InsertCOBJ) never existed in the plugin - ResetCOBJEdits above only cleared the shadow
@@ -1451,20 +1483,7 @@ namespace SkyrimCraftingTool.ViewModel
             // left behind to get patched into the ESP later.
             if (original.Original == 0)
             {
-                ItemService.DeleteCOBJ(key);
-                _cacheManager.RemoveRecipe(key);
-                // See RegisterNewRecipe's comment: this item's entry here holds a plain List<COBJRecord>
-                // that only RegisterNewRecipe/this method ever touch, unrelated to _cacheManager's own
-                // snapshot - leaving the deleted rec behind would let the next LoadSelectedItemDetails
-                // resurrect it as a phantom recipe with a Key that no longer exists in the DB.
-                if (RecipeCacheByCreatedItem.TryGetValue(item.Key, out var craftingList))
-                    craftingList.RemoveAll(r => r.Key == key);
-
-                item.IsLoading = true;
-                item.CraftingRecipe = null;
-                item.IsLoading = false;
-
-                item.ClearCraftingSnapshot();
+                DropRecipeFromViewModel(item, key, isTemper: false, rowExists: true);
                 return;
             }
 
@@ -1490,23 +1509,20 @@ namespace SkyrimCraftingTool.ViewModel
 
             ItemService.ResetCOBJEdits(key);
             var original = ItemService.GetOriginalCOBJ(key);
-            if (original == null) return;
 
-            // See the identical guard in ResetCraftingRecipeEdits above: a user-created recipe never
-            // existed in the plugin, so it must be deleted outright on reset instead of being
-            // restored to its empty just-created stub.
+            // See the identical guard in ResetCraftingRecipeEdits above.
+            if (original == null)
+            {
+                AppLogger.LogWarning($"ResetTemperRecipeEdits: no COBJ row for key {key} (item {item.Key}) - dropping the ViewModel-only recipe.");
+                DropRecipeFromViewModel(item, key, isTemper: true, rowExists: false);
+                return;
+            }
+
+            // A user-created recipe never existed in the plugin, so it must be deleted outright on
+            // reset instead of being restored to its empty just-created stub.
             if (original.Original == 0)
             {
-                ItemService.DeleteCOBJ(key);
-                _cacheManager.RemoveRecipe(key);
-                if (RecipeCacheByCreatedItem.TryGetValue(item.Key, out var temperList))
-                    temperList.RemoveAll(r => r.Key == key);
-
-                item.IsLoading = true;
-                item.TemperRecipe = null;
-                item.IsLoading = false;
-
-                item.ClearTemperSnapshot();
+                DropRecipeFromViewModel(item, key, isTemper: true, rowExists: true);
                 return;
             }
 

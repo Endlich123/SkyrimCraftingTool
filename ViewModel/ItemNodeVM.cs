@@ -40,6 +40,7 @@ namespace SkyrimCraftingTool.ViewModel
 
             // load Container definitions
             ContainerSelection = new ContainerSelectionVM(main.AllContainers);
+            ContainerSelection.LevelChanged += OnContainerSliderChanged;
 
             AllAvailablePerks = main.AllAvailablePerks;
             AllAvailableKeywords = main.AllAvailableKeywords;
@@ -55,6 +56,7 @@ namespace SkyrimCraftingTool.ViewModel
             _keywordService = main?.KeywordService ?? throw new InvalidOperationException("KeywordService not available");
 
             ContainerSelection = new ContainerSelectionVM(main.AllContainers);
+            ContainerSelection.LevelChanged += OnContainerSliderChanged;
 
             AllAvailablePerks = main.AllAvailablePerks;
             AllAvailableKeywords = main.AllAvailableKeywords;
@@ -228,10 +230,16 @@ namespace SkyrimCraftingTool.ViewModel
             NotifyFieldChanged(nameof(ContainerString));
         });
 
+        // Commits an LVLi level change: rebuild the string from the current selection and let the
+        // ContainerString setter decide whether anything actually changed.
+        //
+        // Deliberately NO unconditional NotifyFieldChanged (this used to have one, and was dead code
+        // that nothing called): the same path also runs when a slider merely receives its initial
+        // value as an item gets selected, and an unconditional notify would mark every item you
+        // click on as edited. The setter's SetProperty + IsLoading guard already covers the real case.
         public void OnContainerSliderChanged()
         {
             ContainerString = ContainerSelection.BuildString();
-            NotifyFieldChanged(nameof(ContainerString));
         }
 
         // --------------------
@@ -528,10 +536,15 @@ namespace SkyrimCraftingTool.ViewModel
                     SelectedWorkbench =
                         AllAvailableWorkbenches.FirstOrDefault(x => x.Key == CraftingWorkbenchKey);
 
-                    // A dead workbench ref resolves to no SelectedWorkbench - show the raw key in the
-                    // (red-bordered) box instead of leaving it blank.
-                    if (SelectedWorkbench == null && !string.IsNullOrEmpty(CraftingWorkbenchKey))
-                        _craftingWorkbenchSearchText = CraftingWorkbenchKey;
+                    // No SelectedWorkbench match means one of two things, and both end up here:
+                    // a dead ref (show the raw key in the red-bordered box instead of leaving it
+                    // blank), or no recipe at all - CraftingWorkbenchKey is empty by then, so this
+                    // CLEARS the box. The ComboBox displays this field, not the key (see its Text
+                    // binding in MainContentView.xaml), so leaving it untouched on the no-recipe
+                    // path kept showing the dropped recipe's workbench - right next to the "no
+                    // crafting recipe yet" hint - until the next app restart.
+                    if (SelectedWorkbench == null)
+                        _craftingWorkbenchSearchText = CraftingWorkbenchKey ?? string.Empty;
 
                     OnPropertyChanged(nameof(CraftingWorkbenchSearchText));
                     OnPropertyChanged(nameof(CraftingPerkKey));
@@ -1074,6 +1087,69 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
+        // BOD2 ArmorType. NOT the ArmorLight keyword: this is what makes the game treat the record
+        // as armor or clothing, and therefore whether an armor rating is shown and whether the item
+        // can be tempered at all. A tester set every armor keyword on a clothing piece, saw the
+        // patched rating only in Modex, and could not temper it - all down to this one field.
+        //
+        // Deliberately its own field rather than derived from the keyword: 27% of vanilla armor
+        // carries no class keyword at all (nothing to derive from), and 40 records diverge on
+        // purpose (executioner hoods are Clothing WITH a class keyword). Derivation would silently
+        // rewrite those. See ApplyArmorTypeFromKeyword for the convenience that closes the gap.
+        // MUST be an instance property, not static. WPF's plain {Binding ArmorTypeChoices} resolves
+        // CLR properties through TypeDescriptor, which only sees instance members - a static one is
+        // silently invisible and leaves the ComboBox empty, which also blanks SelectedItem. Same trap
+        // as BaseConditionViewModel.ConditionTypes, which carries the same warning.
+        public IReadOnlyList<string> ArmorTypeChoices { get; } =
+            new[] { "LightArmor", "HeavyArmor", "Clothing" };
+
+        private string _armorType = "";
+        public string ArmorType
+        {
+            get => _armorType;
+            set
+            {
+                if (SetProperty(ref _armorType, value ?? ""))
+                {
+                    NotifyFieldChanged(nameof(ArmorType));
+                    OnPropertyChanged(nameof(IsArmorTypeChanged));
+                    OnPropertyChanged(nameof(HasAnyChanges));
+                }
+            }
+        }
+
+        // Keeps ArmorType in step when the user picks an armour-class keyword. This runs as a
+        // normal, visible edit - the dropdown moves, the changed-marker lights up, reset undoes it -
+        // so it is a sensible default the user can override, not a hidden rewrite.
+        private void ApplyArmorTypeFromKeyword()
+        {
+            if (!IsArmor) return;
+
+            // Matched on the keyword's EditorID via AllKeywords, the same collection the selection
+            // sync above works from - IKeywordService has no key-to-name lookup.
+            string? wanted = null;
+            foreach (var kw in AllKeywords.Where(k => k.IsSelected))
+            {
+                if (string.Equals(kw.Name, "ArmorLight", StringComparison.OrdinalIgnoreCase)) wanted = "LightArmor";
+                else if (string.Equals(kw.Name, "ArmorHeavy", StringComparison.OrdinalIgnoreCase)) wanted = "HeavyArmor";
+                else if (string.Equals(kw.Name, "ArmorClothing", StringComparison.OrdinalIgnoreCase)) wanted = "Clothing";
+                if (wanted != null) break;
+            }
+
+            if (wanted == null || string.Equals(wanted, ArmorType, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            ArmorType = wanted;
+
+            // Persist directly instead of leaving it to the autosave debouncer. The caller changes a
+            // SECOND field (SelectedKeywordKeys) immediately after this, and the debouncer keeps only
+            // ONE pending action - the keyword save would replace this one and the new armor type
+            // would show in the UI but never reach the database. See the note on Debouncer and
+            // MainContentVM.PersistFieldAsync, which exists for exactly this case.
+            if (!IsLoading && Main != null)
+                _ = Main.PersistFieldAsync(this, nameof(ArmorType));
+        }
+
         private SlotVM _selectedSlot;
         public SlotVM SelectedSlot
         {
@@ -1167,6 +1243,7 @@ namespace SkyrimCraftingTool.ViewModel
         private float _originalWeight;
         private float _originalArmorRating;
         private uint _originalBodySlotMask;
+        private string _originalArmorType = "";
         private int _originalDamage;
         private float _originalSpeed;
         private float _originalReach;
@@ -1175,13 +1252,15 @@ namespace SkyrimCraftingTool.ViewModel
         private List<string> _originalSelectedKeywordKeys = new();
 
         public void CaptureOriginalSnapshot(string name, int value, float weight, float armorRating,
-            uint bodySlotMask, int damage, float speed, float reach, float stagger, string containerString, List<string> keywordKeys)
+            uint bodySlotMask, int damage, float speed, float reach, float stagger, string containerString, List<string> keywordKeys,
+            string armorType = "")
         {
             _originalName = name;
             _originalValue = value;
             _originalWeight = weight;
             _originalArmorRating = armorRating;
             _originalBodySlotMask = bodySlotMask;
+            _originalArmorType = armorType ?? "";
             _originalDamage = damage;
             _originalSpeed = speed;
             _originalReach = reach;
@@ -1199,6 +1278,7 @@ namespace SkyrimCraftingTool.ViewModel
             OnPropertyChanged(nameof(IsWeightChanged));
             OnPropertyChanged(nameof(IsArmorRatingChanged));
             OnPropertyChanged(nameof(IsBodySlotMaskChanged));
+            OnPropertyChanged(nameof(IsArmorTypeChanged));
             OnPropertyChanged(nameof(IsDamageChanged));
             OnPropertyChanged(nameof(IsSpeedChanged));
             OnPropertyChanged(nameof(IsReachChanged));
@@ -1213,6 +1293,8 @@ namespace SkyrimCraftingTool.ViewModel
         public bool IsWeightChanged => _hasOriginalSnapshot && Math.Abs(Weight - _originalWeight) > 0.0001f;
         public bool IsArmorRatingChanged => _hasOriginalSnapshot && Math.Abs(ArmorRating - _originalArmorRating) > 0.0001f;
         public bool IsBodySlotMaskChanged => _hasOriginalSnapshot && BodySlotMask != _originalBodySlotMask;
+        public bool IsArmorTypeChanged => _hasOriginalSnapshot
+            && !string.Equals(ArmorType, _originalArmorType, StringComparison.OrdinalIgnoreCase);
         public bool IsDamageChanged => _hasOriginalSnapshot && Damage != _originalDamage;
         public bool IsSpeedChanged => _hasOriginalSnapshot && Math.Abs(Speed - _originalSpeed) > 0.0001f;
         public bool IsReachChanged => _hasOriginalSnapshot && Math.Abs(Reach - _originalReach) > 0.0001f;
@@ -1255,7 +1337,8 @@ namespace SkyrimCraftingTool.ViewModel
         // OnKeywordPropertyChanged) so applying the reverted values doesn't immediately re-save them
         // as a fresh edit.
         public void ApplyResetValues(string name, int value, float weight, float armorRating,
-            uint bodySlotMask, int damage, float speed, float reach, float stagger, string containerString, List<string> keywordKeys)
+            uint bodySlotMask, int damage, float speed, float reach, float stagger, string containerString, List<string> keywordKeys,
+            string armorType = "")
         {
             IsLoading = true;
 
@@ -1267,6 +1350,7 @@ namespace SkyrimCraftingTool.ViewModel
             {
                 ArmorRating = armorRating;
                 BodySlotMask = bodySlotMask; // setter calls SyncDataToGui(), keeping SlotOptions in sync
+                ArmorType = armorType ?? "";
             }
             else
             {
@@ -1426,11 +1510,24 @@ namespace SkyrimCraftingTool.ViewModel
         public bool TemperRecipeMissingIngredients =>
             HasTemperRecipe && !TemperIngredients.Any(i => !string.IsNullOrEmpty(i.Key));
 
+        // --- "No recipe yet" hint (inline, empty section only) ---
+        // Both sections stay fully usable on an item that has no recipe at all: the COBJ row is
+        // created on the next save, from whatever the user touches first - either green "+"
+        // (Conditions or Materials) and, for Crafting, also picking a Workbench (see
+        // CraftingSaveHandler/TemperSaveHandler, which call CreateCraftingRecipe/CreateTemperRecipe
+        // while HasXRecipe is still false). A tester reported that this isn't discoverable by
+        // fiddling alone, so the empty section spells it out.
+        public bool CraftingRecipeAbsent => !HasCraftingRecipe;
+
+        public bool TemperRecipeAbsent => !HasTemperRecipe;
+
         private void RaiseRecipeWarningFlags()
         {
             OnPropertyChanged(nameof(CraftingRecipeMissingWorkbench));
             OnPropertyChanged(nameof(CraftingRecipeMissingIngredients));
             OnPropertyChanged(nameof(TemperRecipeMissingIngredients));
+            OnPropertyChanged(nameof(CraftingRecipeAbsent));
+            OnPropertyChanged(nameof(TemperRecipeAbsent));
         }
 
         // Surfaces recipe problems into the status strip: dead references (workbench / ingredient
@@ -1524,12 +1621,24 @@ namespace SkyrimCraftingTool.ViewModel
                 "Reset item", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
             if (result != System.Windows.MessageBoxResult.Yes) return;
 
+            ResetAllChanges();
+        });
+
+        // The dialog-free core of ResetAllChangesCommand, so the multi-select bulk reset
+        // (MultiSelectDetailVM.ResetSelectionAsync) can confirm once for the whole selection and then run
+        // this per item instead of popping one message box per item. Returns whether anything was
+        // actually reverted.
+        public bool ResetAllChanges()
+        {
+            if (!HasAnyItemOrRecipeChanges) return false;
+
             if (_hasOriginalSnapshot) Main?.ResetItemEdits(this);
             if (HasCraftingChanges) Main?.ResetCraftingRecipeEdits(this);
             if (HasTemperChanges) Main?.ResetTemperRecipeEdits(this);
 
             RefreshEditedState();
-        });
+            return true;
+        }
 
         // --------------------
         // Constructor
@@ -1583,6 +1692,7 @@ namespace SkyrimCraftingTool.ViewModel
 
             ArmorRating = rec.ArmorRating;
             BodySlotMask = rec.BodySlotMask;
+            ArmorType = rec.ArmorType ?? "";
 
             ContainerString = rec.ContainerString ?? "{}";
             ContainerSelection.LoadFromString(ContainerString);
@@ -1891,6 +2001,10 @@ namespace SkyrimCraftingTool.ViewModel
             _keywordViewSource?.View?.Refresh();
             _selectedKeywordViewSource?.View?.Refresh();
             OnPropertyChanged(nameof(SelectedKeywords));
+            // Pull ArmorType along with the armour-class keyword, so "make this light armor" works in
+            // one step instead of silently leaving the record as clothing.
+            ApplyArmorTypeFromKeyword();
+
 
             // IMPORTANT: save SelectedKeywordKeys, not SelectedKeywords!
             NotifyFieldChanged(nameof(SelectedKeywordKeys));
