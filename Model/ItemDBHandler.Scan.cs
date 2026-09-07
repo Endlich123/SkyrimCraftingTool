@@ -441,7 +441,7 @@ namespace SkyrimCraftingTool.Model
         }
 
         private static readonly string[] ArmorParamNames =
-            { "@key", "@editorID", "@name", "@weight", "@val", "@armorRating", "@slotMask", "@keywords" };
+            { "@key", "@editorID", "@name", "@weight", "@val", "@armorRating", "@slotMask", "@armorType", "@keywords" };
         private static readonly string[] WeaponParamNames =
             { "@key", "@editorID", "@name", "@weight", "@val", "@dmg", "@speed", "@reach", "@stagger", "@keywords" };
         private static readonly string[] CobjParamNames =
@@ -465,7 +465,7 @@ namespace SkyrimCraftingTool.Model
         // param names (stripping "@") is wrong wherever they differ and was the cause of the
         // "table Armor has no column named val" crash.
         private static readonly string[] ArmorColumnNames =
-            { "Key", "EditorID", "Name", "Weight", "Value", "ArmorRating", "BodySlotMask", "Keywords" };
+            { "Key", "EditorID", "Name", "Weight", "Value", "ArmorRating", "BodySlotMask", "ArmorType", "Keywords" };
         private static readonly string[] WeaponColumnNames =
             { "Key", "EditorID", "Name", "Weight", "Value", "Damage", "Speed", "Reach", "Stagger", "Keywords" };
         private static readonly string[] CobjColumnNames =
@@ -573,7 +573,8 @@ namespace SkyrimCraftingTool.Model
         private ParsedPluginData ParsePluginForItemDB(string pluginName, string fullPath)
         {
             var result = new ParsedPluginData();
-            var mod = SkyrimMod.CreateFromBinaryOverlay(fullPath, SkyrimRelease.SkyrimSE);
+            var mod = SkyrimMod.CreateFromBinaryOverlay(
+                fullPath, SkyrimRelease.SkyrimSE, Services.PluginReadParams.ForScan());
 
             // ARMOR
             foreach (var armor in mod.Armors.Records)
@@ -582,6 +583,12 @@ namespace SkyrimCraftingTool.Model
 
                 // BodySlotMask (bitmask) — direct typed access, no reflection
                 uint slotMask = (uint)(armor.BodyTemplate?.FirstPersonFlags ?? 0);
+
+                // BOD2 ArmorType - the actual Light/Heavy/Clothing switch. NOT the ArmorLight
+                // keyword, which only drives perks, material and vendors: an item with every armor
+                // keyword stays clothing (no armor rating shown, cannot be tempered) until this is
+                // set. Empty when a record has no BOD2 at all; no vanilla ARMO does, but mods vary.
+                string armorType = armor.BodyTemplate?.ArmorType.ToString() ?? "";
 
                 var kw = (armor.Keywords?
                     .Select(k =>
@@ -609,6 +616,7 @@ namespace SkyrimCraftingTool.Model
                     (int?)armor.Value ?? 0,
                     (float?)armor.ArmorRating ?? 0f,
                     (long)slotMask,
+                    armorType,
                     string.Join(",", kw)
                 });
             }

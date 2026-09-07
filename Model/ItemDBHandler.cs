@@ -246,6 +246,10 @@ namespace SkyrimCraftingTool.Model
                          THEN IsEditedBodySlotMask
                          ELSE BodySlotMask
                     END AS BodySlotMask,
+                    CASE WHEN IsEdited = 1 AND IsEditedArmorType IS NOT NULL
+                         THEN IsEditedArmorType
+                         ELSE ArmorType
+                    END AS ArmorType,
                     CASE WHEN IsEdited = 1 AND IsEditedKeywords IS NOT NULL
                          THEN IsEditedKeywords
                          ELSE Keywords
@@ -259,7 +263,7 @@ namespace SkyrimCraftingTool.Model
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
-                var keywordsCsv = reader.IsDBNull(7) ? "" : reader.GetString(7);
+                var keywordsCsv = reader.IsDBNull(8) ? "" : reader.GetString(8);
                 var keywords = string.IsNullOrWhiteSpace(keywordsCsv)
                     ? new List<string>()
                     : keywordsCsv.Split(',').ToList();
@@ -275,9 +279,10 @@ namespace SkyrimCraftingTool.Model
 
                     // NEW
                     BodySlotMask = reader.IsDBNull(6) ? 0u : (uint)reader.GetInt64(6),
+                    ArmorType = reader.IsDBNull(7) ? "" : reader.GetString(7),
 
                     Keywords = keywords,
-                    ContainerString = reader.IsDBNull(8) ? "{}" : reader.GetString(8),
+                    ContainerString = reader.IsDBNull(9) ? "{}" : reader.GetString(9),
                 });
             }
 
@@ -1034,7 +1039,7 @@ namespace SkyrimCraftingTool.Model
         // the import conflict check ("local is newer than this export file"). What counts as
         // "currently edited" is the IsEdited flag, which is why GetEdited* filters on that.
         private static readonly string[] ArmorShadowColumns =
-            { "IsEditedName", "IsEditedWeight", "IsEditedValue", "IsEditedArmorRating", "IsEditedBodySlotMask", "IsEditedKeywords", "IsEditedContainerString" };
+            { "IsEditedName", "IsEditedWeight", "IsEditedValue", "IsEditedArmorRating", "IsEditedBodySlotMask", "IsEditedArmorType", "IsEditedKeywords", "IsEditedContainerString" };
         private static readonly string[] WeaponShadowColumns =
             { "IsEditedName", "IsEditedWeight", "IsEditedValue", "IsEditedDamage", "IsEditedSpeed", "IsEditedReach", "IsEditedStagger", "IsEditedKeywords", "IsEditedContainerString" };
         private static readonly string[] CobjShadowColumns =
@@ -1102,6 +1107,9 @@ namespace SkyrimCraftingTool.Model
 
         public static void UpdateArmorBodySlotMask(string key, long bodySlotMask)
             => UpdateField("Armor", "IsEditedBodySlotMask", key, bodySlotMask);
+
+        public static void UpdateArmorArmorType(string key, string armorType)
+            => UpdateField("Armor", "IsEditedArmorType", key, armorType);
 
         public static void UpdateArmorKeywords(string key, ObservableCollection<KeywordSelectionVM> keywords)
             => UpdateField("Armor", "IsEditedKeywords", key, SelectedKeywordsCsv(keywords));
@@ -1358,25 +1366,19 @@ namespace SkyrimCraftingTool.Model
             } while (CobjKeyExists(newKey));
             string newName = item.Name;
 
-            string workbenchKeyword = isTemper
-                ? "Skyrim.esm|088108"   // Temper
-                : "Skyrim.esm|0ADB78";  // Crafting
-            if (isTemper == true)
-            {
-                if (item.IsArmor)
-                {
-                    workbenchKeyword = "Skyrim.esm|088108";
-                }
-                else
-                {
-                    workbenchKeyword = "Skyrim.esm|0ADB78";
-                }
+            // Verified against Skyrim.esm by EditorID, because these two were swapped and armor
+            // temper recipes were being created for the sharpening wheel - where they can never
+            // appear. A tester lost an evening to it.
+            //   Skyrim.esm|088105 = CraftingSmithingForge
+            //   Skyrim.esm|0ADB78 = CraftingSmithingArmorTable       (armor tempering)
+            //   Skyrim.esm|088108 = CraftingSmithingSharpeningWheel  (weapon tempering)
+            const string Forge = "Skyrim.esm|088105";
+            const string ArmorTable = "Skyrim.esm|0ADB78";
+            const string SharpeningWheel = "Skyrim.esm|088108";
 
-            }
-            else
-            {
-                workbenchKeyword = "Skyrim.esm|088105";
-            }
+            string workbenchKeyword = isTemper
+                ? (item.IsArmor ? ArmorTable : SharpeningWheel)
+                : Forge;
 
             var rec = new COBJRecord
             {
@@ -1464,14 +1466,14 @@ namespace SkyrimCraftingTool.Model
             using var connection = new SqliteConnection(ConnString);
             connection.Open();
             using var cmd = connection.CreateCommand();
-            cmd.CommandText = @"SELECT EditorID, Name, Weight, Value, ArmorRating, BodySlotMask, Keywords, ContainerString
+            cmd.CommandText = @"SELECT EditorID, Name, Weight, Value, ArmorRating, BodySlotMask, ArmorType, Keywords, ContainerString
                                  FROM Armor WHERE Key = @key";
             cmd.Parameters.AddWithValue("@key", key);
 
             using var reader = cmd.ExecuteReader();
             if (!reader.Read()) return null;
 
-            var keywordsCsv = reader.IsDBNull(6) ? "" : reader.GetString(6);
+            var keywordsCsv = reader.IsDBNull(7) ? "" : reader.GetString(7);
             return new ArmorRecord
             {
                 Key = key,
@@ -1481,8 +1483,9 @@ namespace SkyrimCraftingTool.Model
                 Value = reader.IsDBNull(3) ? 0 : reader.GetInt32(3),
                 ArmorRating = reader.IsDBNull(4) ? 0f : (float)reader.GetDouble(4),
                 BodySlotMask = reader.IsDBNull(5) ? 0u : (uint)reader.GetInt64(5),
+                ArmorType = reader.IsDBNull(6) ? "" : reader.GetString(6),
                 Keywords = string.IsNullOrWhiteSpace(keywordsCsv) ? new List<string>() : keywordsCsv.Split(',').ToList(),
-                ContainerString = reader.IsDBNull(7) ? "{}" : reader.GetString(7),
+                ContainerString = reader.IsDBNull(8) ? "{}" : reader.GetString(8),
             };
         }
 

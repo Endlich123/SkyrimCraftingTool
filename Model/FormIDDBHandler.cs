@@ -66,18 +66,52 @@ namespace SkyrimCraftingTool.Model
 
             // Dictionary lookup, not a linear scan: GetByKey is called once per container item across
             // every plugin (ItemDBHandler.PutIntoDataBank), so a linear scan is O(items * cacheSize)
-            // — noticeable on large modlists. GroupBy/First guards against an unexpected duplicate
-            // key throwing here.
-            _cacheByKey = _cache
-                .GroupBy(r => r.Key, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            // — noticeable on large modlists. DedupeByKey also reports collisions to the log.
+            _cacheByKey = DedupeByKey(_cache, r => r.Key, "FormID name cache");
+        }
+
+        // Collapses duplicate keys AND says so in the log.
+        //
+        // The guard alone is enough to keep the scan alive, but a silent First() throws away the one
+        // piece of evidence we need: a tester hit "An item with the same key has already been added"
+        // twice, and by the time the report arrived formid.db had been rebuilt by the next scan and
+        // the colliding rows were gone. Logging the keys turns an unreproducible crash into a line
+        // anyone can paste. Costs nothing when there are no duplicates, which is the normal case.
+        private static Dictionary<string, T> DedupeByKey<T>(
+            List<T> items, Func<T, string> keyOf, string what)
+        {
+            var groups = items.GroupBy(keyOf, StringComparer.OrdinalIgnoreCase).ToList();
+
+            if (groups.Count != items.Count)
+            {
+                var examples = groups
+                    .Where(g => g.Count() > 1)
+                    .Take(5)
+                    .Select(g => $"{g.Key} (x{g.Count()}: {string.Join(" | ", g.Select(keyOf).Distinct())})");
+
+                AppLogger.LogWarning(
+                    $"{what}: {items.Count - groups.Count} duplicate key(s) collapsed. " +
+                    "Keys are built from the plugin name as each plugin spells its masters, so two " +
+                    "spellings of the same plugin land as separate rows. Examples: " +
+                    string.Join("; ", examples));
+            }
+
+            return groups.ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
         }
 
         // Same as LoadTable("Quests", "Quest") plus the Stages column parsed onto FormIDRecord.Stages.
         private List<FormIDRecord> LoadQuestsWithStages()
         {
             var list = LoadTable("Quests", "Quest");
-            var byKey = list.ToDictionary(r => r.Key, StringComparer.OrdinalIgnoreCase);
+
+            // GroupBy/First for the same reason as _cacheByKey below, and it is NOT theoretical:
+            // keys are built from FormKey.ModKey.FileName, i.e. the plugin name as spelled in the
+            // master list of whichever plugin was being scanned. Two mods overriding the same record
+            // while spelling that master differently (".. Patch.esp" vs ".. patch.esp") produce two
+            // rows - SQLite TEXT compares case-sensitively, this dictionary does not. A plain
+            // ToDictionary threw "An item with the same key has already been added" and took the
+            // entire scan down on a modlist that was otherwise fine.
+            var byKey = DedupeByKey(list, r => r.Key, "Quests");
 
             try
             {
@@ -256,7 +290,8 @@ namespace SkyrimCraftingTool.Model
         private ParsedFormIdPluginData ParsePluginForFormIdDB(string fullPath)
         {
             var result = new ParsedFormIdPluginData();
-            var mod = SkyrimMod.CreateFromBinaryOverlay(fullPath, SkyrimRelease.SkyrimSE);
+            var mod = SkyrimMod.CreateFromBinaryOverlay(
+                fullPath, SkyrimRelease.SkyrimSE, Services.PluginReadParams.ForScan());
 
             foreach (var kw in mod.Keywords.Records)
                 result.Keywords.Add(($"{kw.FormKey.ModKey.FileName}|{kw.FormKey.ID:X6}", kw.EditorID));

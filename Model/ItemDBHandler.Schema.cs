@@ -25,6 +25,8 @@ namespace SkyrimCraftingTool.Model
             AddColumnIfMissing(connection, "Weapons", "Active", "INTEGER NOT NULL DEFAULT 1");
             AddColumnIfMissing(connection, "COBJ", "Active", "INTEGER NOT NULL DEFAULT 1");
             AddColumnIfMissing(connection, "COBJ", "ConditionsEdited", "INTEGER NOT NULL DEFAULT 0");
+            AddColumnIfMissing(connection, "Armor", "ArmorType", "TEXT");
+            AddColumnIfMissing(connection, "Armor", "IsEditedArmorType", "TEXT");
             AddColumnIfMissing(connection, "COBJ_Conditions", "CompareOperator", "TEXT");
             AddColumnIfMissing(connection, "COBJ_Conditions", "Flags", "TEXT");
             AddColumnIfMissing(connection, "COBJ_Conditions_Original", "CompareOperator", "TEXT");
@@ -70,6 +72,16 @@ namespace SkyrimCraftingTool.Model
         // a plain launch without one.)
         private static void RepairBlankWornRestrictionEdits(SqliteConnection connection)
         {
+            // Nothing to repair on a brand-new database: this runs (via EnsureSchema) BEFORE
+            // CreateTables, so none of these tables exist yet. Without the early-out the whole batch
+            // throws on the first missing table and every fresh install writes an alarming-looking
+            // ERROR into the log - noise in exactly the place where a new user's bug report is read.
+            if (!TableExists(connection, "Enchantments") ||
+                !TableExists(connection, "WornRestrictionKeywords"))
+            {
+                return;
+            }
+
             try
             {
                 using var cmd = connection.CreateCommand();
@@ -138,6 +150,14 @@ namespace SkyrimCraftingTool.Model
             }
         }
 
+        private static bool TableExists(SqliteConnection connection, string table)
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=@table;";
+            cmd.Parameters.AddWithValue("@table", table);
+            return Convert.ToInt64(cmd.ExecuteScalar()) > 0;
+        }
+
         private static void AddColumnIfMissing(SqliteConnection connection, string table, string column, string columnDefSql)
         {
             // sqlite_master only has an entry for a table once it exists — on a brand-new DB file,
@@ -181,6 +201,7 @@ namespace SkyrimCraftingTool.Model
                     Value INTEGER,
                     ArmorRating REAL,
                     BodySlotMask INTEGER,
+                    ArmorType TEXT,
                     Keywords TEXT,
                     ContainerString TEXT,
 
@@ -189,6 +210,7 @@ namespace SkyrimCraftingTool.Model
                     IsEditedValue INTEGER,
                     IsEditedArmorRating REAL,
                     IsEditedBodySlotMask INTEGER,
+                    IsEditedArmorType TEXT,
                     IsEditedKeywords TEXT,
                     IsEditedContainerString TEXT,
 
