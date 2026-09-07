@@ -37,6 +37,27 @@
                        TextWrapping="Wrap"
                        Margin="0,0,0,10"/>
 
+            <!-- Bulk reset: the single-item editor's "Reset ALL" for the whole selection, with one
+                 confirmation for all of it (see MultiSelectDetailVM.ResetSelection). Deliberately
+                 NOT inside one of the Expanders below - those all ADD something to the selection,
+                 this is the one destructive action here and shouldn't be buried in a collapsed
+                 section. Always enabled, like the Apply buttons: a selection with nothing to revert
+                 answers via StatusMessage instead of a greyed-out button with no explanation. -->
+            <Button Content="Reset ALL selected"
+                    Command="{Binding ResetSelectionCommand}"
+                    Style="{StaticResource StandardButtonStyle}"
+                    HorizontalAlignment="Left"
+                    Margin="0,0,0,10">
+                <Button.ToolTip>
+                    <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                        <StackPanel>
+                            <TextBlock Text="Reverts EVERYTHING - fields, crafting recipe and temper recipe - on every selected item that has edits, back to the scanned state. Asks for confirmation once for the whole selection."
+                                Style="{StaticResource ToolTipTitelStyle}"/>
+                        </StackPanel>
+                    </ToolTip>
+                </Button.ToolTip>
+            </Button>
+
             <!-- Auto-Apply: applies a preset (see PresetApplyService) to every selected item - per
                  item, all Armor slots get merged, or the one matching Weapon type is used, exactly
                  like in the single-item editor. -->
@@ -800,6 +821,11 @@
                                    Style="{StaticResource ItemLabelStyle}"
                                    Margin="0,0,0,6"/>
 
+                        <TextBlock Text="Leave every slider at 0 and the items are placed in the container itself - permanently, and they will be there. Raise a slider and they go into that leveled list instead: from that level on they can turn up when the merchant restocks (vanilla: about every 48 h), by chance rather than guaranteed."
+                                   Foreground="{StaticResource ColorTextTertiary}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,8"/>
+
                         <ItemsControl ItemsSource="{Binding SelectedContainerTemplateRows}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="{x:Type local:ContainerEntryVM}">
@@ -839,11 +865,14 @@
 
                                                             <StackPanel Grid.Column="1" Orientation="Horizontal"
                                                                         VerticalAlignment="Center">
+                                                                <!-- Same fix as the item editor: Explicit + DragCompleted meant a track
+                                                                     click, arrow keys or the wheel moved the slider without the level ever
+                                                                     reaching the ViewModel, so the template applied levels of 0. Nothing
+                                                                     else is needed here - this only fills a template, no string to rebuild. -->
                                                                 <Slider Minimum="0" Maximum="100"
-                                                                        Value="{Binding LevelDouble, Mode=TwoWay, UpdateSourceTrigger=Explicit}"
+                                                                        Value="{Binding LevelDouble, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                                         SmallChange="1" LargeChange="1" TickFrequency="1"
-                                                                        Width="120"
-                                                                        Thumb.DragCompleted="TemplateSlider_ThumbDragCompleted"/>
+                                                                        Width="120"/>
                                                                 <TextBlock Text="{Binding Level}"
                                                                            Foreground="{StaticResource ColorTextPrimary}"
                                                                            Margin="8,0,0,0"

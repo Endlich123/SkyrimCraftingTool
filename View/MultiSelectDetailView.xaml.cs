@@ -10,12 +10,10 @@ namespace SkyrimCraftingTool.View
             InitializeComponent();
         }
 
-        // Just commit the value (no further side effect needed - unlike in the single-item editor,
-        // this only edits a template, no ContainerString gets rebuilt yet).
-        private void TemplateSlider_ThumbDragCompleted(object sender, DragCompletedEventArgs e)
-        {
-            if (sender is Slider s)
-                s.GetBindingExpression(Slider.ValueProperty)?.UpdateSource();
-        }
+        // The LVLi template slider used to be committed here by hand (Explicit binding +
+        // UpdateSource on DragCompleted). That dropped every non-drag way of moving a WPF slider -
+        // track click, arrow keys, Page Up/Down, wheel - so the template silently applied level 0.
+        // It binds with UpdateSourceTrigger=PropertyChanged now and needs no code-behind: unlike the
+        // item editor there is no ContainerString to rebuild here, this only fills a template.
     }
 }

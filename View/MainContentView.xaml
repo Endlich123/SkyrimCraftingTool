@@ -480,6 +480,41 @@
                                                         </Button>
                                                     </Grid>
 
+                                                    <!-- ArmorType (BOD2). Deliberately a separate field, not derived from the
+                                                         ArmorLight keyword: 27% of vanilla armor carries no class keyword at
+                                                         all, and ~40 records diverge on purpose. Picking an armour-class
+                                                         keyword does move this automatically (see ItemNodeVM
+                                                         .ApplyArmorTypeFromKeyword) - as a normal, resettable edit. -->
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+
+                                                        <TextBlock Grid.Column="0" Text="Armor Type:" Style="{StaticResource ItemLabelStyle}"/>
+
+                                                        <ComboBox Grid.Column="1"
+                                                                  ItemsSource="{Binding ArmorTypeChoices}"
+                                                                  SelectedItem="{Binding ArmorType, Mode=TwoWay}"
+                                                                  IsSynchronizedWithCurrentItem="False"
+                                                                  BorderBrush="{Binding IsArmorTypeChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                                                  Style="{StaticResource ItemComboBoxStyle}"/>
+
+                                                        <Button Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                                            <Button.ToolTip>
+                                                                <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="Whether the game treats this as light armor, heavy armor or clothing."
+                                                                                   Style="{StaticResource ToolTipTitelStyle}"/>
+                                                                        <TextBlock Text="This is NOT the same as the ArmorLight/ArmorHeavy keyword. Keywords drive perks, material and vendors; this field decides the inventory category, whether an armor rating is shown at all, and whether the item can be tempered. Clothing with armor keywords still shows no armor rating in game."
+                                                                                   TextWrapping="Wrap" MaxWidth="420"/>
+                                                                    </StackPanel>
+                                                                </ToolTip>
+                                                            </Button.ToolTip>
+                                                        </Button>
+                                                    </Grid>
+
                                                     <Grid>
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="*" />
@@ -856,6 +891,13 @@
                                                 </DockPanel>
                                             </GroupBox.Header>
                                             <StackPanel>
+                                                <!-- Empty section: the item has no crafting recipe at all yet. Says how one is
+                                                     created, because that isn't obvious from an empty section (tester feedback,
+                                                     see docs/TODO.md). Hidden again the moment the COBJ exists. -->
+                                                <TextBlock Text="No crafting recipe yet - pick a Workbench, or add a material or condition with one of the green + buttons, and one will be created."
+                                                           Foreground="{StaticResource ColorTextTertiary}"
+                                                           TextWrapping="Wrap" Margin="0,0,0,4"
+                                                           Visibility="{Binding CraftingRecipeAbsent, Converter={StaticResource BoolToVis}}"/>
                                                 <TextBlock Text="⚠ This recipe has no workbench set - it can't be crafted in-game."
                                                            Foreground="{StaticResource ColorWarning}"
                                                            TextWrapping="Wrap" Margin="0,0,0,4"
@@ -1233,6 +1275,13 @@
                                             </GroupBox.Header>
 
                                             <StackPanel>
+                                                <!-- See the same hint in the Crafting section above. No Workbench here - the
+                                                     temper workbench is auto-derived at COBJ-creation time - so the green +
+                                                     buttons are the only way in. -->
+                                                <TextBlock Text="No temper recipe yet - add a material or condition with one of the green + buttons, and one will be created."
+                                                           Foreground="{StaticResource ColorTextTertiary}"
+                                                           TextWrapping="Wrap" Margin="0,0,0,4"
+                                                           Visibility="{Binding TemperRecipeAbsent, Converter={StaticResource BoolToVis}}"/>
                                                 <TextBlock Text="⚠ This temper recipe has no ingredients - tempering will be free."
                                                            Foreground="{StaticResource ColorWarning}"
                                                            TextWrapping="Wrap" Margin="0,0,0,4"
@@ -1648,6 +1697,14 @@
                                                        Style="{StaticResource ItemLabelStyle}"
                                                        Margin="0,0,0,6"/>
 
+                                                <!-- The two placement kinds behave completely differently in game, and the
+                                                     sliders are the only thing that tells them apart - a tester expected
+                                                     "from level 3 onwards it's in the shop" and found an empty shop. -->
+                                                <TextBlock Text="Leave every slider at 0 and the item is placed in the container itself - permanently, and it will be there. Raise a slider and it goes into that leveled list instead: from that level on it can turn up when the merchant restocks (vanilla: about every 48 h), by chance rather than guaranteed."
+                                                           Foreground="{StaticResource ColorTextTertiary}"
+                                                           TextWrapping="Wrap"
+                                                           Margin="0,0,0,8"/>
+
                                                 <ItemsControl ItemsSource="{Binding ContainerSelection.SelectedContainers}">
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate>
@@ -1697,14 +1754,18 @@
                                                                                             Orientation="Horizontal"
                                                                                             VerticalAlignment="Center">
 
+                                                                                        <!-- PropertyChanged, NOT Explicit + a Thumb.DragCompleted handler: with Explicit
+                                                                                             the level only ever reached the ViewModel on a finished thumb DRAG, so a
+                                                                                             track click, arrow keys, Page Up/Down or the wheel moved the slider but
+                                                                                             dropped the value - no LVLi in the container string, nothing saved, nothing
+                                                                                             patched. ItemNodeVM rebuilds the string off ContainerSelection.LevelChanged. -->
                                                                                         <Slider Minimum="0"
                                                                                             Maximum="100"
-                                                                                            Value="{Binding LevelDouble, Mode=TwoWay, UpdateSourceTrigger=Explicit}"
+                                                                                            Value="{Binding LevelDouble, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                                                             SmallChange="1"
                                                                                             LargeChange="1"
                                                                                             TickFrequency="1"
-                                                                                            Width="120"
-                                                                                            Thumb.DragCompleted="Slider_ThumbDragCompleted"/>
+                                                                                            Width="120"/>
 
                                                                                         <TextBlock Text="{Binding Level}"
                                                                                            Foreground="{StaticResource ColorTextPrimary}"
@@ -1770,6 +1831,22 @@
                                     <Button Content="Import"
                                         Command="{Binding ImportPluginCommand}"
                                         Style="{StaticResource ActionButtonWarmStyle}"/>
+
+                                    <!-- The way back from the Apply on the left. Every button in this
+                                         row covers the whole plugin, never the filtered view - both
+                                         confirmation dialogs spell that out (see PluginNodeVM). -->
+                                    <Button Content="Reset edited"
+                                        Command="{Binding ResetPluginCommand}"
+                                        Style="{StaticResource StandardButtonStyle}">
+                                        <Button.ToolTip>
+                                            <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                <StackPanel>
+                                                    <TextBlock Text="Reverts EVERYTHING - fields, crafting recipes and temper recipes - on every edited item in this plugin, back to the scanned state. Covers the whole plugin regardless of any active tree filter, and asks for confirmation with the exact item count first."
+                                                        Style="{StaticResource ToolTipTitelStyle}"/>
+                                                </StackPanel>
+                                            </ToolTip>
+                                        </Button.ToolTip>
+                                    </Button>
                                 </DockPanel>
 
                             </StackPanel>

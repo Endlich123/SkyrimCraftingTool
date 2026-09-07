@@ -44,9 +44,21 @@
                           VerticalAlignment="Center"
                           Margin="0,0,14,0"
                           ToolTip="Off: patch goes under Output\. On: SKSE\ and the .esp are written at the tool root, so the tool folder can be enabled directly as an MO2 mod."/>
+                <!-- Width/Height/Margin match NavTabButtonStyle (150x30, top offset 10) so the
+                     button lines up with the Items/Enchantments/Presets tabs opposite it.
+                     ActionButtonStyle only sets MinHeight and carries its own margin, which left
+                     it visibly smaller and 5px too high. -->
+                <!-- Bug report: builds a local text report (versions, paths, DB state, log).
+                     Nothing is sent anywhere - see LogViewerWindow. -->
+                <Button Content="Log / Bug report"
+                        Command="{Binding OpenLogViewerCommand}"
+                        Style="{StaticResource StandardButtonStyle}"
+                        Width="120" Height="30" Margin="0,0,14,0"
+                        ToolTip="View the log and build a bug report you can copy or save. Nothing leaves your PC."/>
                 <Button Content="Generate Patch"
                         Command="{Binding ContentVM.GeneratePatchCommand}"
                         Style="{StaticResource ActionButtonStyle}"
+                        Width="150" Height="30" Margin="0"
                         ToolTip="SkyPatcher INIs for every edited armor, weapon, enchantment and form list, plus SkyrimCraftingTool.esp for created/edited recipes and re-pointed worn-restriction lists."/>
             </StackPanel>
 

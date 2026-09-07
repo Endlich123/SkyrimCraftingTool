@@ -74,22 +74,11 @@ namespace SkyrimCraftingTool.View
             vm.HandleItemNodeClick(clicked, ctrl, shift);
         }
 
-        private void Slider_ThumbDragCompleted(object sender, DragCompletedEventArgs e)
-        {
-            if (sender is Slider s)
-            {
-                // push binding explicitly
-                BindingExpression be = s.GetBindingExpression(Slider.ValueProperty);
-                be?.UpdateSource();
-
-                // After updating the LVLi VM, rebuild the container string for the selected item
-                if (DataContext is MainContentVM vm && vm.SelectedNode is ItemNodeVM item)
-                {
-                    item.ContainerString = item.ContainerSelection.BuildString();
-                    // sync left-hand selection flags
-                    vm.UpdateAllContainerSelectionFlags(item);
-                }
-            }
-        }
+        // The LVLi slider used to be committed from here (Explicit binding + UpdateSource on
+        // DragCompleted), which silently dropped every non-drag way of moving it. It now binds with
+        // UpdateSourceTrigger=PropertyChanged and ItemNodeVM rebuilds the container string off
+        // ContainerSelection.LevelChanged, so no code-behind is involved at all. The left-hand
+        // catalog's highlighting doesn't need a hand either: it is derived from which containers are
+        // selected (UpdateAllContainerSelectionFlags), and a level change never adds or removes one.
     }
 }

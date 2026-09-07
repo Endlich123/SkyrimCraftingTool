@@ -349,6 +349,13 @@
                                             <StackPanel Grid.Column="2">
                                                 <TextBlock Text="Selected Containers" Style="{StaticResource ItemLabelStyle}" Margin="0,0,0,6"/>
 
+                                                <!-- Same note as the item editor: the sliders are the switch between the
+                                                     two placement kinds, and they behave very differently in game. -->
+                                                <TextBlock Text="Leave every slider at 0 and the item is placed in the container itself - permanently, and it will be there. Raise a slider and it goes into that leveled list instead: from that level on it can turn up when the merchant restocks (vanilla: about every 48 h), by chance rather than guaranteed."
+                                                           Foreground="{StaticResource ColorTextTertiary}"
+                                                           TextWrapping="Wrap"
+                                                           Margin="0,0,0,8"/>
+
                                                 <ItemsControl ItemsSource="{Binding ContainerSelection.SelectedContainers}">
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate>

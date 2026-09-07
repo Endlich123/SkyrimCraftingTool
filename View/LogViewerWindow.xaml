@@ -1,0 +1,62 @@
+<Window x:Class="SkyrimCraftingTool.View.LogViewerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Log &amp; Bug Report"
+        Width="900" Height="600"
+        Background="{StaticResource ColorBackgroundBase}"
+        TextElement.Foreground="{StaticResource ColorTextPrimary}"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Style="{StaticResource TitelStyle}" Margin="0,0,0,10"
+                   TextWrapping="Wrap"
+                   Text="Everything below is collected on this machine and goes nowhere unless you send it. Copy it or save it to a file, then attach it to your bug report. Your Windows user folder is replaced with %USERPROFILE% — read it over before sharing if you want to be sure."/>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
+            <Button Content="Copy report" Width="110" Click="Copy_Click"
+                    Style="{StaticResource ActionButtonStyle}"
+                    ToolTip="Copies the whole report to the clipboard, ready to paste into a bug report."/>
+            <Button Content="Save report…" Width="110" Click="Save_Click"
+                    Style="{StaticResource StandardButtonStyle}"
+                    ToolTip="Writes the report to a text file you can attach."/>
+            <Button Content="Open log folder" Width="120" Click="OpenFolder_Click"
+                    Style="{StaticResource StandardButtonStyle}"/>
+            <Button Content="Refresh" Width="80" Click="Refresh_Click"
+                    Style="{StaticResource StandardButtonStyle}"/>
+            <Button Content="Clear log" Width="80" Click="Clear_Click"
+                    Style="{StaticResource StandardButtonStyle}"
+                    ToolTip="Deletes the log file. Do this before reproducing a bug to get a clean report."/>
+        </StackPanel>
+
+        <!-- Read-only TextBox rather than a TextBlock: users need to select and copy parts of it,
+             and a ScrollViewer around a TextBlock gives no selection. -->
+        <TextBox Grid.Row="2"
+                 x:Name="ReportBox"
+                 IsReadOnly="True"
+                 FontFamily="Consolas"
+                 FontSize="12"
+                 TextWrapping="NoWrap"
+                 VerticalScrollBarVisibility="Auto"
+                 HorizontalScrollBarVisibility="Auto"
+                 Background="{StaticResource ColorBackgroundControl}"
+                 Foreground="{StaticResource ColorTextPrimary}"
+                 BorderBrush="{StaticResource ColorBorder}"
+                 BorderThickness="1"
+                 Padding="6"/>
+
+        <DockPanel Grid.Row="3" Margin="0,10,0,0">
+            <Button DockPanel.Dock="Right" Content="Close" Width="90" IsCancel="True"
+                    Style="{StaticResource StandardButtonStyle}"/>
+            <TextBlock x:Name="StatusText"
+                       VerticalAlignment="Center"
+                       Foreground="{StaticResource ColorTextSecondary}"/>
+        </DockPanel>
+    </Grid>
+</Window>
