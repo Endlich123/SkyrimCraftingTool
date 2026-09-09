@@ -18,6 +18,17 @@ namespace SkyrimCraftingTool.View
         {
             InitializeComponent();
             LoadReport();
+            SourceInitialized += LogViewerWindow_SourceInitialized;
+        }
+
+        // Every other window recolors its native title bar to match the dark theme; this one was
+        // the only one left out, so it opened with a light Windows caption next to a dark app.
+        private void LogViewerWindow_SourceInitialized(object? sender, EventArgs e)
+        {
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            var captionColor = ((System.Windows.Media.SolidColorBrush)FindResource("ColorBackgroundBase")).Color;
+            var textColor = ((System.Windows.Media.SolidColorBrush)FindResource("ColorTextPrimary")).Color;
+            DwmTitleBarService.ApplyAccentCaption(hwnd, captionColor, textColor);
         }
 
         private void LoadReport()
