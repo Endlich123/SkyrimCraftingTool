@@ -13,8 +13,19 @@
          InformationalVersion, which is what the bug report prints as "Tool version" (see
          DiagnosticsReport). Kept spelled exactly like the uploaded file name so a report and a
          download name can be compared without translating between them. -->
-    <Version>0.9.2</Version>
-    <InformationalVersion>0.9.2_beta</InformationalVersion>
+    <Version>0.9.3</Version>
+    <InformationalVersion>0.9.3</InformationalVersion>
+
+    <!-- Ship only English resources. The 13 satellite folders are localized error strings from .NET
+         and third-party libraries; the tool's own UI is English either way. -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+
+    <!-- Symbols INSIDE the assembly instead of a loose .pdb next to the exe. "none" was the first
+         idea and would have been a mistake: it also strips file and line numbers from exception
+         stack traces, and those traces are the most useful thing in the bug reports this tool goes
+         out of its way to collect (see Services/DiagnosticsReport.cs). Embedded keeps the folder
+         clean AND keeps the line numbers. -->
+    <DebugType>embedded</DebugType>
   </PropertyGroup>
 
   <ItemGroup>
