@@ -1,0 +1,101 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:local="clr-namespace:SkyrimCraftingTool.ViewModel">
+
+    <!-- One leveled list inside a selected container: checkbox, name as a link, and a short summary
+         of what was set behind the link.
+         Implicit (DataType, no x:Key), so every ItemsControl bound to LVLiEntries picks it up.
+
+         It has to be shared, and the reason is recent: this row is rendered in FOUR views - the item
+         editor, the multi-select editor, and both preset editors. When the slider here was replaced
+         by a link, only the item editor was changed, and the other three silently kept the old row
+         with no way to set an amount at all. Same shape of mistake the condition templates already
+         cost us (see docs/TODO.md, Prio 5).
+
+         The command sits on the row itself rather than being reached through
+         "RelativeSource AncestorType=UserControl": that route resolves to whichever view model the
+         surrounding view has, and these four are unrelated. ContainerSelectionVM installs the action
+         on every row it owns. -->
+    <DataTemplate DataType="{x:Type local:LVLiEntryVM}">
+        <Grid Margin="0,4,0,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Checked means "this item goes into that list". Deliberately a view over Level: the
+                 patch decides everything from the level, and the rule "every list off means the item
+                 goes into the container itself" reads Level == 0. -->
+            <CheckBox Grid.Column="0"
+                      IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                      Style="{StaticResource ItemCheckBoxStyle}"
+                      VerticalAlignment="Center"
+                      Margin="0,0,8,0"
+                      ToolTip="Put this item into this leveled list."/>
+
+            <!-- The two read-only marks, side by side in one column: a list can perfectly well both
+                 hold the item already AND have had its chance changed by you. -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+
+            <!-- READ-ONLY MARK, NOT THE CHECKBOX. The scanned load order already has this item in
+                 this list. Both at once is a perfectly normal state - re-adding an item at another
+                 level is a legitimate thing to want - which is exactly why the checkbox cannot
+                 double as this. -->
+            <Border Margin="0,0,8,0"
+                    Padding="5,1"
+                    CornerRadius="3"
+                    VerticalAlignment="Center"
+                    Background="{DynamicResource ColorBackgroundBase}"
+                    BorderBrush="{DynamicResource ColorAccentLight}"
+                    BorderThickness="1"
+                    ToolTip="Already in your load order: this leveled list holds the item as it is. Not something your patch adds."
+                    Visibility="{Binding AlreadyContainsItem, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="in game"
+                           FontSize="10"
+                           Foreground="{DynamicResource ColorAccentLight}"/>
+            </Border>
+
+            <!-- You changed this list's own properties - chance or calculation. The third state of
+                 this row, and the one that used to leave no trace at all: a changed chance was
+                 visible only in the patch report, so your own edits were unfindable afterwards.
+                 Warning-coloured, because unlike the other two marks this one reaches every mod
+                 feeding the list. -->
+            <Border Margin="0,0,8,0"
+                    Padding="5,1"
+                    CornerRadius="3"
+                    VerticalAlignment="Center"
+                    Background="{DynamicResource ColorBackgroundBase}"
+                    BorderBrush="{DynamicResource ColorWarning}"
+                    BorderThickness="1"
+                    ToolTip="You changed this list's chance or calculation. Open it to see or reset the change."
+                    Visibility="{Binding IsListEdited, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="changed"
+                           FontSize="10"
+                           Foreground="{DynamicResource ColorWarning}"/>
+            </Border>
+
+            </StackPanel>
+
+            <Button Grid.Column="2"
+                    Content="{Binding LVLiName}"
+                    Command="{Binding OpenCommand}"
+                    HorizontalContentAlignment="Left"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Foreground="{DynamicResource ColorAccentLight}"
+                    Cursor="Hand"
+                    Padding="0"
+                    ToolTip="Open this leveled list: what it contains, its chance and flags, and the level and amount for this item."/>
+
+            <TextBlock Grid.Column="3"
+                       Text="{Binding PlacementSummary}"
+                       Foreground="{DynamicResource ColorTextMuted}"
+                       FontSize="11"
+                       VerticalAlignment="Center"
+                       Margin="10,0,0,0"/>
+        </Grid>
+    </DataTemplate>
+
+</ResourceDictionary>

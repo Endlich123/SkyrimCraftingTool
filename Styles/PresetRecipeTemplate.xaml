@@ -1,0 +1,185 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:model="clr-namespace:SkyrimCraftingTool.Model"
+                    xmlns:local="clr-namespace:SkyrimCraftingTool.ViewModel">
+
+    <!-- The recipe block of a preset slot: workbench picker, ingredient list, and the two
+         "enabled but empty" warnings above them.
+
+         Implicit (DataType, no x:Key). These 170 lines were duplicated byte for byte in
+         PresetsConfigView (single-preset editor) and PresetMultiSelectView (bulk editor). Both show
+         the same block, so every change to it had to be made twice - or the two editors quietly
+         disagreed about what a preset recipe looks like. -->
+
+<DataTemplate DataType="{x:Type local:PresetRecipeVM}">
+    <StackPanel Margin="0,10,0,10">
+
+        <TextBlock Text="&#x26A0; Workbench is enabled but none is chosen - it won't be applied."
+                   Foreground="{DynamicResource ColorWarning}" TextWrapping="Wrap" Margin="0,0,0,4"
+                   Visibility="{Binding WorkbenchEnabledButEmpty, Converter={StaticResource BoolToVis}}"/>
+        <TextBlock Text="&#x26A0; Ingredients is enabled but the list is empty - it won't be applied."
+                   Foreground="{DynamicResource ColorWarning}" TextWrapping="Wrap" Margin="0,0,0,4"
+                   Visibility="{Binding IngredientsEnabledButEmpty, Converter={StaticResource BoolToVis}}"/>
+
+        <Grid Visibility="{Binding HasWorkbench, Converter={StaticResource BoolToVis}}" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <CheckBox Grid.Column="0" IsChecked="{Binding WorkbenchEnabled}" Style="{StaticResource ItemCheckBoxStyle}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <TextBlock Grid.Column="1" Text="Workbench:" Style="{StaticResource ItemLabelStyle}"/>
+            <ComboBox Grid.Column="2"
+                      Style="{StaticResource ItemComboBoxStyle}"
+                      ItemsSource="{Binding FilteredWorkbenches}"
+                      SelectedItem="{Binding SelectedWorkbench, Mode=TwoWay}" BorderBrush="{Binding IsWorkbenchDeadRef, Converter={StaticResource BoolToDeadRefBorderConverter}}"
+                      IsSynchronizedWithCurrentItem="False"
+                      Text="{Binding WorkbenchSearchText}"
+                      IsEditable="True"
+                      IsTextSearchEnabled="False"
+                      StaysOpenOnEdit="True"
+                      TextSearch.TextPath="Name">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding Name}" ToolTip="{Binding Key}"/>
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+        </Grid>
+
+        <CheckBox Content="Include Conditions" IsChecked="{Binding ConditionsEnabled}" Style="{StaticResource ItemCheckBoxStyle}" Margin="0,0,0,5"/>
+        <ItemsControl ItemsSource="{Binding Conditions}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Grid Margin="0,5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="180" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="150" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <DockPanel Grid.Column="0" VerticalAlignment="Center">
+                            <TextBlock Text="Type:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
+                            <ComboBox ItemsSource="{Binding ConditionTypes}"
+                                      SelectedItem="{Binding Type, Mode=TwoWay}"
+                                      Style="{StaticResource ItemComboBoxStyle}" />
+                        </DockPanel>
+
+                        <DockPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock Text="Target:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
+                            <ContentControl Content="{Binding}"/>
+                        </DockPanel>
+
+                        <DockPanel Grid.Column="2" VerticalAlignment="Center">
+                            <TextBlock Text="Value:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
+                            <TextBox Text="{Binding ComparisonValue}" model:NumericTextBoxBehavior.Mode="Decimal" Style="{StaticResource ItemTextBoxStyle}" />
+                        </DockPanel>
+
+                        <DockPanel Grid.Column="3" VerticalAlignment="Center">
+                            <TextBlock Text="Run On:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
+                            <ComboBox ItemsSource="{Binding RunOnOptions}" SelectedItem="{Binding RunOn}" Style="{StaticResource ItemComboBoxStyle}" />
+                        </DockPanel>
+
+                        <Button Grid.Column="4"
+                                Command="{Binding DataContext.RemoveConditionCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                CommandParameter="{Binding}"
+                                Style="{StaticResource RemoveButtonStyle}"
+                                ToolTip="Remove Condition"/>
+
+                                                                <!-- Read-only condition overlay.
+                                                                     A condition type the tool preserves verbatim but cannot edit
+                                                                     (GetItemCount, EPTemperingItemIsEnchanted, GetGlobalValue, ...).
+                                                                     Before these were scanned they were simply discarded, which cost
+                                                                     69% of all COBJ conditions. Now they are kept, so the row has to
+                                                                     show something - and must not offer the normal editors, which have
+                                                                     no way to represent the parameter.
+                                                                     It covers the whole row instead of hiding each control separately;
+                                                                     ReadOnlyConditionViewModel.Type is pinned too, so keyboard focus on
+                                                                     a covered picker still can't change anything.
+                                                                     Collapsed by default + DataTrigger, NOT a Visibility converter
+                                                                     binding: a converter binding that resolves to UnsetValue falls
+                                                                     back to Visible, which would cover every ordinary row. -->
+                                                                <Border Grid.Column="0" Grid.ColumnSpan="5" Panel.ZIndex="10"
+                                                                        Background="{DynamicResource ColorBackgroundControl}"
+                                                                        BorderBrush="{DynamicResource ColorDivider}"
+                                                                        BorderThickness="1" Padding="6,4"
+                                                                        ToolTip="{Binding Explanation}">
+                                                                    <Border.Style>
+                                                                        <Style TargetType="Border">
+                                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding Type}" Value="ReadOnly">
+                                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </Border.Style>
+                                                                    <StackPanel Orientation="Horizontal">
+                                                                        <TextBlock Text="Locked:" FontWeight="SemiBold"
+                                                                                   VerticalAlignment="Center"
+                                                                                   Foreground="{DynamicResource ColorTextMuted}"/>
+                                                                        <TextBlock Text="{Binding FunctionName}" Margin="6,0,0,0"
+                                                                                   FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                                        <TextBlock Text="{Binding TargetDisplay}" Margin="10,0,0,0"
+                                                                                   VerticalAlignment="Center"
+                                                                                   Foreground="{DynamicResource ColorTextMuted}"/>
+                                                                        <TextBlock Text="{Binding ValueDisplay}" Margin="10,0,0,0"
+                                                                                   VerticalAlignment="Center"
+                                                                                   Foreground="{DynamicResource ColorTextMuted}"/>
+                                                                        <TextBlock Text="(preserved, not editable)" Margin="14,0,0,0"
+                                                                                   FontStyle="Italic" VerticalAlignment="Center"
+                                                                                   Foreground="{DynamicResource ColorTextMuted}"/>
+                                                                    </StackPanel>
+                                                                </Border>
+                    </Grid>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <Button Command="{Binding AddConditionCommand}" Style="{StaticResource AddButtonStyle}" ToolTip="Add Condition" HorizontalAlignment="Left"/>
+
+        <Border BorderBrush="{DynamicResource ColorBorder}" BorderThickness="0,0,0,1" Margin="0,10,0,10"/>
+
+        <CheckBox Content="Include Ingredients" IsChecked="{Binding IngredientsEnabled}" Style="{StaticResource ItemCheckBoxStyle}" Margin="0,0,0,5"/>
+        <ItemsControl ItemsSource="{Binding Ingredients}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Grid Margin="0,5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="60" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox Grid.Column="0"
+                                  ItemsSource="{Binding LocalMaterialsView}"
+                                  SelectedItem="{Binding SelectedMaterial}" IsSynchronizedWithCurrentItem="False" BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
+                                  Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                  ToolTip="{Binding Key}"
+                                  DisplayMemberPath="Name"
+                                  IsEditable="True"
+                                  IsTextSearchEnabled="False"
+                                  StaysOpenOnEdit="True"
+                                  Style="{StaticResource ItemComboBoxStyle}"/>
+                        <TextBox Grid.Column="1"
+                                 TextAlignment="Center"
+                                 ToolTip="Amount"
+                                 Text="{Binding Count, UpdateSourceTrigger=PropertyChanged}"
+                                 model:NumericTextBoxBehavior.Mode="Integer"
+                                 model:NumericTextBoxBehavior.Min="1"
+                                 Style="{StaticResource ItemTextBoxStyle}"/>
+                        <Button Grid.Column="2"
+                                Command="{Binding DataContext.RemoveIngredientCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                CommandParameter="{Binding}"
+                                ToolTip="Remove Material"
+                                Style="{StaticResource RemoveButtonStyle}"/>
+                    </Grid>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <Button Command="{Binding AddIngredientCommand}" ToolTip="Add Material" Style="{StaticResource AddButtonStyle}" HorizontalAlignment="Left"/>
+
+    </StackPanel>
+</DataTemplate>
+
+</ResourceDictionary>

@@ -1,0 +1,64 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Light palette. One brush per token, and the whole file is what a theme switch replaces:
+         ThemeService swaps this dictionary inside Application.Resources.MergedDictionaries, and the
+         ~330 {DynamicResource ColorX} references across the UI re-resolve against the new one.
+
+         Why a swap and not "write Color into the existing brushes": WPF freezes Freezables in any
+         ResourceDictionary that gets an owner, and Application.Resources is one. Brushes here are
+         frozen, and that is fine - nothing writes to them, they get replaced wholesale. It is also
+         why the references must be DynamicResource: StaticResource is resolved once at load time
+         and would keep pointing at the old, discarded brush.
+
+         Every palette must define every key, or the switch leaves the previous theme's color
+         standing for the ones it misses. ThemePaletteCompletenessTests checks that. -->
+
+    <SolidColorBrush x:Key="ColorBackgroundPanel" Color="#E6E8EB"/>
+    <SolidColorBrush x:Key="ColorBackgroundBase" Color="#F1F2F4"/>
+    <SolidColorBrush x:Key="ColorBackgroundControl" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="ColorBackgroundHighlight" Color="#D4E2F4"/>
+    <SolidColorBrush x:Key="ColorTextPrimary" Color="#1B1B1B"/>
+    <SolidColorBrush x:Key="ColorTextSecondary" Color="#3F3F3F"/>
+    <SolidColorBrush x:Key="ColorTextTertiary" Color="#6E6E6E"/>
+    <SolidColorBrush x:Key="ColorTextMuted" Color="#595959"/>
+    <SolidColorBrush x:Key="ColorTextOnAccent" Color="#F2F2F2"/>
+    <SolidColorBrush x:Key="ColorTreeRoot" Color="#0D0D0D"/>
+    <SolidColorBrush x:Key="ColorTreeBranch" Color="#2C4F7C"/>
+    <SolidColorBrush x:Key="ColorTreeLeaf" Color="#40464C"/>
+    <SolidColorBrush x:Key="ColorHeadingAccent" Color="#8A6A00"/>
+    <SolidColorBrush x:Key="ColorAccent" Color="#0F4C86"/>
+    <SolidColorBrush x:Key="ColorAccentLight" Color="#2A63A8"/>
+    <SolidColorBrush x:Key="ColorAccentSoft" Color="#0A2A4A"/>
+    <SolidColorBrush x:Key="ColorAccentWarm" Color="#8A5D12"/>
+    <SolidColorBrush x:Key="ColorAccentWarmLight" Color="#B3791A"/>
+    <SolidColorBrush x:Key="ColorAccentWarmSoft" Color="#5C3D0C"/>
+    <SolidColorBrush x:Key="ColorAccentGreen" Color="#2E8B57"/>
+    <SolidColorBrush x:Key="ColorAccentGreenLight" Color="#3CAF6E"/>
+    <SolidColorBrush x:Key="ColorAccentGreenSoft" Color="#1F5E3B"/>
+    <SolidColorBrush x:Key="ColorDanger" Color="#B02525"/>
+    <SolidColorBrush x:Key="ColorSuccess" Color="#1E7A32"/>
+    <SolidColorBrush x:Key="ColorWarning" Color="#8A6A00"/>
+    <SolidColorBrush x:Key="ColorBorder" Color="#C2C6CB"/>
+    <SolidColorBrush x:Key="ColorBorderLight" Color="#AAB0B6"/>
+    <SolidColorBrush x:Key="ColorDivider" Color="#DCDFE3"/>
+    <SolidColorBrush x:Key="ColorScrollbarTrack" Color="#ECEDEF"/>
+    <SolidColorBrush x:Key="ColorScrollbarThumb" Color="#BFC3C8"/>
+    <SolidColorBrush x:Key="ColorScrollbarThumbHover" Color="#9AA0A6"/>
+    <SolidColorBrush x:Key="ColorScrollbarArrow" Color="#6B6B6B"/>
+    <SolidColorBrush x:Key="ColorChipBackground" Color="#DADCE0"/>
+    <SolidColorBrush x:Key="ColorChipText" Color="#1B1B1B"/>
+    <SolidColorBrush x:Key="ColorSurfaceInfo" Color="#CADEF5"/>
+    <SolidColorBrush x:Key="ColorSurfaceWarn" Color="#F5E3C0"/>
+    <SolidColorBrush x:Key="ColorSurfaceOk" Color="#C8E6CE"/>
+    <SolidColorBrush x:Key="ColorSurfaceDanger" Color="#F5CDCD"/>
+
+    <!-- WPF's own selection keys. Defined here so selection looks the same everywhere: before this,
+         three views overrode them in their own Style.Resources (in two different spellings) and two
+         did not override them at all, which is why the item and preset lists did not quite match. -->
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#D4E2F4"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#1B1B1B"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#C2C6CB"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#1B1B1B"/>
+
+</ResourceDictionary>
