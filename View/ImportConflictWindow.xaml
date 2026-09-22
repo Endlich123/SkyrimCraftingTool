@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Import Conflicts"
         Width="760" Height="500"
-        Background="{StaticResource ColorBackgroundBase}"
-        TextElement.Foreground="{StaticResource ColorTextPrimary}"
+        Background="{DynamicResource ColorBackgroundBase}"
+        TextElement.Foreground="{DynamicResource ColorTextPrimary}"
         WindowStartupLocation="CenterOwner">
 
     <Grid Margin="14">

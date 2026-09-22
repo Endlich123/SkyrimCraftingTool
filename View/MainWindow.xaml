@@ -5,7 +5,8 @@
         xmlns:views="clr-namespace:SkyrimCraftingTool.View"
         Title="Skyrim Crafting Tool"
         MinWidth="900" MinHeight="700"
-        Background="{StaticResource ColorBackgroundBase}">
+        TextElement.Foreground="{DynamicResource ColorTextPrimary}"
+        Background="{DynamicResource ColorBackgroundBase}">
 
     <Window.Resources>
 
@@ -21,6 +22,10 @@
             <views:PresetsConfigView />
         </DataTemplate>
 
+        <DataTemplate DataType="{x:Type vm:SettingsVM}">
+            <views:SettingsView />
+        </DataTemplate>
+
     </Window.Resources>
 
 
@@ -29,21 +34,13 @@
              "Generate Patch" lives here rather than in the Items view because it covers everything -
              armor, weapons, recipes, enchantments and form lists. It binds through to ContentVM,
              which still owns the command (services + autosave flush live there). -->
-        <DockPanel DockPanel.Dock="Top" Background="{StaticResource ColorBackgroundBase}">
+        <DockPanel DockPanel.Dock="Top" Background="{DynamicResource ColorBackgroundBase}">
 
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="0,10,12,0">
-                <CheckBox Content="One ESP per plugin"
-                          IsChecked="{Binding ContentVM.SplitPatchPerPlugin}"
-                          Foreground="{StaticResource ColorTextSecondary}"
-                          VerticalAlignment="Center"
-                          Margin="0,0,14,0"
-                          ToolTip="Off: one SkyrimCraftingTool.esp. On: SkyrimCraftingTool - &lt;Plugin&gt;.esp per source mod."/>
-                <CheckBox Content="Write patch next to app"
-                          IsChecked="{Binding ContentVM.PatchIntoAppFolder}"
-                          Foreground="{StaticResource ColorTextSecondary}"
-                          VerticalAlignment="Center"
-                          Margin="0,0,14,0"
-                          ToolTip="Off: patch goes under Output\. On: SKSE\ and the .esp are written at the tool root, so the tool folder can be enabled directly as an MO2 mod."/>
+                <!-- The two patch toggles that used to sit here moved into the Settings view:
+                     "One ESP per plugin" as-is, and "Write patch next to app" replaced by a free
+                     output-folder picker, which covers that case and every other one. -->
+
                 <!-- Width/Height/Margin match NavTabButtonStyle (150x30, top offset 10) so the
                      button lines up with the Items/Enchantments/Presets tabs opposite it.
                      ActionButtonStyle only sets MinHeight and carries its own margin, which left
@@ -55,6 +52,13 @@
                         Style="{StaticResource StandardButtonStyle}"
                         Width="120" Height="30" Margin="0,0,14,0"
                         ToolTip="View the log and build a bug report you can copy or save. Nothing leaves your PC."/>
+                <!-- Same run as the button next to it, stopped before anything is written. Styled as
+                     a secondary button so the writing one stays the obvious primary action. -->
+                <Button Content="Preview Patch"
+                        Command="{Binding ContentVM.PreviewPatchCommand}"
+                        Style="{StaticResource StandardButtonStyle}"
+                        Width="120" Height="30" Margin="0,0,8,0"
+                        ToolTip="Works out exactly what Generate Patch would produce - rule counts, recipes, warnings - and writes nothing."/>
                 <Button Content="Generate Patch"
                         Command="{Binding ContentVM.GeneratePatchCommand}"
                         Style="{StaticResource ActionButtonStyle}"
@@ -79,11 +83,17 @@
                         Style="{StaticResource NavTabButtonStyle}"
                         Tag="{Binding IsPresetsActive}"
                         Margin="0,10,10,0"/>
+
+                <Button Content="Settings"
+                        Command="{Binding OpenSettingsCommand}"
+                        Style="{StaticResource NavTabButtonStyle}"
+                        Tag="{Binding IsSettingsActive}"
+                        Margin="0,10,10,0"/>
             </StackPanel>
         </DockPanel>
 
         <Border DockPanel.Dock="Top"
-            BorderBrush="{StaticResource ColorBorder}"
+            BorderBrush="{DynamicResource ColorBorder}"
             BorderThickness="0,0,0,1"
             Height="1"
             Margin="0,5,0,5"/>
@@ -91,8 +101,8 @@
         <!-- Issue status strip: only visible when there is something to show. Click the summary to
              expand the list; "Clear" empties it. Fed by IssueHub.Current. -->
         <Border DockPanel.Dock="Bottom"
-                Background="{StaticResource ColorBackgroundControl}"
-                BorderBrush="{StaticResource ColorBorder}"
+                Background="{DynamicResource ColorBackgroundControl}"
+                BorderBrush="{DynamicResource ColorBorder}"
                 BorderThickness="0,1,0,0"
                 Padding="8,3"
                 Visibility="{Binding Issues.HasIssues, Converter={StaticResource BoolToVis}}">
@@ -106,7 +116,7 @@
                               HorizontalAlignment="Left"
                               Background="Transparent"
                               BorderThickness="0"
-                              Foreground="{StaticResource ColorWarning}"
+                              Foreground="{DynamicResource ColorWarning}"
                               Content="{Binding Issues.Summary, StringFormat=⚠ {0}}"/>
 
                 <Popup IsOpen="{Binding IsChecked, ElementName=IssueToggle}"
@@ -116,8 +126,8 @@
                        AllowsTransparency="True"
                        MaxWidth="640"
                        MaxHeight="320">
-                    <Border Background="{StaticResource ColorBackgroundBase}"
-                            BorderBrush="{StaticResource ColorBorder}"
+                    <Border Background="{DynamicResource ColorBackgroundBase}"
+                            BorderBrush="{DynamicResource ColorBorder}"
                             BorderThickness="1"
                             Padding="6">
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -126,10 +136,10 @@
                                     <DataTemplate>
                                         <StackPanel Margin="0,3">
                                             <TextBlock Text="{Binding Message}"
-                                                       Foreground="{StaticResource ColorTextPrimary}"
+                                                       Foreground="{DynamicResource ColorTextPrimary}"
                                                        TextWrapping="Wrap"/>
                                             <TextBlock Text="{Binding Context}"
-                                                       Foreground="{StaticResource ColorTextSecondary}"
+                                                       Foreground="{DynamicResource ColorTextSecondary}"
                                                        FontSize="11"
                                                        TextWrapping="Wrap"/>
                                         </StackPanel>

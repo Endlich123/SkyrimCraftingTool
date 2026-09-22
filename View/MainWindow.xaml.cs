@@ -26,7 +26,20 @@ namespace SkyrimCraftingTool.View
 
         private void MainWindow_SourceInitialized(object? sender, EventArgs e)
         {
+            ApplyCaptionColors();
+
+            // The caption is the one part of the window that is not painted by WPF: DWM is told its
+            // colors once, here, so it would otherwise keep the theme the app started in while
+            // everything below it switched. Re-applied on every theme change instead.
+            Services.ThemeService.ThemeChanged += ApplyCaptionColors;
+            Closed += (_, _) => Services.ThemeService.ThemeChanged -= ApplyCaptionColors;
+        }
+
+        private void ApplyCaptionColors()
+        {
             var hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd == IntPtr.Zero) return;
+
             var captionColor = ((SolidColorBrush)FindResource("ColorBackgroundBase")).Color;
             var textColor = ((SolidColorBrush)FindResource("ColorTextPrimary")).Color;
             DwmTitleBarService.ApplyAccentCaption(hwnd, captionColor, textColor);

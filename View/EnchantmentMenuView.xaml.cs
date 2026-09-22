@@ -13,13 +13,13 @@ namespace SkyrimCraftingTool.View
             InitializeComponent();
         }
 
+        // Hands the node through untouched, exactly like MainContentView does - the detail side is a
+        // ContentPresenter now, and it needs the NODE to pick a template by type. Filtering folder
+        // rows out here (what this used to do) would mean a plugin click could never reach a panel.
         private void TreeView_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
         {
-            if (e.NewValue is EnchantmentTreeNode node && node.Enchantment != null)
-            {
-                if (DataContext is EnchantmentMenuVM vm)
-                    vm.SelectedEnchantment = node.Enchantment;
-            }
+            if (DataContext is EnchantmentMenuVM vm)
+                vm.SelectedNode = e.NewValue;
         }
 
     }

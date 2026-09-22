@@ -52,28 +52,33 @@
                 </Grid.RowDefinitions>
 
                 <!-- Tree filters -->
-                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,5">
+                <!-- WrapPanel: the column is draggable down to 150, where a stack would simply cut
+                     off the plugin count. Same row in EnchantmentMenuView wraps for the same reason. -->
+                <WrapPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,5">
+                    <!-- Gaps as RIGHT margins on the preceding element, never as left margins on
+                         the following one: in a WrapPanel a left margin survives the line break and
+                         indents whatever moved down by exactly that much. -->
                     <CheckBox Content="Only edited"
                               IsChecked="{Binding ShowOnlyEditedItems}"
-                              Foreground="{StaticResource ColorTextPrimary}"
-                              VerticalAlignment="Center"/>
+                              Foreground="{DynamicResource ColorTextPrimary}"
+                              VerticalAlignment="Center"
+                              Margin="0,0,6,0"/>
                     <TextBlock Text="{Binding EditedItemCount, StringFormat=({0} edited)}"
-                               Foreground="{StaticResource ColorTextSecondary}"
+                               Foreground="{DynamicResource ColorTextSecondary}"
                                VerticalAlignment="Center"
-                               Margin="6,0,0,0"/>
+                               Margin="0,0,10,0"/>
                     <TextBlock Text="{Binding FilteredTree.Count, StringFormat=· {0} plugins}"
-                               Foreground="{StaticResource ColorTextTertiary}"
-                               VerticalAlignment="Center"
-                               Margin="10,0,0,0"/>
-                </StackPanel>
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               VerticalAlignment="Center"/>
+                </WrapPanel>
 
                 <!-- Search -->
                 <TextBox Grid.Row="1"
                          Text="{Binding TreeSearchText, UpdateSourceTrigger=PropertyChanged}"
                          Tag="Search Plugin/Item..."
-                         Background="{StaticResource ColorBackgroundControl}"
-                         Foreground="{StaticResource ColorTextPrimary}"
-                         BorderBrush="{StaticResource ColorBorder}"
+                         Background="{DynamicResource ColorBackgroundControl}"
+                         Foreground="{DynamicResource ColorTextPrimary}"
+                         BorderBrush="{DynamicResource ColorBorder}"
                          Padding="5"
                          Margin="0,0,0,5" />
 
@@ -84,8 +89,8 @@
                     <Button Content="Collapse all [-]"
                             Command="{Binding CollapseAllCommand}"
                             Margin="0,0,2,0"
-                            Background="{StaticResource ColorBackgroundHighlight}"
-                            Foreground="{StaticResource ColorTextPrimary}" />
+                            Background="{DynamicResource ColorBackgroundHighlight}"
+                            Foreground="{DynamicResource ColorTextPrimary}" />
                 </UniformGrid>
 
                 <!-- TreeView -->
@@ -94,7 +99,7 @@
                           ItemsSource="{Binding FilteredTree}"
                           VirtualizingPanel.IsVirtualizing="True"
                           SelectedItemChanged="MainTreeView_SelectedItemChanged"
-                          Background="{StaticResource ColorBackgroundBase}">
+                          Background="{DynamicResource ColorBackgroundBase}">
 
                     <!-- Container-Style -->
                     <TreeView.ItemContainerStyle>
@@ -103,10 +108,6 @@
                             <Setter Property="HorizontalContentAlignment" Value="Left" />
                             <Setter Property="VerticalContentAlignment" Value="Center" />
 
-                            <Style.Resources>
-                                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="{Binding Source={StaticResource ColorBackgroundHighlight}, Path=Color}"/>
-                                <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="{Binding Source={StaticResource ColorBorder}, Path=Color}"/>
-                            </Style.Resources>
                         </Style>
                     </TreeView.ItemContainerStyle>
 
@@ -116,18 +117,25 @@
                         <!-- Plugin -->
                         <HierarchicalDataTemplate DataType="{x:Type local:PluginNodeVM}"
                                                   ItemsSource="{Binding Categories}">
-                            <TextBlock Text="{Binding PluginName}"
-                                       FontWeight="Bold"
-                                       Foreground="White"
-                                       IsHitTestVisible="False" />
+                            <StackPanel Orientation="Horizontal" IsHitTestVisible="False">
+                                <TextBlock Text="{Binding PluginName}"
+                                           FontWeight="Bold"
+                                           Foreground="{DynamicResource ColorTreeRoot}" />
+                                <!-- Collapsed, the edited items underneath show nothing at all. -->
+                                <TextBlock Style="{StaticResource ChangedDotStyle}"
+                                           Visibility="{Binding HasEditedItems, Converter={StaticResource BoolToVis}}"/>
+                            </StackPanel>
                         </HierarchicalDataTemplate>
 
                         <!-- Kategorie -->
                         <HierarchicalDataTemplate DataType="{x:Type local:CategoryNodeVM}"
                                                   ItemsSource="{Binding Items}">
-                            <TextBlock Text="{Binding CategoryName}"
-                                       Foreground="LightSteelBlue"
-                                       IsHitTestVisible="False" />
+                            <StackPanel Orientation="Horizontal" IsHitTestVisible="False">
+                                <TextBlock Text="{Binding CategoryName}"
+                                           Foreground="{DynamicResource ColorTreeBranch}" />
+                                <TextBlock Style="{StaticResource ChangedDotStyle}"
+                                           Visibility="{Binding HasEditedItems, Converter={StaticResource BoolToVis}}"/>
+                            </StackPanel>
 
                             <!-- Container style for the item level (this template's children): clicks
                                  get intercepted here directly (Ctrl/Shift multi-select) instead of
@@ -149,22 +157,22 @@
                                 <StackPanel Orientation="Horizontal" IsHitTestVisible="False">
                                     <TextBlock x:Name="EditedDot"
                                                Text="&#x25CF;  "
-                                               Foreground="{StaticResource ColorWarning}"
+                                               Foreground="{DynamicResource ColorWarning}"
                                                Visibility="Collapsed"
                                                VerticalAlignment="Center"/>
                                     <TextBlock x:Name="EditorIdText"
                                                Text="{Binding EditorID}"
-                                               Foreground="LightGray"/>
+                                               Foreground="{DynamicResource ColorTreeLeaf}"/>
                                 </StackPanel>
                             </Border>
                             <DataTemplate.Triggers>
                                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
                                     <Setter TargetName="ItemHighlight" Property="Background"
-                                            Value="{StaticResource ColorBackgroundHighlight}"/>
+                                            Value="{DynamicResource ColorBackgroundHighlight}"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding IsEdited}" Value="True">
                                     <Setter TargetName="EditedDot" Property="Visibility" Value="Visible"/>
-                                    <Setter TargetName="EditorIdText" Property="Foreground" Value="{StaticResource ColorTextPrimary}"/>
+                                    <Setter TargetName="EditorIdText" Property="Foreground" Value="{DynamicResource ColorTextPrimary}"/>
                                 </DataTrigger>
                             </DataTemplate.Triggers>
                         </DataTemplate>
@@ -176,7 +184,7 @@
             <!-- Splitter -->
             <GridSplitter Grid.Column="1"
                           HorizontalAlignment="Stretch"
-                          Background="#444" />
+                          Background="{DynamicResource ColorDivider}" />
 
             <!-- RECHTS: Detailansicht -->
             <Grid Grid.Column="2" Margin="10,0,0,0">
@@ -208,7 +216,7 @@
 
                                     <!-- Preset-Zeile -->
                                     <Border Grid.Row="0"
-                                        Background="{StaticResource ColorBackgroundBase}"
+                                        Background="{DynamicResource ColorBackgroundBase}"
                                         Padding="0"
                                         Margin="0,0,0,0">
                                         <DockPanel LastChildFill="False">
@@ -298,6 +306,8 @@
                                                 <RowDefinition Height="Auto" />
                                                 <!-- Cost -->
                                                 <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <!-- Enchantment -->
                                                 <!-- Weight -->
                                             </Grid.RowDefinitions>
 
@@ -416,11 +426,70 @@
                                                     </ToolTip>
                                                 </Button.ToolTip>
                                             </Button>
+
+                                            <!-- WHICH enchantment this item wears (Prio 7).
+                                                 In the general block, not the armor/weapon one: both
+                                                 record types carry one (2,197 of 3,674 vanilla armors,
+                                                 3,010 of 3,267 weapons), so it is as fundamental as
+                                                 value and weight.
+                                                 "(no enchantment)" is a real entry in the list, not a
+                                                 blank - taking one off is something the patch can
+                                                 express. -->
+                                            <TextBlock Grid.Row="5"
+                                                       Text="Enchantment:"
+                                                       Style="{StaticResource ItemLabelStyle}"/>
+
+                                            <!-- Editable and filtering as you type, like the workbench
+                                                 picker: 632 entries are not a list anyone scrolls.
+                                                 IsTextSearchEnabled off, because the Text here is the
+                                                 SEARCH string - WPF's own type-ahead would fight it. -->
+                                            <ComboBox Grid.Row="5"
+                                                      Grid.Column="1"
+                                                      ItemsSource="{Binding FilteredEnchantments}"
+                                                      SelectedItem="{Binding SelectedEnchantment, Mode=TwoWay}"
+                                                      Text="{Binding EnchantmentSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                      IsEditable="True"
+                                                      IsTextSearchEnabled="False"
+                                                      IsSynchronizedWithCurrentItem="False"
+                                                      StaysOpenOnEdit="True"
+                                                      TextSearch.TextPath="Name"
+                                                      DisplayMemberPath="Name"
+                                                      BorderBrush="{Binding IsObjectEffectChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                                      Style="{StaticResource ItemComboBoxStyle}"
+                                                      ToolTip="{Binding ObjectEffectSummary}"/>
+
+                                            <Button Grid.Row="5" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                                <Button.ToolTip>
+                                                    <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                        <StackPanel>
+                                                            <TextBlock Text="Which enchantment this item carries."
+                                                                       Style="{StaticResource ToolTipTitelStyle}"/>
+                                                            <TextBlock Text="•  Listed as EditorID | Name: 473 of 632 enchantments share their name with another, so the name alone cannot tell a base effect from its tiers."
+                                                                       Style="{StaticResource ToolTipTextStyle}"/>
+                                                            <TextBlock Text="•  This assigns an existing enchantment - it does not edit the enchantment itself. That is the Enchantments tab."
+                                                                       Style="{StaticResource ToolTipTextStyle}"/>
+                                                            <TextBlock Text="•  Choosing (no enchantment) takes it off. That one is not confirmed in game yet - the patch report says so."
+                                                                       Style="{StaticResource ToolTipTextStyle}"/>
+                                                        </StackPanel>
+                                                    </ToolTip>
+                                                </Button.ToolTip>
+                                            </Button>
                                         </Grid>
                                     </GroupBox>
 
                                     <!-- Armor / Weapon Specific Details -->
-                                    <Expander Grid.Row="2" Style="{StaticResource DarkExpanderStyle}" Header="Expand Armor / Weapon Specific Details" IsExpanded="False">
+                                    <!-- Header carries a dot when something inside changed: the
+                                         section is collapsed by default, and the amber borders on
+                                         the fields cannot be seen through a shut expander. -->
+                                    <Expander Grid.Row="2" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
+                                        <Expander.Header>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Expand Armor / Weapon Specific Details"/>
+                                                <TextBlock Style="{StaticResource ChangedDotStyle}"
+                                                           ToolTip="Armor rating, slots, armor type or the weapon stats differ from the scanned values."
+                                                           Visibility="{Binding HasSpecificDetailChanges, Converter={StaticResource BoolToVis}}"/>
+                                            </StackPanel>
+                                        </Expander.Header>
                                         <GroupBox
                                         Style="{StaticResource DarkGroupBoxStyle}"
                                         Margin="0,0,0,15"
@@ -565,7 +634,7 @@
                                                                     </Border.InputBindings>
 
                                                                     <TextBlock Text="{Binding DisplayName}"
-                                                                   Foreground="White"
+                                                                   Foreground="{DynamicResource ColorChipText}"
                                                                    TextTrimming="CharacterEllipsis"/>
                                                                 </Border>
                                                             </DataTemplate>
@@ -678,7 +747,15 @@
 
                                     <!-- Keywords -->
                                     <!-- Top View -->
-                                    <Expander Grid.Row="3" Style="{StaticResource DarkExpanderStyle}" Header="Keywords" IsExpanded="False">
+                                    <Expander Grid.Row="3" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
+                                        <Expander.Header>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Keywords"/>
+                                                <TextBlock Style="{StaticResource ChangedDotStyle}"
+                                                           ToolTip="The keyword set differs from the scanned one."
+                                                           Visibility="{Binding IsKeywordsChanged, Converter={StaticResource BoolToVis}}"/>
+                                            </StackPanel>
+                                        </Expander.Header>
                                         <StackPanel>
                                             <Grid Margin="0,10,5,0">
                                                 <Grid.ColumnDefinitions>
@@ -761,7 +838,7 @@
                                                                 </Border.InputBindings>
 
                                                                 <TextBlock Text="{Binding Name}"
-                                                            Foreground="White"
+                                                            Foreground="{DynamicResource ColorChipText}"
                                                             TextTrimming="CharacterEllipsis"/>
                                                             </Border>
                                                         </DataTemplate>
@@ -827,7 +904,7 @@
                                                                         <Style.Triggers>
                                                                             <!-- Weapon-type keywords: visually highlight and make read-only -->
                                                                             <DataTrigger Binding="{Binding IsReadOnly}" Value="True">
-                                                                                <Setter Property="Background" Value="#8B0000"/>
+                                                                                <Setter Property="Background" Value="{DynamicResource ColorSurfaceDanger}"/>
                                                                             </DataTrigger>
                                                                         </Style.Triggers>
                                                                     </Style>
@@ -841,7 +918,7 @@
                                                                 <TextBlock Text="{Binding Name}"
                                                             FontSize="{Binding DataContext.KeywordFontSize,
                                                                                RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                            Foreground="White"
+                                                            Foreground="{DynamicResource ColorChipText}"
                                                             HorizontalAlignment="Center"
                                                             TextTrimming="CharacterEllipsis"/>
                                                             </Border>
@@ -853,7 +930,18 @@
                                     </Expander>
 
                                     <!-- Crafting / Recipe -->
-                                    <Expander Grid.Row="4" Style="{StaticResource DarkExpanderStyle}" Header="Crafting Recipe" IsExpanded="False">
+                                    <Expander Grid.Row="4" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
+                                        <Expander.Header>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Crafting Recipe"/>
+                                                <!-- HasCraftingChanges also covers a recipe the user
+                                                     created outright, which has no scanned original
+                                                     to differ from. -->
+                                                <TextBlock Style="{StaticResource ChangedDotStyle}"
+                                                           ToolTip="The crafting recipe was changed or newly created."
+                                                           Visibility="{Binding HasCraftingChanges, Converter={StaticResource BoolToVis}}"/>
+                                            </StackPanel>
+                                        </Expander.Header>
                                         <GroupBox
                                                 Style="{StaticResource DarkGroupBoxStyle}"
                                                 Padding="10">
@@ -895,15 +983,15 @@
                                                      created, because that isn't obvious from an empty section (tester feedback,
                                                      see docs/TODO.md). Hidden again the moment the COBJ exists. -->
                                                 <TextBlock Text="No crafting recipe yet - pick a Workbench, or add a material or condition with one of the green + buttons, and one will be created."
-                                                           Foreground="{StaticResource ColorTextTertiary}"
+                                                           Foreground="{DynamicResource ColorTextTertiary}"
                                                            TextWrapping="Wrap" Margin="0,0,0,4"
                                                            Visibility="{Binding CraftingRecipeAbsent, Converter={StaticResource BoolToVis}}"/>
                                                 <TextBlock Text="⚠ This recipe has no workbench set - it can't be crafted in-game."
-                                                           Foreground="{StaticResource ColorWarning}"
+                                                           Foreground="{DynamicResource ColorWarning}"
                                                            TextWrapping="Wrap" Margin="0,0,0,4"
                                                            Visibility="{Binding CraftingRecipeMissingWorkbench, Converter={StaticResource BoolToVis}}"/>
                                                 <TextBlock Text="⚠ This recipe has no ingredients - it will be free to craft."
-                                                           Foreground="{StaticResource ColorWarning}"
+                                                           Foreground="{DynamicResource ColorWarning}"
                                                            TextWrapping="Wrap" Margin="0,0,0,4"
                                                            Visibility="{Binding CraftingRecipeMissingIngredients, Converter={StaticResource BoolToVis}}"/>
                                                 <Grid>
@@ -965,7 +1053,7 @@
                                                                 <Setter Property="ToolTip" Value="{Binding SelectedValue, RelativeSource={RelativeSource Self}}"/>
                                                                 <Style.Triggers>
                                                                     <DataTrigger Binding="{Binding IsCraftingWorkbenchDeadRef}" Value="True">
-                                                                        <Setter Property="BorderBrush" Value="#C0392B"/>
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource ColorDanger}"/>
                                                                         <Setter Property="ToolTip" Value="This workbench keyword is not in the active load order."/>
                                                                     </DataTrigger>
                                                                 </Style.Triggers>
@@ -1026,83 +1114,7 @@
                                                                         <!-- Target -->
                                                                         <DockPanel Grid.Column="1" VerticalAlignment="Center">
                                                                             <TextBlock Text="Target:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
-                                                                            <ContentControl Content="{Binding}">
-                                                                            <ContentControl.Resources>
-
-                                                                                <!-- HasPerk -->
-                                                                                <DataTemplate DataType="{x:Type local:PerkConditionViewModel}">
-                                                                                    <ComboBox ItemsSource="{Binding DataContext.FilteredCraftingPerks,
-                                                                                            RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                                                          SelectedItem="{Binding SelectedPerk}" IsSynchronizedWithCurrentItem="False" BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
-                                                                                          IsEditable="True"
-                                                                                          Text="{Binding PerkSearchText}"
-                                                                                          Style="{StaticResource ItemComboBoxStyle}" />
-                                                                                </DataTemplate>
-
-                                                                                <!-- GetIsSex -->
-                                                                                <DataTemplate DataType="{x:Type local:SexConditionViewModel}">
-                                                                                    <ComboBox SelectedItem="{Binding TargetGender}"
-                                                                                      ItemsSource="{Binding Genders}"
-                                                                                      Style="{StaticResource ItemComboBoxStyle}" />
-                                                                                </DataTemplate>
-
-                                                                                <!-- GetActorValue -->
-                                                                                <DataTemplate DataType="{x:Type local:ActorValueConditionViewModel}">
-                                                                                    <ComboBox SelectedItem="{Binding SelectedSkill}"
-                                                                                      ItemsSource="{Binding ActorValueWhitelist}"
-                                                                                      Style="{StaticResource ItemComboBoxStyle}" />
-                                                                                </DataTemplate>
-
-                                                                                <!-- GetLevel: no real "Target" for this condition type (it only compares the
-                                                                                     player's level) - RequiredLevel IS ComparisonValue (see
-                                                                                     LevelConditionViewModel), edited via the "Value" column instead. Styled
-                                                                                     as a visibly muted/disabled-looking box (not a plain TextBlock - that
-                                                                                     read as blank/broken instead of "intentionally not editable here"; not
-                                                                                     a normal or IsReadOnly TextBox either - both looked just like a live
-                                                                                     input field) so it still reads as a field at a glance, just a disabled
-                                                                                     one. Keeps the column instead of hiding it, so Type/Target/Value/RunOn
-                                                                                     stay aligned across every condition type in the list. -->
-                                                                                <DataTemplate DataType="{x:Type local:LevelConditionViewModel}">
-                                                                                    <Border Background="{StaticResource ColorBackgroundControl}"
-                                                                                            BorderBrush="{StaticResource ColorDivider}"
-                                                                                            BorderThickness="1"
-                                                                                            Padding="4"
-                                                                                            Margin="0,0,5,5"
-                                                                                            Opacity="0.5"
-                                                                                            ToolTip="Edit via the Value field - Target isn't used for this condition type.">
-                                                                                        <TextBlock Text="{Binding RequiredLevel}"
-                                                                                            Foreground="{StaticResource ColorTextMuted}"
-                                                                                            FontSize="11"/>
-                                                                                    </Border>
-                                                                                </DataTemplate>
-
-                                                                                <!-- GetStageDone -->
-                                                                                <DataTemplate DataType="{x:Type local:QuestStageConditionViewModel}">
-                                                                                        <Grid>
-                                                                                            <Grid.ColumnDefinitions>
-                                                                                                <ColumnDefinition Width="*"/>
-                                                                                                <ColumnDefinition Width="80"/>
-                                                                                            </Grid.ColumnDefinitions>
-
-                                                                                            <ComboBox Grid.Column="0"
-                                                                                                  ItemsSource="{Binding DataContext.FilteredQuests,
-                                                                                                        RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                                                                  SelectedItem="{Binding SelectedQuest}" IsSynchronizedWithCurrentItem="False" BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
-                                                                                                  Style="{StaticResource ItemComboBoxStyle}" />
-
-                                                                                            <ComboBox Grid.Column="1"
-                                                                                                  IsEditable="True"
-                                                                                                  IsSynchronizedWithCurrentItem="False"
-                                                                                                  ItemsSource="{Binding AvailableStages}"
-                                                                                                  Text="{Binding Stage, UpdateSourceTrigger=LostFocus}"
-                                                                                                  ToolTip="Stages defined by the selected quest — or type one."
-                                                                                                  Style="{StaticResource CompactComboBoxStyle}"
-                                                                                                  Margin="0,0,5,5" />
-                                                                                        </Grid>
-                                                                                    </DataTemplate>
-
-                                                                            </ContentControl.Resources>
-                                                                        </ContentControl>
+                                                                            <ContentControl Content="{Binding}"/>
                                                                         </DockPanel>
 
                                                                         <!-- Value -->
@@ -1129,51 +1141,24 @@
                                                                             Style="{StaticResource RemoveButtonStyle}" 
                                                                             ToolTip="Remove Condition"/>
 
-                                                                        <!-- Read-only condition overlay.
-                                                                             A condition type the tool preserves verbatim but cannot edit
-                                                                             (GetItemCount, EPTemperingItemIsEnchanted, GetGlobalValue, ...).
-                                                                             Before these were scanned they were simply discarded, which cost
-                                                                             69% of all COBJ conditions. Now they are kept, so the row has to
-                                                                             show something - and must not offer the normal editors, which have
-                                                                             no way to represent the parameter.
-                                                                             It covers the whole row instead of hiding each control separately;
-                                                                             ReadOnlyConditionViewModel.Type is pinned too, so keyboard focus on
-                                                                             a covered picker still can't change anything.
-                                                                             Collapsed by default + DataTrigger, NOT a Visibility converter
-                                                                             binding: a converter binding that resolves to UnsetValue falls
-                                                                             back to Visible, which would cover every ordinary row. -->
-                                                                        <Border Grid.Column="0" Grid.ColumnSpan="5" Panel.ZIndex="10"
-                                                                                Background="{StaticResource ColorBackgroundControl}"
-                                                                                BorderBrush="{StaticResource ColorDivider}"
-                                                                                BorderThickness="1" Padding="6,4"
-                                                                                ToolTip="{Binding Explanation}">
-                                                                            <Border.Style>
-                                                                                <Style TargetType="Border">
-                                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                        <!-- Read-only condition overlay: covers the whole row for a condition type that is preserved
+                                                                             but not editable. The overlay itself lives in Styles/ConditionTemplates.xaml as the
+                                                                             template for ReadOnlyConditionViewModel.
+                                                                             Content is set by a DataTrigger and left null otherwise - NOT a Visibility toggle on a
+                                                                             filled element. Null content means the template is never instantiated for an ordinary
+                                                                             condition, so its bindings (Explanation, FunctionName, ...) cannot be evaluated against a
+                                                                             view model that has none of them. That was 12 binding errors per editable row. -->
+                                                                        <ContentControl Grid.Column="0" Grid.ColumnSpan="5" Panel.ZIndex="10">
+                                                                            <ContentControl.Style>
+                                                                                <Style TargetType="ContentControl">
                                                                                     <Style.Triggers>
                                                                                         <DataTrigger Binding="{Binding Type}" Value="ReadOnly">
-                                                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                                                            <Setter Property="Content" Value="{Binding}"/>
                                                                                         </DataTrigger>
                                                                                     </Style.Triggers>
                                                                                 </Style>
-                                                                            </Border.Style>
-                                                                            <StackPanel Orientation="Horizontal">
-                                                                                <TextBlock Text="Locked:" FontWeight="SemiBold"
-                                                                                           VerticalAlignment="Center"
-                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
-                                                                                <TextBlock Text="{Binding FunctionName}" Margin="6,0,0,0"
-                                                                                           FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                                                                <TextBlock Text="{Binding TargetDisplay}" Margin="10,0,0,0"
-                                                                                           VerticalAlignment="Center"
-                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
-                                                                                <TextBlock Text="{Binding ValueDisplay}" Margin="10,0,0,0"
-                                                                                           VerticalAlignment="Center"
-                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
-                                                                                <TextBlock Text="(preserved, not editable)" Margin="14,0,0,0"
-                                                                                           FontStyle="Italic" VerticalAlignment="Center"
-                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
-                                                                            </StackPanel>
-                                                                        </Border>
+                                                                            </ContentControl.Style>
+                                                                        </ContentControl>
                                                                     </Grid>
                                                                 </DataTemplate>
                                                             </ItemsControl.ItemTemplate>
@@ -1237,7 +1222,15 @@
                                     </Expander>
 
                                     <!-- Temper Recipe -->
-                                    <Expander Grid.Row="5" Style="{StaticResource DarkExpanderStyle}" Header="Temper Recipe" IsExpanded="False">
+                                    <Expander Grid.Row="5" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
+                                        <Expander.Header>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Temper Recipe"/>
+                                                <TextBlock Style="{StaticResource ChangedDotStyle}"
+                                                           ToolTip="The temper recipe was changed or newly created."
+                                                           Visibility="{Binding HasTemperChanges, Converter={StaticResource BoolToVis}}"/>
+                                            </StackPanel>
+                                        </Expander.Header>
                                         <GroupBox
                                         Style="{StaticResource DarkGroupBoxStyle}"
                                         Margin="0,15,0,0"
@@ -1279,11 +1272,11 @@
                                                      temper workbench is auto-derived at COBJ-creation time - so the green +
                                                      buttons are the only way in. -->
                                                 <TextBlock Text="No temper recipe yet - add a material or condition with one of the green + buttons, and one will be created."
-                                                           Foreground="{StaticResource ColorTextTertiary}"
+                                                           Foreground="{DynamicResource ColorTextTertiary}"
                                                            TextWrapping="Wrap" Margin="0,0,0,4"
                                                            Visibility="{Binding TemperRecipeAbsent, Converter={StaticResource BoolToVis}}"/>
                                                 <TextBlock Text="⚠ This temper recipe has no ingredients - tempering will be free."
-                                                           Foreground="{StaticResource ColorWarning}"
+                                                           Foreground="{DynamicResource ColorWarning}"
                                                            TextWrapping="Wrap" Margin="0,0,0,4"
                                                            Visibility="{Binding TemperRecipeMissingIngredients, Converter={StaticResource BoolToVis}}"/>
                                                 <Grid>
@@ -1375,83 +1368,7 @@
                                                                         <!-- Target -->
                                                                         <DockPanel Grid.Column="1" VerticalAlignment="Center">
                                                                             <TextBlock Text="Target:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center" />
-                                                                            <ContentControl Content="{Binding}">
-                                                                                <ContentControl.Resources>
-
-                                                                                    <!-- HasPerk -->
-                                                                                    <DataTemplate DataType="{x:Type local:PerkConditionViewModel}">
-                                                                                        <ComboBox ItemsSource="{Binding DataContext.FilteredCraftingPerks,
-                                                                                                RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                                                              SelectedItem="{Binding SelectedPerk}" IsSynchronizedWithCurrentItem="False" BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
-                                                                                              IsEditable="True"
-                                                                                              Text="{Binding PerkSearchText}"
-                                                                                              Style="{StaticResource ItemComboBoxStyle}" />
-                                                                                    </DataTemplate>
-
-                                                                                    <!-- GetIsSex -->
-                                                                                    <DataTemplate DataType="{x:Type local:SexConditionViewModel}">
-                                                                                        <ComboBox SelectedItem="{Binding TargetGender}"
-                                                                                              ItemsSource="{Binding Genders}"
-                                                                                              Style="{StaticResource ItemComboBoxStyle}" />
-                                                                                    </DataTemplate>
-
-                                                                                    <!-- GetActorValue -->
-                                                                                    <DataTemplate DataType="{x:Type local:ActorValueConditionViewModel}">
-                                                                                        <ComboBox SelectedItem="{Binding SelectedSkill}"
-                                                                                              ItemsSource="{Binding ActorValueWhitelist}"
-                                                                                              Style="{StaticResource ItemComboBoxStyle}" />
-                                                                                    </DataTemplate>
-
-                                                                                    <!-- GetLevel: no real "Target" for this condition type (it only compares the
-                                                                                         player's level) - RequiredLevel IS ComparisonValue (see
-                                                                                         LevelConditionViewModel), edited via the "Value" column instead. Styled
-                                                                                         as a visibly muted/disabled-looking box (not a plain TextBlock - that
-                                                                                         read as blank/broken instead of "intentionally not editable here"; not
-                                                                                         a normal or IsReadOnly TextBox either - both looked just like a live
-                                                                                         input field) so it still reads as a field at a glance, just a disabled
-                                                                                         one. Keeps the column instead of hiding it, so Type/Target/Value/RunOn
-                                                                                         stay aligned across every condition type in the list. -->
-                                                                                    <DataTemplate DataType="{x:Type local:LevelConditionViewModel}">
-                                                                                        <Border Background="{StaticResource ColorBackgroundControl}"
-                                                                                                BorderBrush="{StaticResource ColorDivider}"
-                                                                                                BorderThickness="1"
-                                                                                                Padding="4"
-                                                                                                Margin="0,0,5,5"
-                                                                                                Opacity="0.5"
-                                                                                                ToolTip="Edit via the Value field - Target isn't used for this condition type.">
-                                                                                            <TextBlock Text="{Binding RequiredLevel}"
-                                                                                                Foreground="{StaticResource ColorTextMuted}"
-                                                                                                FontSize="11"/>
-                                                                                        </Border>
-                                                                                    </DataTemplate>
-
-                                                                                    <!-- GetStageDone -->
-                                                                                    <DataTemplate DataType="{x:Type local:QuestStageConditionViewModel}">
-                                                                                        <Grid>
-                                                                                            <Grid.ColumnDefinitions>
-                                                                                                <ColumnDefinition Width="*"/>
-                                                                                                <ColumnDefinition Width="80"/>
-                                                                                            </Grid.ColumnDefinitions>
-
-                                                                                            <ComboBox Grid.Column="0"
-                                                                                                  ItemsSource="{Binding DataContext.FilteredQuests,
-                                                                                                        RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                                                                  SelectedItem="{Binding SelectedQuest}" IsSynchronizedWithCurrentItem="False" BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
-                                                                                                  Style="{StaticResource ItemComboBoxStyle}" />
-
-                                                                                            <ComboBox Grid.Column="1"
-                                                                                                  IsEditable="True"
-                                                                                                  IsSynchronizedWithCurrentItem="False"
-                                                                                                  ItemsSource="{Binding AvailableStages}"
-                                                                                                  Text="{Binding Stage, UpdateSourceTrigger=LostFocus}"
-                                                                                                  ToolTip="Stages defined by the selected quest — or type one."
-                                                                                                  Style="{StaticResource CompactComboBoxStyle}"
-                                                                                                  Margin="0,0,5,5" />
-                                                                                        </Grid>
-                                                                                    </DataTemplate>
-
-                                                                                </ContentControl.Resources>
-                                                                            </ContentControl>
+                                                                            <ContentControl Content="{Binding}"/>
                                                                         </DockPanel>
 
                                                                         <!-- Value -->
@@ -1478,51 +1395,24 @@
                                                                             Style="{StaticResource RemoveButtonStyle}" 
                                                                             ToolTip="Remove Condition"/>
 
-                                                                        <!-- Read-only condition overlay.
-                                                                             A condition type the tool preserves verbatim but cannot edit
-                                                                             (GetItemCount, EPTemperingItemIsEnchanted, GetGlobalValue, ...).
-                                                                             Before these were scanned they were simply discarded, which cost
-                                                                             69% of all COBJ conditions. Now they are kept, so the row has to
-                                                                             show something - and must not offer the normal editors, which have
-                                                                             no way to represent the parameter.
-                                                                             It covers the whole row instead of hiding each control separately;
-                                                                             ReadOnlyConditionViewModel.Type is pinned too, so keyboard focus on
-                                                                             a covered picker still can't change anything.
-                                                                             Collapsed by default + DataTrigger, NOT a Visibility converter
-                                                                             binding: a converter binding that resolves to UnsetValue falls
-                                                                             back to Visible, which would cover every ordinary row. -->
-                                                                        <Border Grid.Column="0" Grid.ColumnSpan="5" Panel.ZIndex="10"
-                                                                                Background="{StaticResource ColorBackgroundControl}"
-                                                                                BorderBrush="{StaticResource ColorDivider}"
-                                                                                BorderThickness="1" Padding="6,4"
-                                                                                ToolTip="{Binding Explanation}">
-                                                                            <Border.Style>
-                                                                                <Style TargetType="Border">
-                                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                        <!-- Read-only condition overlay: covers the whole row for a condition type that is preserved
+                                                                             but not editable. The overlay itself lives in Styles/ConditionTemplates.xaml as the
+                                                                             template for ReadOnlyConditionViewModel.
+                                                                             Content is set by a DataTrigger and left null otherwise - NOT a Visibility toggle on a
+                                                                             filled element. Null content means the template is never instantiated for an ordinary
+                                                                             condition, so its bindings (Explanation, FunctionName, ...) cannot be evaluated against a
+                                                                             view model that has none of them. That was 12 binding errors per editable row. -->
+                                                                        <ContentControl Grid.Column="0" Grid.ColumnSpan="5" Panel.ZIndex="10">
+                                                                            <ContentControl.Style>
+                                                                                <Style TargetType="ContentControl">
                                                                                     <Style.Triggers>
                                                                                         <DataTrigger Binding="{Binding Type}" Value="ReadOnly">
-                                                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                                                            <Setter Property="Content" Value="{Binding}"/>
                                                                                         </DataTrigger>
                                                                                     </Style.Triggers>
                                                                                 </Style>
-                                                                            </Border.Style>
-                                                                            <StackPanel Orientation="Horizontal">
-                                                                                <TextBlock Text="Locked:" FontWeight="SemiBold"
-                                                                                           VerticalAlignment="Center"
-                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
-                                                                                <TextBlock Text="{Binding FunctionName}" Margin="6,0,0,0"
-                                                                                           FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                                                                <TextBlock Text="{Binding TargetDisplay}" Margin="10,0,0,0"
-                                                                                           VerticalAlignment="Center"
-                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
-                                                                                <TextBlock Text="{Binding ValueDisplay}" Margin="10,0,0,0"
-                                                                                           VerticalAlignment="Center"
-                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
-                                                                                <TextBlock Text="(preserved, not editable)" Margin="14,0,0,0"
-                                                                                           FontStyle="Italic" VerticalAlignment="Center"
-                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
-                                                                            </StackPanel>
-                                                                        </Border>
+                                                                            </ContentControl.Style>
+                                                                        </ContentControl>
                                                                     </Grid>
                                                                 </DataTemplate>
                                                             </ItemsControl.ItemTemplate>
@@ -1581,7 +1471,15 @@
                                         </GroupBox>
                                     </Expander>
                                     <!-- Container Section -->
-                                    <Expander Grid.Row="6" Style="{StaticResource DarkExpanderStyle}" Header="Container" IsExpanded="False">
+                                    <Expander Grid.Row="6" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
+                                        <Expander.Header>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Container"/>
+                                                <TextBlock Style="{StaticResource ChangedDotStyle}"
+                                                           ToolTip="The container / leveled-list placement differs from the scanned one."
+                                                           Visibility="{Binding IsContainerChanged, Converter={StaticResource BoolToVis}}"/>
+                                            </StackPanel>
+                                        </Expander.Header>
                                         <GroupBox
                                           Style="{StaticResource DarkGroupBoxStyle}"
                                           Margin="0,15,0,0"
@@ -1629,9 +1527,43 @@
                                                 <ColumnDefinition Width="10" />
                                                 <ColumnDefinition Width="3*" />
                                             </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <!-- "Already in your load order" summary -->
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+
+                                            <!-- What the scanned game already has, counted in one line.
+                                                 The containers it names are marked in the list below; the leveled
+                                                 lists are only counted, deliberately - 86 % of them hang in no
+                                                 container at all, so there is no row they could be marked on
+                                                 without inventing a placement. -->
+                                            <DockPanel Grid.Row="0" Grid.ColumnSpan="3" Margin="0,0,0,10">
+                                                <!-- The way back to your own list edits. Only there when there
+                                                     are any: a chance you changed reaches every mod feeding that
+                                                     list, so it has to be reviewable - and until this existed,
+                                                     the patch report was its only trace. -->
+                                                <Button DockPanel.Dock="Right"
+                                                        Content="{Binding DataContext.ChangedListsButtonText,
+                                                                  RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        Command="{Binding DataContext.ShowChangedListsCommand,
+                                                                  RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        Style="{StaticResource StandardButtonStyle}"
+                                                        Margin="10,0,0,0"
+                                                        ToolTip="Leveled lists whose chance or calculation you changed - review or reset them."
+                                                        Visibility="{Binding DataContext.HasChangedLists,
+                                                                     RelativeSource={RelativeSource AncestorType=UserControl},
+                                                                     Converter={StaticResource BoolToVis}}"/>
+
+                                                <TextBlock Text="{Binding DataContext.ExistingPlacementSummary,
+                                                                  RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                           Foreground="{DynamicResource ColorTextTertiary}"
+                                                           TextWrapping="Wrap"
+                                                           VerticalAlignment="Center"/>
+                                            </DockPanel>
 
                                             <!-- LEFT SIDE -->
-                                            <StackPanel Grid.Column="0">
+                                            <StackPanel Grid.Row="1" Grid.Column="0">
 
                                                 <!-- Search -->
                                                 <TextBox Text="{Binding DataContext.ContainerSearchText, 
@@ -1662,11 +1594,30 @@
                                                             <DataTemplate>
                                                                 <Border Padding="6"
                                                                         Margin="0,0,0,6"
-                                                                        Background="{StaticResource ColorBackgroundControl}"
+                                                                        Background="{DynamicResource ColorBackgroundControl}"
                                                                         CornerRadius="4">
                                                                     <DockPanel>
+                                                                            <!-- READ-ONLY MARK, NOT A SELECTION. Visible when the scanned load
+                                                                                 order already has this item in this container. The Select button
+                                                                                 next to it says what the patch will do; these two must stay
+                                                                                 visibly different, because they mean the opposite. -->
+                                                                            <Border DockPanel.Dock="Left"
+                                                                                    Margin="0,0,8,0"
+                                                                                    Padding="5,1"
+                                                                                    CornerRadius="3"
+                                                                                    VerticalAlignment="Center"
+                                                                                    Background="{DynamicResource ColorBackgroundBase}"
+                                                                                    BorderBrush="{DynamicResource ColorAccentLight}"
+                                                                                    BorderThickness="1"
+                                                                                    ToolTip="{Binding AlreadyContainsTooltip}"
+                                                                                    Visibility="{Binding AlreadyContainsItem, Converter={StaticResource BoolToVis}}">
+                                                                                <TextBlock Text="in game"
+                                                                                           FontSize="10"
+                                                                                           Foreground="{DynamicResource ColorAccentLight}"/>
+                                                                            </Border>
+
                                                                             <TextBlock Text="{Binding Name}"
-                                                                               Foreground="{StaticResource ColorTextPrimary}"
+                                                                               Foreground="{DynamicResource ColorTextPrimary}"
                                                                                VerticalAlignment="Center"/>
 
                                                                         <Button Width="70"
@@ -1686,13 +1637,13 @@
                                             </StackPanel>
 
                                             <!-- SPLITTER -->
-                                            <GridSplitter Grid.Column="1"
+                                            <GridSplitter Grid.Row="1" Grid.Column="1"
                                                   Width="6"
                                                   HorizontalAlignment="Stretch"
-                                                  Background="{StaticResource ColorDivider}"/>
+                                                  Background="{DynamicResource ColorDivider}"/>
 
                                             <!-- RIGHT SIDE -->
-                                            <StackPanel Grid.Column="2">
+                                            <StackPanel Grid.Row="1" Grid.Column="2">
                                                 <TextBlock Text="Selected Containers (for this item)"
                                                        Style="{StaticResource ItemLabelStyle}"
                                                        Margin="0,0,0,6"/>
@@ -1701,7 +1652,7 @@
                                                      sliders are the only thing that tells them apart - a tester expected
                                                      "from level 3 onwards it's in the shop" and found an empty shop. -->
                                                 <TextBlock Text="Leave every slider at 0 and the item is placed in the container itself - permanently, and it will be there. Raise a slider and it goes into that leveled list instead: from that level on it can turn up when the merchant restocks (vanilla: about every 48 h), by chance rather than guaranteed."
-                                                           Foreground="{StaticResource ColorTextTertiary}"
+                                                           Foreground="{DynamicResource ColorTextTertiary}"
                                                            TextWrapping="Wrap"
                                                            Margin="0,0,0,8"/>
 
@@ -1710,7 +1661,7 @@
                                                         <DataTemplate>
                                                             <Border Padding="8"
                                                                 Margin="0,0,0,8"
-                                                                Background="{StaticResource ColorBackgroundControl}"
+                                                                Background="{DynamicResource ColorBackgroundControl}"
                                                                 CornerRadius="4">
 
                                                                 <StackPanel>
@@ -1724,7 +1675,7 @@
 
                                                                         <TextBlock Grid.Column="0"
                                                                                Text="{Binding Name}"
-                                                                               Foreground="{StaticResource ColorTextPrimary}"
+                                                                               Foreground="{DynamicResource ColorTextPrimary}"
                                                                                FontWeight="Bold"
                                                                                VerticalAlignment="Center"/>
 
@@ -1735,47 +1686,13 @@
                                                                             Margin="8,0,0,0"/>
                                                                     </Grid>
 
-                                                                    <!-- LVLi Entries -->
-                                                                    <ItemsControl ItemsSource="{Binding LVLiEntries}">
-                                                                        <ItemsControl.ItemTemplate>
-                                                                            <DataTemplate>
-                                                                                <Grid Margin="0,6,0,6">
-                                                                                    <Grid.ColumnDefinitions>
-                                                                                        <ColumnDefinition Width="*" />
-                                                                                        <ColumnDefinition Width="180" />
-                                                                                    </Grid.ColumnDefinitions>
-
-                                                                                    <TextBlock Grid.Column="0"
-                                                                                           Text="{Binding LVLiName}"
-                                                                                           Foreground="{StaticResource ColorTextPrimary}"
-                                                                                           VerticalAlignment="Center"/>
-
-                                                                                    <StackPanel Grid.Column="1"
-                                                                                            Orientation="Horizontal"
-                                                                                            VerticalAlignment="Center">
-
-                                                                                        <!-- PropertyChanged, NOT Explicit + a Thumb.DragCompleted handler: with Explicit
-                                                                                             the level only ever reached the ViewModel on a finished thumb DRAG, so a
-                                                                                             track click, arrow keys, Page Up/Down or the wheel moved the slider but
-                                                                                             dropped the value - no LVLi in the container string, nothing saved, nothing
-                                                                                             patched. ItemNodeVM rebuilds the string off ContainerSelection.LevelChanged. -->
-                                                                                        <Slider Minimum="0"
-                                                                                            Maximum="100"
-                                                                                            Value="{Binding LevelDouble, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                                                            SmallChange="1"
-                                                                                            LargeChange="1"
-                                                                                            TickFrequency="1"
-                                                                                            Width="120"/>
-
-                                                                                        <TextBlock Text="{Binding Level}"
-                                                                                           Foreground="{StaticResource ColorTextPrimary}"
-                                                                                           Margin="8,0,0,0"
-                                                                                           VerticalAlignment="Center"/>
-                                                                                    </StackPanel>
-                                                                                </Grid>
-                                                                            </DataTemplate>
-                                                                        </ItemsControl.ItemTemplate>
-                                                                    </ItemsControl>
+                                                                    <!-- LVLi Entries: checkbox + link, nothing else.
+                                                                         Everything adjustable (level, amount, and the list's own chance/flags for reading)
+                                                                         lives in the detail window behind the name - a row that carried all of it would be
+                                                                         wider than the panel and still could not show what the list contains. -->
+                                                                    <!-- Rows come from Styles/LeveledListRowTemplate.xaml - shared by all four views that
+                                                                         show a container's leveled lists, so a change to the row cannot reach only one. -->
+                                                                    <ItemsControl ItemsSource="{Binding LVLiEntries}"/>
 
                                                                 </StackPanel>
                                                             </Border>
@@ -1810,7 +1727,7 @@
                                 <TextBlock Text="{Binding PluginName}"
                                            FontSize="20"
                                            FontWeight="Bold"
-                                           Foreground="#FFD700"
+                                           Foreground="{DynamicResource ColorHeadingAccent}"
                                            Margin="0,0,0,20" />
 
                                 <!-- Same simple Preset row as the single-item detail view above -
@@ -1836,6 +1753,7 @@
                                          row covers the whole plugin, never the filtered view - both
                                          confirmation dialogs spell that out (see PluginNodeVM). -->
                                     <Button Content="Reset edited"
+                                        Margin="10,0,5,5"
                                         Command="{Binding ResetPluginCommand}"
                                         Style="{StaticResource StandardButtonStyle}">
                                         <Button.ToolTip>

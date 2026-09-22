@@ -5,8 +5,12 @@
              xmlns:model="clr-namespace:SkyrimCraftingTool.Model">
 
     <Grid Margin="10">
+        <!-- Same three columns as MainContentView: a resizable tree with a floor under it, the
+             splitter, and the detail panel. The tree used to be a fixed 280 with no splitter, so a
+             plugin name longer than the column could not be read at all. -->
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="280"/>
+            <ColumnDefinition Width="250" MinWidth="150"/>
+            <ColumnDefinition Width="5"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
@@ -15,7 +19,13 @@
         </Grid.RowDefinitions>
 
         <!-- Top toolbar -->
-        <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,0,0,8">
+        <StackPanel Grid.Row="0" Grid.ColumnSpan="3" Orientation="Horizontal" Margin="0,0,0,8">
+            <!-- Eigene Records: sie landen unter SkyrimCraftingTool.esp im Baum und kommen über die
+                 erzeugte ESP ins Spiel. -->
+            <Button Content="New enchantment"
+                    Command="{Binding NewEnchantmentCommand}"
+                    Style="{StaticResource ActionButtonGreenStyle}"
+                    ToolTip="Creates an empty enchantment of your own. It appears under SkyrimCraftingTool.esp in the tree; give it at least one effect, then assign it to an item. The generated ESP is what brings it into the game."/>
             <Button Content="Export"
                     Command="{Binding ExportEnchantmentsCommand}"
                     Style="{StaticResource ActionButtonStyle}"
@@ -27,14 +37,9 @@
         </StackPanel>
 
         <!-- LEFT: TREEVIEW + SEARCH -->
-        <Border Grid.Row="1"
-            BorderBrush="{StaticResource ColorBorder}"
-            BorderThickness="1"
-            Padding="5"
-            Margin="0,0,10,0"
-            Background="{StaticResource ColorBackgroundPanel}">
-
-            <Grid>
+        <!-- No Border wrapper, matching MainContentView: the panel frame plus its 5px padding sat
+             around the TreeView's own border and made the same control read as a different one. -->
+            <Grid Grid.Row="1" Grid.Column="0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <!-- Filters -->
@@ -47,34 +52,41 @@
                 </Grid.RowDefinitions>
 
                 <!-- FILTERS -->
-                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,5">
+                <!-- WrapPanel, not StackPanel: this row carries one control more than the item
+                     view's ("Only base"), and the column is now draggable down to 150. A stack
+                     clips whatever no longer fits - the plugin count was already cut off at the old
+                     fixed width. Wrapping degrades instead. -->
+                <WrapPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,5">
+                    <!-- Gaps as RIGHT margins on the preceding element, never as left margins on
+                         the following one: in a WrapPanel a left margin survives the line break and
+                         indents whatever moved down by exactly that much. -->
                     <CheckBox Content="Only edited"
                               IsChecked="{Binding ShowOnlyEditedEnchantments}"
-                              Foreground="{StaticResource ColorTextPrimary}"
-                              VerticalAlignment="Center"/>
+                              Foreground="{DynamicResource ColorTextPrimary}"
+                              VerticalAlignment="Center"
+                              Margin="0,0,6,0"/>
                     <TextBlock Text="{Binding EditedEnchantmentCount, StringFormat=({0} edited)}"
-                               Foreground="{StaticResource ColorTextSecondary}"
+                               Foreground="{DynamicResource ColorTextSecondary}"
                                VerticalAlignment="Center"
-                               Margin="6,0,0,0"/>
+                               Margin="0,0,12,0"/>
                     <CheckBox Content="Only base"
                               IsChecked="{Binding ShowOnlyBaseEnchantments}"
-                              Foreground="{StaticResource ColorTextPrimary}"
+                              Foreground="{DynamicResource ColorTextPrimary}"
                               VerticalAlignment="Center"
                               ToolTip="Hide derived enchantments (magnitude/duration tier variants that inherit from a base)"
-                              Margin="12,0,0,0"/>
+                              Margin="0,0,10,0"/>
                     <TextBlock Text="{Binding PluginCount, StringFormat=· {0} plugins}"
-                               Foreground="{StaticResource ColorTextTertiary}"
-                               VerticalAlignment="Center"
-                               Margin="10,0,0,0"/>
-                </StackPanel>
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               VerticalAlignment="Center"/>
+                </WrapPanel>
 
                 <!-- SUCHFELD -->
                 <TextBox Grid.Row="1"
                      Text="{Binding EnchantmentTreeSearchText, UpdateSourceTrigger=PropertyChanged}"
                      Tag="Search..."
-                     Background="{StaticResource ColorBackgroundControl}"
-                     Foreground="{StaticResource ColorTextPrimary}"
-                     BorderBrush="#555"
+                     Background="{DynamicResource ColorBackgroundControl}"
+                     Foreground="{DynamicResource ColorTextPrimary}"
+                     BorderBrush="{DynamicResource ColorBorder}"
                      Padding="5"
                      Margin="0,0,0,5"/>
 
@@ -84,38 +96,68 @@
                      Margin="0,0,0,5">
                     <Button Content="Collapse all [-]"
                     Command="{Binding EnchantementCollapseAllCommand}"
-                    Background="#444"
-                    Foreground="White"/>
+                    Background="{DynamicResource ColorBackgroundHighlight}"
+                    Foreground="{DynamicResource ColorTextPrimary}"/>
                 </UniformGrid>
 
                 <!-- TREEVIEW need extra FilteredView -->
                 <TreeView Grid.Row="3"
+                  x:Name="EnchantmentTreeView"
                   ItemsSource="{Binding EnchantementFilteredTree}"
+                  VirtualizingPanel.IsVirtualizing="True"
                   SelectedItemChanged="TreeView_SelectedItemChanged"
-                  Background="{StaticResource ColorBackgroundControl}"
-                  Foreground="{StaticResource ColorTextPrimary}">
+                  Background="{DynamicResource ColorBackgroundBase}"
+                  Foreground="{DynamicResource ColorTextPrimary}">
 
-                    <!-- Container-Style wie bisher -->
+                    <!-- Container-Style wie bisher, plus die zwei Zustände, die der Sprung braucht:
+                         TreeView.SelectedItem ist read-only, Auswahl aus dem Code geht nur über
+                         TreeViewItem.IsSelected - und selektierbar ist nur, was aufgeklappt und
+                         damit realisiert ist. Beide zweiwegig, damit das, was der Anwender im Baum
+                         tut, im Knoten landet und ein Sprung nicht dagegen arbeitet. -->
                     <TreeView.ItemContainerStyle>
                         <Style TargetType="TreeViewItem">
                             <Setter Property="Padding" Value="2" />
                             <Setter Property="HorizontalContentAlignment" Value="Left" />
                             <Setter Property="VerticalContentAlignment" Value="Center" />
-
-                            <Style.Resources>
-                                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}"
-                                         Color="#444444"/>
-                                <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}"
-                                         Color="#333333"/>
-                            </Style.Resources>
+                            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
                         </Style>
                     </TreeView.ItemContainerStyle>
 
-                    <TreeView.ItemTemplate>
-                        <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                    <!-- One implicit template per node type, picked by DataType the way
+                         MainContentView's tree does it. This replaces a single template that told
+                         the levels apart with DataTriggers on "Enchantment is null" - the null check
+                         the node split exists to remove. -->
+                    <TreeView.Resources>
+
+                        <!-- Plugin -->
+                        <HierarchicalDataTemplate DataType="{x:Type vm:EnchantmentPluginNode}"
+                                                  ItemsSource="{Binding Children}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding DisplayName}"
+                                           FontWeight="Bold"
+                                           Foreground="{DynamicResource ColorTreeRoot}"/>
+                                <TextBlock Style="{StaticResource ChangedDotStyle}"
+                                           Visibility="{Binding HasEditedDescendant, Converter={StaticResource BoolToVis}}"/>
+                            </StackPanel>
+                        </HierarchicalDataTemplate>
+
+                        <!-- Category: Weapon / Armor / Other -->
+                        <HierarchicalDataTemplate DataType="{x:Type vm:EnchantmentCategoryNode}"
+                                                  ItemsSource="{Binding Children}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding DisplayName}"
+                                           Foreground="{DynamicResource ColorTreeBranch}"/>
+                                <TextBlock Style="{StaticResource ChangedDotStyle}"
+                                           Visibility="{Binding HasEditedDescendant, Converter={StaticResource BoolToVis}}"/>
+                            </StackPanel>
+                        </HierarchicalDataTemplate>
+
+                        <!-- Enchantment. No ItemsSource - this is where the tree ends. -->
+                        <DataTemplate DataType="{x:Type vm:EnchantmentLeafNode}">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="●"
-                                           Foreground="{StaticResource ColorWarning}"
+                                           Foreground="{DynamicResource ColorWarning}"
                                            Margin="0,0,4,0"
                                            VerticalAlignment="Center">
                                     <TextBlock.Style>
@@ -130,7 +172,7 @@
                                     </TextBlock.Style>
                                 </TextBlock>
                                 <TextBlock Text="↳"
-                                           Foreground="{StaticResource ColorTextTertiary}"
+                                           Foreground="{DynamicResource ColorTextTertiary}"
                                            Margin="0,0,4,0"
                                            VerticalAlignment="Center"
                                            ToolTip="Derived enchantment (inherits from a base)">
@@ -145,61 +187,205 @@
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
-                                <TextBlock Text="{Binding DisplayName}"
-                                           Foreground="{StaticResource ColorTextPrimary}">
+                                <!-- Foreground belongs in the Style, not on the element: a local value
+                                     outranks every Style trigger, so setting it here meant the
+                                     "edited" trigger below could never actually colour anything - only
+                                     its FontWeight came through. -->
+                                <!-- The record, not the node's DisplayName: that is a copy taken when
+                                     the tree was built, so renaming showed up only after a rebuild.
+                                     EditorID notifies, so this row follows along as you type. -->
+                                <TextBlock Text="{Binding Enchantment.EditorID}">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{DynamicResource ColorTreeLeaf}"/>
                                             <Style.Triggers>
+                                                <!-- The level colour is no longer a trigger - the
+                                                     template above owns it. Only "edited" remains. -->
                                                 <DataTrigger Binding="{Binding Enchantment.IsEdited}" Value="True">
                                                     <Setter Property="FontWeight" Value="Bold"/>
-                                                    <Setter Property="Foreground" Value="{StaticResource ColorWarning}"/>
+                                                    <Setter Property="Foreground" Value="{DynamicResource ColorWarning}"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
                             </StackPanel>
-                        </HierarchicalDataTemplate>
-                    </TreeView.ItemTemplate>
+                        </DataTemplate>
+
+                    </TreeView.Resources>
 
                 </TreeView>
             </Grid>
-        </Border>
 
+        <!-- Splitter -->
+        <GridSplitter Grid.Row="1" Grid.Column="1"
+                      HorizontalAlignment="Stretch"
+                      Background="{DynamicResource ColorDivider}" />
 
         <!-- RIGHT: DETAIL VIEW -->
-        <Border Grid.Row="1" Grid.Column="1"
-                BorderBrush="{StaticResource ColorBorder}"
+        <!-- A ContentPresenter over the selected NODE, like MainContentView: the template is chosen
+             by the node's type, and with nothing selected nothing is built at all. Before this the
+             whole form existed from the first layout pass (measured: 212 of the view's 446 visual
+             elements) and showed itself as a complete but empty set of fields, which reads as broken
+             rather than as "nothing selected".
+             A plugin template goes in here next; a category node deliberately has none, exactly as
+             CategoryNodeVM has none on the item side. -->
+        <Border Grid.Row="1" Grid.Column="2"
+                Margin="10,0,0,0"
+                BorderBrush="{DynamicResource ColorBorder}"
                 BorderThickness="1"
                 Padding="10"
-                Background="{StaticResource ColorBackgroundPanel}">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                Background="{DynamicResource ColorBackgroundPanel}">
+            <ContentPresenter Content="{Binding SelectedNode}">
+                <ContentPresenter.Resources>
 
-                <StackPanel DataContext="{Binding SelectedEnchantment}">
+                    <!-- Plugin: the three actions that cover a whole plugin. Laid out like the item
+                         side's plugin panel; no preset row, because presets act on items. -->
+                    <DataTemplate DataType="{x:Type vm:EnchantmentPluginNode}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="20">
+                                <TextBlock Text="{Binding DisplayName}"
+                                           FontSize="20"
+                                           FontWeight="Bold"
+                                           Foreground="{DynamicResource ColorHeadingAccent}"
+                                           Margin="0,0,0,20"/>
+
+                                <WrapPanel Margin="0,0,0,15">
+                                    <Button Content="Export"
+                                            Command="{Binding ExportPluginCommand}"
+                                            Style="{StaticResource ActionButtonStyle}"
+                                            ToolTip="Writes every edited enchantment of THIS plugin to Output\Exports. Covers the whole plugin, regardless of any active tree filter."/>
+                                    <Button Content="Import"
+                                            Command="{Binding ImportPluginCommand}"
+                                            Style="{StaticResource ActionButtonWarmStyle}"
+                                            ToolTip="Reads the export files belonging to this plugin and applies them. Conflicts are resolved per record."/>
+                                    <!-- StandardButtonStyle carries only a RIGHT margin, so this sat
+                                         flush against Import. The gap is wider than the 6 the action
+                                         buttons use between themselves - this one deletes things. -->
+                                    <Button Content="Reset edited"
+                                            Command="{Binding ResetPluginCommand}"
+                                            Margin="10,0,5,5"
+                                            Style="{StaticResource StandardButtonStyle}">
+                                        <Button.ToolTip>
+                                            <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                <TextBlock Style="{StaticResource ToolTipTitelStyle}"
+                                                           TextWrapping="Wrap"
+                                                           MaxWidth="380"
+                                                           Text="Reverts fields and effects on every edited enchantment in this plugin. Scanned records go back to what their plugin defines; ones you created go back to the empty enchantment they started as. Nothing is deleted - use Delete for that. Covers the whole plugin regardless of any active tree filter, asks for confirmation with the exact count first, and leaves shared worn-restriction list contents alone."/>
+                                            </ToolTip>
+                                        </Button.ToolTip>
+                                    </Button>
+
+                                    <!-- Only where the plugin actually holds records of the user's,
+                                         mirroring IsUserCreatedSelected on the single record. -->
+                                    <Button Content="Delete enchantments"
+                                            Command="{Binding DeletePluginCommand}"
+                                            Visibility="{Binding HasOwnEnchantments, Converter={StaticResource BoolToVis}}"
+                                            Style="{StaticResource ActionButtonWarmStyle}">
+                                        <Button.ToolTip>
+                                            <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                <TextBlock Style="{StaticResource ToolTipTitelStyle}"
+                                                           TextWrapping="Wrap"
+                                                           MaxWidth="380"
+                                                           Text="Removes every enchantment you created in this plugin, for good. No plugin defines them, so a rescan cannot bring them back, and any item you assigned them to will point at nothing. Asks for confirmation with the exact count first."/>
+                                            </ToolTip>
+                                        </Button.ToolTip>
+                                    </Button>
+                                </WrapPanel>
+
+                                <TextBlock Text="Pick an enchantment in the tree to edit it."
+                                           Foreground="{DynamicResource ColorTextTertiary}"/>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </DataTemplate>
+
+                    <DataTemplate DataType="{x:Type vm:EnchantmentLeafNode}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+
+                            <!-- The template's DataContext is the NODE; everything below was written
+                                 against the record, so hand it the record and leave those bindings
+                                 alone. The ones reaching the view model via
+                                 RelativeSource AncestorType=UserControl keep working - template
+                                 content sits in the visual tree under the UserControl. -->
+                            <StackPanel DataContext="{Binding Enchantment}">
 
                     <!-- TITLE -->
                     <TextBlock Text="{Binding Name}"
                                FontSize="22"
-                               Foreground="{StaticResource ColorAccentLight}"
+                               Foreground="{DynamicResource ColorAccentLight}"
                                Margin="0,0,0,10"/>
 
-                    <!-- BASE ENCHANTMENT (read-only tag — this ObjectEffect inherits from a base ENCH) -->
-                    <TextBlock Text="{Binding DataContext.CurrentBaseEnchantmentLabel, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                               Foreground="{StaticResource ColorTextSecondary}"
-                               FontStyle="Italic"
-                               Margin="0,-6,0,10"
-                               ToolTip="Derived enchantment. Which base it inherits from is a scanned value and is not editable.">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding DataContext.HasBaseEnchantment, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
+                    <!-- BASE ENCHANTMENT (read-only tag — this ObjectEffect inherits from a base ENCH)
+                         plus die Sprungmarke dorthin. Beides in einer Zeile, weil der Knopf ohne das
+                         Etikett daneben nicht sagen würde, wohin er springt. -->
+                    <StackPanel Orientation="Horizontal" Margin="0,-6,0,10"
+                                Visibility="{Binding DataContext.ShowLineageRow, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}">
+
+                        <TextBlock Text="{Binding DataContext.CurrentBaseEnchantmentLabel, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                   Foreground="{DynamicResource ColorTextSecondary}"
+                                   FontStyle="Italic"
+                                   VerticalAlignment="Center"
+                                   Visibility="{Binding DataContext.HasBaseEnchantment, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}"
+                                   ToolTip="Derived enchantment. Which base it inherits from is a scanned value and is not editable."/>
+
+                        <!-- Eigener Margin statt dem des Stils: StandardButtonStyle bringt
+                             Margin="0,0,5,5" mit, und die 5px unten würden den Knopf gegenüber der
+                             Textzeile nach oben versetzen. -->
+                        <Button Content="Open base ↑"
+                                Command="{Binding DataContext.OpenBaseEnchantmentCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                IsEnabled="{Binding DataContext.CanOpenBaseEnchantment, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                Visibility="{Binding DataContext.HasBaseEnchantment, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}"
+                                Style="{StaticResource StandardButtonStyle}"
+                                Margin="10,0,0,0"
+                                VerticalAlignment="Center"
+                                ToolTip="Selects the base enchantment in the tree and shows it here. Clears the tree filters if they would hide it. Greyed out when the base record is not in the scanned load order."/>
+
+                        <!-- Die Gegenrichtung: zu den Stufen, die auf dieses Enchantment zeigen.
+                             Ein Aufklappknopf, weil eine Familie bis zu 20 Mitglieder hat. -->
+                        <ToggleButton x:Name="VariantsToggle"
+                                      Content="{Binding DataContext.VariantsLabel, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                      IsChecked="{Binding DataContext.IsVariantListOpen, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=TwoWay}"
+                                      Visibility="{Binding DataContext.HasFamilyChildren, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}"
+                                      Background="{DynamicResource ColorBackgroundControl}"
+                                      Foreground="{DynamicResource ColorTextPrimary}"
+                                      BorderBrush="{DynamicResource ColorBorder}"
+                                      BorderThickness="1"
+                                      Padding="8,2"
+                                      MinHeight="25"
+                                      Margin="10,0,0,0"
+                                      VerticalAlignment="Center"
+                                      ToolTip="The tier variants that point at this enchantment. Picking one selects it in the tree and shows it here."/>
+
+                        <Popup IsOpen="{Binding IsChecked, ElementName=VariantsToggle}"
+                               PlacementTarget="{Binding ElementName=VariantsToggle}"
+                               Placement="Bottom"
+                               StaysOpen="False"
+                               AllowsTransparency="True">
+                            <Border Background="{DynamicResource ColorBackgroundControl}"
+                                    BorderBrush="{DynamicResource ColorBorder}"
+                                    BorderThickness="1"
+                                    Padding="4"
+                                    MaxHeight="320">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl ItemsSource="{Binding DataContext.FamilyChildLinks, RelativeSource={RelativeSource AncestorType=UserControl}}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Content="{Binding Label}"
+                                                        Command="{Binding DataContext.OpenVariantCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding Key}"
+                                                        HorizontalContentAlignment="Left"
+                                                        Background="Transparent"
+                                                        Foreground="{DynamicResource ColorTextPrimary}"
+                                                        BorderThickness="0"
+                                                        Padding="6,3"
+                                                        Margin="0"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </StackPanel>
 
                     <!-- BASIC INFO -->
                     <StackPanel Orientation="Vertical" Margin="0,0,0,20">
@@ -217,12 +403,26 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
+                                <!-- The rest of ENIT: enchant type, flags, charge time, amount. -->
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
                             <!-- Header -->
                             <StackPanel Grid.Row="0" Grid.ColumnSpan="3" Orientation="Horizontal" Margin="0,0,0,5">
                                 <TextBlock Text="Basic Info"
                                            Style="{StaticResource TitelStyle}"/>
+
+                                <!-- Nur für eigene Records: ein gescanntes Enchantment lässt sich
+                                     nicht löschen, ein Plugin definiert es ja weiterhin. -->
+                                <Button Content="Delete enchantment"
+                                    Margin="15,0,0,0"
+                                    Style="{StaticResource ActionButtonWarmStyle}"
+                                    Command="{Binding DataContext.DeleteEnchantmentCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    Visibility="{Binding DataContext.IsUserCreatedSelected, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}"
+                                    ToolTip="Deletes this enchantment for good — record, effects and snapshot. Only your own enchantments can be deleted; a scanned one belongs to its plugin."/>
 
                                 <Button Content="Reset Changes"
                                     Margin="15,0,0,0"
@@ -247,7 +447,7 @@
                             <TextBlock Grid.Row="1"
                                        Grid.Column="1"
                                        Text="{Binding Key}"
-                                       Foreground="{StaticResource ColorTextPrimary}"
+                                       Foreground="{DynamicResource ColorTextPrimary}"
                                        Margin="5"/>
                             <Button Grid.Row="1" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
                                 <Button.ToolTip>
@@ -260,21 +460,46 @@
                                 </Button.ToolTip>
                             </Button>
 
-                            <!-- EditorID -->
+                            <!-- EditorID. Editable only on records the user created - a scanned
+                                 record's EditorID belongs to its plugin. Both spellings sit in the
+                                 same cell; exactly one is visible, so the row keeps its height
+                                 either way. -->
                             <TextBlock Grid.Row="2"
                                        Text="EditorID:"
                                        Style="{StaticResource ItemLabelStyle}"/>
                             <TextBlock Grid.Row="2"
                                        Grid.Column="1"
                                        Text="{Binding EditorID}"
-                                       Foreground="{StaticResource ColorTextPrimary}"
-                                       Margin="5"/>
+                                       Foreground="{DynamicResource ColorTextPrimary}"
+                                       Margin="5">
+                                <!-- Trigger rather than an inverse converter: there is no inverted
+                                     BooleanToVisibility in Converters.xaml, and this is the one
+                                     place that needs one. -->
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding DataContext.IsUserCreatedSelected, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <TextBox Grid.Row="2"
+                                     Grid.Column="1"
+                                     Text="{Binding EditorID, UpdateSourceTrigger=PropertyChanged}"
+                                     Visibility="{Binding DataContext.IsUserCreatedSelected, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}"
+                                     Style="{StaticResource ItemTextBoxStyle}"/>
                             <Button Grid.Row="2" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
                                 <Button.ToolTip>
                                     <ToolTip Style="{StaticResource InfoTooltipStyle}">
                                         <StackPanel>
-                                            <TextBlock Text="Internal name used by the Creation Engine. Not shown in-game. Read-only."
+                                            <TextBlock Text="Internal name used by the Creation Engine. Not shown in-game — that is what Name is for. It is also the text this record shows in the tree."
                                                 Style="{StaticResource ToolTipTitelStyle}"/>
+                                            <TextBlock Text="Editable only on enchantments you created. A scanned record's EditorID belongs to its plugin, and renaming it would disagree with every other tool reading that plugin."
+                                                Style="{StaticResource ToolTipTextStyle}"
+                                                TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </ToolTip>
                                 </Button.ToolTip>
@@ -304,17 +529,40 @@
                             <TextBlock Grid.Row="4"
                                        Text="Cast Type:"
                                        Style="{StaticResource ItemLabelStyle}"/>
+                            <!-- Editable on user-created records only. SkyPatcher does have
+                                 castType=, so a scanned record could be patched - but cast type is
+                                 what makes an enchantment an armor or a weapon one, and the tree is
+                                 built from it. -->
                             <TextBlock Grid.Row="4"
                                        Grid.Column="1"
                                        Text="{Binding CastType}"
-                                       Foreground="{StaticResource ColorTextPrimary}"
-                                       Margin="5"/>
+                                       Foreground="{DynamicResource ColorTextPrimary}"
+                                       Margin="5">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding DataContext.IsUserCreatedSelected, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <ComboBox Grid.Row="4" Grid.Column="1"
+                                      ItemsSource="{Binding DataContext.CastTypeChoices, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                      SelectedItem="{Binding CastType}"
+                                      Visibility="{Binding DataContext.IsUserCreatedSelected, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}"
+                                      Style="{StaticResource CompactComboBoxStyle}"
+                                      Margin="5,0,5,5"/>
                             <Button Grid.Row="4" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
                                 <Button.ToolTip>
                                     <ToolTip Style="{StaticResource InfoTooltipStyle}">
                                         <StackPanel>
-                                            <TextBlock Text="How the effect is delivered: ConstantEffect (always on — armor enchantments), FireAndForget (one-shot — weapon hits) or Concentration (channelled). Read-only, scanned from the plugin."
+                                            <TextBlock Text="How the effect is delivered: ConstantEffect (always on — armor enchantments), FireAndForget (one-shot — weapon hits), Concentration (channelled) or Scroll."
                                                 Style="{StaticResource ToolTipTitelStyle}"/>
+                                            <TextBlock Text="Editable on enchantments you created. On a scanned record it stays read-only: it decides whether the record counts as an armor or a weapon enchantment, and the tree is built from that."
+                                                Style="{StaticResource ToolTipTextStyle}" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </ToolTip>
                                 </Button.ToolTip>
@@ -327,7 +575,7 @@
                             <TextBlock Grid.Row="5"
                                        Grid.Column="1"
                                        Text="{Binding TargetType}"
-                                       Foreground="{StaticResource ColorTextPrimary}"
+                                       Foreground="{DynamicResource ColorTextPrimary}"
                                        Margin="5"/>
                             <Button Grid.Row="5" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
                                 <Button.ToolTip>
@@ -360,13 +608,198 @@
                                     </ToolTip>
                                 </Button.ToolTip>
                             </Button>
+
+                            <!-- Enchant Type. User-created only, and unlike cast type that is not a
+                                 choice: SkyPatcher has no enchantType operation at all, so on a
+                                 scanned record the edit could never reach the game. -->
+                            <TextBlock Grid.Row="7"
+                                       Text="Enchant Type:"
+                                       Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBlock Grid.Row="7"
+                                       Grid.Column="1"
+                                       Text="{Binding EnchantType}"
+                                       Foreground="{DynamicResource ColorTextPrimary}"
+                                       Margin="5">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding DataContext.IsUserCreatedSelected, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <ComboBox Grid.Row="7" Grid.Column="1"
+                                      ItemsSource="{Binding DataContext.EnchantTypeChoices, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                      SelectedItem="{Binding EnchantType}"
+                                      Visibility="{Binding DataContext.IsUserCreatedSelected, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}"
+                                      Style="{StaticResource CompactComboBoxStyle}"
+                                      Margin="5,0,5,5"/>
+                            <Button Grid.Row="7" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                <Button.ToolTip>
+                                    <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                        <StackPanel>
+                                            <TextBlock Text="Enchantment (weapons and armor) or StaffEnchantment (staves). Only these two values exist."
+                                                Style="{StaticResource ToolTipTitelStyle}"/>
+                                            <TextBlock Text="Editable on enchantments you created only — SkyPatcher has no operation for this field, so on a scanned record the change could never reach the game without a full ESP override."
+                                                Style="{StaticResource ToolTipTextStyle}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </ToolTip>
+                                </Button.ToolTip>
+                            </Button>
+
+                            <!-- Flags -->
+                            <TextBlock Grid.Row="8"
+                                       Text="Flags:"
+                                       Style="{StaticResource ItemLabelStyle}"/>
+                            <!-- The marking sits on each box's own outline, not on a frame around
+                                 the pair: Flags is one int in the database, but two independent
+                                 switches here, and framing both because one moved points at the
+                                 wrong one half the time. ChangedMarker instead of BorderBrush
+                                 because the check box template repaints its own border when ticked
+                                 - see the trigger at the end of the CheckBox template. -->
+                            <WrapPanel Grid.Row="8" Grid.Column="1" Margin="5,0,0,5">
+                                <CheckBox Content="No auto-calc (costoverride)"
+                                          IsChecked="{Binding NoAutoCalc}"
+                                          model:ChangedMarker.IsChanged="{Binding DataContext.IsNoAutoCalcChanged, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                          VerticalAlignment="Center"
+                                          Margin="0,0,14,0"
+                                          ToolTip="Without this the game recalculates the cost from the effects and ignores what you typed. SkyPatcher calls it costoverride."/>
+                                <CheckBox Content="Extend duration on recast"
+                                          IsChecked="{Binding ExtendDurationOnRecast}"
+                                          model:ChangedMarker.IsChanged="{Binding DataContext.IsExtendDurationOnRecastChanged, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                          VerticalAlignment="Center"/>
+                            </WrapPanel>
+                            <Button Grid.Row="8" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                <Button.ToolTip>
+                                    <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                        <StackPanel>
+                                            <TextBlock Text="The ENIT flags. Patched via SkyPatcher's setFlags / removeFlags, so these work on scanned records too."
+                                                Style="{StaticResource ToolTipTitelStyle}"/>
+                                            <TextBlock Text="No auto-calc is the one that matters: measured across the load order, of 1943 enchantments the 81 whose Amount differs from their Cost ALL carry it, and none without it does. Set Amount without this flag and the game overwrites your number."
+                                                Style="{StaticResource ToolTipTextStyle}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </ToolTip>
+                                </Button.ToolTip>
+                            </Button>
+
+                            <!-- Charge Time -->
+                            <TextBlock Grid.Row="9"
+                                       Text="Charge Time:"
+                                       Style="{StaticResource ItemLabelStyle}"/>
+                            <!-- Staff enchantments only. Measured across the load order: of 1501
+                                 non-staff records, ZERO carry a charge time - a value here is
+                                 stored and means nothing. Deliberately not narrowed further to
+                                 FireAndForget staves: 24 Concentration staves use it legitimately.
+                                 Disabled, not cleared - taking the stored value away would be an
+                                 edit the user never asked for. -->
+                            <TextBox Grid.Row="9"
+                                     Grid.Column="1"
+                                     Text="{Binding ChargeTime}"
+                                     BorderBrush="{Binding DataContext.IsEnchantmentChargeTimeChanged, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                     model:NumericTextBoxBehavior.Mode="Decimal">
+                                <TextBox.Style>
+                                    <Style TargetType="TextBox" BasedOn="{StaticResource ItemTextBoxStyle}">
+                                        <Setter Property="IsEnabled" Value="False"/>
+                                        <Setter Property="ToolTip" Value="Staff enchantments only — set Enchant Type to StaffEnchantment to edit this."/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding EnchantType}" Value="StaffEnchantment">
+                                                <Setter Property="IsEnabled" Value="True"/>
+                                                <Setter Property="ToolTip" Value="{x:Null}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBox.Style>
+                            </TextBox>
+                            <Button Grid.Row="9" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                <Button.ToolTip>
+                                    <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                        <StackPanel>
+                                            <TextBlock Text="How long a staff takes to charge before it fires."
+                                                Style="{StaticResource ToolTipTitelStyle}"/>
+                                            <TextBlock Text="Staff enchantments only. Measured across the load order: all 364 records with a non-zero charge time are staves, and no weapon or armor enchantment uses it — on those the value is stored but means nothing."
+                                                Style="{StaticResource ToolTipTextStyle}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </ToolTip>
+                                </Button.ToolTip>
+                            </Button>
+
+                            <!-- Enchantment Amount -->
+                            <TextBlock Grid.Row="10"
+                                       Text="Amount:"
+                                       Style="{StaticResource ItemLabelStyle}"/>
+                            <!-- Only has an effect together with No auto-calc: without that flag the
+                                 game recalculates the amount from the effects and discards what was
+                                 typed. Measured across the load order: of 1943 records the 81 whose
+                                 amount differs from their cost ALL carry the flag, 0 without it do.
+                                 Disabled rather than hidden, so the scanned value stays readable. -->
+                            <TextBox Grid.Row="10"
+                                     Grid.Column="1"
+                                     Text="{Binding EnchantmentAmount}"
+                                     BorderBrush="{Binding DataContext.IsEnchantmentAmountChanged, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                     model:NumericTextBoxBehavior.Mode="Integer">
+                                <TextBox.Style>
+                                    <Style TargetType="TextBox" BasedOn="{StaticResource ItemTextBoxStyle}">
+                                        <Setter Property="IsEnabled" Value="False"/>
+                                        <Setter Property="ToolTip" Value="Needs the &quot;No auto-calc&quot; flag — without it the game recalculates this value and ignores what you type."/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding NoAutoCalc}" Value="True">
+                                                <Setter Property="IsEnabled" Value="True"/>
+                                                <Setter Property="ToolTip" Value="{x:Null}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBox.Style>
+                            </TextBox>
+                            <Button Grid.Row="10" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                <Button.ToolTip>
+                                    <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                        <StackPanel>
+                                            <TextBlock Text="The charge a single use costs. Vanilla mirrors it onto Cost in 1862 of 1943 records."
+                                                Style="{StaticResource ToolTipTitelStyle}"/>
+                                            <TextBlock Text="Only has an effect together with the No auto-calc flag — without it the game recalculates and your number is discarded."
+                                                Style="{StaticResource ToolTipTextStyle}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </ToolTip>
+                                </Button.ToolTip>
+                            </Button>
                         </Grid>
                     </StackPanel>
 
                     <!-- EFFECTS -->
+                    <!-- Expanded by default, unlike every expander in MainContentView: the effect
+                         list is the reason one opens an enchantment at all, so having to unfold it
+                         each time would be a click for nothing. -->
+                    <Expander Style="{StaticResource DarkExpanderStyle}" IsExpanded="True" Margin="0,0,0,10">
+                        <Expander.Header>
+                            <!-- A collapsed section must still admit that something inside it
+                                 changed - the amber borders on the fields are invisible while it is
+                                 shut. Same dot the tree uses for an edited record. -->
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Effects"/>
+                                <TextBlock Style="{StaticResource ChangedDotStyle}"
+                                           ToolTip="This section contains unsaved-looking changes — the effect list differs from the scanned state."
+                                           Visibility="{Binding DataContext.IsEnchantmentEffectsChanged, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}"/>
+                            </StackPanel>
+                        </Expander.Header>
+
                     <StackPanel Margin="0,0,0,20">
+                        <!-- The heading moved into the expander header above; what stays is the row
+                             of actions that belongs to the section. -->
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
-                            <TextBlock Text="Effects" Style="{StaticResource TitelStyle}"/>
+
+                            <!-- Nur sichtbar, wenn dieses Enchantment überhaupt Stufen-Varianten
+                                 hat. Öffnet die Vorschau; geschrieben wird erst dort. -->
+                            <Button Content="{Binding DataContext.ApplyToFamilyLabel, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    Command="{Binding DataContext.ApplyToFamilyCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    Visibility="{Binding DataContext.HasFamilyChildren, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}"
+                                    Style="{StaticResource StandardButtonStyle}"
+                                    Margin="15,0,0,0"
+                                    VerticalAlignment="Center"
+                                    ToolTip="Carries this effect list over to the tier variants that point at this enchantment — additions scaled to where each variant sits, removals as they are. Shows every proposal before writing anything."/>
+
                             <Button Margin="10,0,0,0" Style="{StaticResource InfoButtonStyle}">
                                 <Button.ToolTip>
                                     <ToolTip Style="{StaticResource InfoTooltipStyle}">
@@ -382,18 +815,53 @@
                                 BorderThickness="0,0,0,2" Margin="0,0,0,5"
                                 ToolTip="A colored line here means the Effects differ from how they looked when this enchantment was loaded."/>
 
+                        <!-- Effekt hinzufügen. Die Auswahl zeigt nur, was noch fehlt: ein Effekt kann
+                             pro Enchantment nur einmal vorkommen (PRIMARY KEY über Enchantment +
+                             MagicEffect). Filtert beim Tippen wie die anderen Auswahlfelder, 3.875
+                             Einträge scrollt niemand. -->
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <ComboBox Grid.Column="0"
+                                      ItemsSource="{Binding DataContext.FilteredMagicEffects, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                      SelectedItem="{Binding DataContext.SelectedMagicEffectToAdd, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=TwoWay}"
+                                      Text="{Binding DataContext.MagicEffectSearchText, RelativeSource={RelativeSource AncestorType=UserControl}, UpdateSourceTrigger=PropertyChanged}"
+                                      IsEditable="True"
+                                      IsTextSearchEnabled="False"
+                                      IsSynchronizedWithCurrentItem="False"
+                                      StaysOpenOnEdit="True"
+                                      DisplayMemberPath="Label"
+                                      Style="{StaticResource ItemComboBoxStyle}"
+                                      ToolTip="Type to filter the scanned magic effects. Effects this enchantment already carries are not listed."/>
+
+                            <!-- Eigener Margin statt dem des Stils: StandardButtonStyle bringt
+                                 Margin="0,0,5,5" mit, und die 5px unten setzen den Knopf gegenüber
+                                 der Auswahlbox daneben zu tief. -->
+                            <Button Grid.Column="1"
+                                    Content="Add effect"
+                                    Command="{Binding DataContext.AddEffectCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    IsEnabled="{Binding DataContext.CanAddEffect, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    Style="{StaticResource StandardButtonStyle}"
+                                    Margin="6,0,0,5"
+                                    ToolTip="Adds the selected effect with Magnitude / Duration / Area at 0. The patch writes it as mgefsToAdd; Reset Changes takes it away again."/>
+                        </Grid>
+
                         <ItemsControl ItemsSource="{Binding DataContext.EffectVMs, RelativeSource={RelativeSource AncestorType=UserControl}}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border BorderBrush="{StaticResource ColorBorder}"
+                                    <Border BorderBrush="{DynamicResource ColorBorder}"
                                             BorderThickness="1"
                                             Padding="5"
                                             Margin="0,0,0,5"
-                                            Background="{StaticResource ColorBackgroundControl}">
+                                            Background="{DynamicResource ColorBackgroundControl}">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto" />
                                                 <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
                                             <Grid.RowDefinitions>
                                                 <RowDefinition Height="Auto" />
@@ -403,6 +871,18 @@
                                                 <RowDefinition Height="Auto" />
                                                 <RowDefinition Height="Auto" />
                                             </Grid.RowDefinitions>
+
+                                            <!-- Diesen Block entfernen. CommandParameter ist das
+                                                 EnchantmentEffectViewModel dieser Zeile; das Kommando
+                                                 selbst hängt am View-Model der ganzen Ansicht. -->
+                                            <Button Grid.Row="0" Grid.Column="2" Grid.RowSpan="6"
+                                                    Content="Remove"
+                                                    VerticalAlignment="Top"
+                                                    Command="{Binding DataContext.RemoveEffectCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}"
+                                                    Style="{StaticResource StandardButtonStyle}"
+                                                    Margin="8,0,0,0"
+                                                    ToolTip="Takes this effect off the enchantment. The patch writes it as mgefsToRemove; Reset Changes puts it back."/>
 
                                             <!-- EditorID -->
                                             <TextBlock Grid.Row="0"
@@ -469,11 +949,27 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </StackPanel>
+                    </Expander>
 
                     <!-- WORN RESTRICTIONS -->
+                    <!-- Hidden where the field means nothing - but never where it holds something.
+                         See EnchantmentMenuVM.ShowWornRestrictions: an assigned list always wins
+                         over the category, so a misclassified record can never hide real data. -->
+                    <Expander Style="{StaticResource DarkExpanderStyle}" IsExpanded="False"
+                              Visibility="{Binding DataContext.ShowWornRestrictions, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}">
+                        <Expander.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Worn Restrictions"/>
+                                <!-- Covers both kinds: re-pointing at another list, and editing the
+                                     keywords of the list it points at. -->
+                                <TextBlock Style="{StaticResource ChangedDotStyle}"
+                                           ToolTip="This section contains changes — either the list assignment or the keywords of the attached list."
+                                           Visibility="{Binding DataContext.HasWornRestrictionChanges, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}"/>
+                            </StackPanel>
+                        </Expander.Header>
+
                     <StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
-                            <TextBlock Text="Worn Restrictions" Style="{StaticResource TitelStyle}"/>
                             <Button Margin="10,0,0,0" Style="{StaticResource InfoButtonStyle}">
                                 <Button.ToolTip>
                                     <ToolTip Style="{StaticResource InfoTooltipStyle}">
@@ -487,12 +983,12 @@
                         </StackPanel>
 
                         <TextBlock Text="{Binding DataContext.CurrentWornRestrictionListLabel, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                   Foreground="{StaticResource ColorTextSecondary}"
+                                   Foreground="{DynamicResource ColorTextSecondary}"
                                    ToolTip="{Binding WornRestrictionListKey}"
                                    Margin="0,0,0,4"/>
 
                         <TextBlock Text="{Binding DataContext.WornRestrictionListUsageLabel, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                   Foreground="{StaticResource ColorTextTertiary}"
+                                   Foreground="{DynamicResource ColorTextTertiary}"
                                    TextWrapping="Wrap"
                                    Margin="0,0,0,6">
                             <TextBlock.Style>
@@ -527,7 +1023,7 @@
                         </DockPanel>
 
                         <TextBlock Text="This enchantment has no worn-restriction list — editing worn restrictions isn't supported."
-                                   Foreground="{StaticResource ColorTextTertiary}"
+                                   Foreground="{DynamicResource ColorTextTertiary}"
                                    TextWrapping="Wrap"
                                    Margin="0,0,0,5">
                             <TextBlock.Style>
@@ -583,7 +1079,7 @@
                                                               Command="{Binding ToggleSelectedCommand}"/>
                                             </Border.InputBindings>
                                             <TextBlock Text="{Binding Name}"
-                                                       Foreground="{StaticResource ColorTextPrimary}"
+                                                       Foreground="{DynamicResource ColorTextPrimary}"
                                                        TextTrimming="CharacterEllipsis"/>
                                         </Border>
                                     </DataTemplate>
@@ -613,7 +1109,7 @@
                                                               Command="{Binding ToggleSelectedCommand}"/>
                                             </Border.InputBindings>
                                             <TextBlock Text="{Binding Name}"
-                                                       Foreground="{StaticResource ColorTextPrimary}"
+                                                       Foreground="{DynamicResource ColorTextPrimary}"
                                                        HorizontalAlignment="Center"
                                                        TextTrimming="CharacterEllipsis"/>
                                         </Border>
@@ -624,9 +1120,14 @@
 
                         </StackPanel>
                     </StackPanel>
+                    </Expander>
 
-                </StackPanel>
-            </ScrollViewer>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </DataTemplate>
+
+                </ContentPresenter.Resources>
+            </ContentPresenter>
         </Border>
 
     </Grid>

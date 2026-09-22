@@ -4,17 +4,17 @@
         Title="Choose your folders"
         Width="640"
         SizeToContent="Height"
-        Background="{StaticResource ColorBackgroundBase}"
-        TextElement.Foreground="{StaticResource ColorTextPrimary}"
+        Background="{DynamicResource ColorBackgroundBase}"
+        TextElement.Foreground="{DynamicResource ColorTextPrimary}"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize">
 
     <Window.Resources>
         <!-- Dark TextBox with a placeholder driven by Tag. -->
         <Style TargetType="TextBox">
-            <Setter Property="Background" Value="{StaticResource ColorBackgroundControl}"/>
-            <Setter Property="Foreground" Value="{StaticResource ColorTextPrimary}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource ColorBorder}"/>
+            <Setter Property="Background" Value="{DynamicResource ColorBackgroundControl}"/>
+            <Setter Property="Foreground" Value="{DynamicResource ColorTextPrimary}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ColorBorder}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="5,4"/>
             <Setter Property="FontSize" Value="12"/>
@@ -29,7 +29,7 @@
                                 <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
                                 <TextBlock x:Name="Placeholder"
                                            Text="{TemplateBinding Tag}"
-                                           Foreground="{StaticResource ColorTextTertiary}"
+                                           Foreground="{DynamicResource ColorTextTertiary}"
                                            Margin="{TemplateBinding Padding}"
                                            IsHitTestVisible="False"
                                            VerticalAlignment="Center"
@@ -50,7 +50,7 @@
         </Style>
 
         <Style x:Key="FieldLabel" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource ColorTextSecondary}"/>
+            <Setter Property="Foreground" Value="{DynamicResource ColorTextSecondary}"/>
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="Margin" Value="2,0,0,3"/>
         </Style>

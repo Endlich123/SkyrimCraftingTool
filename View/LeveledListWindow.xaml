@@ -1,0 +1,345 @@
+<Window x:Class="SkyrimCraftingTool.View.LeveledListWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:model="clr-namespace:SkyrimCraftingTool.Model"
+        Title="Leveled List"
+        Width="980" Height="760"
+        Background="{DynamicResource ColorBackgroundBase}"
+        TextElement.Foreground="{DynamicResource ColorTextPrimary}"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <!-- list properties + calculator, side by side -->
+            <RowDefinition Height="Auto"/>
+            <!-- this item's placement -->
+            <RowDefinition Height="Auto"/>
+            <!-- contents -->
+            <RowDefinition Height="*"/>
+            <!-- where this list is rolled -->
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Margin="0,0,0,10">
+            <TextBlock Text="{Binding ListName}" Style="{StaticResource TitelStyle}"
+                       FontSize="18" FontWeight="Bold" Margin="0,0,0,2"/>
+            <TextBlock Text="{Binding ListKey}" Foreground="{DynamicResource ColorTextTertiary}"
+                       FontSize="11"/>
+        </StackPanel>
+
+        <!-- THE TWO HALVES THAT BELONG NEXT TO EACH OTHER. Left: properties of the whole list, which
+             change the odds for every mod feeding it. Right: what those odds actually are, recomputed
+             on every change. The calculator sits here rather than in the dry-run on the user's own
+             reasoning: by the time it shows up in the dry-run it is too late. -->
+        <Grid Grid.Row="1" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <GroupBox Grid.Column="0" Style="{StaticResource DarkGroupBoxStyle}" Padding="10">
+                <GroupBox.Header>
+                    <TextBlock Text="This list" Style="{StaticResource TitelStyle}"/>
+                </GroupBox.Header>
+
+                <StackPanel>
+                    <TextBlock Text="{Binding EntryCountSummary}"
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               FontSize="11" Margin="0,0,0,8"/>
+
+                    <!-- chanceNone: how often the list hands out nothing at all. -->
+                    <TextBlock Text="Chance of nothing" Style="{StaticResource ItemLabelStyle}"/>
+                    <Grid Margin="0,2,0,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Slider Grid.Column="0" Minimum="0" Maximum="100"
+                                Value="{Binding ChanceNoneDouble, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                SmallChange="1" LargeChange="5" TickFrequency="1"
+                                VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Text="{Binding ChanceNone, UpdateSourceTrigger=PropertyChanged}"
+                                 model:NumericTextBoxBehavior.Mode="Integer"
+                                 Width="46" Margin="8,0,4,0"
+                                 Style="{StaticResource ItemTextBoxStyle}"/>
+                        <TextBlock Grid.Column="2" Text="%" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource ColorTextTertiary}"/>
+                    </Grid>
+                    <TextBlock Text="{Binding ChanceSummary}"
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               TextWrapping="Wrap" FontSize="11" Margin="0,0,0,10"/>
+
+                    <!-- 223 lists take their chance from a global variable instead of the number
+                         above - mostly gates that a quest or a skill level opens. Shown, not
+                         editable: pointing a list at a different global couples it to unrelated game
+                         state, and SkyPatcher can set one but never remove it. Only appears for the
+                         lists it actually applies to. -->
+                    <TextBlock Text="{Binding GlobalSummary}"
+                               Foreground="{DynamicResource ColorWarning}"
+                               TextWrapping="Wrap" FontSize="11" Margin="0,0,0,10"
+                               Visibility="{Binding HasGoverningGlobal, Converter={StaticResource BoolToVis}}"/>
+
+                    <!-- One dropdown rather than checkboxes, and that is not a simplification:
+                         SkyPatcher can only set one flag operation at a time, and ships a combined
+                         "for level and each item" precisely because two operations cannot be
+                         issued. Checkboxes would offer states the patch cannot write. -->
+                    <TextBlock Text="How the list calculates" Style="{StaticResource ItemLabelStyle}"/>
+                    <ComboBox ItemsSource="{Binding FlagOptions}"
+                              SelectedItem="{Binding SelectedFlagOption, Mode=TwoWay}"
+                              DisplayMemberPath="Label"
+                              Style="{StaticResource ItemComboBoxStyle}"
+                              Margin="0,2,0,4"/>
+                    <TextBlock Text="{Binding LevelEffectHint}"
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               TextWrapping="Wrap" FontSize="11" Margin="0,0,0,8"/>
+
+                    <TextBlock Text="{Binding SpecialLootWarning}"
+                               Foreground="{DynamicResource ColorWarning}"
+                               TextWrapping="Wrap" FontSize="11" Margin="0,0,0,8"
+                               Visibility="{Binding TouchesSpecialLoot, Converter={StaticResource BoolToVis}}"/>
+
+                    <DockPanel LastChildFill="True">
+                        <Button DockPanel.Dock="Right" Content="Reset list" Width="90"
+                                Command="{Binding ResetListPropertiesCommand}"
+                                Style="{StaticResource StandardButtonStyle}"
+                                ToolTip="Put chance and calculation back to what your load order has."/>
+                        <TextBlock Text="{Binding ListEditSummary}"
+                                   Foreground="{DynamicResource ColorTextSecondary}"
+                                   TextWrapping="Wrap" FontSize="11" VerticalAlignment="Center"
+                                   Margin="0,0,8,0"/>
+                    </DockPanel>
+                </StackPanel>
+            </GroupBox>
+
+            <GroupBox Grid.Column="2" Style="{StaticResource DarkGroupBoxStyle}" Padding="10">
+                <GroupBox.Header>
+                    <TextBlock Text="Chance calculator" Style="{StaticResource TitelStyle}"/>
+                </GroupBox.Header>
+
+                <StackPanel Visibility="{Binding CanCalculate, Converter={StaticResource BoolToVis}}">
+                    <!-- The item is named in "Your placement" below, not here: this panel answers a
+                         question about that placement, and naming the item twice on one screen makes
+                         the two blocks look like they are about different things. -->
+
+                    <!-- The player level is an input, not a detail: the same placement is worth 7.5%
+                         at level 1 and 3.75% at level 60, because more entries qualify as you rise. -->
+                    <TextBlock Text="At player level" Style="{StaticResource ItemLabelStyle}"/>
+                    <Grid Margin="0,2,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Slider Grid.Column="0" Minimum="1" Maximum="100"
+                                Value="{Binding PlayerLevelDouble, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                SmallChange="1" LargeChange="5" TickFrequency="1"
+                                VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="1" Text="{Binding PlayerLevel}" MinWidth="28"
+                                   Margin="8,0,0,0" VerticalAlignment="Center"/>
+                    </Grid>
+
+                    <TextBlock Text="{Binding ChanceBeforeText}"
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               TextWrapping="Wrap" Margin="0,0,0,4"/>
+
+                    <TextBlock Text="{Binding ChanceAfterText}"
+                               Foreground="{DynamicResource ColorAccentLight}"
+                               FontSize="15" FontWeight="Bold"
+                               TextWrapping="Wrap" Margin="0,0,0,4"/>
+
+                    <TextBlock Text="{Binding ExpectedCountText}"
+                               Foreground="{DynamicResource ColorTextSecondary}"
+                               TextWrapping="Wrap" FontSize="11" Margin="0,0,0,10"/>
+
+                    <TextBlock Text="{Binding CalculatorCaveat}"
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               TextWrapping="Wrap" FontSize="11" FontStyle="Italic"/>
+                </StackPanel>
+            </GroupBox>
+        </Grid>
+
+        <!-- This item's placement -->
+        <GroupBox Grid.Row="2" Style="{StaticResource DarkGroupBoxStyle}" Padding="10" Margin="0,0,0,10"
+                  Visibility="{Binding CanPlace, Converter={StaticResource BoolToVis}}">
+            <GroupBox.Header>
+                <TextBlock Text="Your placement" Style="{StaticResource TitelStyle}"/>
+            </GroupBox.Header>
+
+            <StackPanel>
+                <TextBlock Text="{Binding ItemName}" FontWeight="Bold" Margin="0,0,0,2"/>
+
+                <!-- Only from the multi-select: the row is a template, nothing is written until the
+                     bulk apply runs. -->
+                <TextBlock Text="{Binding PlacementScopeNote}"
+                           Foreground="{DynamicResource ColorWarning}"
+                           TextWrapping="Wrap" FontSize="11" Margin="0,0,0,4"
+                           Visibility="{Binding HasPlacementScopeNote, Converter={StaticResource BoolToVis}}"/>
+
+                <!-- Only meaningful for real items: a preset slot has no form key, so it can never
+                     be "already in this list". -->
+                <TextBlock Text="{Binding AlreadyInListSummary}"
+                           Foreground="{DynamicResource ColorTextTertiary}"
+                           TextWrapping="Wrap" FontSize="11" Margin="0,0,0,8"
+                           Visibility="{Binding HasSubjects, Converter={StaticResource BoolToVis}}"/>
+
+                <CheckBox Content="Put this item into this list"
+                          IsChecked="{Binding IsPlaced}"
+                          Style="{StaticResource ItemCheckBoxStyle}"
+                          Margin="0,0,0,8"/>
+
+                <Grid Visibility="{Binding IsPlaced, Converter={StaticResource BoolToVis}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0" Text="From level:" Style="{StaticResource ItemLabelStyle}"
+                               VerticalAlignment="Center"/>
+                    <Slider Grid.Column="1" Minimum="1" Maximum="100"
+                            Value="{Binding LevelDouble, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            SmallChange="1" LargeChange="1" TickFrequency="1"
+                            VerticalAlignment="Center" Margin="6,0,6,0"/>
+                    <TextBlock Grid.Column="2" Text="{Binding Level}" MinWidth="28"
+                               VerticalAlignment="Center"/>
+
+                    <TextBlock Grid.Column="3" Text="Amount:" Style="{StaticResource ItemLabelStyle}"
+                               VerticalAlignment="Center" Margin="16,0,0,0"/>
+                    <TextBox Grid.Column="4" Text="{Binding Count, UpdateSourceTrigger=PropertyChanged}"
+                             model:NumericTextBoxBehavior.Mode="Integer"
+                             Width="46" Style="{StaticResource ItemTextBoxStyle}"
+                             ToolTip="How many of this item the list hands out when it rolls this entry."/>
+                </Grid>
+            </StackPanel>
+        </GroupBox>
+
+        <!-- What the list holds today -->
+        <GroupBox Grid.Row="3" Style="{StaticResource DarkGroupBoxStyle}" Padding="10">
+            <GroupBox.Header>
+                <TextBlock Text="What this list contains" Style="{StaticResource TitelStyle}"/>
+            </GroupBox.Header>
+
+            <ListBox ItemsSource="{Binding Contents}"
+                     Background="Transparent" BorderThickness="0"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     MouseDoubleClick="Contents_MouseDoubleClick">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Margin="0,1,0,1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="54"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- A nested list is linked, not expanded. Double-click opens it in a
+                                 window of its own - see the code-behind. -->
+                            <TextBlock Grid.Column="0" Text="List"
+                                       Foreground="{DynamicResource ColorAccentLight}"
+                                       FontSize="11" VerticalAlignment="Center"
+                                       Visibility="{Binding IsList, Converter={StaticResource BoolToVis}}"/>
+
+                            <!-- Not in the game yet: your patch puts it here. Marked rather than
+                                 mixed in silently - what the list has and what you are adding must
+                                 stay tellable apart. -->
+                            <TextBlock Grid.Column="0" Text="+ new"
+                                       Foreground="{DynamicResource ColorWarning}"
+                                       FontSize="11" FontWeight="Bold" VerticalAlignment="Center"
+                                       ToolTip="Planned by you - the patch will add this entry."
+                                       Visibility="{Binding IsPlanned, Converter={StaticResource BoolToVis}}"/>
+
+                            <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                       ToolTip="{Binding Reference}"
+                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+
+                            <TextBlock Grid.Column="2" Margin="10,0,0,0"
+                                       Foreground="{DynamicResource ColorTextMuted}"
+                                       FontSize="11" VerticalAlignment="Center">
+                                <TextBlock.Text>
+                                    <MultiBinding StringFormat="Level {0}  x{1}">
+                                        <Binding Path="Level"/>
+                                        <Binding Path="Count"/>
+                                    </MultiBinding>
+                                </TextBlock.Text>
+                            </TextBlock>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </GroupBox>
+
+        <!-- Who actually rolls this list. Collapsed and loaded on first expand: it walks every
+             ancestor of the list and then computes odds per container, which is cheap for a leaf
+             list and not cheap for one hanging under 120 of them. -->
+        <Expander Grid.Row="4" Margin="0,10,0,0"
+                  Header="Where this list is rolled"
+                  Foreground="{DynamicResource ColorTextPrimary}"
+                  IsExpanded="{Binding IsReachExpanded, Mode=TwoWay}"
+                  Visibility="{Binding CanCalculate, Converter={StaticResource BoolToVis}}">
+            <StackPanel Margin="0,6,0,0">
+                <TextBlock Text="{Binding ReachSummary}"
+                           Foreground="{DynamicResource ColorTextTertiary}"
+                           TextWrapping="Wrap" FontSize="11" Margin="0,0,0,6"/>
+
+                <ItemsControl ItemsSource="{Binding ReachedBy}" MaxHeight="150">
+                    <ItemsControl.Template>
+                        <ControlTemplate TargetType="ItemsControl">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <ItemsPresenter/>
+                            </ScrollViewer>
+                        </ControlTemplate>
+                    </ItemsControl.Template>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <DockPanel Margin="0,1,0,1" ToolTip="{Binding Tooltip}">
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding ChanceText}"
+                                           Foreground="{DynamicResource ColorAccentLight}"
+                                           FontSize="11" Margin="10,0,0,0"/>
+
+                                <!-- Which way in: the container holds this list itself, or it holds
+                                     another list that leads here. With 120 containers reaching one
+                                     list, most are the second kind, and the name of the list they
+                                     enter through is the next thing anyone wants to know. -->
+                                <Border DockPanel.Dock="Left" Width="62" Margin="0,0,6,0"
+                                        Padding="4,0" CornerRadius="3"
+                                        HorizontalAlignment="Left" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Tag}" FontSize="10"
+                                               HorizontalAlignment="Center"
+                                               Foreground="{DynamicResource ColorTextMuted}"/>
+                                </Border>
+
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding ViaText}"
+                                           Foreground="{DynamicResource ColorTextTertiary}"
+                                           FontSize="10" Margin="8,0,0,0"
+                                           TextTrimming="CharacterEllipsis" MaxWidth="180"/>
+
+                                <TextBlock Text="{Binding Name}"
+                                           TextTrimming="CharacterEllipsis" FontSize="11"/>
+                            </DockPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <TextBlock Text="{Binding ReachTruncationNote}"
+                           Foreground="{DynamicResource ColorTextTertiary}"
+                           FontSize="11" Margin="0,4,0,0"
+                           Visibility="{Binding ReachTruncated, Converter={StaticResource BoolToVis}}"/>
+            </StackPanel>
+        </Expander>
+
+        <DockPanel Grid.Row="5" Margin="0,12,0,0">
+            <Button DockPanel.Dock="Right" Content="Close" Width="90" IsCancel="True"
+                    Style="{StaticResource StandardButtonStyle}"/>
+            <TextBlock Text="Double-click a nested list to open it."
+                       Foreground="{DynamicResource ColorTextTertiary}"
+                       FontSize="11" VerticalAlignment="Center"/>
+        </DockPanel>
+    </Grid>
+</Window>

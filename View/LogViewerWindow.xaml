@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Log &amp; Bug Report"
         Width="900" Height="600"
-        Background="{StaticResource ColorBackgroundBase}"
-        TextElement.Foreground="{StaticResource ColorTextPrimary}"
+        Background="{DynamicResource ColorBackgroundBase}"
+        TextElement.Foreground="{DynamicResource ColorTextPrimary}"
         WindowStartupLocation="CenterOwner">
 
     <Grid Margin="14">
@@ -45,9 +45,9 @@
                  TextWrapping="NoWrap"
                  VerticalScrollBarVisibility="Auto"
                  HorizontalScrollBarVisibility="Auto"
-                 Background="{StaticResource ColorBackgroundControl}"
-                 Foreground="{StaticResource ColorTextPrimary}"
-                 BorderBrush="{StaticResource ColorBorder}"
+                 Background="{DynamicResource ColorBackgroundControl}"
+                 Foreground="{DynamicResource ColorTextPrimary}"
+                 BorderBrush="{DynamicResource ColorBorder}"
                  BorderThickness="1"
                  Padding="6"/>
 
@@ -56,7 +56,7 @@
                     Style="{StaticResource StandardButtonStyle}"/>
             <TextBlock x:Name="StatusText"
                        VerticalAlignment="Center"
-                       Foreground="{StaticResource ColorTextSecondary}"/>
+                       Foreground="{DynamicResource ColorTextSecondary}"/>
         </DockPanel>
     </Grid>
 </Window>

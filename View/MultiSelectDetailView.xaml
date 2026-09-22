@@ -22,10 +22,10 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="{x:Type local:ItemNodeVM}">
-                        <Border Background="{StaticResource ColorBackgroundControl}"
+                        <Border Background="{DynamicResource ColorBackgroundControl}"
                                 CornerRadius="3" Padding="6,2" Margin="0,0,4,4">
                             <TextBlock Text="{Binding EditorID}"
-                                       Foreground="{StaticResource ColorTextSecondary}"
+                                       Foreground="{DynamicResource ColorTextSecondary}"
                                        FontSize="11"/>
                         </Border>
                     </DataTemplate>
@@ -33,7 +33,7 @@
             </ItemsControl>
 
             <TextBlock Text="{Binding StatusMessage}"
-                       Foreground="{StaticResource ColorWarning}"
+                       Foreground="{DynamicResource ColorWarning}"
                        TextWrapping="Wrap"
                        Margin="0,0,0,10"/>
 
@@ -87,7 +87,7 @@
             <Expander Style="{StaticResource DarkExpanderStyle}" Header="Numeric Fields (set / add / subtract)" IsExpanded="False">
                 <StackPanel>
                     <TextBlock Text="Applies to every selected item that has the field. + / − use each item's current value; the result is clamped to the valid range."
-                               Foreground="{StaticResource ColorTextTertiary}"
+                               Foreground="{DynamicResource ColorTextTertiary}"
                                TextWrapping="Wrap"
                                Margin="0,0,0,8"/>
 
@@ -110,7 +110,7 @@
                                     <TextBlock Grid.Column="1"
                                                Text="{Binding Label}"
                                                VerticalAlignment="Center"
-                                               Foreground="{StaticResource ColorTextPrimary}"/>
+                                               Foreground="{DynamicResource ColorTextPrimary}"/>
 
                                     <ComboBox Grid.Column="2"
                                               ItemsSource="{Binding OpChoices}"
@@ -181,13 +181,13 @@
                                     <Border.Style>
                                         <Style TargetType="Border">
                                             <!-- Base = "mixed" (some, but not all, items have the keyword) -->
-                                            <Setter Property="Background" Value="{StaticResource ColorAccentWarmSoft}"/>
+                                            <Setter Property="Background" Value="{DynamicResource ColorSurfaceWarn}"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding StatusText}" Value="–">
-                                                    <Setter Property="Background" Value="{StaticResource ColorBackgroundControl}"/>
+                                                    <Setter Property="Background" Value="{DynamicResource ColorBackgroundControl}"/>
                                                 </DataTrigger>
                                                 <DataTrigger Binding="{Binding StatusText}" Value="all">
-                                                    <Setter Property="Background" Value="{StaticResource ColorAccentGreen}"/>
+                                                    <Setter Property="Background" Value="{DynamicResource ColorSurfaceOk}"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
@@ -204,11 +204,11 @@
                                         </Grid.ColumnDefinitions>
 
                                         <TextBlock Grid.Column="0" Text="{Binding Name}"
-                                                   Foreground="{StaticResource ColorTextPrimary}"
+                                                   Foreground="{DynamicResource ColorTextPrimary}"
                                                    FontSize="11"
                                                    TextTrimming="CharacterEllipsis"/>
                                         <TextBlock Grid.Column="1" Text="{Binding StatusText}"
-                                                   Foreground="{StaticResource ColorTextTertiary}"
+                                                   Foreground="{DynamicResource ColorTextTertiary}"
                                                    FontSize="10"
                                                    Margin="6,0,0,0"/>
                                     </Grid>
@@ -286,83 +286,7 @@
                                     <!-- Target -->
                                     <DockPanel Grid.Column="1" VerticalAlignment="Center">
                                         <TextBlock Text="Target:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center"/>
-                                        <ContentControl Content="{Binding}">
-                                            <ContentControl.Resources>
-
-                                                <!-- HasPerk -->
-                                                <DataTemplate DataType="{x:Type local:PerkConditionViewModel}">
-                                                    <ComboBox ItemsSource="{Binding DataContext.FilteredCraftingPerks,
-                                                            RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                          SelectedItem="{Binding SelectedPerk}" IsSynchronizedWithCurrentItem="False"
-                                                          IsEditable="True"
-                                                          Text="{Binding PerkSearchText}"
-                                                          Style="{StaticResource ItemComboBoxStyle}"/>
-                                                </DataTemplate>
-
-                                                <!-- GetIsSex -->
-                                                <DataTemplate DataType="{x:Type local:SexConditionViewModel}">
-                                                    <ComboBox SelectedItem="{Binding TargetGender}"
-                                                          ItemsSource="{Binding Genders}"
-                                                          Style="{StaticResource ItemComboBoxStyle}"/>
-                                                </DataTemplate>
-
-                                                <!-- GetActorValue -->
-                                                <DataTemplate DataType="{x:Type local:ActorValueConditionViewModel}">
-                                                    <ComboBox SelectedItem="{Binding SelectedSkill}"
-                                                          ItemsSource="{Binding ActorValueWhitelist}"
-                                                          Style="{StaticResource ItemComboBoxStyle}"/>
-                                                </DataTemplate>
-
-                                                <!-- GetLevel: no real "Target" for this condition type (it only compares the
-                                                     player's level) - RequiredLevel IS ComparisonValue (see
-                                                     LevelConditionViewModel), edited via the "Value" column instead. Styled
-                                                     as a visibly muted/disabled-looking box (not a plain TextBlock - that
-                                                     read as blank/broken instead of "intentionally not editable here"; not
-                                                     a normal or IsReadOnly TextBox either - both looked just like a live
-                                                     input field) so it still reads as a field at a glance, just a disabled
-                                                     one. Keeps the column instead of hiding it, so Type/Target/Value/RunOn
-                                                     stay aligned across every condition type in the list. -->
-                                                <DataTemplate DataType="{x:Type local:LevelConditionViewModel}">
-                                                    <Border Background="{StaticResource ColorBackgroundControl}"
-                                                            BorderBrush="{StaticResource ColorDivider}"
-                                                            BorderThickness="1"
-                                                            Padding="4"
-                                                            Margin="0,0,5,5"
-                                                            Opacity="0.5"
-                                                            ToolTip="Edit via the Value field - Target isn't used for this condition type.">
-                                                        <TextBlock Text="{Binding RequiredLevel}"
-                                                            Foreground="{StaticResource ColorTextMuted}"
-                                                            FontSize="11"/>
-                                                    </Border>
-                                                </DataTemplate>
-
-                                                <!-- GetStageDone -->
-                                                <DataTemplate DataType="{x:Type local:QuestStageConditionViewModel}">
-                                                    <Grid>
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="*"/>
-                                                            <ColumnDefinition Width="80"/>
-                                                        </Grid.ColumnDefinitions>
-
-                                                        <ComboBox Grid.Column="0"
-                                                              ItemsSource="{Binding DataContext.FilteredQuests,
-                                                                    RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                              SelectedItem="{Binding SelectedQuest}" IsSynchronizedWithCurrentItem="False"
-                                                              Style="{StaticResource ItemComboBoxStyle}"/>
-
-                                                        <ComboBox Grid.Column="1"
-                                                              IsEditable="True"
-                                                              IsSynchronizedWithCurrentItem="False"
-                                                              ItemsSource="{Binding AvailableStages}"
-                                                              Text="{Binding Stage, UpdateSourceTrigger=LostFocus}"
-                                                              ToolTip="Stages defined by the selected quest — or type one."
-                                                              Style="{StaticResource CompactComboBoxStyle}"
-                                                              Margin="0,0,5,5"/>
-                                                    </Grid>
-                                                </DataTemplate>
-
-                                            </ContentControl.Resources>
-                                        </ContentControl>
+                                        <ContentControl Content="{Binding}"/>
                                     </DockPanel>
 
                                     <!-- Value -->
@@ -387,51 +311,24 @@
                                         Style="{StaticResource RemoveButtonStyle}"
                                         ToolTip="Remove Condition"/>
 
-                                                                        <!-- Read-only condition overlay.
-                                                                             A condition type the tool preserves verbatim but cannot edit
-                                                                             (GetItemCount, EPTemperingItemIsEnchanted, GetGlobalValue, ...).
-                                                                             Before these were scanned they were simply discarded, which cost
-                                                                             69% of all COBJ conditions. Now they are kept, so the row has to
-                                                                             show something - and must not offer the normal editors, which have
-                                                                             no way to represent the parameter.
-                                                                             It covers the whole row instead of hiding each control separately;
-                                                                             ReadOnlyConditionViewModel.Type is pinned too, so keyboard focus on
-                                                                             a covered picker still can't change anything.
-                                                                             Collapsed by default + DataTrigger, NOT a Visibility converter
-                                                                             binding: a converter binding that resolves to UnsetValue falls
-                                                                             back to Visible, which would cover every ordinary row. -->
-                                                                        <Border Grid.Column="0" Grid.ColumnSpan="5" Panel.ZIndex="10"
-                                                                                Background="{StaticResource ColorBackgroundControl}"
-                                                                                BorderBrush="{StaticResource ColorDivider}"
-                                                                                BorderThickness="1" Padding="6,4"
-                                                                                ToolTip="{Binding Explanation}">
-                                                                            <Border.Style>
-                                                                                <Style TargetType="Border">
-                                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                        <!-- Read-only condition overlay: covers the whole row for a condition type that is preserved
+                                                                             but not editable. The overlay itself lives in Styles/ConditionTemplates.xaml as the
+                                                                             template for ReadOnlyConditionViewModel.
+                                                                             Content is set by a DataTrigger and left null otherwise - NOT a Visibility toggle on a
+                                                                             filled element. Null content means the template is never instantiated for an ordinary
+                                                                             condition, so its bindings (Explanation, FunctionName, ...) cannot be evaluated against a
+                                                                             view model that has none of them. That was 12 binding errors per editable row. -->
+                                                                        <ContentControl Grid.Column="0" Grid.ColumnSpan="5" Panel.ZIndex="10">
+                                                                            <ContentControl.Style>
+                                                                                <Style TargetType="ContentControl">
                                                                                     <Style.Triggers>
                                                                                         <DataTrigger Binding="{Binding Type}" Value="ReadOnly">
-                                                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                                                            <Setter Property="Content" Value="{Binding}"/>
                                                                                         </DataTrigger>
                                                                                     </Style.Triggers>
                                                                                 </Style>
-                                                                            </Border.Style>
-                                                                            <StackPanel Orientation="Horizontal">
-                                                                                <TextBlock Text="Locked:" FontWeight="SemiBold"
-                                                                                           VerticalAlignment="Center"
-                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
-                                                                                <TextBlock Text="{Binding FunctionName}" Margin="6,0,0,0"
-                                                                                           FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                                                                <TextBlock Text="{Binding TargetDisplay}" Margin="10,0,0,0"
-                                                                                           VerticalAlignment="Center"
-                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
-                                                                                <TextBlock Text="{Binding ValueDisplay}" Margin="10,0,0,0"
-                                                                                           VerticalAlignment="Center"
-                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
-                                                                                <TextBlock Text="(preserved, not editable)" Margin="14,0,0,0"
-                                                                                           FontStyle="Italic" VerticalAlignment="Center"
-                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
-                                                                            </StackPanel>
-                                                                        </Border>
+                                                                            </ContentControl.Style>
+                                                                        </ContentControl>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -542,83 +439,7 @@
                                     <!-- Target -->
                                     <DockPanel Grid.Column="1" VerticalAlignment="Center">
                                         <TextBlock Text="Target:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center"/>
-                                        <ContentControl Content="{Binding}">
-                                            <ContentControl.Resources>
-
-                                                <!-- HasPerk -->
-                                                <DataTemplate DataType="{x:Type local:PerkConditionViewModel}">
-                                                    <ComboBox ItemsSource="{Binding DataContext.FilteredCraftingPerks,
-                                                            RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                          SelectedItem="{Binding SelectedPerk}" IsSynchronizedWithCurrentItem="False"
-                                                          IsEditable="True"
-                                                          Text="{Binding PerkSearchText}"
-                                                          Style="{StaticResource ItemComboBoxStyle}"/>
-                                                </DataTemplate>
-
-                                                <!-- GetIsSex -->
-                                                <DataTemplate DataType="{x:Type local:SexConditionViewModel}">
-                                                    <ComboBox SelectedItem="{Binding TargetGender}"
-                                                          ItemsSource="{Binding Genders}"
-                                                          Style="{StaticResource ItemComboBoxStyle}"/>
-                                                </DataTemplate>
-
-                                                <!-- GetActorValue -->
-                                                <DataTemplate DataType="{x:Type local:ActorValueConditionViewModel}">
-                                                    <ComboBox SelectedItem="{Binding SelectedSkill}"
-                                                          ItemsSource="{Binding ActorValueWhitelist}"
-                                                          Style="{StaticResource ItemComboBoxStyle}"/>
-                                                </DataTemplate>
-
-                                                <!-- GetLevel: no real "Target" for this condition type (it only compares the
-                                                     player's level) - RequiredLevel IS ComparisonValue (see
-                                                     LevelConditionViewModel), edited via the "Value" column instead. Styled
-                                                     as a visibly muted/disabled-looking box (not a plain TextBlock - that
-                                                     read as blank/broken instead of "intentionally not editable here"; not
-                                                     a normal or IsReadOnly TextBox either - both looked just like a live
-                                                     input field) so it still reads as a field at a glance, just a disabled
-                                                     one. Keeps the column instead of hiding it, so Type/Target/Value/RunOn
-                                                     stay aligned across every condition type in the list. -->
-                                                <DataTemplate DataType="{x:Type local:LevelConditionViewModel}">
-                                                    <Border Background="{StaticResource ColorBackgroundControl}"
-                                                            BorderBrush="{StaticResource ColorDivider}"
-                                                            BorderThickness="1"
-                                                            Padding="4"
-                                                            Margin="0,0,5,5"
-                                                            Opacity="0.5"
-                                                            ToolTip="Edit via the Value field - Target isn't used for this condition type.">
-                                                        <TextBlock Text="{Binding RequiredLevel}"
-                                                            Foreground="{StaticResource ColorTextMuted}"
-                                                            FontSize="11"/>
-                                                    </Border>
-                                                </DataTemplate>
-
-                                                <!-- GetStageDone -->
-                                                <DataTemplate DataType="{x:Type local:QuestStageConditionViewModel}">
-                                                    <Grid>
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="*"/>
-                                                            <ColumnDefinition Width="80"/>
-                                                        </Grid.ColumnDefinitions>
-
-                                                        <ComboBox Grid.Column="0"
-                                                              ItemsSource="{Binding DataContext.FilteredQuests,
-                                                                    RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                              SelectedItem="{Binding SelectedQuest}" IsSynchronizedWithCurrentItem="False"
-                                                              Style="{StaticResource ItemComboBoxStyle}"/>
-
-                                                        <ComboBox Grid.Column="1"
-                                                              IsEditable="True"
-                                                              IsSynchronizedWithCurrentItem="False"
-                                                              ItemsSource="{Binding AvailableStages}"
-                                                              Text="{Binding Stage, UpdateSourceTrigger=LostFocus}"
-                                                              ToolTip="Stages defined by the selected quest — or type one."
-                                                              Style="{StaticResource CompactComboBoxStyle}"
-                                                              Margin="0,0,5,5"/>
-                                                    </Grid>
-                                                </DataTemplate>
-
-                                            </ContentControl.Resources>
-                                        </ContentControl>
+                                        <ContentControl Content="{Binding}"/>
                                     </DockPanel>
 
                                     <!-- Value -->
@@ -643,51 +464,24 @@
                                         Style="{StaticResource RemoveButtonStyle}"
                                         ToolTip="Remove Condition"/>
 
-                                                                        <!-- Read-only condition overlay.
-                                                                             A condition type the tool preserves verbatim but cannot edit
-                                                                             (GetItemCount, EPTemperingItemIsEnchanted, GetGlobalValue, ...).
-                                                                             Before these were scanned they were simply discarded, which cost
-                                                                             69% of all COBJ conditions. Now they are kept, so the row has to
-                                                                             show something - and must not offer the normal editors, which have
-                                                                             no way to represent the parameter.
-                                                                             It covers the whole row instead of hiding each control separately;
-                                                                             ReadOnlyConditionViewModel.Type is pinned too, so keyboard focus on
-                                                                             a covered picker still can't change anything.
-                                                                             Collapsed by default + DataTrigger, NOT a Visibility converter
-                                                                             binding: a converter binding that resolves to UnsetValue falls
-                                                                             back to Visible, which would cover every ordinary row. -->
-                                                                        <Border Grid.Column="0" Grid.ColumnSpan="5" Panel.ZIndex="10"
-                                                                                Background="{StaticResource ColorBackgroundControl}"
-                                                                                BorderBrush="{StaticResource ColorDivider}"
-                                                                                BorderThickness="1" Padding="6,4"
-                                                                                ToolTip="{Binding Explanation}">
-                                                                            <Border.Style>
-                                                                                <Style TargetType="Border">
-                                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                        <!-- Read-only condition overlay: covers the whole row for a condition type that is preserved
+                                                                             but not editable. The overlay itself lives in Styles/ConditionTemplates.xaml as the
+                                                                             template for ReadOnlyConditionViewModel.
+                                                                             Content is set by a DataTrigger and left null otherwise - NOT a Visibility toggle on a
+                                                                             filled element. Null content means the template is never instantiated for an ordinary
+                                                                             condition, so its bindings (Explanation, FunctionName, ...) cannot be evaluated against a
+                                                                             view model that has none of them. That was 12 binding errors per editable row. -->
+                                                                        <ContentControl Grid.Column="0" Grid.ColumnSpan="5" Panel.ZIndex="10">
+                                                                            <ContentControl.Style>
+                                                                                <Style TargetType="ContentControl">
                                                                                     <Style.Triggers>
                                                                                         <DataTrigger Binding="{Binding Type}" Value="ReadOnly">
-                                                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                                                            <Setter Property="Content" Value="{Binding}"/>
                                                                                         </DataTrigger>
                                                                                     </Style.Triggers>
                                                                                 </Style>
-                                                                            </Border.Style>
-                                                                            <StackPanel Orientation="Horizontal">
-                                                                                <TextBlock Text="Locked:" FontWeight="SemiBold"
-                                                                                           VerticalAlignment="Center"
-                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
-                                                                                <TextBlock Text="{Binding FunctionName}" Margin="6,0,0,0"
-                                                                                           FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                                                                <TextBlock Text="{Binding TargetDisplay}" Margin="10,0,0,0"
-                                                                                           VerticalAlignment="Center"
-                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
-                                                                                <TextBlock Text="{Binding ValueDisplay}" Margin="10,0,0,0"
-                                                                                           VerticalAlignment="Center"
-                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
-                                                                                <TextBlock Text="(preserved, not editable)" Margin="14,0,0,0"
-                                                                                           FontStyle="Italic" VerticalAlignment="Center"
-                                                                                           Foreground="{StaticResource ColorTextMuted}"/>
-                                                                            </StackPanel>
-                                                                        </Border>
+                                                                            </ContentControl.Style>
+                                                                        </ContentControl>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -793,11 +587,11 @@
                             <ListBox.ItemTemplate>
                                 <DataTemplate DataType="{x:Type local:ContainerEntryVM}">
                                     <Border Padding="6" Margin="0,0,0,6"
-                                            Background="{StaticResource ColorBackgroundControl}"
+                                            Background="{DynamicResource ColorBackgroundControl}"
                                             CornerRadius="4">
                                         <DockPanel>
                                             <TextBlock Text="{Binding Name}"
-                                                       Foreground="{StaticResource ColorTextPrimary}"
+                                                       Foreground="{DynamicResource ColorTextPrimary}"
                                                        VerticalAlignment="Center"/>
 
                                             <Button Width="70"
@@ -813,7 +607,7 @@
                     </StackPanel>
 
                     <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch"
-                                  Background="{StaticResource ColorDivider}"/>
+                                  Background="{DynamicResource ColorDivider}"/>
 
                     <!-- RIGHT: Template -->
                     <StackPanel Grid.Column="2">
@@ -822,7 +616,7 @@
                                    Margin="0,0,0,6"/>
 
                         <TextBlock Text="Leave every slider at 0 and the items are placed in the container itself - permanently, and they will be there. Raise a slider and they go into that leveled list instead: from that level on they can turn up when the merchant restocks (vanilla: about every 48 h), by chance rather than guaranteed."
-                                   Foreground="{StaticResource ColorTextTertiary}"
+                                   Foreground="{DynamicResource ColorTextTertiary}"
                                    TextWrapping="Wrap"
                                    Margin="0,0,0,8"/>
 
@@ -830,7 +624,7 @@
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="{x:Type local:ContainerEntryVM}">
                                     <Border Padding="8" Margin="0,0,0,8"
-                                            Background="{StaticResource ColorBackgroundControl}"
+                                            Background="{DynamicResource ColorBackgroundControl}"
                                             CornerRadius="4">
                                         <StackPanel>
                                             <Grid>
@@ -840,7 +634,7 @@
                                                 </Grid.ColumnDefinitions>
 
                                                 <TextBlock Grid.Column="0" Text="{Binding Name}"
-                                                           Foreground="{StaticResource ColorTextPrimary}"
+                                                           Foreground="{DynamicResource ColorTextPrimary}"
                                                            FontWeight="Bold"
                                                            VerticalAlignment="Center"/>
 
@@ -850,38 +644,9 @@
                                                         Margin="8,0,0,0"/>
                                             </Grid>
 
-                                            <ItemsControl ItemsSource="{Binding LVLiEntries}">
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <Grid Margin="0,6,0,6">
-                                                            <Grid.ColumnDefinitions>
-                                                                <ColumnDefinition Width="*"/>
-                                                                <ColumnDefinition Width="180"/>
-                                                            </Grid.ColumnDefinitions>
-
-                                                            <TextBlock Grid.Column="0" Text="{Binding LVLiName}"
-                                                                       Foreground="{StaticResource ColorTextPrimary}"
-                                                                       VerticalAlignment="Center"/>
-
-                                                            <StackPanel Grid.Column="1" Orientation="Horizontal"
-                                                                        VerticalAlignment="Center">
-                                                                <!-- Same fix as the item editor: Explicit + DragCompleted meant a track
-                                                                     click, arrow keys or the wheel moved the slider without the level ever
-                                                                     reaching the ViewModel, so the template applied levels of 0. Nothing
-                                                                     else is needed here - this only fills a template, no string to rebuild. -->
-                                                                <Slider Minimum="0" Maximum="100"
-                                                                        Value="{Binding LevelDouble, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                                        SmallChange="1" LargeChange="1" TickFrequency="1"
-                                                                        Width="120"/>
-                                                                <TextBlock Text="{Binding Level}"
-                                                                           Foreground="{StaticResource ColorTextPrimary}"
-                                                                           Margin="8,0,0,0"
-                                                                           VerticalAlignment="Center"/>
-                                                            </StackPanel>
-                                                        </Grid>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
+                                            <!-- Rows come from Styles/LeveledListRowTemplate.xaml - shared by all four views that
+                                                 show a container's leveled lists, so a change to the row cannot reach only one. -->
+                                            <ItemsControl ItemsSource="{Binding LVLiEntries}"/>
                                         </StackPanel>
                                     </Border>
                                 </DataTemplate>

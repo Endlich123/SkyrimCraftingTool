@@ -1,0 +1,120 @@
+<UserControl x:Class="SkyrimCraftingTool.View.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:SkyrimCraftingTool.ViewModel">
+
+    <!-- DataContext is SettingsVM (see the DataTemplate in MainWindow.xaml).
+         Sections are grouped by what they affect, not by when they were added.
+         See docs/TODO.md, Prio 1 and 2, for how this page came about. -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="20" MaxWidth="900" HorizontalAlignment="Left">
+
+            <TextBlock Text="Settings"
+                       Style="{StaticResource TitelStyle}"
+                       FontSize="20"
+                       FontWeight="Bold"
+                       Margin="0,0,0,4"/>
+
+            <TextBlock Text="App-wide options that don't belong to a single view."
+                       Foreground="{DynamicResource ColorTextTertiary}"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,20"/>
+
+            <GroupBox Header="Patch output"
+                      Style="{StaticResource DarkGroupBoxStyle}"
+                      Padding="10"
+                      Margin="0,0,0,15">
+                <StackPanel>
+
+                    <TextBlock Text="Where Generate Patch writes its files. Leave it empty to use the default Output\ folder next to the tool."
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,10"/>
+
+                    <Grid Margin="0,0,0,6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBox Grid.Column="0"
+                                 Text="{Binding PatchOutputPath, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource ItemTextBoxStyle}"
+                                 VerticalAlignment="Center"/>
+
+                        <Button Grid.Column="1"
+                                Content="Browse…"
+                                Command="{Binding BrowseOutputPathCommand}"
+                                Style="{StaticResource StandardButtonStyle}"
+                                Margin="8,0,0,0"/>
+
+                        <Button Grid.Column="2"
+                                Content="Use default"
+                                Command="{Binding ResetOutputPathCommand}"
+                                Style="{StaticResource StandardButtonStyle}"
+                                Margin="8,0,0,0"/>
+                    </Grid>
+
+                    <TextBlock Text="{Binding OutputPathStatus}"
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,4"/>
+
+                    <!-- The reason this setting exists at all: pointing it at a mod folder keeps the
+                         tool from writing inside MO2's virtualised tree, so nothing ends up in
+                         Overwrite and no per-executable redirect is needed. -->
+                    <TextBlock Text="Tip: point this straight at a mod folder in your mod manager. The patch then lands in a mod you already have enabled — and if you run the tool through MO2, nothing gets redirected into Overwrite."
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               TextWrapping="Wrap"
+                               Margin="0,6,0,0"/>
+
+                </StackPanel>
+            </GroupBox>
+
+            <GroupBox Header="Patch layout"
+                      Style="{StaticResource DarkGroupBoxStyle}"
+                      Padding="10"
+                      Margin="0,0,0,15">
+                <StackPanel>
+                    <CheckBox Content="One ESP per plugin"
+                              IsChecked="{Binding SplitPatchPerPlugin}"
+                              Style="{StaticResource ItemCheckBoxStyle}"/>
+                    <TextBlock Text="Off: all generated recipes go into a single SkyrimCraftingTool.esp. On: one SkyrimCraftingTool - &lt;Plugin&gt;.esp per source mod, so you can hand out or disable your changes for a single mod separately."
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               TextWrapping="Wrap"
+                               Margin="0,6,0,0"/>
+                </StackPanel>
+            </GroupBox>
+
+            <GroupBox Header="Appearance"
+                      Style="{StaticResource DarkGroupBoxStyle}"
+                      Padding="10"
+                      Margin="0,0,0,15">
+                <StackPanel>
+
+                    <TextBlock Text="Colour theme. The change applies right away — no restart — and is remembered for the next start."
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,10"/>
+
+                    <ComboBox ItemsSource="{Binding AvailableThemes}"
+                              SelectedItem="{Binding SelectedTheme}"
+                              Style="{StaticResource CompactComboBoxStyle}"
+                              Width="200"
+                              HorizontalAlignment="Left"/>
+
+                    <!-- The folder dialog at startup is the one window this does not reach: it is
+                         shown before the settings folder exists, so the remembered theme cannot be
+                         read yet (see App.OnStartup). -->
+                    <TextBlock Text="The folder-selection window at startup always uses the dark theme — it opens before the setting can be read."
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               TextWrapping="Wrap"
+                               Margin="0,10,0,0"/>
+
+                </StackPanel>
+            </GroupBox>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
