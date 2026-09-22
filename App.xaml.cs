@@ -61,6 +61,14 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        // After Program.Handler, because the remembered theme lives in AppPrefs, which reads
+        // Input\prefs.json through GlobalState.Tool - and that only exists once the folder settings
+        // have been initialised. Consequence: the folder dialog always shows in the palette baked
+        // into Styles/Controls.xaml (the dark one). Fine while that IS the default; worth
+        // revisiting if a light theme should already apply to the very first window.
+        // Writes into the existing brushes rather than swapping dictionaries - see ThemeService.
+        Services.ThemeService.ApplySaved();
+
         var main = new View.MainWindow();
         main.Show();
 
