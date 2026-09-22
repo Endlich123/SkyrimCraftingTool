@@ -20,6 +20,13 @@
         // tempered. 27% of vanilla armor carries no class keyword, so it cannot be derived from one.
         public string ArmorType { get; set; } = "";
 
+        // The ObjectEffect (ENCH) this item wears, as Plugin|FormID - empty when it has none.
+        //
+        // Not the same thing as the Enchantments tab: that one edits the effect itself, this says
+        // WHICH effect an item carries. 2,809 of 3,674 vanilla armors and 3,010 of 3,267 weapons have
+        // one, because the enchanted variants are separate records rather than a flag.
+        public string ObjectEffectKey { get; set; } = "";
+
         // Liste von Plugin|FormID
         public List<string> Keywords { get; set; } = new();
         public string ContainerString { get; set; } = "";

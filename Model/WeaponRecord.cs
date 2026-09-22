@@ -15,6 +15,10 @@
         public float Reach { get; set; }
         public float Stagger { get; set; }
 
+        // The ObjectEffect (ENCH) this weapon wears, as Plugin|FormID - empty when it has none.
+        // See ArmorRecord.ObjectEffectKey.
+        public string ObjectEffectKey { get; set; } = "";
+
         // Liste von Plugin|FormID
         public List<string> Keywords { get; set; } = new();
         public string ContainerString { get; set; } = "";

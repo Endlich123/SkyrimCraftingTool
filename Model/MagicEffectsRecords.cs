@@ -21,5 +21,26 @@ namespace SkyrimCraftingTool.Model
         public string CastType { get; set; }
         public string TargetType { get; set; }
 
+        // How the effect is written in the "add effect" picker: "EditorID | Name", whichever half
+        // exists, and the key when neither does. Same shape as MainContentVM.EnchantmentLabel, and
+        // for the same reason - names repeat across records, EditorIDs tell the variants apart.
+        //
+        // The fallback is not theoretical: of 3,875 scanned effects, 9 carry no name and exactly one
+        // (MysticismMagic.esp|3A3E12) carries neither, which showed up in the picker as an empty
+        // row. Reported by the user.
+        public string Label
+        {
+            get
+            {
+                var editorId = (EditorID ?? "").Trim();
+                var name = (Name ?? "").Trim();
+
+                if (editorId.Length > 0 && name.Length > 0) return $"{editorId} | {name}";
+                if (editorId.Length > 0) return editorId;
+                if (name.Length > 0) return name;
+
+                return Key;
+            }
+        }
     }
 }

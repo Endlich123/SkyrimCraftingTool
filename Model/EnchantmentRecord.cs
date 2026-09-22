@@ -10,7 +10,22 @@ namespace SkyrimCraftingTool.Model
         // Plugin|FormID
         public string Key { get; set; } = "";
 
-        public string EditorID { get; set; } = "";
+        // Editable only for records the user created (see EnchantmentMenuVM.CanEditEditorId): a
+        // scanned record's EditorID belongs to its plugin, and there is no shadow column to hold an
+        // override anyway. Notifies like Name does, and for the same two reasons - the tree row
+        // binds straight to this, so a rename shows up there without rebuilding the tree.
+        private string _editorId = "";
+        public string EditorID
+        {
+            get => _editorId;
+            set
+            {
+                if (_editorId == value) return;
+                _editorId = value;
+                OnPropertyChanged();
+                FieldChanged?.Invoke(nameof(EditorID));
+            }
+        }
 
         // Raises FieldChanged so EnchantmentMenuVM can autosave edits made directly against this
         // record (the EnchantmentView binds straight to it, with no wrapping ViewModel in between).
@@ -49,9 +64,105 @@ namespace SkyrimCraftingTool.Model
             }
         }
 
-        // Not user-editable in the current UI (shown read-only). If it ever becomes editable, wire
-        // FieldChanged here like Name/EnchantmentCost so EnchantmentSaveHandler picks it up.
-        public string CastType { get; set; } = "";
+        // Editable on user-created records only. SkyPatcher does have castType=, so a scanned record
+        // COULD be patched - the restriction is a product decision, not a technical one: cast type
+        // is what decides whether an enchantment is an armor or a weapon one, and the tree is built
+        // from it.
+        private string _castType = "";
+        public string CastType
+        {
+            get => _castType;
+            set
+            {
+                if (_castType == value) return;
+                _castType = value;
+                OnPropertyChanged();
+                FieldChanged?.Invoke(nameof(CastType));
+            }
+        }
+
+        // --- The rest of ENIT ---
+
+        // "Enchantment" or "StaffEnchantment". User-created records only: SkyPatcher has no
+        // operation for it at all, so on a scanned record the edit could never reach the game
+        // without a full ESP override.
+        private string _enchantType = "";
+        public string EnchantType
+        {
+            get => _enchantType;
+            set
+            {
+                if (_enchantType == value) return;
+                _enchantType = value;
+                OnPropertyChanged();
+                FieldChanged?.Invoke(nameof(EnchantType));
+            }
+        }
+
+        // The raw ENIT flag dword. Kept as a number rather than named flags because SkyPatcher knows
+        // a third one ("fooditem") that Mutagen's ObjectEffect.Flag does not name - see the
+        // Enchantments schema comment. The individual bits are exposed below for binding.
+        private int _flags;
+        public int Flags
+        {
+            get => _flags;
+            set
+            {
+                if (_flags == value) return;
+                _flags = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(NoAutoCalc));
+                OnPropertyChanged(nameof(ExtendDurationOnRecast));
+                FieldChanged?.Invoke(nameof(Flags));
+            }
+        }
+
+        // SkyPatcher calls this one "costoverride". Without it the game recalculates the cost from
+        // the effects and ignores the stored number - measured across the load order: of 1943 ENCH
+        // records, the 81 whose amount differs from their cost ALL carry this flag, and none without
+        // it does.
+        public const int FlagNoAutoCalc = 0x01;
+        public const int FlagExtendDurationOnRecast = 0x04;
+
+        public bool NoAutoCalc
+        {
+            get => (Flags & FlagNoAutoCalc) != 0;
+            set => Flags = value ? Flags | FlagNoAutoCalc : Flags & ~FlagNoAutoCalc;
+        }
+
+        public bool ExtendDurationOnRecast
+        {
+            get => (Flags & FlagExtendDurationOnRecast) != 0;
+            set => Flags = value ? Flags | FlagExtendDurationOnRecast : Flags & ~FlagExtendDurationOnRecast;
+        }
+
+        // Staff enchantments only - measured: all 364 records with a non-zero charge time across the
+        // load order are staffs, and no non-staff uses it.
+        private float _chargeTime;
+        public float ChargeTime
+        {
+            get => _chargeTime;
+            set
+            {
+                if (_chargeTime == value) return;
+                _chargeTime = value;
+                OnPropertyChanged();
+                FieldChanged?.Invoke(nameof(ChargeTime));
+            }
+        }
+
+        private int _enchantmentAmount;
+        public int EnchantmentAmount
+        {
+            get => _enchantmentAmount;
+            set
+            {
+                if (_enchantmentAmount == value) return;
+                _enchantmentAmount = value;
+                OnPropertyChanged();
+                FieldChanged?.Invoke(nameof(EnchantmentAmount));
+            }
+        }
 
         private float _enchantmentCost;
         public float EnchantmentCost
@@ -80,6 +191,11 @@ namespace SkyrimCraftingTool.Model
         public bool IsDerived =>
             !string.IsNullOrWhiteSpace(BaseEnchantmentKey)
             && !BaseEnchantmentKey.StartsWith("Null|", StringComparison.OrdinalIgnoreCase);
+
+        // Created in this tool rather than scanned from a plugin (Enchantments.Original = 0). It
+        // exists nowhere until the generated ESP is written, which is also why the scan must leave
+        // its row alone - nothing would ever produce it again.
+        public bool IsUserCreated { get; set; }
 
         public ObservableCollection<EnchantmentEffectRecord> Effects { get; set; }
             = new ObservableCollection<EnchantmentEffectRecord>();

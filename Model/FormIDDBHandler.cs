@@ -388,33 +388,33 @@ namespace SkyrimCraftingTool.Model
             cmd.CommandText =
             @"
                 CREATE TABLE Keywords (
-                Key TEXT PRIMARY KEY,
+                Key TEXT PRIMARY KEY COLLATE NOCASE,
                 Name TEXT NOT NULL
             );
 
             CREATE TABLE Materials (
-                Key TEXT PRIMARY KEY,
+                Key TEXT PRIMARY KEY COLLATE NOCASE,
                 Name TEXT NOT NULL
             );
 
             CREATE TABLE Perks (
-                Key TEXT PRIMARY KEY,
+                Key TEXT PRIMARY KEY COLLATE NOCASE,
                 Name TEXT NOT NULL
             );
 
             CREATE TABLE Quests (
-                Key TEXT PRIMARY KEY,
+                Key TEXT PRIMARY KEY COLLATE NOCASE,
                 Name TEXT NOT NULL,
                 Stages TEXT
             );
 
             CREATE TABLE LVLi(
-                Key TEXT PRIMARY KEY,
+                Key TEXT PRIMARY KEY COLLATE NOCASE,
                 Name TEXT NOT NULL
             );
 
             CREATE TABLE FormLists (
-                Key TEXT PRIMARY KEY,
+                Key TEXT PRIMARY KEY COLLATE NOCASE,
                 Name TEXT NOT NULL
             );
             ";

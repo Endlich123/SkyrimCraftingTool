@@ -257,7 +257,11 @@ namespace SkyrimCraftingTool.Model
                     CASE WHEN IsEdited = 1 AND IsEditedContainerString IS NOT NULL
                          THEN IsEditedContainerString
                          ELSE ContainerString
-                    END AS ContainerString
+                    END AS ContainerString,
+                    CASE WHEN IsEdited = 1 AND IsEditedObjectEffectKey IS NOT NULL
+                         THEN IsEditedObjectEffectKey
+                         ELSE ObjectEffectKey
+                    END AS ObjectEffectKey
                 FROM Armor WHERE Active = 1;";
 
             using var reader = cmd.ExecuteReader();
@@ -283,6 +287,7 @@ namespace SkyrimCraftingTool.Model
 
                     Keywords = keywords,
                     ContainerString = reader.IsDBNull(9) ? "{}" : reader.GetString(9),
+                    ObjectEffectKey = reader.IsDBNull(10) ? "" : reader.GetString(10),
                 });
             }
 
@@ -340,7 +345,11 @@ namespace SkyrimCraftingTool.Model
                     CASE WHEN IsEdited = 1 AND IsEditedContainerString IS NOT NULL
                          THEN IsEditedContainerString
                          ELSE ContainerString
-                    END AS ContainerString
+                    END AS ContainerString,
+                    CASE WHEN IsEdited = 1 AND IsEditedObjectEffectKey IS NOT NULL
+                         THEN IsEditedObjectEffectKey
+                         ELSE ObjectEffectKey
+                    END AS ObjectEffectKey
                 FROM Weapons WHERE Active = 1;";
 
             using var reader = cmd.ExecuteReader();
@@ -366,7 +375,8 @@ namespace SkyrimCraftingTool.Model
                     Stagger = reader.IsDBNull(8) ? 0f : (float)reader.GetDouble(8),
 
                     Keywords = keywords,
-                    ContainerString = reader.IsDBNull(10) ? "{}" : reader.GetString(10)
+                    ContainerString = reader.IsDBNull(10) ? "{}" : reader.GetString(10),
+                    ObjectEffectKey = reader.IsDBNull(11) ? "" : reader.GetString(11)
                 });
             }
 
@@ -494,6 +504,46 @@ namespace SkyrimCraftingTool.Model
                 .ToList();
         }
 
+        // The lazy pre-edit snapshot, in ONE place.
+        //
+        // Every writer of child rows - conditions, effects, FLST members, whether the edit arrives
+        // from the UI or from an import - has to freeze the pristine rows into the matching
+        // _Original table before overwriting them. Miss it, and a later Reset sees the edited flag,
+        // passes its guard, deletes the live rows and restores from an empty table: the record's
+        // scanned content is gone and only a rescan brings it back. That happened twice, to two
+        // different units, months apart, because the rule was written out by hand at each writer.
+        // See ChildTableSpec and docs/ImportExport-Analyse.md (IE-3).
+        //
+        // Gated on the parent's edited FLAG, never on "does _Original already have rows": a record
+        // whose true original has zero children is otherwise indistinguishable from one that was
+        // never snapshotted, and it would then be re-snapshotted - with already-edited data - on
+        // every later save. Once the flag is up this is a no-op, so what it captures is permanently
+        // "how it looked immediately before the first edit". A parent row that doesn't exist at all
+        // (the FLST state table only gets one on first edit) reads as "never edited", which is what
+        // it means. See ResetCOBJConditions / GetOriginalCOBJConditions, which fall back to the live
+        // table while the flag is still 0 for the same "empty original" reason.
+        private static void SnapshotChildRowsIfFirstEdit(
+            SqliteConnection connection, SqliteTransaction transaction, ChildTableSpec spec, string key)
+        {
+            using (var checkCmd = connection.CreateCommand())
+            {
+                checkCmd.Transaction = transaction;
+                checkCmd.CommandText = $"SELECT {spec.EditedFlagColumn} FROM {spec.ParentTable} WHERE {spec.ParentKeyColumn} = @key";
+                checkCmd.Parameters.AddWithValue("@key", key);
+                var flag = checkCmd.ExecuteScalar();
+                if (flag != null && flag != DBNull.Value && Convert.ToInt64(flag) == 1)
+                    return;
+            }
+
+            using var snapshotCmd = connection.CreateCommand();
+            snapshotCmd.Transaction = transaction;
+            snapshotCmd.CommandText =
+                $@"INSERT INTO {spec.OriginalTable} ({spec.ColumnList})
+                   SELECT {spec.ColumnList} FROM {spec.Table} WHERE {spec.KeyColumn} = @key";
+            snapshotCmd.Parameters.AddWithValue("@key", key);
+            snapshotCmd.ExecuteNonQuery();
+        }
+
         // -------------------------------------------------
         // COBJ_Conditions: replace all conditions for a COBJ
         // -------------------------------------------------
@@ -503,34 +553,7 @@ namespace SkyrimCraftingTool.Model
             connection.Open();
             using var transaction = connection.BeginTransaction();
 
-            // First edit ever for this COBJ's conditions: freeze whatever is currently in
-            // COBJ_Conditions (still pristine - nothing has touched it before now) into
-            // COBJ_Conditions_Original before it gets destroyed by the delete+insert below. Gated on
-            // the ConditionsEdited flag rather than "does _Original already have rows" - a recipe
-            // whose true original is zero conditions would otherwise look indistinguishable from
-            // "never snapshotted yet" and get re-snapshotted (with already-edited data) on every
-            // subsequent save. Later edits are a no-op here since the flag is already 1 by then, so
-            // this permanently captures "what it looked like right before the first edit" - see
-            // ResetCOBJConditions and GetOriginalCOBJConditions (which falls back to the live table
-            // when ConditionsEdited is still 0, for the same "empty original" reason).
-            using (var checkCmd = connection.CreateCommand())
-            {
-                checkCmd.Transaction = transaction;
-                checkCmd.CommandText = "SELECT ConditionsEdited FROM COBJ WHERE Key = @cobjKey";
-                checkCmd.Parameters.AddWithValue("@cobjKey", cobjKey);
-                var flagResult = checkCmd.ExecuteScalar();
-                bool alreadyEdited = flagResult != null && flagResult != DBNull.Value && Convert.ToInt64(flagResult) == 1;
-                if (!alreadyEdited)
-                {
-                    using var snapshotCmd = connection.CreateCommand();
-                    snapshotCmd.Transaction = transaction;
-                    snapshotCmd.CommandText = @"INSERT INTO COBJ_Conditions_Original (COBJKey, ConditionType, Target, Value, Extra, RunOn, CompareOperator, Flags)
-                                                 SELECT COBJKey, ConditionType, Target, Value, Extra, RunOn, CompareOperator, Flags
-                                                 FROM COBJ_Conditions WHERE COBJKey = @cobjKey";
-                    snapshotCmd.Parameters.AddWithValue("@cobjKey", cobjKey);
-                    snapshotCmd.ExecuteNonQuery();
-                }
-            }
+            SnapshotChildRowsIfFirstEdit(connection, transaction, ChildTables.CobjConditions, cobjKey);
 
             using (var deleteCmd = connection.CreateCommand())
             {
@@ -740,12 +763,23 @@ namespace SkyrimCraftingTool.Model
                     END AS WornRestrictionListKey,
                     -- Read-only scan value (no shadow column) — drives the derived tree tag + filter.
                     BaseEnchantmentKey,
+                    -- The rest of ENIT. EnchantType has no shadow column on purpose: it is editable
+                    -- on user-created records only, which write the base column directly.
+                    EnchantType,
+                    CASE WHEN IsEdited = 1 AND IsEditedFlags IS NOT NULL
+                         THEN IsEditedFlags ELSE Flags END AS Flags,
+                    CASE WHEN IsEdited = 1 AND IsEditedChargeTime IS NOT NULL
+                         THEN IsEditedChargeTime ELSE ChargeTime END AS ChargeTime,
+                    CASE WHEN IsEdited = 1 AND IsEditedEnchantmentAmount IS NOT NULL
+                         THEN IsEditedEnchantmentAmount ELSE EnchantmentAmount END AS EnchantmentAmount,
                     -- Currently-edited, NOT ever-touched: the flags are cleared by the reset paths,
                     -- whereas LastChanged is left non-null by them. E3: KeywordsEdited dropped — a
                     -- worn-restriction-list content edit marks the LIST (WornRestrictionListState),
                     -- not the enchantments pointing at it.
                     CASE WHEN IsEdited = 1 OR EffectsEdited = 1
-                         THEN 1 ELSE 0 END AS IsEditedFlag
+                         THEN 1 ELSE 0 END AS IsEditedFlag,
+                    -- 0 = created in this tool; the generated ESP is what brings it into the game.
+                    Original
                 FROM Enchantments WHERE Active = 1;";
 
             using var reader = cmd.ExecuteReader();
@@ -761,7 +795,12 @@ namespace SkyrimCraftingTool.Model
                     EnchantmentCost = reader.IsDBNull(5) ? 0f : (float)reader.GetDouble(5),
                     WornRestrictionListKey = reader.IsDBNull(6) ? "" : reader.GetString(6),
                     BaseEnchantmentKey = reader.IsDBNull(7) ? "" : reader.GetString(7),
-                    IsEdited = !reader.IsDBNull(8) && reader.GetInt64(8) == 1,
+                    EnchantType = reader.IsDBNull(8) ? "" : reader.GetString(8),
+                    Flags = reader.IsDBNull(9) ? 0 : (int)reader.GetInt64(9),
+                    ChargeTime = reader.IsDBNull(10) ? 0f : (float)reader.GetDouble(10),
+                    EnchantmentAmount = reader.IsDBNull(11) ? 0 : (int)reader.GetInt64(11),
+                    IsEdited = !reader.IsDBNull(12) && reader.GetInt64(12) == 1,
+                    IsUserCreated = !reader.IsDBNull(13) && reader.GetInt64(13) == 0,
                 });
             }
 
@@ -1038,16 +1077,23 @@ namespace SkyrimCraftingTool.Model
         // IsEdited flag, stamp LastChanged. LastChanged is deliberately SET (not cleared) — it feeds
         // the import conflict check ("local is newer than this export file"). What counts as
         // "currently edited" is the IsEdited flag, which is why GetEdited* filters on that.
-        private static readonly string[] ArmorShadowColumns =
-            { "IsEditedName", "IsEditedWeight", "IsEditedValue", "IsEditedArmorRating", "IsEditedBodySlotMask", "IsEditedArmorType", "IsEditedKeywords", "IsEditedContainerString" };
-        private static readonly string[] WeaponShadowColumns =
-            { "IsEditedName", "IsEditedWeight", "IsEditedValue", "IsEditedDamage", "IsEditedSpeed", "IsEditedReach", "IsEditedStagger", "IsEditedKeywords", "IsEditedContainerString" };
-        private static readonly string[] CobjShadowColumns =
+        internal static readonly string[] ArmorShadowColumns =
+            { "IsEditedName", "IsEditedWeight", "IsEditedValue", "IsEditedArmorRating", "IsEditedBodySlotMask", "IsEditedArmorType", "IsEditedKeywords", "IsEditedContainerString", "IsEditedObjectEffectKey" };
+        internal static readonly string[] WeaponShadowColumns =
+            { "IsEditedName", "IsEditedWeight", "IsEditedValue", "IsEditedDamage", "IsEditedSpeed", "IsEditedReach", "IsEditedStagger", "IsEditedKeywords", "IsEditedContainerString", "IsEditedObjectEffectKey" };
+        internal static readonly string[] CobjShadowColumns =
             { "IsEditedName", "IsEditedCreatedItem", "IsEditedWorkbenchKeyword", "IsEditedIngredients" };
         // CastType/TargetType have no UI edit path but ARE importable (AllowedImportFields), so they
         // must be cleared too — otherwise a later edit revives the orphaned shadow.
-        private static readonly string[] EnchantmentShadowColumns =
-            { "IsEditedName", "IsEditedCastType", "IsEditedTargetType", "IsEditedEnchantmentCost", "IsEditedWornRestrictionListKey" };
+        //
+        // THE one list: reset clears these, import accepts these, and export reads these
+        // (GetEditedEnchantments derives its SELECT from it). It used to be spelled out twice, which
+        // is exactly how Flags/ChargeTime/Amount ended up editable but silently absent from every
+        // export - the fields existed, the second copy of the list did not know about them.
+        internal static readonly string[] EnchantmentShadowColumns =
+            { "IsEditedName", "IsEditedCastType", "IsEditedTargetType", "IsEditedEnchantmentCost",
+              "IsEditedWornRestrictionListKey",
+              "IsEditedFlags", "IsEditedChargeTime", "IsEditedEnchantmentAmount" };
 
         private static void ResetEditShadows(string table, string[] shadowColumns, string key)
         {
@@ -1110,6 +1156,15 @@ namespace SkyrimCraftingTool.Model
 
         public static void UpdateArmorArmorType(string key, string armorType)
             => UpdateField("Armor", "IsEditedArmorType", key, armorType);
+
+        // WHICH enchantment the item wears. The empty string is a real value here - it means "none",
+        // which the patch expresses by writing objectEffect with nothing after it - so it is stored
+        // rather than turned into NULL: NULL is "not edited" and would read back as the scanned one.
+        public static void UpdateArmorObjectEffect(string key, string objectEffectKey)
+            => UpdateField("Armor", "IsEditedObjectEffectKey", key, objectEffectKey ?? "");
+
+        public static void UpdateWeaponObjectEffect(string key, string objectEffectKey)
+            => UpdateField("Weapons", "IsEditedObjectEffectKey", key, objectEffectKey ?? "");
 
         public static void UpdateArmorKeywords(string key, ObservableCollection<KeywordSelectionVM> keywords)
             => UpdateField("Armor", "IsEditedKeywords", key, SelectedKeywordsCsv(keywords));
@@ -1461,12 +1516,25 @@ namespace SkyrimCraftingTool.Model
         // instead of only comparing against whatever was already edited when this session loaded the
         // item (see ItemNodeVM.CaptureOriginalSnapshot).
         // -------------------------------------------------
-        public static ArmorRecord GetOriginalArmor(string key)
+        // Takes either a full connection string or a plain file path, so a caller with a path does
+        // not have to know how this class spells one.
+        private static string Normalize(string connectionStringOrPath)
+            => connectionStringOrPath.Contains('=')
+                ? connectionStringOrPath
+                : $"Data Source={connectionStringOrPath}";
+
+        public static ArmorRecord GetOriginalArmor(string key) => GetOriginalArmorFrom(ConnString, key);
+
+        // Split from the method above only so a test can point it at a prepared database: these two
+        // read by column INDEX, and an index that drifts out of step with the SELECT is invisible
+        // until an item is clicked. It happened - adding ObjectEffectKey to the reader without adding
+        // it to the query threw on every armor selection.
+        internal static ArmorRecord GetOriginalArmorFrom(string connectionString, string key)
         {
-            using var connection = new SqliteConnection(ConnString);
+            using var connection = new SqliteConnection(Normalize(connectionString));
             connection.Open();
             using var cmd = connection.CreateCommand();
-            cmd.CommandText = @"SELECT EditorID, Name, Weight, Value, ArmorRating, BodySlotMask, ArmorType, Keywords, ContainerString
+            cmd.CommandText = @"SELECT EditorID, Name, Weight, Value, ArmorRating, BodySlotMask, ArmorType, Keywords, ContainerString, ObjectEffectKey
                                  FROM Armor WHERE Key = @key";
             cmd.Parameters.AddWithValue("@key", key);
 
@@ -1486,15 +1554,18 @@ namespace SkyrimCraftingTool.Model
                 ArmorType = reader.IsDBNull(6) ? "" : reader.GetString(6),
                 Keywords = string.IsNullOrWhiteSpace(keywordsCsv) ? new List<string>() : keywordsCsv.Split(',').ToList(),
                 ContainerString = reader.IsDBNull(8) ? "{}" : reader.GetString(8),
+                ObjectEffectKey = reader.IsDBNull(9) ? "" : reader.GetString(9),
             };
         }
 
-        public static WeaponRecord GetOriginalWeapon(string key)
+        public static WeaponRecord GetOriginalWeapon(string key) => GetOriginalWeaponFrom(ConnString, key);
+
+        internal static WeaponRecord GetOriginalWeaponFrom(string connectionString, string key)
         {
-            using var connection = new SqliteConnection(ConnString);
+            using var connection = new SqliteConnection(Normalize(connectionString));
             connection.Open();
             using var cmd = connection.CreateCommand();
-            cmd.CommandText = @"SELECT EditorID, Name, Weight, Value, Damage, Speed, Reach, Stagger, Keywords, ContainerString
+            cmd.CommandText = @"SELECT EditorID, Name, Weight, Value, Damage, Speed, Reach, Stagger, Keywords, ContainerString, ObjectEffectKey
                                  FROM Weapons WHERE Key = @key";
             cmd.Parameters.AddWithValue("@key", key);
 
@@ -1515,6 +1586,7 @@ namespace SkyrimCraftingTool.Model
                 Stagger = reader.IsDBNull(7) ? 0f : (float)reader.GetDouble(7),
                 Keywords = string.IsNullOrWhiteSpace(keywordsCsv) ? new List<string>() : keywordsCsv.Split(',').ToList(),
                 ContainerString = reader.IsDBNull(9) ? "{}" : reader.GetString(9),
+                ObjectEffectKey = reader.IsDBNull(10) ? "" : reader.GetString(10),
             };
         }
 
@@ -1594,10 +1666,37 @@ namespace SkyrimCraftingTool.Model
         public static void UpdateEnchantmentName(string key, string name)
             => UpdateField("Enchantments", "IsEditedName", key, name);
 
-        // UpdateEnchantmentEditorID used to live here, writing to a column ("IsEditedEditorID") that
-        // was never actually in the Enchantments schema — it threw a SqliteException the moment it
-        // was called. Removed rather than fixed: EditorID isn't editable in the UI (EnchantmentMenuView
-        // shows it read-only), so there was no working feature to preserve, just dead/broken plumbing.
+        // An earlier version of this wrote to "IsEditedEditorID", a column that was never in the
+        // schema, and threw the moment it was called. It is back, but writing the BASE column - and
+        // that is the point, not an oversight: a shadow column exists to hold an override next to a
+        // scanned value, and only records the user created may be renamed. Those have no scanned
+        // value underneath, so there is nothing to shadow.
+        //
+        // The Original = 0 guard is in the SQL rather than only at the call site: it is the one
+        // thing that must hold no matter who calls this, since renaming a plugin's record would
+        // quietly disagree with every other tool reading that plugin.
+        public static void UpdateEnchantmentEditorId(string key, string editorId)
+        {
+            try
+            {
+                using var conn = new SqliteConnection(ConnString);
+                conn.Open();
+                using var cmd = new SqliteCommand(
+                    "UPDATE Enchantments SET EditorID = @val, IsEdited = 1, LastChanged = @now " +
+                    "WHERE Key = @key AND Original = 0", conn);
+                cmd.Parameters.AddWithValue("@key", key);
+                cmd.Parameters.AddWithValue("@val", editorId ?? "");
+                cmd.Parameters.AddWithValue("@now", NowIso());
+
+                if (cmd.ExecuteNonQuery() == 0)
+                    AppLogger.LogWarning($"UpdateEnchantmentEditorId ignored for {key}: not a user-created record.");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError($"UpdateEnchantmentEditorId failed (key={key})", ex);
+                throw;
+            }
+        }
 
         public static void UpdateEnchantmentCastType(string key, string castType)
             => UpdateField("Enchantments", "IsEditedCastType", key, castType);
@@ -1611,6 +1710,44 @@ namespace SkyrimCraftingTool.Model
         public static void UpdateEnchantmentWornRestrictionListKey(string key, string listKey)
             => UpdateField("Enchantments", "IsEditedWornRestrictionListKey", key, listKey);
 
+        // Shadow columns: SkyPatcher can patch these three on a scanned record
+        // (setFlags/removeFlags, chargeTime, enchantmentAmount), so an override next to the scanned
+        // value is exactly the right shape.
+        public static void UpdateEnchantmentFlags(string key, int flags)
+            => UpdateField("Enchantments", "IsEditedFlags", key, flags);
+
+        public static void UpdateEnchantmentChargeTime(string key, float chargeTime)
+            => UpdateField("Enchantments", "IsEditedChargeTime", key, chargeTime);
+
+        public static void UpdateEnchantmentAmount(string key, int amount)
+            => UpdateField("Enchantments", "IsEditedEnchantmentAmount", key, amount);
+
+        // Base column, and only on a user-created record - the same shape as EditorID above and for
+        // the same reason: SkyPatcher has no enchantType operation, so this is only ever reachable
+        // for records the generated ESP writes from scratch. The guard is in the SQL.
+        public static void UpdateEnchantmentEnchantType(string key, string enchantType)
+        {
+            try
+            {
+                using var conn = new SqliteConnection(ConnString);
+                conn.Open();
+                using var cmd = new SqliteCommand(
+                    "UPDATE Enchantments SET EnchantType = @val, IsEdited = 1, LastChanged = @now " +
+                    "WHERE Key = @key AND Original = 0", conn);
+                cmd.Parameters.AddWithValue("@key", key);
+                cmd.Parameters.AddWithValue("@val", enchantType ?? "");
+                cmd.Parameters.AddWithValue("@now", NowIso());
+
+                if (cmd.ExecuteNonQuery() == 0)
+                    AppLogger.LogWarning($"UpdateEnchantmentEnchantType ignored for {key}: not a user-created record.");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError($"UpdateEnchantmentEnchantType failed (key={key})", ex);
+                throw;
+            }
+        }
+
         // -------------------------------------------------
         // Enchantment: Reset (Name + Cost - CastType/TargetType/WornRestrictionListKey aren't
         // directly user-editable anywhere in the UI today)
@@ -1620,7 +1757,12 @@ namespace SkyrimCraftingTool.Model
             using var connection = new SqliteConnection(ConnString);
             connection.Open();
             using var cmd = connection.CreateCommand();
-            cmd.CommandText = "SELECT EditorID, Name, EnchantmentCost, WornRestrictionListKey FROM Enchantments WHERE Key = @key";
+            // The BASE columns - the scanned state, never the shadows. This is what "changed"
+            // is measured against and what a reset restores, so the ENIT fields have to be here
+            // too or they can never read as edited.
+            cmd.CommandText = @"SELECT EditorID, Name, EnchantmentCost, WornRestrictionListKey,
+                                       Flags, ChargeTime, EnchantmentAmount
+                                FROM Enchantments WHERE Key = @key";
             cmd.Parameters.AddWithValue("@key", key);
 
             using var reader = cmd.ExecuteReader();
@@ -1633,11 +1775,139 @@ namespace SkyrimCraftingTool.Model
                 Name = reader.IsDBNull(1) ? "" : reader.GetString(1),
                 EnchantmentCost = reader.IsDBNull(2) ? 0f : (float)reader.GetDouble(2),
                 WornRestrictionListKey = reader.IsDBNull(3) ? "" : reader.GetString(3),
+                Flags = reader.IsDBNull(4) ? 0 : (int)reader.GetInt64(4),
+                ChargeTime = reader.IsDBNull(5) ? 0f : (float)reader.GetDouble(5),
+                EnchantmentAmount = reader.IsDBNull(6) ? 0 : (int)reader.GetInt64(6),
             };
         }
 
         public static void ResetEnchantmentEdits(string key)
             => ResetEditShadows("Enchantments", EnchantmentShadowColumns, key);
+
+        // -------------------------------------------------
+        // Enchantment: anlegen und löschen (Original = 0)
+        // -------------------------------------------------
+
+        // A brand-new enchantment, keyed under the tool's own pseudo-plugin exactly like a
+        // user-created recipe. It exists in no plugin - the generated ESP is what brings it into the
+        // game - so the row carries Original = 0 and the scan leaves it alone.
+        //
+        // CastType/TargetType stay EMPTY on purpose. They are not a question to put to the user:
+        // measured against the real load order, 1,893 of 1,895 effect rows agree with their
+        // enchantment's cast type and 1,894 of 1,895 with its target type. The first effect added
+        // decides both (see EnchantmentMenuVM.AddEffectCommand).
+        public static EnchantmentRecord CreateEnchantment(string editorId, string name)
+        {
+            string key = AllocateUserEnchantmentKey();
+
+            // An EditorID is what the tree shows and what xEdit will list, so it can never be blank.
+            // The ID it is built from is the one thing about the record that is already unique.
+            if (string.IsNullOrWhiteSpace(editorId))
+                editorId = "SCT_Ench_" + key.Substring(key.IndexOf('|') + 1);
+
+            using var connection = new SqliteConnection(ConnString);
+            connection.Open();
+
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = @"
+                INSERT INTO Enchantments
+                    (Key, EditorID, Name, CastType, TargetType, EnchantmentCost,
+                     WornRestrictionListKey, BaseEnchantmentKey,
+                     IsEdited, Active, EffectsEdited, KeywordsEdited, Original, LastChanged)
+                VALUES
+                    (@key, @editorId, @name, '', '', 0, '', '', 0, 1, 0, 0, 0, @now);";
+            cmd.Parameters.AddWithValue("@key", key);
+            cmd.Parameters.AddWithValue("@editorId", editorId ?? "");
+            cmd.Parameters.AddWithValue("@name", name ?? "");
+            cmd.Parameters.AddWithValue("@now", NowIso());
+            cmd.ExecuteNonQuery();
+
+            return new EnchantmentRecord
+            {
+                Key = key,
+                EditorID = editorId ?? "",
+                Name = name ?? "",
+                IsUserCreated = true,
+            };
+        }
+
+        // Gone means gone: the row, its effects and its snapshot. Only ever called for Original = 0
+        // records — a scanned enchantment cannot be deleted, there is no way to un-ship a record
+        // that a plugin defines.
+        public static bool DeleteEnchantment(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key)) return false;
+
+            try
+            {
+                using var connection = new SqliteConnection(ConnString);
+                connection.Open();
+                using var transaction = connection.BeginTransaction();
+
+                using (var guard = new SqliteCommand(
+                    "SELECT Original FROM Enchantments WHERE Key = @key", connection, transaction))
+                {
+                    guard.Parameters.AddWithValue("@key", key);
+                    var original = guard.ExecuteScalar();
+                    if (original == null || original == DBNull.Value || Convert.ToInt64(original) != 0)
+                    {
+                        AppLogger.LogWarning($"DeleteEnchantment refused for {key}: not a user-created record.");
+                        return false;
+                    }
+                }
+
+                foreach (var sql in new[]
+                {
+                    "DELETE FROM EnchantmentEffects WHERE EnchantmentKey = @key",
+                    "DELETE FROM EnchantmentEffects_Original WHERE EnchantmentKey = @key",
+                    "DELETE FROM Enchantments WHERE Key = @key",
+                })
+                {
+                    using var cmd = new SqliteCommand(sql, connection, transaction);
+                    cmd.Parameters.AddWithValue("@key", key);
+                    cmd.ExecuteNonQuery();
+                }
+
+                transaction.Commit();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError($"DeleteEnchantment failed (key={key})", ex);
+                throw;
+            }
+        }
+
+        // Seeded from the highest ID ever used under the tool's plugin, not from a counter that
+        // restarts with the app - the same trap COBJ's counter fell into, where a second session
+        // handed out FormIDs that were already taken.
+        private static string AllocateUserEnchantmentKey()
+        {
+            const int baseline = 0x1000;
+            int max = baseline;
+
+            using (var connection = new SqliteConnection(ConnString))
+            {
+                connection.Open();
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "SELECT Key FROM Enchantments WHERE Key LIKE @prefix";
+                cmd.Parameters.AddWithValue("@prefix", KeyFactory.UserPluginName + "|%");
+
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                {
+                    var hex = reader.GetString(0);
+                    int bar = hex.IndexOf('|');
+                    if (bar < 0) continue;
+
+                    if (int.TryParse(hex.Substring(bar + 1), System.Globalization.NumberStyles.HexNumber,
+                                     null, out int value) && value > max)
+                        max = value;
+                }
+            }
+
+            return $"{KeyFactory.UserPluginName}|{max + 1:X6}";
+        }
 
         public static void SaveEnchantmentEffects(string enchantmentKey, List<EnchantmentEffectRecord> effects)
         {
@@ -1647,27 +1917,7 @@ namespace SkyrimCraftingTool.Model
                 conn.Open();
                 using var transaction = conn.BeginTransaction();
 
-                // First edit ever for this enchantment's effects: freeze the current (still
-                // pristine) rows into EnchantmentEffects_Original before the delete+insert below
-                // destroys them. Gated on the EffectsEdited flag rather than "does _Original already
-                // have rows" - see SaveCOBJConditions' comment for why (an enchantment whose true
-                // original has zero effects would otherwise be indistinguishable from "never
-                // snapshotted yet").
-                using (var checkCmd = new SqliteCommand("SELECT EffectsEdited FROM Enchantments WHERE Key = @key", conn, transaction))
-                {
-                    checkCmd.Parameters.AddWithValue("@key", enchantmentKey);
-                    var flagResult = checkCmd.ExecuteScalar();
-                    bool alreadyEdited = flagResult != null && flagResult != DBNull.Value && Convert.ToInt64(flagResult) == 1;
-                    if (!alreadyEdited)
-                    {
-                        using var snapshotCmd = new SqliteCommand(
-                            @"INSERT INTO EnchantmentEffects_Original (EnchantmentKey, MagicEffectKey, EditorID, Name, Magnitude, Duration, Area)
-                              SELECT EnchantmentKey, MagicEffectKey, EditorID, Name, Magnitude, Duration, Area
-                              FROM EnchantmentEffects WHERE EnchantmentKey = @key", conn, transaction);
-                        snapshotCmd.Parameters.AddWithValue("@key", enchantmentKey);
-                        snapshotCmd.ExecuteNonQuery();
-                    }
-                }
+                SnapshotChildRowsIfFirstEdit(conn, transaction, ChildTables.EnchantmentEffects, enchantmentKey);
 
                 // Delete existing effects for the enchantment
                 using (var deleteCmd = new SqliteCommand("DELETE FROM EnchantmentEffects WHERE EnchantmentKey = @key", conn, transaction))
@@ -1726,25 +1976,9 @@ namespace SkyrimCraftingTool.Model
                 conn.Open();
                 using var transaction = conn.BeginTransaction();
 
-                // First edit ever for this list: freeze the current (still pristine) rows into
-                // WornRestrictionKeywords_Original before the delete+insert below destroys them.
-                // Gated on WornRestrictionListState.IsEdited (E3 — was "any referencing Enchantments
-                // row has KeywordsEdited=1"), so "true original has zero members" is still
-                // distinguishable from "never snapshotted yet". See SaveCOBJConditions' comment.
-                using (var checkCmd = new SqliteCommand("SELECT IsEdited FROM WornRestrictionListState WHERE ListKey = @key", conn, transaction))
-                {
-                    checkCmd.Parameters.AddWithValue("@key", listKey);
-                    var res = checkCmd.ExecuteScalar();
-                    bool alreadyEdited = res != null && res != DBNull.Value && Convert.ToInt64(res) == 1;
-                    if (!alreadyEdited)
-                    {
-                        using var snapshotCmd = new SqliteCommand(
-                            @"INSERT INTO WornRestrictionKeywords_Original (ListKey, KeywordKey)
-                              SELECT ListKey, KeywordKey FROM WornRestrictionKeywords WHERE ListKey = @key", conn, transaction);
-                        snapshotCmd.Parameters.AddWithValue("@key", listKey);
-                        snapshotCmd.ExecuteNonQuery();
-                    }
-                }
+                // E3: gated on WornRestrictionListState.IsEdited, not on "any referencing
+                // Enchantments row has KeywordsEdited = 1" as it once was.
+                SnapshotChildRowsIfFirstEdit(conn, transaction, ChildTables.WornRestrictionKeywords, listKey);
 
                 // Delete existing keywords for the list
                 using (var deleteCmd = new SqliteCommand("DELETE FROM WornRestrictionKeywords WHERE ListKey = @key", conn, transaction))

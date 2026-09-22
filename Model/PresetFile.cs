@@ -50,6 +50,13 @@ namespace SkyrimCraftingTool.Model
         // Same serialized format as Armor/Weapons.ContainerString (built/parsed via
         // ContainerSelectionVM.BuildString/LoadFromString, see ContainerStringBuilder/Parser).
         public FieldValue<string> Container { get; set; } = new() { Value = "{}" };
+
+        // WHICH enchantment the matching items get, as Plugin|FormID - empty means "none".
+        //
+        // Deliberately here and NOT in the multi-select bulk editor (user, 2026-09-16): patching ten
+        // items rarely means giving them all the same enchantment, but a preset for legendary
+        // end-game items is exactly the case where that sameness is the point.
+        public FieldValue<string> Enchantment { get; set; } = new() { Value = "" };
     }
 
     // Wraps a preset field together with its "Include"-checkbox state. Apply only touches

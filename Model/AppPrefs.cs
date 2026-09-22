@@ -43,6 +43,18 @@ namespace SkyrimCraftingTool.Model
         public static string GetString(string key, string fallback = "")
             => Load().TryGetValue(key, out var v) ? v : fallback;
 
+        // Stored invariantly, not in the current culture: a preferences file written on a German
+        // machine must still read on any other one.
+        public static int GetInt(string key, int fallback = 0)
+            => Load().TryGetValue(key, out var v)
+               && int.TryParse(v, System.Globalization.NumberStyles.Integer,
+                               System.Globalization.CultureInfo.InvariantCulture, out var i)
+                ? i
+                : fallback;
+
+        public static void SetInt(string key, int value)
+            => Set(key, value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
         public static void SetString(string key, string value) => Set(key, value ?? "");
 
         private static void Set(string key, string value)

@@ -1,3 +1,4 @@
+using System;
 using DynamicData;
 using Microsoft.Data.Sqlite;
 using Mutagen.Bethesda;
@@ -63,7 +64,11 @@ namespace SkyrimCraftingTool.Model
             using var insertWRK = PrepareInsert(connection, "WornRestrictionKeywords", WornRestrictionKeywordColumnNames, WornRestrictionKeywordParamNames);
             using var insertContainer = PrepareUpsert(connection, "Container", ContainerColumnNames, ContainerParamNames);
             using var insertContainerLVLI = PrepareInsert(connection, "ContainerLVLI", ContainerLvliColumnNames, ContainerLvliParamNames);
+            using var insertContainerEntry = PrepareInsert(connection, "ContainerEntry", ContainerEntryColumnNames, ContainerEntryParamNames);
             using var insertMagicEffects = PrepareUpsert(connection, "MagicEffects", MagicEffectColumnNames, MagicEffectParamNames);
+            using var insertGlobals = PrepareUpsert(connection, "Globals", GlobalColumnNames, GlobalParamNames);
+            using var insertLeveledList = PrepareUpsert(connection, "LeveledList", LeveledListColumnNames, LeveledListParamNames);
+            using var insertLeveledListEntry = PrepareInsert(connection, "LeveledListEntry", LeveledListEntryColumnNames, LeveledListEntryParamNames);
 
             // Multi-row "batch" counterparts of the commands above. At the row counts a full scan
             // produces (100k+), one ExecuteNonQuery() per row was the dominant cost (~140k round
@@ -80,7 +85,11 @@ namespace SkyrimCraftingTool.Model
             using var insertWRKBatch = PrepareInsertBatch(connection, "WornRestrictionKeywords", WornRestrictionKeywordColumnNames, WornRestrictionKeywordParamNames, BatchSize);
             using var insertContainerBatch = PrepareUpsertBatch(connection, "Container", ContainerColumnNames, ContainerParamNames, BatchSize);
             using var insertContainerLVLIBatch = PrepareInsertBatch(connection, "ContainerLVLI", ContainerLvliColumnNames, ContainerLvliParamNames, BatchSize);
+            using var insertContainerEntryBatch = PrepareInsertBatch(connection, "ContainerEntry", ContainerEntryColumnNames, ContainerEntryParamNames, BatchSize);
             using var insertMagicEffectsBatch = PrepareUpsertBatch(connection, "MagicEffects", MagicEffectColumnNames, MagicEffectParamNames, BatchSize);
+            using var insertGlobalsBatch = PrepareUpsertBatch(connection, "Globals", GlobalColumnNames, GlobalParamNames, BatchSize);
+            using var insertLeveledListBatch = PrepareUpsertBatch(connection, "LeveledList", LeveledListColumnNames, LeveledListParamNames, BatchSize);
+            using var insertLeveledListEntryBatch = PrepareInsertBatch(connection, "LeveledListEntry", LeveledListEntryColumnNames, LeveledListEntryParamNames, BatchSize);
 
             using var transaction = connection.BeginTransaction();
             insertArmor.Transaction = transaction;
@@ -92,7 +101,11 @@ namespace SkyrimCraftingTool.Model
             insertWRK.Transaction = transaction;
             insertContainer.Transaction = transaction;
             insertContainerLVLI.Transaction = transaction;
+            insertContainerEntry.Transaction = transaction;
             insertMagicEffects.Transaction = transaction;
+            insertGlobals.Transaction = transaction;
+            insertLeveledList.Transaction = transaction;
+            insertLeveledListEntry.Transaction = transaction;
             insertArmorBatch.Transaction = transaction;
             insertWeaponBatch.Transaction = transaction;
             insertCOBJBatch.Transaction = transaction;
@@ -102,7 +115,11 @@ namespace SkyrimCraftingTool.Model
             insertWRKBatch.Transaction = transaction;
             insertContainerBatch.Transaction = transaction;
             insertContainerLVLIBatch.Transaction = transaction;
+            insertContainerEntryBatch.Transaction = transaction;
             insertMagicEffectsBatch.Transaction = transaction;
+            insertGlobalsBatch.Transaction = transaction;
+            insertLeveledListBatch.Transaction = transaction;
+            insertLeveledListEntryBatch.Transaction = transaction;
 
             // Parse phase runs in parallel across plugins (CPU-bound, no DB access); a second,
             // strictly sequential phase then does all SQLite writes (one connection/transaction).
@@ -163,16 +180,19 @@ namespace SkyrimCraftingTool.Model
             var allArmor = new List<object[]>();
             var allWeapon = new List<object[]>();
             var allMagicEffects = new List<object[]>();
+            var allGlobals = new List<object[]>();
 
             var latestCobjByKey = new Dictionary<string, ParsedCobj>();
             var latestEnchantmentByKey = new Dictionary<string, ParsedEnchantment>();
             var latestContainerByKey = new Dictionary<string, ParsedContainer>();
+            var latestLeveledListByKey = new Dictionary<string, ParsedLeveledList>();
 
             foreach (var parsed in parsedPlugins)
             {
                 allArmor.AddRange(parsed.ArmorRows);
                 allWeapon.AddRange(parsed.WeaponRows);
                 allMagicEffects.AddRange(parsed.MagicEffectRows);
+                allGlobals.AddRange(parsed.GlobalRows);
 
                 foreach (var cobj in parsed.Cobjs)
                     latestCobjByKey[(string)cobj.Values[0]] = cobj;
@@ -182,6 +202,9 @@ namespace SkyrimCraftingTool.Model
 
                 foreach (var container in parsed.Containers)
                     latestContainerByKey[(string)container.Values[0]] = container;
+
+                foreach (var list in parsed.LeveledLists)
+                    latestLeveledListByKey[(string)list.Values[0]] = list;
             }
 
             // Records whose ConditionsEdited/EffectsEdited/KeywordsEdited flag is set keep their
@@ -259,6 +282,23 @@ namespace SkyrimCraftingTool.Model
             }
             allContainerLvli.AddRange(latestLvliRow.Values);
 
+            // No dedupe here, unlike ContainerLVLI above: a container listing the same thing twice is
+            // data, and Ordinal keeps the rows apart.
+            var allContainerEntries = new List<object[]>();
+            foreach (var container in latestContainerByKey.Values)
+                allContainerEntries.AddRange(container.EntryRows);
+
+            // Leveled lists: parent row plus its entries, taken only from the winning plugin's
+            // version. No per-key dedupe of the entries, unlike ContainerLVLI above - here a repeated
+            // reference is real data, and Ordinal keeps the rows apart.
+            var allLeveledLists = new List<object[]>();
+            var allLeveledListEntries = new List<object[]>();
+            foreach (var list in latestLeveledListByKey.Values)
+            {
+                allLeveledLists.Add(list.Values);
+                allLeveledListEntries.AddRange(list.EntryRows);
+            }
+
             // --- Write phase: strictly sequential — do not parallelize SQLite writes ---
             var writeSw = Stopwatch.StartNew();
 
@@ -276,6 +316,12 @@ namespace SkyrimCraftingTool.Model
             // rescan's insert collides with the previous scan's still-present rows for the same
             // (ContainerKey, LVLiKey), and a removed item would linger as a stale row.
             DeleteChildRowsForKeys(connection, transaction, "ContainerLVLI", "ContainerKey", latestContainerByKey.Keys.ToList());
+            // Same reasoning for a leveled list: its entries are positional and have no identity, so
+            // the only correct refresh is "drop this list's rows, insert the ones just parsed".
+            // Without the delete, a rescan collides on (ListKey, Ordinal) and an entry the winning
+            // plugin had removed would survive as a stale row.
+            DeleteChildRowsForKeys(connection, transaction, "ContainerEntry", "ContainerKey", latestContainerByKey.Keys.ToList());
+            DeleteChildRowsForKeys(connection, transaction, "LeveledListEntry", "ListKey", latestLeveledListByKey.Keys.ToList());
 
             ExecuteRowsBatched(insertArmor, insertArmorBatch, ArmorParamNames, allArmor, BatchSize);
             ExecuteRowsBatched(insertWeapon, insertWeaponBatch, WeaponParamNames, allWeapon, BatchSize);
@@ -286,7 +332,11 @@ namespace SkyrimCraftingTool.Model
             ExecuteRowsBatched(insertEnchEff, insertEnchEffBatch, EnchantmentEffectParamNames, allEnchantmentEffects, BatchSize);
             ExecuteRowsBatched(insertContainer, insertContainerBatch, ContainerParamNames, allContainers, BatchSize);
             ExecuteRowsBatched(insertContainerLVLI, insertContainerLVLIBatch, ContainerLvliParamNames, allContainerLvli, BatchSize);
+            ExecuteRowsBatched(insertContainerEntry, insertContainerEntryBatch, ContainerEntryParamNames, allContainerEntries, BatchSize);
             ExecuteRowsBatched(insertMagicEffects, insertMagicEffectsBatch, MagicEffectParamNames, allMagicEffects, BatchSize);
+            ExecuteRowsBatched(insertGlobals, insertGlobalsBatch, GlobalParamNames, allGlobals, BatchSize);
+            ExecuteRowsBatched(insertLeveledList, insertLeveledListBatch, LeveledListParamNames, allLeveledLists, BatchSize);
+            ExecuteRowsBatched(insertLeveledListEntry, insertLeveledListEntryBatch, LeveledListEntryParamNames, allLeveledListEntries, BatchSize);
 
             // Parent tables: anything not touched by this scan is no longer defined by any currently
             // active plugin — mark it inactive (hidden from Load*) instead of deleting, so its
@@ -297,9 +347,13 @@ namespace SkyrimCraftingTool.Model
             MarkInactiveExcept(connection, transaction, "Armor", "Key", allArmor.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "Weapons", "Key", allWeapon.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "COBJ", "Key", latestCobjByKey.Keys, extraWhere: "Original = 1");
-            MarkInactiveExcept(connection, transaction, "Enchantments", "Key", latestEnchantmentByKey.Keys);
+            // Original = 1 only: a user-created enchantment exists in no plugin, so a scan must
+            // never retire it. Same guard as COBJ above.
+            MarkInactiveExcept(connection, transaction, "Enchantments", "Key", latestEnchantmentByKey.Keys, extraWhere: "Original = 1");
             MarkInactiveExcept(connection, transaction, "Container", "ContainerKey", latestContainerByKey.Keys);
             MarkInactiveExcept(connection, transaction, "MagicEffects", "Key", allMagicEffects.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "Globals", "Key", allGlobals.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "LeveledList", "Key", latestLeveledListByKey.Keys);
 
             writeSw.Stop();
             Debug.WriteLine($"[ItemDB] Write phase: {writeSw.ElapsedMilliseconds} ms");
@@ -332,7 +386,11 @@ namespace SkyrimCraftingTool.Model
             using (var createCmd = connection.CreateCommand())
             {
                 createCmd.Transaction = transaction;
-                createCmd.CommandText = $"CREATE TEMP TABLE {tempTableName} (Key TEXT PRIMARY KEY);";
+                // COLLATE NOCASE, because every Key column this table is compared against is NOCASE.
+                // Without it the comparison in MarkInactiveExcept runs BINARY (SQLite takes the left
+                // operand.s collation, which is this column.s) and a key that differs only in casing
+                // silently fails to match - which deactivates a record the scan had just written.
+                createCmd.CommandText = $"CREATE TEMP TABLE {tempTableName} (Key TEXT PRIMARY KEY COLLATE NOCASE);";
                 createCmd.ExecuteNonQuery();
             }
 
@@ -379,7 +437,9 @@ namespace SkyrimCraftingTool.Model
         // just that one record was dropped from an updated version of it. Verified against a real
         // SQLite instance before wiring in (temp table + NOT EXISTS, not a giant IN-list, to stay fast
         // at the tens-of-thousands-of-keys scale this app's scans run at).
-        private static void MarkInactiveExcept(SqliteConnection connection, SqliteTransaction transaction, string table, string keyColumn, IEnumerable<string> scannedKeys, string extraWhere = null)
+        // internal for the regression test: the casing rule below is invisible in the SQL and cost a
+        // record that had just been written (see ScanKeyCasingTests).
+        internal static void MarkInactiveExcept(SqliteConnection connection, SqliteTransaction transaction, string table, string keyColumn, IEnumerable<string> scannedKeys, string extraWhere = null)
         {
             var keys = scannedKeys.Distinct().ToList();
             var tempTable = PopulateKeyTempTable(connection, transaction, "_ActiveKeys", keys);
@@ -411,7 +471,10 @@ namespace SkyrimCraftingTool.Model
             public List<ParsedEnchantment> Enchantments = new();
             public List<ParsedContainer> Containers = new();
             public List<object[]> MagicEffectRows = new();
+            public List<object[]> GlobalRows = new();
             public List<ParsedFormList> FormLists = new();
+            public List<ParsedLeveledList> LeveledLists = new();
+
         }
 
         // E3: every FLST in the plugin (not just enchant-referenced ones) and its members. Feeds the
@@ -438,25 +501,40 @@ namespace SkyrimCraftingTool.Model
         {
             public object[] Values;
             public List<object[]> LvliRows = new();
+            public List<object[]> EntryRows = new();   // every entry, not just the leveled lists
+        }
+
+        // A leveled list plus its entries. Same parent/child shape as ParsedContainer, and for the
+        // same reason: only the winning plugin's version of a list may contribute entries, or a
+        // later plugin that REMOVED an entry would leave the earlier one behind forever.
+        private sealed class ParsedLeveledList
+        {
+            public object[] Values;
+            public List<object[]> EntryRows = new();
         }
 
         private static readonly string[] ArmorParamNames =
-            { "@key", "@editorID", "@name", "@weight", "@val", "@armorRating", "@slotMask", "@armorType", "@keywords" };
+            { "@key", "@editorID", "@name", "@weight", "@val", "@armorRating", "@slotMask", "@armorType", "@keywords", "@objectEffect" };
         private static readonly string[] WeaponParamNames =
-            { "@key", "@editorID", "@name", "@weight", "@val", "@dmg", "@speed", "@reach", "@stagger", "@keywords" };
+            { "@key", "@editorID", "@name", "@weight", "@val", "@dmg", "@speed", "@reach", "@stagger", "@keywords", "@objectEffect" };
         private static readonly string[] CobjParamNames =
             { "@key", "@name", "@createdItem", "@workbench", "@ingredients" };
         private static readonly string[] CobjConditionParamNames =
             { "@cobjKey", "@extra", "@runOn", "@type", "@target", "@value", "@op", "@flags" };
         private static readonly string[] EnchantmentParamNames =
-            { "@key", "@editorID", "@name", "@cast", "@target", "@cost", "@wrestr", "@baseEnch" };
+            { "@key", "@editorID", "@name", "@cast", "@target", "@cost", "@wrestr", "@baseEnch",
+              "@enchType", "@flags", "@chargeTime", "@enchAmount" };
         private static readonly string[] EnchantmentEffectParamNames =
             { "@ench", "@mgef", "@editorID", "@name", "@mag", "@dur", "@area" };
         private static readonly string[] WornRestrictionKeywordParamNames = { "@list", "@kw" };
         private static readonly string[] ContainerParamNames = { "@key", "@name" };
         private static readonly string[] ContainerLvliParamNames = { "@containerKey", "@lvliKey", "@lvliName" };
+        private static readonly string[] ContainerEntryParamNames = { "@containerKey", "@ordinal", "@reference", "@count" };
+        private static readonly string[] LeveledListParamNames = { "@key", "@editorID", "@chanceNone", "@flags", "@globalKey" };
+        private static readonly string[] LeveledListEntryParamNames = { "@listKey", "@ordinal", "@reference", "@level", "@count" };
         private static readonly string[] MagicEffectParamNames =
             { "@key", "@editorID", "@name", "@hasMag", "@hasDur", "@hasAre", "@castType", "@targetType" };
+        private static readonly string[] GlobalParamNames = { "@key", "@editorID", "@value" };
 
         // Real table column names, in the same order as the matching *ParamNames array above.
         // Several of the single-row PrepareInsertX commands bind a parameter name that doesn't match
@@ -465,22 +543,27 @@ namespace SkyrimCraftingTool.Model
         // param names (stripping "@") is wrong wherever they differ and was the cause of the
         // "table Armor has no column named val" crash.
         private static readonly string[] ArmorColumnNames =
-            { "Key", "EditorID", "Name", "Weight", "Value", "ArmorRating", "BodySlotMask", "ArmorType", "Keywords" };
+            { "Key", "EditorID", "Name", "Weight", "Value", "ArmorRating", "BodySlotMask", "ArmorType", "Keywords", "ObjectEffectKey" };
         private static readonly string[] WeaponColumnNames =
-            { "Key", "EditorID", "Name", "Weight", "Value", "Damage", "Speed", "Reach", "Stagger", "Keywords" };
+            { "Key", "EditorID", "Name", "Weight", "Value", "Damage", "Speed", "Reach", "Stagger", "Keywords", "ObjectEffectKey" };
         private static readonly string[] CobjColumnNames =
             { "Key", "Name", "CreatedItem", "WorkbenchKeyword", "Ingredients" };
         private static readonly string[] CobjConditionColumnNames =
             { "COBJKey", "Extra", "RunOn", "ConditionType", "Target", "Value", "CompareOperator", "Flags" };
         private static readonly string[] EnchantmentColumnNames =
-            { "Key", "EditorID", "Name", "CastType", "TargetType", "EnchantmentCost", "WornRestrictionListKey", "BaseEnchantmentKey" };
+            { "Key", "EditorID", "Name", "CastType", "TargetType", "EnchantmentCost", "WornRestrictionListKey", "BaseEnchantmentKey",
+              "EnchantType", "Flags", "ChargeTime", "EnchantmentAmount" };
         private static readonly string[] EnchantmentEffectColumnNames =
             { "EnchantmentKey", "MagicEffectKey", "EditorID", "Name", "Magnitude", "Duration", "Area" };
         private static readonly string[] WornRestrictionKeywordColumnNames = { "ListKey", "KeywordKey" };
         private static readonly string[] ContainerColumnNames = { "ContainerKey", "Name" };
         private static readonly string[] ContainerLvliColumnNames = { "ContainerKey", "LVLiKey", "LVLiName" };
+        private static readonly string[] ContainerEntryColumnNames = { "ContainerKey", "Ordinal", "Reference", "Count" };
+        private static readonly string[] LeveledListColumnNames = { "Key", "EditorID", "ChanceNone", "Flags", "GlobalKey" };
+        private static readonly string[] LeveledListEntryColumnNames = { "ListKey", "Ordinal", "Reference", "Level", "Count" };
         private static readonly string[] MagicEffectColumnNames =
             { "Key", "EditorID", "Name", "HasMagnitude", "HasDuration", "HasArea", "CastType", "TargetType" };
+        private static readonly string[] GlobalColumnNames = { "Key", "EditorID", "Value" };
 
         private static void ApplyRowAndExecute(SqliteCommand cmd, string[] paramNames, object[] values)
         {
@@ -567,6 +650,12 @@ namespace SkyrimCraftingTool.Model
                 ApplyRowAndExecute(singleCmd, paramNames, rows[i]);
         }
 
+        // An unset link is an empty string, never the text form of FormKey.Null. That distinction was
+        // paid for once already: an FLST-less enchantment stored "Null|000000", ~1100 records ended
+        // up sharing that value, and editing one of them touched them all.
+        private static string LinkKey(FormKey formKey) =>
+            formKey.IsNull ? "" : KeyFactory.BuildMasterKey(formKey);
+
         // Pure parsing — no DB access — so this is safe to call concurrently from Parallel.ForEach.
         // Mirrors the original single-threaded loop body exactly, just capturing values into rows
         // instead of writing straight to a shared SqliteCommand's parameters.
@@ -617,7 +706,10 @@ namespace SkyrimCraftingTool.Model
                     (float?)armor.ArmorRating ?? 0f,
                     (long)slotMask,
                     armorType,
-                    string.Join(",", kw)
+                    string.Join(",", kw),
+                    // Which enchantment the record wears. Empty rather than a null key when it has
+                    // none: "no enchantment" is a value the editor has to be able to show and set.
+                    armor.ObjectEffect.FormKey.IsNull ? "" : KeyFactory.BuildMasterKey(armor.ObjectEffect.FormKey)
                 });
             }
 
@@ -645,7 +737,8 @@ namespace SkyrimCraftingTool.Model
                     weap.Data?.Speed ?? 0f,
                     weap.Data?.Reach ?? 0f,
                     weap.Data?.Stagger ?? 0f,
-                    string.Join(",", kw)
+                    string.Join(",", kw),
+                    weap.ObjectEffect.FormKey.IsNull ? "" : KeyFactory.BuildMasterKey(weap.ObjectEffect.FormKey)
                 });
             }
 
@@ -835,7 +928,18 @@ namespace SkyrimCraftingTool.Model
             // ENCHANTMENTS
             foreach (var ench in mod.ObjectEffects.Records)
             {
-                string enchKey = $"{pluginName}|{ench.FormKey.IDString()}";
+                // Master-correct, like every other record key in this scan (see the FLST block
+                // below for the same rule spelled out). It used to be the name of the plugin
+                // being READ, and an override therefore produced a SECOND row instead of
+                // replacing the record: measured against the real load order, 117 enchantments
+                // and 542 magic effects existed two or three times over, and the copies
+                // disagreed - USSEP adds the BaseEnchantment link that Bethesda left off the
+                // Articulation tiers, so the same enchantment showed a base on one row and none
+                // on the other. Reported by the user as "die Kinder werden nicht als Kinder
+                // erkannt". Every LINK into this table was master-keyed all along
+                // (Armor.ObjectEffectKey, BaseEnchantmentKey, EnchantmentEffects.MagicEffectKey),
+                // so only the row keys were out of step.
+                string enchKey = KeyFactory.BuildMasterKey(ench.FormKey);
                 var parsedEnch = new ParsedEnchantment();
 
                 // WornRestrictions (FLST). The FormLink is non-null even when it points at nothing —
@@ -869,7 +973,12 @@ namespace SkyrimCraftingTool.Model
                     ench.TargetType.ToString(),
                     (float)ench.EnchantmentCost,
                     listKey,
-                    baseEnchKey
+                    baseEnchKey,
+                    ench.EnchantType.ToString(),
+                    // The raw dword, not the enum's ToString - see the Enchantments schema comment.
+                    (int)ench.Flags,
+                    ench.ChargeTime,
+                    ench.EnchantmentAmount
                 };
 
                 // Effects
@@ -928,16 +1037,25 @@ namespace SkyrimCraftingTool.Model
                 // LVLI inside Container
                 if (container.Items != null)
                 {
+                    int ordinal = 0;
                     foreach (var entry in container.Items)
                     {
                         var fk = entry.Item.Item.FormKey;
-                        string lvliKey = KeyFactory.BuildMasterKey(fk);
+                        string refKey = KeyFactory.BuildMasterKey(fk);
+
+                        // Every entry, whatever it points at. Only about a quarter of a container's
+                        // entries are leveled lists; the rest are items, and those are exactly what
+                        // "where does this item already appear" has to be able to find.
+                        parsedContainer.EntryRows.Add(new object[]
+                        {
+                            containerKey, ordinal++, refKey, entry.Item.Count,
+                        });
 
                         // Check whether the LVLI exists
-                        var lvliRecord = _formIDDB.GetByKey(lvliKey);
+                        var lvliRecord = _formIDDB.GetByKey(refKey);
                         if (lvliRecord != null && lvliRecord.Type == "LVLi")
                         {
-                            parsedContainer.LvliRows.Add(new object[] { containerKey, lvliKey, lvliRecord.Name });
+                            parsedContainer.LvliRows.Add(new object[] { containerKey, refKey, lvliRecord.Name });
                         }
                     }
                 }
@@ -945,10 +1063,100 @@ namespace SkyrimCraftingTool.Model
                 result.Containers.Add(parsedContainer);
             }
 
+            // LEVELED LISTS (the lists themselves, with their contents)
+            //
+            // The Container block above only records WHICH leveled lists hang in a container. This
+            // records what is IN those lists - which is what answers "where does this item already
+            // appear" and "what is in this list" without opening xEdit.
+            //
+            // Entries are stored positionally: an entry has no identity of its own, and in the real
+            // load order 3,982 of them share (list, reference, level) with a sibling. Keying on the
+            // reference would merge those and silently change the odds the list rolls.
+            foreach (var list in mod.LeveledItems.Records)
+            {
+                string listKey = KeyFactory.BuildMasterKey(list.FormKey);
+
+                var parsedList = new ParsedLeveledList
+                {
+                    Values = new object[]
+                    {
+                        listKey,
+                        list.EditorID ?? "",
+                        // Stored as 0-100, which is what SkyPatcher's chanceNone= expects and what
+                        // xEdit shows. Mutagen's Noggog.Percent holds a 0-1 double, so a plain (int)
+                        // cast silently floors every list below 100% to zero - 512 lists in
+                        // Skyrim.esm have a chance-none, and only 61 survived that cast.
+                        (int)Math.Round(list.ChanceNone.Value * 100),
+                        // Flags as their names rather than a bit value: the patcher addresses them by
+                        // name too (calcForLevel, calcEachItem, ...), and a stored number would have
+                        // to be translated on both sides.
+                        list.Flags == 0 ? "" : list.Flags.ToString(),
+                        list.Global.FormKey.IsNull ? "" : KeyFactory.BuildMasterKey(list.Global.FormKey),
+                    },
+                };
+
+                if (list.Entries != null)
+                {
+                    int ordinal = 0;
+                    foreach (var entry in list.Entries)
+                    {
+                        var data = entry.Data;
+                        if (data == null) continue;   // an entry with no payload carries nothing to show
+
+                        parsedList.EntryRows.Add(new object[]
+                        {
+                            listKey,
+                            ordinal++,
+                            KeyFactory.BuildMasterKey(data.Reference.FormKey),
+                            (int)data.Level,
+                            (int)data.Count,
+                        });
+                    }
+                }
+
+                result.LeveledLists.Add(parsedList);
+            }
+
+            // GLOBALS
+            //
+            // Only interesting because a leveled list can take its chance-none from one instead of
+            // from a fixed number: 223 lists in the real load order do, across 125 different globals,
+            // and without a name they are unpickable and unreadable ("Skyrim.esm|0F258D" tells the
+            // user nothing).
+            //
+            // The VALUE is scanned too, and that matters for the calculator: a list with a global has
+            // no fixed chance at all, so the only honest number to compute with is what the global
+            // holds right now in the load order. It is a starting value - quests and scripts change
+            // it while playing - which is why the window says where the number came from.
+            //
+            // GLOB is one record with three payload shapes (float, int, short). Mutagen models them
+            // as separate types, so the value is read through the getter interfaces rather than a
+            // common property - there is none.
+            foreach (var glob in mod.Globals.Records)
+            {
+                float? value = glob switch
+                {
+                    IGlobalFloatGetter f => f.Data,
+                    IGlobalIntGetter i => i.Data,
+                    IGlobalShortGetter s => s.Data,
+                    _ => null,
+                };
+
+                result.GlobalRows.Add(new object[]
+                {
+                    KeyFactory.BuildMasterKey(glob.FormKey),
+                    glob.EditorID ?? "",
+                    // NULL rather than 0 for a shape this scan does not know: 0 is a legitimate
+                    // chance ("always rolls something") and must not be invented.
+                    value.HasValue ? (object)(double)value.Value : DBNull.Value,
+                });
+            }
+
             // MAGIC EFFECTS
             foreach (var mgef in mod.MagicEffects.Records)
             {
-                string mgefKey = $"{pluginName}|{mgef.FormKey.IDString()}";
+                // Master-correct — same fix and the same reason as the enchantment key above.
+                string mgefKey = KeyFactory.BuildMasterKey(mgef.FormKey);
 
                 bool hasMagnitude = !mgef.Flags.HasFlag(MagicEffect.Flag.NoMagnitude);
                 bool hasDuration = !mgef.Flags.HasFlag(MagicEffect.Flag.NoDuration);
@@ -966,6 +1174,7 @@ namespace SkyrimCraftingTool.Model
                     mgef.TargetType.ToString()
                 });
             }
+
 
             return result;
         }

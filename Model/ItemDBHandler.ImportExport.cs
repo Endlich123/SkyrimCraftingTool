@@ -78,6 +78,20 @@ namespace SkyrimCraftingTool.Model
 
         private static List<EditedItemDto> GetEditedCOBJ(SqliteConnection connection, ExportScope scope, string scopeValue)
         {
+            // The last column list in this file that was still written out by hand, and the last
+            // place a new editable COBJ field could be forgotten. Both halves come from
+            // CobjShadowColumns now: the shadow columns, and the base columns they shadow
+            // ("IsEditedName" -> "Name"), which a user-created row exports in place of the diff.
+            // ImportExportRoundTripTests walks the same array, so a fifth field that never reaches
+            // this SELECT fails the build instead of quietly vanishing on export.
+            string[] shadowCols = CobjShadowColumns;
+            string[] baseCols = shadowCols.Select(c => c.Substring("IsEdited".Length)).ToArray();
+
+            // Key, LastChanged, Original, ConditionsEdited, Name (for display), then the two blocks.
+            const int displayNameOrdinal = 4;
+            int baseOffset = displayNameOrdinal + 1;
+            int shadowOffset = baseOffset + baseCols.Length;
+
             var rows = new List<(string Key, bool ConditionsEdited, EditedItemDto Dto)>();
             using (var cmd = connection.CreateCommand())
             {
@@ -86,9 +100,9 @@ namespace SkyrimCraftingTool.Model
                 // Original=0 (user-created) is always an edit — it's new content that must export
                 // even if some path ever cleared its IsEdited (a reset of a user recipe deletes the
                 // row, so it can't be a stale pristine Original=0 here).
-                cmd.CommandText = @"SELECT Key, LastChanged, Original, ConditionsEdited,
-                        Name, CreatedItem, WorkbenchKeyword, Ingredients,
-                        IsEditedName, IsEditedCreatedItem, IsEditedWorkbenchKeyword, IsEditedIngredients
+                cmd.CommandText = $@"SELECT Key, LastChanged, Original, ConditionsEdited, Name,
+                        {string.Join(", ", baseCols)},
+                        {string.Join(", ", shadowCols)}
                     FROM COBJ WHERE (IsEdited = 1 OR ConditionsEdited = 1 OR Original = 0)" + BuildScopeWhere(scope, scopeValue, cmd);
 
                 using var reader = cmd.ExecuteReader();
@@ -101,24 +115,28 @@ namespace SkyrimCraftingTool.Model
                     // SafeStr, not GetString - see GetEditedArmorOrWeapons.
                     var dto = new EditedItemDto { Table = "COBJ", Key = key, LastChanged = SafeStr(reader, 1), Original = original };
 
-                    if (original == 0)
+                    for (int i = 0; i < shadowCols.Length; i++)
                     {
-                        // User-created: no scan to fall back to, so export the full effective row
-                        // (shadow value if set, else the base value) rather than just the shadow diff.
-                        dto.Fields["Name"] = reader.IsDBNull(8) ? SafeStr(reader, 4) : reader.GetString(8);
-                        dto.Fields["CreatedItem"] = reader.IsDBNull(9) ? SafeStr(reader, 5) : reader.GetString(9);
-                        dto.Fields["WorkbenchKeyword"] = reader.IsDBNull(10) ? SafeStr(reader, 6) : reader.GetString(10);
-                        dto.Fields["Ingredients"] = reader.IsDBNull(11) ? SafeStr(reader, 7) : reader.GetString(11);
-                        dto.DisplayName = dto.Fields["Name"];
+                        int shadowOrdinal = shadowOffset + i;
+
+                        if (original == 0)
+                        {
+                            // User-created: no scan to fall back to, so export the full effective row
+                            // (shadow value if set, else the base value) rather than just the shadow diff.
+                            dto.Fields[baseCols[i]] = reader.IsDBNull(shadowOrdinal)
+                                ? SafeStr(reader, baseOffset + i)
+                                : reader.GetString(shadowOrdinal);
+                        }
+                        else if (!reader.IsDBNull(shadowOrdinal))
+                        {
+                            dto.Fields[shadowCols[i]] = reader.GetString(shadowOrdinal);
+                        }
                     }
-                    else
-                    {
-                        if (!reader.IsDBNull(8)) dto.Fields["IsEditedName"] = reader.GetString(8);
-                        if (!reader.IsDBNull(9)) dto.Fields["IsEditedCreatedItem"] = reader.GetString(9);
-                        if (!reader.IsDBNull(10)) dto.Fields["IsEditedWorkbenchKeyword"] = reader.GetString(10);
-                        if (!reader.IsDBNull(11)) dto.Fields["IsEditedIngredients"] = reader.GetString(11);
-                        dto.DisplayName = SafeStr(reader, 4);
-                    }
+
+                    // A created row shows the name it will be given, a scanned one the name it has.
+                    dto.DisplayName = original == 0 && dto.Fields.TryGetValue("Name", out var effectiveName)
+                        ? effectiveName
+                        : SafeStr(reader, displayNameOrdinal);
 
                     rows.Add((key, conditionsEdited, dto));
                 }
@@ -160,7 +178,9 @@ namespace SkyrimCraftingTool.Model
         private static List<EditedItemDto> GetEditedEnchantments(SqliteConnection connection, ExportScope scope, string scopeValue)
         {
             var rows = new List<(string Key, bool EffectsEdited, EditedItemDto Dto)>();
-            string[] editedCols = { "IsEditedName", "IsEditedCastType", "IsEditedTargetType", "IsEditedEnchantmentCost", "IsEditedWornRestrictionListKey" };
+
+            // From the shared list, not a second copy of it - see EnchantmentShadowColumns.
+            string[] editedCols = EnchantmentShadowColumns;
 
             using (var cmd = connection.CreateCommand())
             {
@@ -168,9 +188,9 @@ namespace SkyrimCraftingTool.Model
                 // non-null, so LastChanged means "ever touched incl. resets" — wrong for "what to
                 // export". Matches the tree's edited badge. E3: KeywordsEdited dropped — worn-
                 // restriction-list content is its own export unit (GetEditedWornRestrictionLists).
-                cmd.CommandText = @"SELECT Key, LastChanged, EffectsEdited,
+                cmd.CommandText = $@"SELECT Key, LastChanged, EffectsEdited,
                         Name,
-                        IsEditedName, IsEditedCastType, IsEditedTargetType, IsEditedEnchantmentCost, IsEditedWornRestrictionListKey
+                        {string.Join(", ", editedCols)}
                     FROM Enchantments
                     WHERE (IsEdited = 1 OR EffectsEdited = 1)" + BuildScopeWhere(scope, scopeValue, cmd);
 
@@ -482,25 +502,7 @@ namespace SkyrimCraftingTool.Model
             if (KeyFactory.IsUnsetKey(item.Key) || item.WornRestrictionKeywords == null)
                 return false;
 
-            bool alreadyEdited;
-            using (var checkCmd = connection.CreateCommand())
-            {
-                checkCmd.Transaction = transaction;
-                checkCmd.CommandText = "SELECT IsEdited FROM WornRestrictionListState WHERE ListKey = @key";
-                checkCmd.Parameters.AddWithValue("@key", item.Key);
-                var res = checkCmd.ExecuteScalar();
-                alreadyEdited = res != null && res != DBNull.Value && Convert.ToInt64(res) == 1;
-            }
-            if (!alreadyEdited)
-            {
-                using var snapshotCmd = connection.CreateCommand();
-                snapshotCmd.Transaction = transaction;
-                snapshotCmd.CommandText =
-                    @"INSERT INTO WornRestrictionKeywords_Original (ListKey, KeywordKey)
-                      SELECT ListKey, KeywordKey FROM WornRestrictionKeywords WHERE ListKey = @key";
-                snapshotCmd.Parameters.AddWithValue("@key", item.Key);
-                snapshotCmd.ExecuteNonQuery();
-            }
+            SnapshotChildRowsIfFirstEdit(connection, transaction, ChildTables.WornRestrictionKeywords, item.Key);
 
             using (var deleteCmd = connection.CreateCommand())
             {
@@ -657,6 +659,13 @@ namespace SkyrimCraftingTool.Model
 
             if (item.ConditionRows != null)
             {
+                // An import IS an edit of these child rows, so it owes the same snapshot every other
+                // writer takes. Without it Reset later sees ConditionsEdited = 1, passes its guard,
+                // deletes the live rows and restores from an empty COBJ_Conditions_Original -
+                // leaving the recipe with no conditions at all. This was the last of the three
+                // child-row writers still missing it; see docs/ImportExport-Analyse.md, B2.
+                SnapshotChildRowsIfFirstEdit(connection, transaction, ChildTables.CobjConditions, item.Key);
+
                 using (var deleteCmd = connection.CreateCommand())
                 {
                     deleteCmd.Transaction = transaction;
@@ -705,6 +714,17 @@ namespace SkyrimCraftingTool.Model
 
             if (item.EffectRows != null)
             {
+                // DATA LOSS IF THIS IS MISSING, and it was.
+                //
+                // An import is an effect edit like any other: it deletes the live rows and writes
+                // its own, then sets EffectsEdited = 1. But it used to skip the snapshot that
+                // SaveEnchantmentEffects takes on the first edit - so Reset later saw
+                // EffectsEdited = 1, passed its guard, deleted the live rows and restored from an
+                // EMPTY EnchantmentEffects_Original. The enchantment came back with no effects at
+                // all, and nothing short of a rescan brought them back.
+                //
+                SnapshotChildRowsIfFirstEdit(connection, transaction, ChildTables.EnchantmentEffects, item.Key);
+
                 using (var deleteCmd = connection.CreateCommand())
                 {
                     deleteCmd.Transaction = transaction;
