@@ -88,6 +88,7 @@ namespace SkyrimCraftingTool.ViewModel
             // container is toggled and when a level slider moves, which is what LevelChanged is for.
             var allContainers = main?.AllContainers ?? new List<ContainerRecord>();
             _containerSelection = new ContainerSelectionVM(allContainers);
+            _containerSelection.OwnerInfo = () => ("", "the selected preset slots");
             _containerSelection.SelectedContainers.CollectionChanged += (_, _) => SyncContainerTemplate();
             _containerSelection.LevelChanged += SyncContainerTemplate;
 
@@ -147,7 +148,32 @@ namespace SkyrimCraftingTool.ViewModel
                 c.IsSelected = false;
         });
 
-        private void SyncContainerTemplate() => _template.Container.Value = _containerSelection.BuildString();
+        // Same rule as the single-slot editor: the include switch follows the first placement, and
+        // only on that transition. A configured container that the bulk apply then ignores is a dead
+        // end nobody can debug from the screen - see PresetSlotNodeVM.SyncContainerAndNotify.
+        private void SyncContainerTemplate()
+        {
+            var built = _containerSelection.BuildString();
+
+            bool had = HasPlacements(_template.Container.Value);
+            bool has = HasPlacements(built);
+
+            _template.Container.Value = built;
+
+            if (has != had)
+            {
+                _template.Container.Enabled = has;
+                OnPropertyChanged(nameof(ContainerEnabled));
+            }
+        }
+
+        private static bool HasPlacements(string? containerString)
+        {
+            if (string.IsNullOrWhiteSpace(containerString)) return false;
+
+            try { return Services.ContainerStringParser.Parse(containerString).Count > 0; }
+            catch { return false; }
+        }
 
         // --------------------
         // Values

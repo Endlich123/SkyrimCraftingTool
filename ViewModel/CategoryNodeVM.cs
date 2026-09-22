@@ -16,6 +16,24 @@ namespace SkyrimCraftingTool.ViewModel
         public ObservableCollection<ItemNodeVM> Items { get; set; }
             = new ObservableCollection<ItemNodeVM>();
 
+        // Drives the dot on a COLLAPSED category row: an edited item marks itself, but folded away
+        // that marker is invisible and the edit looks like it is not there.
+        //
+        // Computed, not cached, and that is deliberate - FilterReference hands out category copies
+        // that SHARE the item instances, so a copy answers this correctly without any bookkeeping of
+        // its own. What it does need is a nudge, which MainContentVM gives it (RaiseTreeEditedFlags).
+        public bool HasEditedItems
+        {
+            get
+            {
+                foreach (var item in Items)
+                    if (item.IsEdited) return true;
+                return false;
+            }
+        }
+
+        internal void RaiseHasEditedItems() => OnPropertyChanged(nameof(HasEditedItems));
+
         /// <summary>
         /// Filters this category. pluginMatched = true when the plugin already matches the search text.
         /// </summary>

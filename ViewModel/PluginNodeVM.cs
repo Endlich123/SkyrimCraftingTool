@@ -26,6 +26,20 @@ namespace SkyrimCraftingTool.ViewModel
         public ObservableCollection<CategoryNodeVM> Categories { get; set; }
             = new ObservableCollection<CategoryNodeVM>();
 
+        // Same as CategoryNodeVM.HasEditedItems, one level up - a plugin row collapsed over an
+        // edited item would otherwise show nothing at all.
+        public bool HasEditedItems
+        {
+            get
+            {
+                foreach (var cat in Categories)
+                    if (cat.HasEditedItems) return true;
+                return false;
+            }
+        }
+
+        internal void RaiseHasEditedItems() => OnPropertyChanged(nameof(HasEditedItems));
+
         // --------------------
         // Presets (Output/Presets/*.json) — Auto-Apply to every item in this plugin.
         // --------------------

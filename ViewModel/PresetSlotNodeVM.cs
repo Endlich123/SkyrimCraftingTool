@@ -48,6 +48,7 @@ namespace SkyrimCraftingTool.ViewModel
         private readonly List<FormIDRecord> _allPerks;
         private readonly List<FormIDRecord> _allQuests;
         private readonly List<ContainerRecord> _allContainers;
+        private readonly List<FormIDRecord> _allEnchantments;
         private readonly Services.IReferenceResolver? _references;
 
         private bool _loaded;
@@ -70,7 +71,8 @@ namespace SkyrimCraftingTool.ViewModel
             List<FormIDRecord> allMaterials, List<FormIDRecord> allPerks, List<FormIDRecord> allQuests,
             List<ContainerRecord> allContainers,
             Action onChanged,
-            Services.IReferenceResolver? references = null)
+            Services.IReferenceResolver? references = null,
+            List<FormIDRecord>? allEnchantments = null)
         {
             _config = config;
             IsArmor = isArmor;
@@ -84,6 +86,11 @@ namespace SkyrimCraftingTool.ViewModel
             _allPerks = allPerks ?? new List<FormIDRecord>();
             _allQuests = allQuests ?? new List<FormIDRecord>();
             _allContainers = allContainers ?? new List<ContainerRecord>();
+            _allEnchantments = allEnchantments ?? new List<FormIDRecord>();
+
+            // The box shows this text, so a preset that already carries an enchantment has to open
+            // with its label in the field instead of an empty search line.
+            _enchantmentSearchText = SelectedEnchantment?.Name ?? "";
         }
 
         // --------------------
@@ -120,6 +127,7 @@ namespace SkyrimCraftingTool.ViewModel
             };
 
             _containerSelection = new ContainerSelectionVM(_allContainers);
+            _containerSelection.OwnerInfo = () => ("", DisplayName);
             _containerSelection.LoadFromString(_config.Container.Value ?? "{}");
             SubscribeContainerEvents();
 
@@ -145,8 +153,7 @@ namespace SkyrimCraftingTool.ViewModel
             if (_containerSelection != null)
             {
                 _containerSelection.SelectedContainers.CollectionChanged -= OnSelectedContainersChanged;
-                foreach (var c in _containerSelection.SelectedContainers)
-                    UnsubscribeContainerEntry(c);
+                _containerSelection.LevelChanged -= SyncContainerAndNotify;
             }
 
             if (_keywordViewSource != null)
@@ -350,6 +357,70 @@ namespace SkyrimCraftingTool.ViewModel
         }
 
         // --------------------
+        // Enchantment
+        // --------------------
+        //
+        // In presets, NOT in the multi-select bulk editor (user, 2026-09-16): patching ten items
+        // rarely means giving them all the same enchantment, but a preset for legendary end-game
+        // items is exactly the case where that sameness is the point.
+        public bool EnchantmentEnabled
+        {
+            get => _config.Enchantment.Enabled;
+            set { if (_config.Enchantment.Enabled == value) return; _config.Enchantment.Enabled = value; OnPropertyChanged(); NotifyChanged(); }
+        }
+
+        public IReadOnlyList<FormIDRecord> AvailableEnchantments => _allEnchantments;
+
+        // Same editable-and-filtering box as the item editor: the catalogue runs to hundreds of
+        // entries, and the label carries EditorID and Name because 473 of 632 share a name.
+        private string _enchantmentSearchText = "";
+        public string EnchantmentSearchText
+        {
+            get => _enchantmentSearchText;
+            set
+            {
+                if (SetProperty(ref _enchantmentSearchText, value ?? ""))
+                    OnPropertyChanged(nameof(FilteredEnchantments));
+            }
+        }
+
+        public IEnumerable<FormIDRecord> FilteredEnchantments =>
+            _allEnchantments.Where(e =>
+                string.IsNullOrWhiteSpace(EnchantmentSearchText)
+                || e.Name.Contains(EnchantmentSearchText, StringComparison.OrdinalIgnoreCase));
+
+        public FormIDRecord? SelectedEnchantment
+        {
+            get => _allEnchantments.FirstOrDefault(
+                e => string.Equals(e.Key, _config.Enchantment.Value ?? "", StringComparison.OrdinalIgnoreCase));
+            set
+            {
+                // null arrives when the filter hides the selected row - taking it at face value would
+                // silently clear the field mid-keystroke. "None" is a real entry in the list.
+                if (value == null) return;
+
+                bool had = !string.IsNullOrWhiteSpace(_config.Enchantment.Value);
+                bool has = !string.IsNullOrWhiteSpace(value.Key);
+
+                _config.Enchantment.Value = value.Key ?? "";
+                _enchantmentSearchText = value.Name ?? "";
+
+                // The include switch follows the first pick, and only on that transition - the same
+                // rule the container field learned the hard way: a configured value that Apply then
+                // ignores is a dead end nobody can debug from the screen.
+                if (has != had)
+                {
+                    _config.Enchantment.Enabled = has;
+                    OnPropertyChanged(nameof(EnchantmentEnabled));
+                }
+
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(EnchantmentSearchText));
+                NotifyChanged();
+            }
+        }
+
+        // --------------------
         // Container
         // --------------------
         public bool ContainerEnabled
@@ -412,48 +483,58 @@ namespace SkyrimCraftingTool.ViewModel
                 c.IsSelected = false;
         });
 
+        // ContainerSelectionVM already watches every row it owns and raises LevelChanged for both the
+        // level AND the amount. This used to subscribe to the rows itself and filter on Level alone,
+        // so the per-entry amount (Prio 6, Schritt 3) never reached _config.Container.Value: the
+        // editor showed 4, the preset stored 1, and nobody found out until the patch handed out one.
+        //
+        // The second copy of the wiring was the whole problem, so there is no second copy any more -
+        // exactly the reasoning behind the shared row template next to it.
         private void SubscribeContainerEvents()
         {
             _containerSelection.SelectedContainers.CollectionChanged += OnSelectedContainersChanged;
-            foreach (var c in _containerSelection.SelectedContainers)
-                SubscribeContainerEntry(c);
-        }
-
-        private void SubscribeContainerEntry(ContainerEntryVM entry)
-        {
-            foreach (var lvli in entry.LVLiEntries)
-                lvli.PropertyChanged += OnLVLiPropertyChanged;
-        }
-
-        private void UnsubscribeContainerEntry(ContainerEntryVM entry)
-        {
-            foreach (var lvli in entry.LVLiEntries)
-                lvli.PropertyChanged -= OnLVLiPropertyChanged;
+            _containerSelection.LevelChanged += SyncContainerAndNotify;
         }
 
         private void OnSelectedContainersChanged(object sender, NotifyCollectionChangedEventArgs e)
-        {
-            if (e.OldItems != null)
-                foreach (ContainerEntryVM c in e.OldItems)
-                    UnsubscribeContainerEntry(c);
-
-            if (e.NewItems != null)
-                foreach (ContainerEntryVM c in e.NewItems)
-                    SubscribeContainerEntry(c);
-
-            SyncContainerAndNotify();
-        }
-
-        private void OnLVLiPropertyChanged(object sender, PropertyChangedEventArgs e)
-        {
-            if (e.PropertyName == nameof(LVLiEntryVM.Level))
-                SyncContainerAndNotify();
-        }
+            => SyncContainerAndNotify();
 
         private void SyncContainerAndNotify()
         {
-            _config.Container.Value = _containerSelection.BuildString();
+            var built = _containerSelection.BuildString();
+
+            // "Include Container" follows the placement, on the transition only.
+            //
+            // Every other field of a preset has a value whether or not the user wants it applied, so
+            // its include switch carries real information. A container has none until someone picks
+            // one - so picking one IS the statement, and leaving the switch off made the editor show
+            // a configured container that Apply silently ignored. That is a dead end nobody can
+            // debug from the screen; it cost a real preset of the user's ("Apply nothing happens").
+            //
+            // Only on the transition, never on every edit: once the field is on, the switch belongs
+            // to the user again - turning it off and then nudging a level must not turn it back on.
+            bool had = HasPlacements(_config.Container.Value);
+            bool has = HasPlacements(built);
+
+            _config.Container.Value = built;
+
+            if (has != had)
+            {
+                _config.Container.Enabled = has;
+                OnPropertyChanged(nameof(ContainerEnabled));
+            }
+
             NotifyChanged();
+        }
+
+        // "{}" and an empty string both mean no placement at all. A malformed string counts as empty
+        // rather than throwing - the switch is not worth an exception.
+        private static bool HasPlacements(string? containerString)
+        {
+            if (string.IsNullOrWhiteSpace(containerString)) return false;
+
+            try { return Services.ContainerStringParser.Parse(containerString).Count > 0; }
+            catch { return false; }
         }
 
         private void NotifyChanged() => _onChanged();

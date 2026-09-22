@@ -34,7 +34,10 @@ namespace SkyrimCraftingTool.ViewModel
         public ICommand AddConditionCommand { get; }
         public ICommand RemoveConditionCommand { get; }
 
-        public IEnumerable<FormIDRecord> FilteredPerks => _allPerks;
+        // Named to match ItemNodeVM and MultiSelectDetailVM: the condition "Target" templates live once
+        // in Styles/ConditionTemplates.xaml and bind to the nearest ItemsControl DataContext, so all
+        // three owners of a condition list have to expose the same property name.
+        public IEnumerable<FormIDRecord> FilteredCraftingPerks => _allPerks;
         public IEnumerable<FormIDRecord> FilteredQuests => _allQuests;
 
         public PresetRecipeVM(RecipeConfig config, bool hasWorkbench,

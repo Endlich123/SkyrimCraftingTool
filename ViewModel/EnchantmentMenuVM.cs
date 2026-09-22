@@ -21,9 +21,35 @@ namespace SkyrimCraftingTool.ViewModel
         private readonly IImportExportService _importExportService;
 
         // Shared autosave debouncer - only holds ONE pending action. Flushed on app shutdown.
-        private readonly Debouncer _saveDebouncer = new();
+        // ONE DEBOUNCER PER FIELD, not one for the whole view model.
+        //
+        // A Debouncer keeps a single pending action, so changing two DIFFERENT fields inside the
+        // 350 ms window meant the first one was cancelled and never written - its own class comment
+        // says as much. With Name and Cost that rarely bit, because people type one box at a time.
+        // With the ENIT fields it bit immediately: tick "No auto-calc", then set Charge Time and
+        // Amount, and only Amount reached the database. Measured exactly that before the split.
+        //
+        // Keyed by field name, so a burst within one field still coalesces to a single write.
+        private readonly Dictionary<string, Debouncer> _saveDebouncers = new(StringComparer.Ordinal);
 
-        public System.Threading.Tasks.Task FlushPendingSavesAsync() => _saveDebouncer.FlushAsync();
+        private Debouncer DebouncerFor(string fieldName)
+        {
+            lock (_saveDebouncers)
+            {
+                if (!_saveDebouncers.TryGetValue(fieldName, out var d))
+                    _saveDebouncers[fieldName] = d = new Debouncer();
+                return d;
+            }
+        }
+
+        public async System.Threading.Tasks.Task FlushPendingSavesAsync()
+        {
+            Debouncer[] all;
+            lock (_saveDebouncers) all = _saveDebouncers.Values.ToArray();
+
+            foreach (var d in all)
+                await d.FlushAsync();
+        }
 
         // Change tracking / Reset for the selected enchantment's own fields (Name/Cost), its Effects,
         // and its Worn Restriction Keywords. Snapshot of the pristine values, refreshed whenever
@@ -33,6 +59,9 @@ namespace SkyrimCraftingTool.ViewModel
         private bool _hasEnchantmentSnapshot;
         private string _originalEnchantmentName;
         private float _originalEnchantmentCost;
+        private int _originalFlags;
+        private float _originalChargeTime;
+        private int _originalEnchantmentAmount;
         private List<EnchantmentEffectRecord> _originalEffects = new();
         private List<string> _originalWornRestrictionKeywords = new();
 
@@ -74,10 +103,20 @@ namespace SkyrimCraftingTool.ViewModel
                     UpdateKeywordSelection();
                     OnPropertyChanged(nameof(KeywordItems));
                     OnPropertyChanged(nameof(CanEditWornRestrictions));
+                    OnPropertyChanged(nameof(ShowWornRestrictions));
                     OnPropertyChanged(nameof(SelectedWornRestrictionListChoice));
                     OnPropertyChanged(nameof(CurrentWornRestrictionListLabel));
                     OnPropertyChanged(nameof(HasBaseEnchantment));
                     OnPropertyChanged(nameof(CurrentBaseEnchantmentLabel));
+                    OnPropertyChanged(nameof(CanOpenBaseEnchantment));
+                    OnPropertyChanged(nameof(CanAddEffect));
+                    OnPropertyChanged(nameof(HasFamilyChildren));
+                    OnPropertyChanged(nameof(ApplyToFamilyLabel));
+                    OnPropertyChanged(nameof(ShowLineageRow));
+                    OnPropertyChanged(nameof(IsUserCreatedSelected));
+                    OnPropertyChanged(nameof(VariantsLabel));
+                    OnPropertyChanged(nameof(FamilyChildLinks));
+                    IsVariantListOpen = false;
 
                     foreach (var vm in EffectVMs)
                         vm.PropertyChanged -= OnEffectPropertyChanged;
@@ -156,7 +195,7 @@ namespace SkyrimCraftingTool.ViewModel
             // don't keep pointing at EnchantmentRecord instances a rescan/import may have replaced —
             // but remember which one so it can be re-selected against the fresh records below.
             var previouslySelectedKey = _selectedEnchantment?.Key;
-            SelectedEnchantment = null;
+            SelectedNode = null;
 
             BuildEnchantmentTree();
             RecomputeEditedEnchantmentCount();
@@ -165,11 +204,18 @@ namespace SkyrimCraftingTool.ViewModel
             // Re-select the same enchantment (now a fresh record instance) so an import or rescan is
             // reflected in the detail panel straight away instead of blanking it — otherwise the user
             // has to hunt for and re-click the row to see that anything happened.
+            //
+            // Through SelectedNode, not SelectedEnchantment: the detail panel is a ContentPresenter
+            // over the NODE now. Setting only the record would leave the view model pointing at an
+            // enchantment while the panel showed nothing - which is exactly what "blanking it" above
+            // was written to prevent. The nodes here are the ones the tree holds: BuildEnchantmentTree
+            // ends in UpdateEnchantmentFilteredTree(TreeItems), so at this moment both lists carry
+            // the same instances, before any filter makes copies of them.
             if (!string.IsNullOrEmpty(previouslySelectedKey))
             {
                 var leaf = FindEnchantmentLeaf(previouslySelectedKey);
-                if (leaf?.Enchantment != null)
-                    SelectedEnchantment = leaf.Enchantment;
+                if (leaf != null)
+                    SelectedNode = leaf;
             }
 
             // BuildEnchantmentTree publishes the UNFILTERED tree, but "Only edited" / "Only base" /
@@ -179,7 +225,27 @@ namespace SkyrimCraftingTool.ViewModel
             ApplyEnchantmentFilterDebounced(_enchantmentTreeSearchText);
         }
 
-        private EnchantmentTreeNode FindEnchantmentLeaf(string key)
+        // What the tree has selected, whatever level it sits on - the ContentPresenter on the right
+        // picks its DataTemplate from this object's type, the way MainContentVM.SelectedNode does.
+        // Deliberately untyped: a plugin row and an enchantment row are different types by design.
+        //
+        // SelectedEnchantment stays the single source of truth for the editor itself (snapshot,
+        // EffectVMs, every command), so it is derived here rather than bound to in parallel.
+        private object _selectedNode;
+        public object SelectedNode
+        {
+            get => _selectedNode;
+            set
+            {
+                if (!SetProperty(ref _selectedNode, value)) return;
+
+                // A folder row clears the editor instead of leaving the last record on screen -
+                // otherwise the panel would describe something the tree no longer points at.
+                SelectedEnchantment = (value as EnchantmentLeafNode)?.Enchantment;
+            }
+        }
+
+        private EnchantmentLeafNode FindEnchantmentLeaf(string key)
         {
             foreach (var root in TreeItems)
             {
@@ -188,11 +254,11 @@ namespace SkyrimCraftingTool.ViewModel
             }
             return null;
 
-            static EnchantmentTreeNode Search(EnchantmentTreeNode node, string key)
+            static EnchantmentLeafNode Search(EnchantmentTreeNode node, string key)
             {
-                if (node.Enchantment != null &&
-                    string.Equals(node.Enchantment.Key, key, StringComparison.OrdinalIgnoreCase))
-                    return node;
+                if (node is EnchantmentLeafNode leaf &&
+                    string.Equals(leaf.Enchantment.Key, key, StringComparison.OrdinalIgnoreCase))
+                    return leaf;
                 foreach (var child in node.Children)
                 {
                     var f = Search(child, key);
@@ -297,6 +363,303 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
+        // --- Sprungmarke: vom abgeleiteten Enchantment zu seinem Basis-Record (Prio 9) ---
+
+        // Offered only when the base record is actually in the tree. A derived enchantment whose
+        // base sits in a plugin that has left the load order keeps its "Base: <key>" line - the
+        // scanned value stays true - but there is nothing to jump to, so the button greys out
+        // instead of doing nothing on click.
+        public bool CanOpenBaseEnchantment =>
+            _selectedEnchantment?.IsDerived == true
+            && FindEnchantmentLeaf(_selectedEnchantment.BaseEnchantmentKey) != null;
+
+        public ICommand OpenBaseEnchantmentCommand => new RelayCommand(() =>
+        {
+            var ench = _selectedEnchantment;
+            if (ench?.IsDerived != true) return;
+
+            NavigateToEnchantment(ench.BaseEnchantmentKey);
+        });
+
+        // --- Eigene Enchantments anlegen und löschen ---
+
+        public bool IsUserCreatedSelected => _selectedEnchantment?.IsUserCreated == true;
+
+        // The two closed vocabularies. Offering them as lists rather than free text is what makes a
+        // wrong value impossible - the "<Unknown: 0>" enchant type this tool used to write came from
+        // nobody choosing at all. CastType matches SkyPatcher's four documented castType= values.
+        public IReadOnlyList<string> CastTypeChoices { get; } =
+            new[] { "ConstantEffect", "FireAndForget", "Concentration", "Scroll" };
+
+        public IReadOnlyList<string> EnchantTypeChoices { get; } =
+            new[] { "Enchantment", "StaffEnchantment" };
+
+        // Whether the worn-restriction panel is worth showing at all.
+        //
+        // Measured across the load order: of 1018 enchantments exactly 81 carry a worn-restriction
+        // list, and every one of them is ConstantEffect. No weapon and no staff enchantment uses the
+        // field - 0 of 937. So on those it is a permanently empty panel.
+        //
+        // But the category is a guess (cast type, which the engine does not enforce), and hiding a
+        // field hides DATA, which nobody reports as missing - they just assume the tool cannot do it.
+        // So an assigned list always wins over the category: the panel can be hidden only where
+        // there is provably nothing to lose.
+        public bool ShowWornRestrictions => ShouldShowWornRestrictions(_selectedEnchantment);
+
+        // Static so the rule can be tested without standing a whole view model up behind it.
+        internal static bool ShouldShowWornRestrictions(EnchantmentRecord ench)
+        {
+            if (ench == null) return false;
+
+            // An assigned list beats the category, always. This is the line that makes hiding safe.
+            if (!KeyFactory.IsUnsetKey(ench.WornRestrictionListKey)) return true;
+
+            return EnchantmentCategoryHelper.Classify(ench) == EnchantmentCategory.Armor;
+        }
+
+        // Legt einen leeren Record an und wählt ihn aus. Ohne CastType/TargetType: die entscheidet
+        // der erste Effekt (1.893 von 1.895 Effektzeilen stimmen mit ihrem Enchantment überein).
+        public ICommand NewEnchantmentCommand => new RelayCommand(() =>
+        {
+            EnchantmentRecord created;
+            try
+            {
+                created = _enchantmentService.CreateEnchantment("", "New enchantment");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError("Creating an enchantment failed", ex);
+                System.Windows.MessageBox.Show(
+                    $"The enchantment could not be created:{Environment.NewLine}{ex.Message}",
+                    "New enchantment", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                return;
+            }
+
+            // Der Baum wird aus der Datenbank gebaut; danach ist der neue Record die Instanz, die
+            // überall benutzt wird - nicht die zurückgegebene.
+            BuildEnchantmentTree();
+            RefreshWornRestrictionListChoices();
+            UpdateEnchantmentFilteredTree(TreeItems.ToList());
+
+            NavigateToEnchantment(created.Key);
+
+            IssueHub.Current.Report(new AppIssue(
+                AppIssueSeverity.Info,
+                $"{created.EditorID} created. It reaches the game through the generated ESP — " +
+                "give it at least one effect, then assign it to an item.",
+                Category: "enchantment"));
+        });
+
+        public ICommand DeleteEnchantmentCommand => new RelayCommand(() =>
+        {
+            var ench = _selectedEnchantment;
+            if (ench?.IsUserCreated != true) return;
+
+            DeleteUserEnchantment(ench,
+                $"Delete '{ench.EditorID}' for good? It is yours alone — no plugin defines it, so " +
+                "this cannot be undone by a rescan.",
+                "Delete enchantment");
+        });
+
+        // "Back to how it was created" for a record no plugin defines: the shadow columns go, the
+        // effects go, and the panel is rebuilt from what the database now actually holds. Going
+        // through RefreshData rather than restoring field by field is deliberate - there is no
+        // original row to restore FROM, so the database is the only truth left.
+        private void ResetUserEnchantmentToCreatedState(EnchantmentRecord ench)
+        {
+            var answer = System.Windows.MessageBox.Show(
+                $"Reset '{ench.EditorID}' to the empty enchantment it started as? Its effects and edits go," +
+                $" the record itself stays." +
+                $"{Environment.NewLine}{Environment.NewLine}To remove it entirely, use Delete instead.",
+                "Reset enchantment", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+            if (answer != System.Windows.MessageBoxResult.Yes) return;
+
+            var key = ench.Key;
+            _enchantmentService.ResetEnchantmentEdits(key);
+            _enchantmentService.ResetEnchantmentEffects(key);
+
+            RefreshData(_activePlugins);
+            NavigateToEnchantment(key);
+        }
+
+        // Shared by the Delete button and by the plugin panel's Delete, which is the same operation
+        // reached from the other direction.
+        private void DeleteUserEnchantment(EnchantmentRecord ench, string question, string title)
+        {
+            if (ench?.IsUserCreated != true) return;
+
+            var answer = System.Windows.MessageBox.Show(
+                question, title, System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Warning);
+            if (answer != System.Windows.MessageBoxResult.Yes) return;
+
+            bool gone;
+            try
+            {
+                gone = _enchantmentService.DeleteEnchantment(ench.Key);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError($"Deleting enchantment {ench.Key} failed", ex);
+                System.Windows.MessageBox.Show(
+                    $"The enchantment could not be deleted:{Environment.NewLine}{ex.Message}",
+                    "Delete enchantment", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                return;
+            }
+
+            if (!gone) return;
+
+            // Items that still point at it would now carry a dead reference. Saying so beats letting
+            // the patch discover it later.
+            IssueHub.Current.Report(new AppIssue(
+                AppIssueSeverity.Info,
+                $"{ench.EditorID} deleted. Any item you assigned it to now points at nothing — " +
+                "check those items before generating a patch.",
+                Category: "enchantment"));
+
+            SelectedNode = null;
+            BuildEnchantmentTree();
+            RecomputeEditedEnchantmentCount();
+            UpdateEnchantmentFilteredTree(TreeItems.ToList());
+        }
+
+        // --- Der Weg nach unten: zu den Stufen-Varianten ---
+        //
+        // Der Gegenrichtung von "Open base". Nicht überflüssig neben der Suche: von 68 Familien
+        // teilen nur 39 den Namensstamm ihrer Basis - bei 29 führt kein Suchbegriff zur Familie.
+        // `EnchRobesAlterationBase` heißt seine Kinder `EnchRobesCollegeAlteration*`, und
+        // `EnchArmorArticulation01` hat `DA03ClavicusMaskEnch` als Kind. Dass die Maske von Clavicus
+        // Vile zur Articulation-Familie gehört, steht nirgends außer in der Verknüpfung.
+
+        public string VariantsLabel => $"Variants ({FamilyChildCount})  ▾";
+
+        // Beide Knöpfe sitzen in einer Zeile, jeder mit eigener Sichtbarkeit - 15 Records sind
+        // Basis UND Kind und zeigen deshalb beide.
+        public bool ShowLineageRow => HasBaseEnchantment || HasFamilyChildren;
+
+        private bool _isVariantListOpen;
+        public bool IsVariantListOpen
+        {
+            get => _isVariantListOpen;
+            set => SetProperty(ref _isVariantListOpen, value);
+        }
+
+        public sealed class EnchantmentLinkVM
+        {
+            public string Key { get; init; } = "";
+            public string Label { get; init; } = "";
+        }
+
+        public IReadOnlyList<EnchantmentLinkVM> FamilyChildLinks =>
+            CurrentChildren
+                .OrderBy(c => c.EditorID, StringComparer.OrdinalIgnoreCase)
+                .Select(c => new EnchantmentLinkVM { Key = c.Key, Label = VariantLabel(c) })
+                .ToList();
+
+        // "EnchArmorFortifyBlock04 — 30". The value is the point: the tiers ARE a ladder, so the
+        // number is what tells them apart - the EditorID alone would make picking the right one a
+        // guess. Magnitude where there is one, duration otherwise (SoulTrap and friends carry their
+        // ladder in the seconds).
+        internal static string VariantLabel(EnchantmentRecord variant)
+        {
+            var name = string.IsNullOrWhiteSpace(variant.EditorID) ? variant.Key : variant.EditorID;
+
+            var first = variant.Effects?.FirstOrDefault();
+            if (first == null) return name;
+
+            if (first.Magnitude != 0)
+                return $"{name}  —  {first.Magnitude.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}";
+            if (first.Duration != 0) return $"{name}  —  {first.Duration}s";
+
+            return name;
+        }
+
+        public ICommand OpenVariantCommand => new RelayCommand<string>(key =>
+        {
+            if (string.IsNullOrEmpty(key)) return;
+
+            IsVariantListOpen = false;
+            NavigateToEnchantment(key);
+        });
+
+        // Shows an enchantment: in the detail panel AND in the tree. Written as its own step rather
+        // than folded into the command, because the same move is what every further jump target of
+        // Prio 9 needs.
+        //
+        // Three things have to line up, and the filtered tree is why: it is a COPY, rebuilt whenever
+        // the filter runs. The target has to survive the filter, its ancestors have to be expanded
+        // (an unrealised TreeViewItem cannot be selected), and the node that carries IsSelected has
+        // to be the one currently IN that copy - not the original it was cloned from.
+        private void NavigateToEnchantment(string key)
+        {
+            var target = FindEnchantmentLeaf(key);
+            if (target?.Enchantment == null)
+            {
+                IssueHub.Current.Report(new AppIssue(
+                    AppIssueSeverity.Warning,
+                    $"Base enchantment {key} is not in the scanned load order - nothing to jump to.",
+                    Category: "navigation"));
+                return;
+            }
+
+            // A filter that hides the target would land the jump on an invisible row. Clearing it is
+            // the honest way out: the user asked to be taken there, not to be taken somewhere near.
+            if (!TryFindPath(EnchantementFilteredTree, target.Enchantment, new List<EnchantmentTreeNode>()))
+                ClearEnchantmentFiltersAndRebuild();
+
+            SelectedEnchantment = target.Enchantment;
+            TrySelectInTree(EnchantementFilteredTree, target.Enchantment);
+        }
+
+        private void ClearEnchantmentFiltersAndRebuild()
+        {
+            _enchantmentTreeSearchText = "";
+            _showOnlyEditedEnchantments = false;
+            _showOnlyBaseEnchantments = false;
+            OnPropertyChanged(nameof(EnchantmentTreeSearchText));
+            OnPropertyChanged(nameof(ShowOnlyEditedEnchantments));
+            OnPropertyChanged(nameof(ShowOnlyBaseEnchantments));
+
+            // Rebuilt here and now, not through the debouncer: the selection below has to happen on
+            // the tree that is on screen, and a debounced rebuild would replace it 120 ms later -
+            // taking the selection with it. With no filter set this is exactly what the background
+            // filter would have produced (see FilterEnchantmentTreeOnBackground's early return).
+            UpdateEnchantmentFilteredTree(TreeItems.ToList());
+        }
+
+        // Selects the node carrying this record and expands everything above it. Static and taking
+        // the roots so it can be tested without a view model behind it.
+        internal static bool TrySelectInTree(IEnumerable<EnchantmentTreeNode> roots, EnchantmentRecord record)
+        {
+            var path = new List<EnchantmentTreeNode>();
+            if (!TryFindPath(roots, record, path)) return false;
+
+            // Ancestors first - a TreeViewItem whose parent is collapsed was never realised, and an
+            // unrealised container cannot take the selection.
+            for (int i = 0; i < path.Count - 1; i++)
+                path[i].IsExpanded = true;
+
+            // The TreeView clears the previously selected row on its own, and the two-way binding
+            // carries that back into its node - so nothing has to be deselected here.
+            path[^1].IsSelected = true;
+            return true;
+        }
+
+        internal static bool TryFindPath(IEnumerable<EnchantmentTreeNode> nodes, EnchantmentRecord record,
+                                         List<EnchantmentTreeNode> path)
+        {
+            foreach (var node in nodes)
+            {
+                path.Add(node);
+
+                if (node is EnchantmentLeafNode leaf && ReferenceEquals(leaf.Enchantment, record)) return true;
+                if (TryFindPath(node.Children, record, path)) return true;
+
+                path.RemoveAt(path.Count - 1);
+            }
+            return false;
+        }
+
         // Info label shown next to the picker regardless of whether editing is possible.
         public string CurrentWornRestrictionListLabel =>
             _selectedEnchantment == null ? ""
@@ -395,6 +758,8 @@ namespace SkyrimCraftingTool.ViewModel
                 OnPropertyChanged(nameof(SelectedWornRestrictionListChoice));
                 OnPropertyChanged(nameof(CurrentWornRestrictionListLabel));
                 OnPropertyChanged(nameof(CanEditWornRestrictions));
+                // Clearing the list can take the panel away; assigning one always brings it back.
+                OnPropertyChanged(nameof(ShowWornRestrictions));
             }
         }
 
@@ -419,6 +784,9 @@ namespace SkyrimCraftingTool.ViewModel
             _hasEnchantmentSnapshot = original != null;
             _originalEnchantmentName = original?.Name;
             _originalEnchantmentCost = original?.EnchantmentCost ?? 0f;
+            _originalFlags = original?.Flags ?? 0;
+            _originalChargeTime = original?.ChargeTime ?? 0f;
+            _originalEnchantmentAmount = original?.EnchantmentAmount ?? 0;
 
             _originalEffects = ench != null
                 ? _enchantmentService.GetOriginalEnchantmentEffects(ench.Key)
@@ -436,10 +804,21 @@ namespace SkyrimCraftingTool.ViewModel
 
             OnPropertyChanged(nameof(IsEnchantmentNameChanged));
             OnPropertyChanged(nameof(IsEnchantmentCostChanged));
+            OnPropertyChanged(nameof(IsEnchantmentFlagsChanged));
+            OnPropertyChanged(nameof(IsNoAutoCalcChanged));
+            OnPropertyChanged(nameof(IsExtendDurationOnRecastChanged));
+            OnPropertyChanged(nameof(IsEnchantmentChargeTimeChanged));
+            OnPropertyChanged(nameof(IsEnchantmentAmountChanged));
             OnPropertyChanged(nameof(IsEnchantmentEffectsChanged));
             OnPropertyChanged(nameof(IsWornRestrictionKeywordsChanged));
+            OnPropertyChanged(nameof(HasWornRestrictionChanges));
             OnPropertyChanged(nameof(IsWornRestrictionListAssignmentChanged));
+            OnPropertyChanged(nameof(HasWornRestrictionChanges));
             OnPropertyChanged(nameof(HasEnchantmentChanges));
+
+            // The effect list decides what the "add effect" picker may still offer - a selection
+            // switch and a reset both rebuild it.
+            OnPropertyChanged(nameof(FilteredMagicEffects));
         }
 
         private string _originalWornRestrictionListKey = "";
@@ -472,9 +851,49 @@ namespace SkyrimCraftingTool.ViewModel
                 (_selectedEnchantment.WornRestrictionKeywords ?? new ObservableCollection<string>()).ToList(),
                 _originalWornRestrictionKeywords);
 
+        public bool IsEnchantmentFlagsChanged =>
+            _hasEnchantmentSnapshot && _selectedEnchantment != null
+            && _selectedEnchantment.Flags != _originalFlags;
+
+        // Per BIT, not per field. Flags is one int in the database, but the user sees two check
+        // boxes - and marking both because one of them moved points at the wrong one half the time.
+        // Each box answers for its own bit; IsEnchantmentFlagsChanged above stays the field-level
+        // answer that HasEnchantmentChanges and the reset path need.
+        // Static so the rule can be tested without standing up the view model, the same seam
+        // ShouldShowWornRestrictions uses. Masking both sides matters: comparing the whole int would
+        // light up BOTH boxes as soon as either bit moved, and comparing the raw bit values would
+        // miss that 0x04 and 0x00 are "the same bit, different state".
+        internal static bool FlagBitDiffers(int current, int original, int bit)
+            => (current & bit) != (original & bit);
+
+        private bool FlagBitChanged(int bit) =>
+            _hasEnchantmentSnapshot && _selectedEnchantment != null
+            && FlagBitDiffers(_selectedEnchantment.Flags, _originalFlags, bit);
+
+        public bool IsNoAutoCalcChanged => FlagBitChanged(EnchantmentRecord.FlagNoAutoCalc);
+
+        public bool IsExtendDurationOnRecastChanged => FlagBitChanged(EnchantmentRecord.FlagExtendDurationOnRecast);
+
+        public bool IsEnchantmentChargeTimeChanged =>
+            _hasEnchantmentSnapshot && _selectedEnchantment != null
+            && System.Math.Abs(_selectedEnchantment.ChargeTime - _originalChargeTime) > 0.0001f;
+
+        public bool IsEnchantmentAmountChanged =>
+            _hasEnchantmentSnapshot && _selectedEnchantment != null
+            && _selectedEnchantment.EnchantmentAmount != _originalEnchantmentAmount;
+
         public bool HasEnchantmentChanges =>
             IsEnchantmentNameChanged || IsEnchantmentCostChanged || IsEnchantmentEffectsChanged
-            || IsWornRestrictionListAssignmentChanged;
+            || IsWornRestrictionListAssignmentChanged
+            || IsEnchantmentFlagsChanged || IsEnchantmentChargeTimeChanged || IsEnchantmentAmountChanged;
+
+        // The dot on the collapsed Worn Restrictions header. Both kinds of change count, even though
+        // they are not the same thing to the rest of the view model: re-pointing the enchantment at
+        // another list is its own edit, editing that list's keywords changes a SHARED record. From
+        // "did I touch anything in there" they are the same question, and a collapsed section that
+        // hides an edit is exactly what the header dot exists to prevent.
+        public bool HasWornRestrictionChanges =>
+            IsWornRestrictionListAssignmentChanged || IsWornRestrictionKeywordsChanged;
 
         // Reverts the selected enchantment's Name/Cost/Effects + its list *assignment* to the
         // pristine plugin-scanned values by clearing the DB's shadow state for each (not just pushing
@@ -490,6 +909,17 @@ namespace SkyrimCraftingTool.ViewModel
             var ench = _selectedEnchantment;
             if (ench == null || !_hasEnchantmentSnapshot) return;
 
+            // Reset never deletes - Delete is its own button, right next to this one. For a record
+            // the user created that means "back to how it was created": no effects, the name it was
+            // given, cost 0. The bug worth naming is what used to happen instead: the wipe below ran
+            // first and GetOriginalEnchantment then returned null for it, so the restore bailed out
+            // halfway and the panel kept showing values the database no longer held.
+            if (ench.IsUserCreated)
+            {
+                ResetUserEnchantmentToCreatedState(ench);
+                return;
+            }
+
             _enchantmentService.ResetEnchantmentEdits(ench.Key);
             var original = _enchantmentService.GetOriginalEnchantment(ench.Key);
             if (original == null) return;
@@ -498,6 +928,15 @@ namespace SkyrimCraftingTool.ViewModel
             ench.Name = original.Name;
             ench.EnchantmentCost = original.EnchantmentCost;
             ench.WornRestrictionListKey = original.WornRestrictionListKey;
+
+            // The rest of ENIT. ResetEnchantmentEdits above already cleared their shadow columns, so
+            // the database is right either way - but without these three the panel kept showing the
+            // edited numbers until the user selected something else and came back. Everything the
+            // shadow columns cover has to be restored here, or the two drift apart.
+            ench.Flags = original.Flags;
+            ench.ChargeTime = original.ChargeTime;
+            ench.EnchantmentAmount = original.EnchantmentAmount;
+
             ench.FieldChanged += OnEnchantmentFieldChanged;
 
             _enchantmentService.ResetEnchantmentEffects(ench.Key);
@@ -535,7 +974,382 @@ namespace SkyrimCraftingTool.ViewModel
             }
 
             RefreshEnchantmentSnapshot();
+
+            // The tree on screen is a filtered COPY, rebuilt only when the filter runs — nothing in
+            // it recomputes itself. Both filters can be invalidated by this reset: "only edited"
+            // because the row just stopped being edited, and the search text because the reverted
+            // Name is part of what it matches on. Without this the reset row stays listed (and
+            // selectable) until the next keystroke or rescan. Same rule as
+            // MainContentVM.NotifyItemEditedStateChanged on the item side.
+            if (_showOnlyEditedEnchantments || !string.IsNullOrWhiteSpace(_enchantmentTreeSearchText))
+                ApplyEnchantmentFilterDebounced(_enchantmentTreeSearchText);
         });
+
+        // --- Effekte hinzufügen / entfernen ---
+        //
+        // Braucht keine ESP: mgefsToAdd/mgefsToRemove gibt der EnchantmentRuleBuilder längst aus, und
+        // das Zurücksetzen steht auch schon — EnchantmentEffects_Original hält den gescannten Stand,
+        // das EffectsEdited-Flag am Eltern-Record schützt ihn vor dem nächsten Scan. Ein entfernter
+        // Block ist damit nach dem Reset wieder da, ein hinzugefügter wieder weg. Hier fehlte nur die
+        // Bedienung.
+
+        private string _magicEffectSearchText = "";
+
+        // True only while a pick is being put back into the box. See SelectedMagicEffectToAdd.
+        private bool _isSyncingMagicEffectPicker;
+
+        public string MagicEffectSearchText
+        {
+            get => _magicEffectSearchText;
+            set
+            {
+                // Only the user typing moves the search text on its own. The ComboBox also writes
+                // here - the Text binding is TwoWay - including the empty string it produces by
+                // itself while its ItemsSource is being swapped.
+                if (_isSyncingMagicEffectPicker) return;
+
+                if (SetProperty(ref _magicEffectSearchText, value ?? ""))
+                    OnPropertyChanged(nameof(FilteredMagicEffects));
+            }
+        }
+
+        private void SetMagicEffectSearchText(string text)
+        {
+            if (SetProperty(ref _magicEffectSearchText, text ?? "", nameof(MagicEffectSearchText)))
+                OnPropertyChanged(nameof(FilteredMagicEffects));
+        }
+
+        private MagicEffectsRecords _selectedMagicEffectToAdd;
+        public MagicEffectsRecords SelectedMagicEffectToAdd
+        {
+            get => _selectedMagicEffectToAdd;
+            set
+            {
+                // Same trap as the item's enchantment picker: an editable ComboBox whose filtered
+                // rows no longer contain the selection reports null. Taken at face value the Add
+                // button would go dead the moment the user types.
+                if (value == null) return;
+                if (!SetProperty(ref _selectedMagicEffectToAdd, value)) return;
+
+                // THE BUG THIS EXISTS FOR, reported as "it is selected, but the line shows nothing":
+                // picking a row makes the ComboBox write the row's text back through the Text
+                // binding, which re-runs the filter, which hands the control a new ItemsSource -
+                // whereupon it drops its own SelectedItem and clears its text. The view model still
+                // held the pick (the null above is ignored), so Add worked while the box looked
+                // empty. Writing the label here, past the guard, and re-announcing both properties
+                // is what puts the row back on screen.
+                _isSyncingMagicEffectPicker = true;
+                try
+                {
+                    SetMagicEffectSearchText(value.Label);
+                }
+                finally
+                {
+                    _isSyncingMagicEffectPicker = false;
+                    OnPropertyChanged(nameof(MagicEffectSearchText));
+                    OnPropertyChanged(nameof(SelectedMagicEffectToAdd));
+                }
+
+                OnPropertyChanged(nameof(CanAddEffect));
+            }
+        }
+
+        // Nach dem Hinzufügen steht die Box auf einem Effekt, den die Auswahl nicht mehr anbietet
+        // (er ist jetzt am Enchantment) - die Liste wäre leer und der Text ein Eintrag, den es dort
+        // nicht mehr gibt. Also zurück auf Anfang für den nächsten.
+        private void ClearMagicEffectPicker()
+        {
+            _selectedMagicEffectToAdd = null;
+
+            _isSyncingMagicEffectPicker = true;
+            try { SetMagicEffectSearchText(""); }
+            finally
+            {
+                _isSyncingMagicEffectPicker = false;
+                OnPropertyChanged(nameof(MagicEffectSearchText));
+                OnPropertyChanged(nameof(SelectedMagicEffectToAdd));
+            }
+
+            OnPropertyChanged(nameof(CanAddEffect));
+        }
+
+        public IEnumerable<MagicEffectsRecords> FilteredMagicEffects =>
+            AddableMagicEffects(AllMagicEffects, EffectVMs.Select(vm => vm.Model.MagicEffectKey), MagicEffectSearchText);
+
+        // What may still be added, and why anything is excluded at all: EnchantmentEffects has
+        // PRIMARY KEY(EnchantmentKey, MagicEffectKey), so one enchantment can carry a given effect
+        // exactly once. Vanilla records do occasionally list the same MGEF twice with different
+        // values - that shape simply cannot be stored here (see ByMgef in EnchantmentRuleBuilder for
+        // the same limitation on the emitting side), so the picker hides what is already in the list
+        // rather than letting the save silently drop it.
+        internal static IEnumerable<MagicEffectsRecords> AddableMagicEffects(
+            IEnumerable<MagicEffectsRecords> catalogue, IEnumerable<string> alreadyUsedKeys, string search)
+        {
+            var used = new HashSet<string>(
+                (alreadyUsedKeys ?? Enumerable.Empty<string>()).Where(k => !string.IsNullOrEmpty(k)),
+                StringComparer.OrdinalIgnoreCase);
+
+            var hits = (catalogue ?? Enumerable.Empty<MagicEffectsRecords>())
+                .Where(m => m != null && !used.Contains(m.Key));
+
+            if (!string.IsNullOrWhiteSpace(search))
+                hits = hits.Where(m =>
+                    // The LABEL first, and that is not a nicety: what a row shows is
+                    // "EditorID | Name", and picking one puts exactly that string into the box.
+                    // Matching only the halves meant the search for a whole label found NOTHING -
+                    // the list emptied, the ComboBox had no row left to hold, and it dropped its
+                    // selection and cleared the line. Reported as "it is selected, but the line
+                    // shows nothing".
+                    m.Label.Contains(search, StringComparison.OrdinalIgnoreCase)
+                    || (m.EditorID ?? "").Contains(search, StringComparison.OrdinalIgnoreCase)
+                    || (m.Name ?? "").Contains(search, StringComparison.OrdinalIgnoreCase)
+                    || (m.Key ?? "").Contains(search, StringComparison.OrdinalIgnoreCase));
+
+            return hits.ToList();
+        }
+
+        public bool CanAddEffect => _selectedEnchantment != null && _selectedMagicEffectToAdd != null;
+
+        public ICommand AddEffectCommand => new RelayCommand(async () =>
+        {
+            var ench = _selectedEnchantment;
+            var mgef = _selectedMagicEffectToAdd;
+            if (ench == null || mgef == null) return;
+            if (EffectVMs.Any(vm => string.Equals(vm.Model.MagicEffectKey, mgef.Key, StringComparison.OrdinalIgnoreCase)))
+                return;
+
+            var record = new EnchantmentEffectRecord
+            {
+                EnchantmentKey = ench.Key,
+                MagicEffectKey = mgef.Key,
+                EditorID = mgef.EditorID ?? "",
+                Name = mgef.Name ?? "",
+            };
+
+            ench.Effects.Add(record);
+
+            var effectVm = new EnchantmentEffectViewModel(record, AllMagicEffects);
+            effectVm.PropertyChanged += OnEffectPropertyChanged;
+            EffectVMs.Add(effectVm);
+
+            // Was ein neu angelegtes Enchantment IST, entscheidet sein erster Effekt - nicht eine
+            // Frage an den Anwender. Gemessen an der echten Ladereihenfolge stimmen 1.893 von 1.895
+            // Effektzeilen im CastType mit ihrem Enchantment überein und 1.894 von 1.895 im
+            // TargetType. ConstantEffect/Self ist die Rüstungsform, FireAndForget/Touch die einer
+            // Waffe; davon hängt auch ab, in welchem Zweig des Baums der Record landet.
+            bool adoptedType = ench.IsUserCreated && string.IsNullOrEmpty(ench.CastType) && EffectVMs.Count == 1;
+            if (adoptedType)
+            {
+                ench.CastType = mgef.CastType ?? "";
+                ench.TargetType = mgef.TargetType ?? "";
+
+                _enchantmentService.UpdateEnchantmentCastType(ench.Key, ench.CastType);
+                _enchantmentService.UpdateEnchantmentTargetType(ench.Key, ench.TargetType);
+
+                IssueHub.Current.Report(new AppIssue(
+                    AppIssueSeverity.Info,
+                    $"{ench.EditorID} is now {ench.CastType}/{ench.TargetType} — taken from its first effect, " +
+                    "and has moved to the matching branch of the tree.",
+                    Category: "enchantment"));
+            }
+
+            ClearMagicEffectPicker();
+
+            await PersistEffectsAsync("added");
+
+            // Der Zweig, in dem ein Enchantment hängt, wird aus seinem CastType bestimmt und beim
+            // Bauen des Baums festgelegt - ändert sich der Typ, hängt der Knoten am falschen Ast.
+            // Ein frisch angelegter Record hat noch gar keinen und liegt deshalb unter "Other"; mit
+            // seinem ersten Effekt gehört er zu Rüstung oder Waffe. Also neu bauen und den Record
+            // wieder aufsuchen - BuildEnchantmentTree liest aus der Datenbank, die Instanz danach
+            // ist eine andere, weshalb der Sprung über den Schlüssel geht und nicht über das Objekt.
+            if (adoptedType)
+            {
+                var key = ench.Key;
+
+                BuildEnchantmentTree();
+                UpdateEnchantmentFilteredTree(TreeItems.ToList());
+                NavigateToEnchantment(key);
+            }
+        });
+
+        public ICommand RemoveEffectCommand => new RelayCommand<EnchantmentEffectViewModel>(async effectVm =>
+        {
+            var ench = _selectedEnchantment;
+            if (ench == null || effectVm == null) return;
+
+            effectVm.PropertyChanged -= OnEffectPropertyChanged;
+            EffectVMs.Remove(effectVm);
+
+            var record = ench.Effects.FirstOrDefault(e =>
+                string.Equals(e.MagicEffectKey, effectVm.Model.MagicEffectKey, StringComparison.OrdinalIgnoreCase));
+            if (record != null) ench.Effects.Remove(record);
+
+            await PersistEffectsAsync("removed");
+        });
+
+        // Written straight through instead of through the debouncer. Adding or removing a block is a
+        // structural change, and this view model shares ONE debouncer for every autosave - a pending
+        // Name save would be dropped in favour of this one (see Debouncer's class comment). The same
+        // reason MainContentVM persists its bulk paths directly.
+        private async Task PersistEffectsAsync(string what)
+        {
+            var ench = _selectedEnchantment;
+            if (ench == null) return;
+
+            MarkSelectedEnchantmentEdited();
+
+            OnPropertyChanged(nameof(FilteredMagicEffects));
+            OnPropertyChanged(nameof(IsEnchantmentEffectsChanged));
+            OnPropertyChanged(nameof(HasEnchantmentChanges));
+
+            var request = new SaveRequest(null, "Effects")
+            {
+                Enchantment = ench,
+                Effects = EffectVMs.ToList(),
+            };
+
+            try
+            {
+                await _saveRequestService.SaveAsync(request);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError($"Saving enchantment effects failed ({what}, key={ench.Key})", ex);
+                IssueHub.Current.Report(new AppIssue(
+                    AppIssueSeverity.Error,
+                    $"The effect could not be {what} - see Logs\\error.log.",
+                    Category: "enchantment"));
+            }
+        }
+
+        // --- Die Effektliste auf die Stufen-Varianten übertragen ---
+
+        private IReadOnlyList<EnchantmentRecord> CurrentChildren =>
+            _selectedEnchantment == null
+                ? Array.Empty<EnchantmentRecord>()
+                : EnchantmentFamily.ChildrenOf(_selectedEnchantment, AllEnchantmentRecords());
+
+        public int FamilyChildCount => CurrentChildren.Count;
+
+        public bool HasFamilyChildren => FamilyChildCount > 0;
+
+        public string ApplyToFamilyLabel =>
+            FamilyChildCount == 1 ? "Apply to 1 variant…" : $"Apply to {FamilyChildCount} variants…";
+
+        // Adds what this enchantment carries and the variant does not, and removes what the variant
+        // carries and this one no longer does. The numbers are SCALED, not copied — see
+        // Services/EnchantmentFamily for what the load order says about tier ladders — and every
+        // proposal is shown before anything is written.
+        public ICommand ApplyToFamilyCommand => new RelayCommand(async () =>
+        {
+            var parent = _selectedEnchantment;
+            if (parent == null) return;
+
+            var children = CurrentChildren;
+            if (children.Count == 0) return;
+
+            // The panel's live effect list is the truth here, not the record's - the user may have
+            // added a block seconds ago.
+            parent.Effects = new ObservableCollection<EnchantmentEffectRecord>(EffectVMs.Select(vm => vm.Model));
+
+            var byKey = AllMagicEffects.ToDictionary(m => m.Key, StringComparer.OrdinalIgnoreCase);
+            var plan = EnchantmentFamily.Plan(
+                parent, children,
+                mgef => !byKey.TryGetValue(mgef, out var m) || m.HasMagnitude,
+                mgef => byKey.TryGetValue(mgef, out var m) ? m.Label : mgef);
+
+            if (plan.Count == 0)
+            {
+                System.Windows.MessageBox.Show(
+                    "Every variant already carries exactly these effects — nothing to do.",
+                    "Apply to variants", System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            var accepted = View.EnchantmentFamilyWindow.Show(
+                System.Windows.Application.Current?.MainWindow, parent, plan, children.Count);
+
+            if (accepted == null || accepted.Count == 0) return;
+
+            await ApplyFamilyChangesAsync(accepted);
+        });
+
+        private async Task ApplyFamilyChangesAsync(IReadOnlyList<FamilyChangeRowVM> rows)
+        {
+            int written = 0;
+
+            // One save per variant, not per row: SaveEnchantmentEffects replaces a record's whole
+            // effect list (and takes its pristine snapshot on the first edit), so every change to the
+            // same variant has to be in the list that gets written.
+            foreach (var group in rows.GroupBy(r => r.Change.Child))
+            {
+                var child = group.Key;
+
+                var effects = EnchantmentFamily.ApplyTo(
+                    child.Key,
+                    child.Effects,
+                    group.Select(r => (r.Change, r.Magnitude, r.Duration, r.Area)),
+                    mgef => (EffectEditorId(mgef), EffectName(mgef)));
+
+                try
+                {
+                    _enchantmentService.SaveEnchantmentEffects(child.Key, effects);
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.LogError($"Applying effects to variant {child.Key} failed", ex);
+                    IssueHub.Current.Report(new AppIssue(
+                        AppIssueSeverity.Error,
+                        $"{child.EditorID}: the effects could not be written — see Logs\\error.log.",
+                        Category: "enchantment"));
+                    continue;
+                }
+
+                child.Effects = new ObservableCollection<EnchantmentEffectRecord>(effects);
+
+                if (!child.IsEdited)
+                {
+                    child.IsEdited = true;
+                    EditedEnchantmentCount++;
+                }
+
+                written++;
+            }
+
+            // The variants now differ from their scan, so the "only edited" tree has to be rebuilt.
+            ApplyEnchantmentFilterDebounced(_enchantmentTreeSearchText);
+
+            IssueHub.Current.Report(new AppIssue(
+                AppIssueSeverity.Info,
+                $"{rows.Count} effect change(s) written to {written} variant(s).",
+                Category: "enchantment"));
+
+            await Task.CompletedTask;
+        }
+
+        private string EffectEditorId(string mgefKey) =>
+            AllMagicEffects.FirstOrDefault(m => string.Equals(m.Key, mgefKey, StringComparison.OrdinalIgnoreCase))?.EditorID ?? "";
+
+        private string EffectName(string mgefKey) =>
+            AllMagicEffects.FirstOrDefault(m => string.Equals(m.Key, mgefKey, StringComparison.OrdinalIgnoreCase))?.Name ?? "";
+
+        // Every scanned enchantment, from the unfiltered tree - the same records the detail panel
+        // edits, so a change made here is visible everywhere at once.
+        private List<EnchantmentRecord> AllEnchantmentRecords()
+        {
+            var all = new List<EnchantmentRecord>();
+            foreach (var root in TreeItems)
+                Collect(root, all);
+            return all;
+
+            static void Collect(EnchantmentTreeNode node, List<EnchantmentRecord> into)
+            {
+                if (node is EnchantmentLeafNode leaf) into.Add(leaf.Enchantment);
+                foreach (var child in node.Children) Collect(child, into);
+            }
+        }
 
         // --- Autosave wiring ---
 
@@ -547,9 +1361,19 @@ namespace SkyrimCraftingTool.ViewModel
             MarkSelectedEnchantmentEdited();
             OnPropertyChanged(nameof(IsEnchantmentNameChanged));
             OnPropertyChanged(nameof(IsEnchantmentCostChanged));
+            OnPropertyChanged(nameof(IsEnchantmentFlagsChanged));
+            OnPropertyChanged(nameof(IsNoAutoCalcChanged));
+            OnPropertyChanged(nameof(IsExtendDurationOnRecastChanged));
+            OnPropertyChanged(nameof(IsEnchantmentChargeTimeChanged));
+            OnPropertyChanged(nameof(IsEnchantmentAmountChanged));
             OnPropertyChanged(nameof(HasEnchantmentChanges));
 
-            _saveDebouncer.DebounceAsync(350, async ct =>
+            // The category is derived from EnchantType and CastType, and the worn-restriction panel
+            // hangs off the category - so switching either has to re-ask.
+            if (fieldName is nameof(EnchantmentRecord.EnchantType) or nameof(EnchantmentRecord.CastType))
+                OnPropertyChanged(nameof(ShowWornRestrictions));
+
+            DebouncerFor(fieldName).DebounceAsync(350, async ct =>
             {
                 var request = new SaveRequest(null, fieldName) { Enchantment = ench };
                 await _saveRequestService.SaveAsync(request);
@@ -570,7 +1394,7 @@ namespace SkyrimCraftingTool.ViewModel
             OnPropertyChanged(nameof(IsEnchantmentEffectsChanged));
             OnPropertyChanged(nameof(HasEnchantmentChanges));
 
-            _saveDebouncer.DebounceAsync(350, async ct =>
+            DebouncerFor("Effects").DebounceAsync(350, async ct =>
             {
                 var request = new SaveRequest(null, "Effects")
                 {
@@ -618,10 +1442,11 @@ namespace SkyrimCraftingTool.ViewModel
             // view still shows it as a resettable change via IsWornRestrictionKeywordsChanged.
             _wornRestrictionListEdited = true;   // optimistic — the debounced save below sets it in the DB
             OnPropertyChanged(nameof(IsWornRestrictionKeywordsChanged));
+            OnPropertyChanged(nameof(HasWornRestrictionChanges));
             OnPropertyChanged(nameof(HasEnchantmentChanges));
             OnPropertyChanged(nameof(CanResetWornRestrictionList));
 
-            _saveDebouncer.DebounceAsync(350, async ct =>
+            DebouncerFor("WornRestrictionKeywords").DebounceAsync(350, async ct =>
             {
                 var request = new SaveRequest(null, "WornRestrictionKeywords")
                 {
@@ -694,10 +1519,19 @@ namespace SkyrimCraftingTool.ViewModel
         }
 
         private int _editedEnchantmentCount;
+        // The plugin and category dots hang off this. Raising them here rather than at each call
+        // site is deliberate: the count moves in both directions - up when a record is marked, down
+        // when one is reset - and the reset path is exactly the one that was missing its nudge.
+        // Anything that changes the count changes whether an ancestor still has an edited record
+        // under it, so there is no call site that may skip this.
         public int EditedEnchantmentCount
         {
             get => _editedEnchantmentCount;
-            private set => SetProperty(ref _editedEnchantmentCount, value);
+            private set
+            {
+                if (SetProperty(ref _editedEnchantmentCount, value))
+                    RaiseTreeEditedFlags();
+            }
         }
 
         // Worn-restriction keywords are stored per FLST. An enchantment with no FLST has no list to
@@ -708,6 +1542,20 @@ namespace SkyrimCraftingTool.ViewModel
         public int PluginCount => EnchantementFilteredTree.Count;
 
         // Walk the (unfiltered) tree once and count leaves whose record is edited.
+        // Both trees, and for the same reason as MainContentVM.RaiseTreeEditedFlags: the filter hands
+        // the TreeView copies of the folder nodes, which share the records but not the notifications.
+        private void RaiseTreeEditedFlags()
+        {
+            foreach (var root in TreeItems) Raise(root);
+            foreach (var root in EnchantementFilteredTree) Raise(root);
+
+            static void Raise(EnchantmentTreeNode node)
+            {
+                node.RaiseHasEditedDescendant();
+                foreach (var c in node.Children) Raise(c);
+            }
+        }
+
         private void RecomputeEditedEnchantmentCount()
         {
             int n = 0;
@@ -715,9 +1563,13 @@ namespace SkyrimCraftingTool.ViewModel
                 CountEdited(plugin, ref n);
             EditedEnchantmentCount = n;
 
+            // Explicitly, not only through the setter: a rebuild can replace WHICH records are
+            // edited while the total stays the same, and then SetProperty raises nothing.
+            RaiseTreeEditedFlags();
+
             static void CountEdited(EnchantmentTreeNode node, ref int n)
             {
-                if (node.Enchantment is { IsEdited: true }) n++;
+                if (node is EnchantmentLeafNode { Enchantment.IsEdited: true }) n++;
                 foreach (var c in node.Children) CountEdited(c, ref n);
             }
         }
@@ -727,7 +1579,7 @@ namespace SkyrimCraftingTool.ViewModel
         {
             if (_selectedEnchantment == null || _selectedEnchantment.IsEdited) return;
             _selectedEnchantment.IsEdited = true;
-            EditedEnchantmentCount++;
+            EditedEnchantmentCount++;   // its setter raises the ancestors' dots
         }
 
         private readonly Debouncer _enchantmentDebouncer = new();
@@ -776,21 +1628,18 @@ namespace SkyrimCraftingTool.ViewModel
         {
             bool searching = search.Length > 0;
 
-            var newRoot = new EnchantmentTreeNode
-            {
-                DisplayName = root.DisplayName,
-                Enchantment = root.Enchantment,
-                IsExpanded = root.IsExpanded
-            };
+            // Type-preserving: a plugin has to come back a plugin, or the templates that pick by
+            // DataType would dress it as something else.
+            var newRoot = root.CloneWithoutChildren();
 
             // Leaf: gate on edited / base-only state first, then on the search text.
-            if (root.Enchantment != null)
+            if (root is EnchantmentLeafNode leaf)
             {
-                if (onlyEdited && !root.Enchantment.IsEdited)
+                if (onlyEdited && !leaf.Enchantment.IsEdited)
                     return null;
-                if (onlyBase && root.Enchantment.IsDerived)
+                if (onlyBase && leaf.Enchantment.IsDerived)
                     return null;
-                if (!searching || EnchantmentMatches(root.Enchantment, search))
+                if (!searching || EnchantmentMatches(leaf.Enchantment, search))
                 {
                     if (searching) newRoot.IsExpanded = true;
                     return newRoot;
@@ -921,18 +1770,20 @@ namespace SkyrimCraftingTool.ViewModel
 
             foreach (var pluginGroup in grouped)
             {
-                var pluginNode = new EnchantmentTreeNode
+                var pluginNode = new EnchantmentPluginNode
                 {
-                    DisplayName = pluginGroup.Key
+                    DisplayName = pluginGroup.Key,
+                    Menu = this,
                 };
 
-                var weaponNode = new EnchantmentTreeNode { DisplayName = "Weapon Enchantments" };
-                var armorNode = new EnchantmentTreeNode { DisplayName = "Armor Enchantments" };
-                var otherNode = new EnchantmentTreeNode { DisplayName = "Other" };
+                var weaponNode = new EnchantmentCategoryNode { DisplayName = "Weapon Enchantments" };
+                var armorNode = new EnchantmentCategoryNode { DisplayName = "Armor Enchantments" };
+                var staffNode = new EnchantmentCategoryNode { DisplayName = "Staff Enchantments" };
+                var otherNode = new EnchantmentCategoryNode { DisplayName = "Other" };
 
                 foreach (var ench in pluginGroup.OrderBy(e => e.Name))
                 {
-                    var node = new EnchantmentTreeNode
+                    var node = new EnchantmentLeafNode
                     {
                         DisplayName = ench.EditorID,
                         Enchantment = ench
@@ -948,14 +1799,21 @@ namespace SkyrimCraftingTool.ViewModel
                             armorNode.Children.Add(node);
                             break;
 
+                        case EnchantmentCategory.Staff:
+                            staffNode.Children.Add(node);
+                            break;
+
                         default:
                             otherNode.Children.Add(node);
                             break;
                     }
                 }
 
+                // Empty categories stay out of the tree, which is also what keeps "Other" from
+                // showing up as an always-empty branch once every record has been rescanned.
                 if (weaponNode.Children.Any()) pluginNode.Children.Add(weaponNode);
                 if (armorNode.Children.Any()) pluginNode.Children.Add(armorNode);
+                if (staffNode.Children.Any()) pluginNode.Children.Add(staffNode);
                 if (otherNode.Children.Any()) pluginNode.Children.Add(otherNode);
 
                 TreeItems.Add(pluginNode);
@@ -1008,6 +1866,226 @@ namespace SkyrimCraftingTool.ViewModel
             System.Windows.MessageBox.Show(
                 $"{count} enchantment(s) exported to{Environment.NewLine}{root}",
                 "Export Successful", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+        }
+
+        // --- The same three actions, scoped to one plugin (the plugin detail panel) ---
+        //
+        // Scope is the WHOLE plugin, independent of the tree filter, exactly like the item side's
+        // PluginNodeVM: the tree node the panel hangs off may be a filtered COPY, so the work is
+        // driven off the plugin NAME and the unfiltered TreeItems, never off the node's children.
+
+        private static bool BelongsTo(EditedItemDto i, string plugin)
+            => (i.Key ?? "").StartsWith(plugin + "|", StringComparison.OrdinalIgnoreCase);
+
+        // Both halves get reset - Delete is a separate button - but they land somewhere different,
+        // and the confirmation has to say which:
+        //   scanned (Original = 1)      -> the values its plugin defines come back underneath
+        //   user-created (Original = 0) -> the empty enchantment it was created as; nothing is
+        //                                  underneath it, so that is as far back as reset goes
+        // Split out of the command so the counts can be tested; the command itself is wrapped in
+        // MessageBox calls and cannot be.
+        internal static (List<EnchantmentRecord> Scanned, List<EnchantmentRecord> Own) SplitForReset(
+            IEnumerable<EnchantmentRecord> edited)
+        {
+            var all = (edited ?? Enumerable.Empty<EnchantmentRecord>()).Where(e => e != null).ToList();
+            return (all.Where(e => !e.IsUserCreated).ToList(),
+                    all.Where(e => e.IsUserCreated).ToList());
+        }
+
+        internal async Task ExportPluginEnchantmentsAsync(string plugin)
+        {
+            await FlushPendingSavesAsync();
+
+            List<EditedItemDto> items;
+            try
+            {
+                items = _importExportService.GetEditedItems(ExportScope.Plugin, plugin)
+                    .Where(IsEnchantSideUnit)
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError($"ExportPluginEnchantmentsAsync ({plugin}) failed", ex);
+                System.Windows.MessageBox.Show($"Export failed:{Environment.NewLine}{ex.Message}",
+                    "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                return;
+            }
+
+            if (items.Count == 0)
+            {
+                System.Windows.MessageBox.Show($"'{plugin}' has no edited enchantments to export.",
+                    "Export", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            var (count, root) = ImportExportFlow.ExportItems(items);
+            System.Windows.MessageBox.Show(
+                $"{count} enchantment(s) from '{plugin}' exported to{Environment.NewLine}{root}",
+                "Export Successful", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+        }
+
+        internal async Task ImportPluginEnchantmentsAsync(string plugin)
+        {
+            await FlushPendingSavesAsync();
+
+            var items = ImportExportFlow.ReadAllExportedItems(
+                i => IsEnchantSideUnit(i) && BelongsTo(i, plugin));
+
+            if (items.Count == 0)
+            {
+                System.Windows.MessageBox.Show(
+                    $"No exported enchantments for '{plugin}' found under{Environment.NewLine}{ExportFileStore.ExportsRoot}",
+                    "Import", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            ImportResult? result;
+            try
+            {
+                result = ImportExportFlow.RunImport(_importExportService, items);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError($"ImportPluginEnchantmentsAsync ({plugin}) failed", ex);
+                System.Windows.MessageBox.Show($"Import failed:{Environment.NewLine}{ex.Message}",
+                    "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                return;
+            }
+
+            if (result == null) return; // user cancelled the conflict dialog
+
+            try { RefreshData(_activePlugins); }
+            catch (Exception ex) { AppLogger.LogError($"ImportPluginEnchantmentsAsync ({plugin}) RefreshData failed", ex); }
+
+            System.Windows.MessageBox.Show(ImportExportFlow.SummaryText(result), "Import Complete",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+        }
+
+        // Reverts every edited enchantment of one plugin. Unlike ResetEnchantmentCommand this does
+        // NOT restore the live objects field by field - it clears the shadow columns and then
+        // rebuilds from the database. Replaying that delicate in-place restoration across hundreds
+        // of records is exactly where it would go wrong; the rebuild is the same path a rescan takes.
+        internal async Task ResetPluginEnchantmentsAsync(string plugin)
+        {
+            // A pending debounced save has to land BEFORE the edited set is read and the shadow
+            // columns are cleared - otherwise it fires afterwards and re-marks a just-reset record
+            // as edited. Same rule as PluginNodeVM.ResetPluginCommand.
+            await FlushPendingSavesAsync();
+
+            var edited = EnchantmentsOf(plugin).Where(e => e.IsEdited).ToList();
+
+            if (edited.Count == 0)
+            {
+                System.Windows.MessageBox.Show($"'{plugin}' has no edited enchantments to reset.",
+                    "Reset plugin", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            // Reset does not delete - Delete is its own button on this panel. Records the user
+            // created are reset to the empty state they were created in, the same as the single
+            // record's Reset does; removing them is the Delete button's job.
+            var (scanned, own) = SplitForReset(edited);
+
+            var question =
+                $"Revert ALL edits on {edited.Count} enchantment(s) in '{plugin}' - fields and effects?" +
+                $"{Environment.NewLine}{Environment.NewLine}{scanned.Count} scanned record(s) go back to the state their plugin defines.";
+
+            if (own.Count > 0)
+                question += $" {own.Count} you created yourself go back to the empty enchantment they started as - " +
+                            "they are NOT deleted; use Delete for that.";
+
+            question += $"{Environment.NewLine}{Environment.NewLine}This covers the whole plugin, regardless of any active tree filter, and cannot be undone." +
+                        $"{Environment.NewLine}{Environment.NewLine}Worn-restriction LIST contents are shared between enchantments and are not touched here - use \"Reset list\" for those.";
+
+            var answer = System.Windows.MessageBox.Show(
+                question, "Reset plugin",
+                System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+            if (answer != System.Windows.MessageBoxResult.Yes) return;
+
+            foreach (var ench in edited)
+            {
+                _enchantmentService.ResetEnchantmentEdits(ench.Key);
+                _enchantmentService.ResetEnchantmentEffects(ench.Key);
+            }
+
+            RefreshData(_activePlugins);
+
+            System.Windows.MessageBox.Show(
+                $"{edited.Count} enchantment(s) in '{plugin}' reset.",
+                "Reset plugin", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+        }
+
+        // Deletes every enchantment of this plugin that the user created. Only ever offered where
+        // there are any, which in practice means the tool's own pseudo-plugin - see
+        // KeyFactory.UserPluginName.
+        internal async Task DeletePluginEnchantmentsAsync(string plugin)
+        {
+            await FlushPendingSavesAsync();
+
+            var own = EnchantmentsOf(plugin).Where(e => e.IsUserCreated).ToList();
+
+            if (own.Count == 0)
+            {
+                System.Windows.MessageBox.Show($"'{plugin}' holds none of your own enchantments.",
+                    "Delete enchantments", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            var answer = System.Windows.MessageBox.Show(
+                $"Delete all {own.Count} enchantment(s) you created in '{plugin}' for good?" +
+                $"{Environment.NewLine}{Environment.NewLine}No plugin defines them, so a rescan cannot bring them back. " +
+                "Any item you assigned them to will point at nothing." +
+                $"{Environment.NewLine}{Environment.NewLine}This covers the whole plugin, regardless of any active tree filter.",
+                "Delete enchantments", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+            if (answer != System.Windows.MessageBoxResult.Yes) return;
+
+            int deleted = 0;
+            foreach (var ench in own)
+            {
+                try
+                {
+                    if (_enchantmentService.DeleteEnchantment(ench.Key)) deleted++;
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.LogError($"DeletePluginEnchantmentsAsync: deleting {ench.Key} failed", ex);
+                }
+            }
+
+            SelectedNode = null;
+            RefreshData(_activePlugins);
+
+            IssueHub.Current.Report(new AppIssue(
+                AppIssueSeverity.Info,
+                $"{deleted} of your own enchantment(s) deleted from {plugin}. Any item you assigned them to " +
+                "now points at nothing — check those items before generating a patch.",
+                Category: "enchantment"));
+
+            System.Windows.MessageBox.Show(
+                $"{deleted} enchantment(s) deleted.",
+                "Delete enchantments", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+        }
+
+        internal bool PluginHasUserCreatedEnchantments(string plugin)
+            => EnchantmentsOf(plugin).Any(e => e.IsUserCreated);
+
+        // Off the UNFILTERED tree on purpose - see the scope note above.
+        private IEnumerable<EnchantmentRecord> EnchantmentsOf(string plugin)
+        {
+            var root = TreeItems.FirstOrDefault(
+                n => string.Equals(n.DisplayName, plugin, StringComparison.OrdinalIgnoreCase));
+
+            if (root == null) return Enumerable.Empty<EnchantmentRecord>();
+
+            var found = new List<EnchantmentRecord>();
+            Collect(root, found);
+            return found;
+
+            static void Collect(EnchantmentTreeNode node, List<EnchantmentRecord> into)
+            {
+                if (node is EnchantmentLeafNode leaf) into.Add(leaf.Enchantment);
+                foreach (var c in node.Children) Collect(c, into);
+            }
         }
 
         private async Task ImportEnchantmentsAsync()

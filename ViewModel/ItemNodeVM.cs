@@ -41,6 +41,7 @@ namespace SkyrimCraftingTool.ViewModel
             // load Container definitions
             ContainerSelection = new ContainerSelectionVM(main.AllContainers);
             ContainerSelection.LevelChanged += OnContainerSliderChanged;
+            ContainerSelection.OwnerInfo = () => (Key, string.IsNullOrWhiteSpace(Name) ? EditorID : Name);
 
             AllAvailablePerks = main.AllAvailablePerks;
             AllAvailableKeywords = main.AllAvailableKeywords;
@@ -57,6 +58,7 @@ namespace SkyrimCraftingTool.ViewModel
 
             ContainerSelection = new ContainerSelectionVM(main.AllContainers);
             ContainerSelection.LevelChanged += OnContainerSliderChanged;
+            ContainerSelection.OwnerInfo = () => (Key, string.IsNullOrWhiteSpace(Name) ? EditorID : Name);
 
             AllAvailablePerks = main.AllAvailablePerks;
             AllAvailableKeywords = main.AllAvailableKeywords;
@@ -1064,6 +1066,7 @@ namespace SkyrimCraftingTool.ViewModel
                 {
                     NotifyFieldChanged(nameof(ArmorRating));
                     OnPropertyChanged(nameof(IsArmorRatingChanged));
+                    OnPropertyChanged(nameof(HasSpecificDetailChanges));
                     OnPropertyChanged(nameof(HasAnyChanges));
                 }
             }
@@ -1082,6 +1085,7 @@ namespace SkyrimCraftingTool.ViewModel
                     SyncDataToGui();
                     NotifyFieldChanged(nameof(BodySlotMask));
                     OnPropertyChanged(nameof(IsBodySlotMaskChanged));
+                    OnPropertyChanged(nameof(HasSpecificDetailChanges));
                     OnPropertyChanged(nameof(HasAnyChanges));
                 }
             }
@@ -1113,10 +1117,129 @@ namespace SkyrimCraftingTool.ViewModel
                 {
                     NotifyFieldChanged(nameof(ArmorType));
                     OnPropertyChanged(nameof(IsArmorTypeChanged));
+                    OnPropertyChanged(nameof(HasSpecificDetailChanges));
                     OnPropertyChanged(nameof(HasAnyChanges));
                 }
             }
         }
+
+        // --- Which enchantment this item wears (Prio 7) ---
+        //
+        // The key, not the record: that is what the scan stores, what the patch writes, and what
+        // survives a rescan when the enchantment's own record is rebuilt. The picker below maps it
+        // to a name for the eye.
+        //
+        // The empty string is a real value - "no enchantment" - and the patch expresses it by
+        // writing objectEffect with nothing after it. That is also the one part of this feature
+        // whose syntax is read from the documentation rather than confirmed, so the generator warns
+        // about it (see ItemRuleBuilder.AppendObjectEffectOp).
+        private string _objectEffectKey = "";
+        public string ObjectEffectKey
+        {
+            get => _objectEffectKey;
+            set
+            {
+                bool changed = SetProperty(ref _objectEffectKey, value ?? "");
+
+                // The box SHOWS this text, so it follows the value on every assignment - not only on
+                // a change. A reset that lands back on the enchantment the item already had changes
+                // nothing here, and a half-typed search would otherwise be left standing in the
+                // field as though it were the value. The workbench picker carries the same scar.
+                //
+                // Guarded, because the ComboBox writes its own Text back into EnchantmentSearchText
+                // (TwoWay, UpdateSourceTrigger=PropertyChanged) - including the empty string it
+                // produces by itself the moment FilteredEnchantments hands it a new ItemsSource and
+                // its selection is dropped. That write-back lands in the MIDDLE of this sequence and
+                // overwrites what we just set. Measured in a live window: after Reset the model said
+                // "(no enchantment)" while the box showed "", and the model's own search text had
+                // been clobbered to "" along with it.
+                _isSyncingEnchantmentPicker = true;
+                try
+                {
+                    SetEnchantmentSearchTextFromValue(SelectedEnchantment?.Name ?? "");
+
+                    if (!changed) return;
+
+                    if (!IsLoading) NotifyFieldChanged(nameof(ObjectEffectKey));
+
+                    OnPropertyChanged(nameof(SelectedEnchantment));
+                    OnPropertyChanged(nameof(IsObjectEffectChanged));
+                    OnPropertyChanged(nameof(HasAnyChanges));
+                }
+                finally
+                {
+                    _isSyncingEnchantmentPicker = false;
+
+                    // Re-assert it last: by now the box may have pushed its own interim text into the
+                    // binding, and this is what makes it re-read the value that actually holds.
+                    OnPropertyChanged(nameof(EnchantmentSearchText));
+                }
+            }
+        }
+
+        public IReadOnlyList<FormIDRecord> AvailableEnchantments =>
+            Main?.AllAvailableEnchantments ?? new List<FormIDRecord>();
+
+        // Typing filters, the same way the workbench and perk pickers do - 632 entries are not a
+        // list anyone scrolls. The box is editable and its Text IS this search string, which is why
+        // picking an entry writes its label back here: otherwise the box would go blank the moment
+        // the dropdown closed.
+        private string _enchantmentSearchText = "";
+
+        // True only while ObjectEffectKey is putting the box back in step with the value. See its
+        // setter for what this keeps out.
+        private bool _isSyncingEnchantmentPicker;
+
+        public string EnchantmentSearchText
+        {
+            get => _enchantmentSearchText;
+            set
+            {
+                // The user typing is the only thing allowed to move the search text on its own.
+                if (_isSyncingEnchantmentPicker) return;
+
+                if (SetProperty(ref _enchantmentSearchText, value ?? ""))
+                    OnPropertyChanged(nameof(FilteredEnchantments));
+            }
+        }
+
+        // The way ObjectEffectKey sets the text itself, past the guard above.
+        private void SetEnchantmentSearchTextFromValue(string text)
+        {
+            if (SetProperty(ref _enchantmentSearchText, text ?? "", nameof(EnchantmentSearchText)))
+                OnPropertyChanged(nameof(FilteredEnchantments));
+        }
+
+        public IEnumerable<FormIDRecord> FilteredEnchantments =>
+            AvailableEnchantments.Where(e =>
+                string.IsNullOrWhiteSpace(EnchantmentSearchText)
+                || e.Name.Contains(EnchantmentSearchText, StringComparison.OrdinalIgnoreCase));
+
+        // The picker binds to the record, the item stores the key. An enchantment whose plugin left
+        // the load order has no record here - the box then falls back to the synthetic "none" entry
+        // rather than silently dropping what the item actually wears, which is why the raw key stays
+        // visible in the label next to it.
+        public FormIDRecord? SelectedEnchantment
+        {
+            get => AvailableEnchantments.FirstOrDefault(
+                       e => string.Equals(e.Key, ObjectEffectKey, StringComparison.OrdinalIgnoreCase))
+                   ?? AvailableEnchantments.FirstOrDefault();
+            set
+            {
+                // NULL IS IGNORED, and that is not laziness. Filtering an editable ComboBox down to
+                // rows that no longer include the selected one makes WPF report SelectedItem = null -
+                // so typing three letters would silently strip the item's enchantment. "None" is a
+                // real entry in the list; nobody has to reach it by narrowing the list to nothing.
+                if (value == null) return;
+
+                ObjectEffectKey = value.Key;
+                EnchantmentSearchText = value.Name;
+            }
+        }
+
+        public string ObjectEffectSummary => string.IsNullOrWhiteSpace(ObjectEffectKey)
+            ? "No enchantment."
+            : ObjectEffectKey;
 
         // Keeps ArmorType in step when the user picks an armour-class keyword. This runs as a
         // normal, visible edit - the dropdown moves, the changed-marker lights up, reset undoes it -
@@ -1179,6 +1302,7 @@ namespace SkyrimCraftingTool.ViewModel
                 {
                     NotifyFieldChanged(nameof(Damage));
                     OnPropertyChanged(nameof(IsDamageChanged));
+                    OnPropertyChanged(nameof(HasSpecificDetailChanges));
                     OnPropertyChanged(nameof(HasAnyChanges));
                 }
             }
@@ -1194,6 +1318,7 @@ namespace SkyrimCraftingTool.ViewModel
                 {
                     NotifyFieldChanged(nameof(Speed));
                     OnPropertyChanged(nameof(IsSpeedChanged));
+                    OnPropertyChanged(nameof(HasSpecificDetailChanges));
                     OnPropertyChanged(nameof(HasAnyChanges));
                 }
             }
@@ -1209,6 +1334,7 @@ namespace SkyrimCraftingTool.ViewModel
                 {
                     NotifyFieldChanged(nameof(Reach));
                     OnPropertyChanged(nameof(IsReachChanged));
+                    OnPropertyChanged(nameof(HasSpecificDetailChanges));
                     OnPropertyChanged(nameof(HasAnyChanges));
                 }
             }
@@ -1224,6 +1350,7 @@ namespace SkyrimCraftingTool.ViewModel
                 {
                     NotifyFieldChanged(nameof(Stagger));
                     OnPropertyChanged(nameof(IsStaggerChanged));
+                    OnPropertyChanged(nameof(HasSpecificDetailChanges));
                     OnPropertyChanged(nameof(HasAnyChanges));
                 }
             }
@@ -1244,6 +1371,7 @@ namespace SkyrimCraftingTool.ViewModel
         private float _originalArmorRating;
         private uint _originalBodySlotMask;
         private string _originalArmorType = "";
+        private string _originalObjectEffectKey = "";
         private int _originalDamage;
         private float _originalSpeed;
         private float _originalReach;
@@ -1253,7 +1381,7 @@ namespace SkyrimCraftingTool.ViewModel
 
         public void CaptureOriginalSnapshot(string name, int value, float weight, float armorRating,
             uint bodySlotMask, int damage, float speed, float reach, float stagger, string containerString, List<string> keywordKeys,
-            string armorType = "")
+            string armorType = "", string objectEffectKey = "")
         {
             _originalName = name;
             _originalValue = value;
@@ -1261,6 +1389,7 @@ namespace SkyrimCraftingTool.ViewModel
             _originalArmorRating = armorRating;
             _originalBodySlotMask = bodySlotMask;
             _originalArmorType = armorType ?? "";
+            _originalObjectEffectKey = objectEffectKey ?? "";
             _originalDamage = damage;
             _originalSpeed = speed;
             _originalReach = reach;
@@ -1279,14 +1408,23 @@ namespace SkyrimCraftingTool.ViewModel
             OnPropertyChanged(nameof(IsArmorRatingChanged));
             OnPropertyChanged(nameof(IsBodySlotMaskChanged));
             OnPropertyChanged(nameof(IsArmorTypeChanged));
+            OnPropertyChanged(nameof(IsObjectEffectChanged));
             OnPropertyChanged(nameof(IsDamageChanged));
             OnPropertyChanged(nameof(IsSpeedChanged));
             OnPropertyChanged(nameof(IsReachChanged));
             OnPropertyChanged(nameof(IsStaggerChanged));
             OnPropertyChanged(nameof(IsContainerChanged));
             OnPropertyChanged(nameof(IsKeywordsChanged));
+            OnPropertyChanged(nameof(HasSpecificDetailChanges));
             OnPropertyChanged(nameof(HasAnyChanges));
         }
+
+        // Drives the dot on the collapsed "Armor / Weapon Specific Details" header: exactly the
+        // fields that live inside that expander. Name, Value, Weight and the enchantment sit in the
+        // always-visible part above it and need no marker - their amber borders are on screen.
+        public bool HasSpecificDetailChanges =>
+            IsArmorRatingChanged || IsBodySlotMaskChanged || IsArmorTypeChanged
+            || IsDamageChanged || IsSpeedChanged || IsReachChanged || IsStaggerChanged;
 
         public bool IsNameChanged => _hasOriginalSnapshot && Name != _originalName;
         public bool IsValueChanged => _hasOriginalSnapshot && Value != _originalValue;
@@ -1295,6 +1433,8 @@ namespace SkyrimCraftingTool.ViewModel
         public bool IsBodySlotMaskChanged => _hasOriginalSnapshot && BodySlotMask != _originalBodySlotMask;
         public bool IsArmorTypeChanged => _hasOriginalSnapshot
             && !string.Equals(ArmorType, _originalArmorType, StringComparison.OrdinalIgnoreCase);
+        public bool IsObjectEffectChanged => _hasOriginalSnapshot
+            && !string.Equals(ObjectEffectKey, _originalObjectEffectKey, StringComparison.OrdinalIgnoreCase);
         public bool IsDamageChanged => _hasOriginalSnapshot && Damage != _originalDamage;
         public bool IsSpeedChanged => _hasOriginalSnapshot && Math.Abs(Speed - _originalSpeed) > 0.0001f;
         public bool IsReachChanged => _hasOriginalSnapshot && Math.Abs(Reach - _originalReach) > 0.0001f;
@@ -1306,6 +1446,7 @@ namespace SkyrimCraftingTool.ViewModel
 
         public bool HasAnyChanges =>
             IsNameChanged || IsValueChanged || IsWeightChanged || IsContainerChanged || IsKeywordsChanged ||
+            IsObjectEffectChanged ||
             (IsArmor ? (IsArmorRatingChanged || IsBodySlotMaskChanged) : (IsDamageChanged || IsSpeedChanged || IsReachChanged || IsStaggerChanged));
 
         // Delegates to MainContentVM.ResetItemEdits, which clears this item's IsEdited* shadow columns
@@ -1338,7 +1479,7 @@ namespace SkyrimCraftingTool.ViewModel
         // as a fresh edit.
         public void ApplyResetValues(string name, int value, float weight, float armorRating,
             uint bodySlotMask, int damage, float speed, float reach, float stagger, string containerString, List<string> keywordKeys,
-            string armorType = "")
+            string armorType = "", string objectEffectKey = "")
         {
             IsLoading = true;
 
@@ -1362,6 +1503,7 @@ namespace SkyrimCraftingTool.ViewModel
 
             ContainerString = containerString;
             ContainerSelection.LoadFromString(containerString);
+            ObjectEffectKey = objectEffectKey ?? "";
 
             var keywordSet = new HashSet<string>(keywordKeys ?? new List<string>());
             foreach (var kw in AllKeywords)
@@ -1369,7 +1511,8 @@ namespace SkyrimCraftingTool.ViewModel
 
             IsLoading = false;
 
-            CaptureOriginalSnapshot(name, value, weight, armorRating, bodySlotMask, damage, speed, reach, stagger, containerString, keywordKeys);
+            CaptureOriginalSnapshot(name, value, weight, armorRating, bodySlotMask, damage, speed, reach, stagger,
+                containerString, keywordKeys, armorType, objectEffectKey ?? "");
         }
 
         // --------------------
@@ -1679,8 +1822,20 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
-        public ItemNodeVM(ArmorRecord rec) : this() => ApplyArmorRecord(rec);
-        public ItemNodeVM(WeaponRecord rec) : this() => ApplyWeaponRecord(rec);
+        // Record-only, without a MainContentVM behind it: there is no container catalogue to offer,
+        // but the selection still has to exist - ApplyArmorRecord/ApplyWeaponRecord load the item's
+        // own ContainerString into it and would otherwise walk straight into a null.
+        public ItemNodeVM(ArmorRecord rec) : this()
+        {
+            ContainerSelection = new ContainerSelectionVM(new List<ContainerRecord>());
+            ApplyArmorRecord(rec);
+        }
+
+        public ItemNodeVM(WeaponRecord rec) : this()
+        {
+            ContainerSelection = new ContainerSelectionVM(new List<ContainerRecord>());
+            ApplyWeaponRecord(rec);
+        }
 
         // --------------------
         // Apply Records
@@ -1693,6 +1848,7 @@ namespace SkyrimCraftingTool.ViewModel
             ArmorRating = rec.ArmorRating;
             BodySlotMask = rec.BodySlotMask;
             ArmorType = rec.ArmorType ?? "";
+            ObjectEffectKey = rec.ObjectEffectKey ?? "";
 
             ContainerString = rec.ContainerString ?? "{}";
             ContainerSelection.LoadFromString(ContainerString);
@@ -1707,6 +1863,7 @@ namespace SkyrimCraftingTool.ViewModel
             Speed = rec.Speed;
             Reach = rec.Reach;
             Stagger = rec.Stagger;
+            ObjectEffectKey = rec.ObjectEffectKey ?? "";
 
             ContainerString = rec.ContainerString ?? "{}";
             ContainerSelection.LoadFromString(ContainerString);

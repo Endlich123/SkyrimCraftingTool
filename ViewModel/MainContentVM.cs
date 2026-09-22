@@ -240,10 +240,20 @@ namespace SkyrimCraftingTool.ViewModel
         }
 
         private int _editedItemCount;
+
+        // The plugin and category dots hang off this. Raised here rather than at each call site,
+        // because there are three and they were not in agreement: NotifyItemBecameEdited (first live
+        // edit), NotifyItemEditedStateChanged (a reset flipping it back) and the bulk recount below.
+        // Anything that moves this number can change whether an ancestor still has an edited item
+        // under it.
         public int EditedItemCount
         {
             get => _editedItemCount;
-            private set => SetProperty(ref _editedItemCount, value);
+            private set
+            {
+                if (SetProperty(ref _editedItemCount, value))
+                    RaiseTreeEditedFlags();
+            }
         }
 
         // Called by ItemNodeVM the first time an item picks up a live edit.
@@ -256,8 +266,30 @@ namespace SkyrimCraftingTool.ViewModel
         internal void NotifyItemEditedStateChanged(bool edited)
         {
             if (edited) EditedItemCount++;
-            else if (EditedItemCount > 0) EditedItemCount--;
+            else if (EditedItemCount > 0) EditedItemCount--;   // its setter raises the ancestors' dots
             ApplyFilterDebounced(_treeSearchText); // keep the "only edited" view in sync
+        }
+
+        // The plugin and category rows carry a dot when something below them is edited, and neither
+        // knows its children changed - the flag is computed on demand, so all they need is a nudge.
+        //
+        // Both trees, because they are not the same objects: ApplyFilter hands the TreeView COPIES
+        // of the plugin and category nodes (FilterReference). The copies share the item instances,
+        // so they answer correctly once asked - but a raise on the unfiltered tree never reaches
+        // them, and the filtered tree is the one on screen.
+        private void RaiseTreeEditedFlags()
+        {
+            foreach (var plugin in ModItemsTree)
+            {
+                plugin.RaiseHasEditedItems();
+                foreach (var cat in plugin.Categories) cat.RaiseHasEditedItems();
+            }
+
+            foreach (var plugin in FilteredTree)
+            {
+                plugin.RaiseHasEditedItems();
+                foreach (var cat in plugin.Categories) cat.RaiseHasEditedItems();
+            }
         }
 
         private IEnumerable<ItemNodeVM> GetAllItemNodes()
@@ -314,6 +346,37 @@ namespace SkyrimCraftingTool.ViewModel
         public List<FormIDRecord> AllAvailableKeywords { get; private set; } = new();
         public List<FormIDRecord> AllAvailableWorkbenches { get; private set; } = new();
 
+        // The enchantments an item can be given (Prio 7), as the picker needs them: key plus a
+        // readable name. Read once from the scanned catalogue the Enchantments tab already fills -
+        // 2,197 of the vanilla armors' effects resolve against it, so the box shows "Fortify Block"
+        // rather than a FormID.
+        //
+        // The first entry is a synthetic "no enchantment", because taking one off is a legitimate
+        // choice and a second button for it would be a worse way to say the same thing.
+        public List<FormIDRecord> AllAvailableEnchantments { get; private set; } = new();
+
+        public const string NoEnchantmentKey = "";
+
+        // Named, not blank: an empty row in a dropdown reads as "nothing here yet", and this is a
+        // deliberate choice the user can make.
+        public static FormIDRecord NoEnchantmentChoice()
+            => new() { Key = NoEnchantmentKey, Name = "(no enchantment)" };
+
+        // "EnchArmorFortifyBlock04 | Fortify Block". Either half can be missing - 8 of the 632
+        // enchantments carry no name - so whichever exists is used alone rather than leaving a
+        // dangling separator, and a record with neither falls back to its key.
+        internal static string EnchantmentLabel(EnchantmentRecord e)
+        {
+            var editorId = (e.EditorID ?? "").Trim();
+            var name = (e.Name ?? "").Trim();
+
+            if (editorId.Length > 0 && name.Length > 0) return $"{editorId} | {name}";
+            if (editorId.Length > 0) return editorId;
+            if (name.Length > 0) return name;
+
+            return e.Key;
+        }
+
         // --- Global keyword VM list ---
         public ObservableCollection<KeywordSelectionVM> GlobalKeywords => _keywordService.GlobalKeywords;
 
@@ -352,7 +415,14 @@ namespace SkyrimCraftingTool.ViewModel
             set
             {
                 if (SetProperty(ref _showExpertContainers, value))
+                {
                     OnPropertyChanged(nameof(FilteredContainers));
+
+                    // The summary counts how many existing placements the current list cannot show,
+                    // so switching the list changes the sentence. Leaving it stale would tell the
+                    // user to switch to a view they are already in.
+                    UpdateAllContainerSelectionFlags(_subscribedItemForContainerSelection);
+                }
             }
         }
 
@@ -378,13 +448,47 @@ namespace SkyrimCraftingTool.ViewModel
             set { if (SetProperty(ref _splitPatchPerPlugin, value)) AppPrefs.SetBool("patch.splitPerPlugin", value); }
         }
 
-        // When set, the patch is written next to the app (SKSE\... and the .esp at the tool root)
-        // so the tool folder itself works as an MO2 mod. Otherwise it goes under Output\.
-        private bool _patchIntoAppFolder = AppPrefs.GetBool("patch.nextToApp");
-        public bool PatchIntoAppFolder
+        // Where the patch is written. Empty means the default, Output\ next to the tool.
+        //
+        // Replaces the old "write patch next to app" toggle, which only ever offered two fixed
+        // places. A free folder also sidesteps MO2 entirely: pointing it straight at a mod folder
+        // means the tool never writes inside MO2's virtualised tree, so nothing lands in Overwrite
+        // and no per-executable redirect has to be configured (see docs/TODO.md, Prio 1).
+        private string _patchOutputPath = LoadPatchOutputPath();
+        public string PatchOutputPath
         {
-            get => _patchIntoAppFolder;
-            set { if (SetProperty(ref _patchIntoAppFolder, value)) AppPrefs.SetBool("patch.nextToApp", value); }
+            get => _patchOutputPath;
+            set
+            {
+                var v = (value ?? "").Trim();
+                if (!SetProperty(ref _patchOutputPath, v)) return;
+                AppPrefs.SetString("patch.outputPath", v);
+                OnPropertyChanged(nameof(EffectivePatchOutputPath));
+            }
+        }
+
+        // What the next patch run will actually use — the configured path, or the default when none
+        // is set. Shown in the settings so the answer is never guesswork.
+        public string EffectivePatchOutputPath =>
+            string.IsNullOrWhiteSpace(PatchOutputPath) ? GlobalState.Tool.OutputFolder : PatchOutputPath;
+
+        // One-time migration off the old boolean: someone who had "write patch next to app" ticked
+        // keeps writing there, now as an explicit path they can see and change. Runs once because it
+        // persists the result; the legacy key is left in prefs.json rather than deleted, so rolling
+        // back to an older build doesn't silently change where the patch goes.
+        private static string LoadPatchOutputPath()
+        {
+            var stored = AppPrefs.GetString("patch.outputPath");
+            if (!string.IsNullOrWhiteSpace(stored)) return stored;
+
+            if (AppPrefs.GetBool("patch.nextToApp"))
+            {
+                var migrated = GlobalState.Tool.ModFolder;
+                AppPrefs.SetString("patch.outputPath", migrated);
+                return migrated;
+            }
+
+            return "";
         }
 
 
@@ -410,6 +514,7 @@ namespace SkyrimCraftingTool.ViewModel
         public RelayCommand ExportAllCommand { get; }
         public RelayCommand ImportAllCommand { get; }
         public RelayCommand GeneratePatchCommand { get; }
+        public RelayCommand PreviewPatchCommand { get; }
 
         private void Log(string msg)
         {
@@ -476,6 +581,7 @@ namespace SkyrimCraftingTool.ViewModel
             ExportAllCommand = new RelayCommand(async () => await ExportAllAsync());
             ImportAllCommand = new RelayCommand(async () => await ImportAllAsync());
             GeneratePatchCommand = new RelayCommand(async () => await GeneratePatchAsync());
+            PreviewPatchCommand = new RelayCommand(async () => await PreviewPatchAsync());
             ManageOrphanedEditsCommand = new RelayCommand(ManageOrphanedEdits);
 
             RefreshAvailablePresets();
@@ -554,28 +660,77 @@ namespace SkyrimCraftingTool.ViewModel
         //    (Output\SKSE\Plugins\SkyPatcher\{armor,weapon}\zzz_SkyrimCraftingTool\<Plugin>.esp.ini)
         //  - one SkyrimCraftingTool.esp for created / edited COBJ recipes
         // See docs/PatchGenerator-Plan.md.
+        // Both the preview and the real run build their options here, so a preview can never answer
+        // for a different configuration than the run it is previewing. The only difference between
+        // them is DryRun.
+        private PatchGenOptions BuildPatchOptions(bool dryRun) => new()
+        {
+            DryRun = dryRun,
+
+            CobjSplitMode = SplitPatchPerPlugin
+                ? PatchCobjSplitMode.PerSourcePlugin
+                : PatchCobjSplitMode.Global,
+            OutputRoot = EffectivePatchOutputPath,
+
+            // Real plugin paths in load order. The COBJ builder needs them to deep-copy the
+            // winning record for an override instead of rebuilding it from the tracked fields -
+            // rebuilding drops every field the scan does not read, above all the ~69% of
+            // condition types it cannot represent. GetActivePlugins() is already load-ordered
+            // (FileServiceAdapter maps it to GetActivePluginsInLoadOrder).
+            PluginsInLoadOrder = FileService.GetActivePlugins()
+                .SelectMany(p => p.FullPaths.Select(fp => (p.FileName, FullPath: fp)))
+                .ToList(),
+        };
+
+        // Runs the whole generation with DryRun set: every rule is built and every warning is
+        // produced, then it stops before writing anything. Answers "what would this do" without
+        // putting files into a mod folder first - which is the only way to find out today.
+        private async Task PreviewPatchAsync()
+        {
+            await FlushPendingSavesAsync();
+
+            var options = BuildPatchOptions(dryRun: true);
+            PatchGenReport report;
+            try
+            {
+                var svc = new PatchGeneratorService(references: References);
+                report = await Task.Run(() => svc.Generate(options));
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError("MainContentVM.PreviewPatchAsync failed", ex);
+                System.Windows.MessageBox.Show($"Patch preview failed:{Environment.NewLine}{ex.Message}",
+                    "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                return;
+            }
+
+            if (!report.AnythingGenerated)
+            {
+                System.Windows.MessageBox.Show(
+                    "No edited armor, weapon, recipe or enchantment found - a patch would produce nothing.",
+                    "Preview Patch", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            Services.PatchGen.PatchReportText.SaveLastRun(report, options.OutputRoot);
+
+            var msg = new System.Text.StringBuilder();
+            msg.Append(Services.PatchGen.PatchReportText.Render(report, options.OutputRoot, forFile: false));
+            if (report.Warnings.Count > 0)
+            {
+                msg.AppendLine();
+                msg.AppendLine($"Full preview saved to {Services.PatchGen.PatchReportText.LastPreviewPath}");
+            }
+
+            System.Windows.MessageBox.Show(msg.ToString(), "Preview Patch",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+        }
+
         private async Task GeneratePatchAsync()
         {
             await FlushPendingSavesAsync();
 
-            var options = new PatchGenOptions
-            {
-                CobjSplitMode = SplitPatchPerPlugin
-                    ? PatchCobjSplitMode.PerSourcePlugin
-                    : PatchCobjSplitMode.Global,
-                OutputRoot = PatchIntoAppFolder
-                    ? GlobalState.Tool.ModFolder
-                    : GlobalState.Tool.OutputFolder,
-
-                // Real plugin paths in load order. The COBJ builder needs them to deep-copy the
-                // winning record for an override instead of rebuilding it from the tracked fields -
-                // rebuilding drops every field the scan does not read, above all the ~69% of
-                // condition types it cannot represent. GetActivePlugins() is already load-ordered
-                // (FileServiceAdapter maps it to GetActivePluginsInLoadOrder).
-                PluginsInLoadOrder = FileService.GetActivePlugins()
-                    .SelectMany(p => p.FullPaths.Select(fp => (p.FileName, FullPath: fp)))
-                    .ToList(),
-            };
+            var options = BuildPatchOptions(dryRun: false);
             PatchGenReport report;
             try
             {
@@ -759,9 +914,12 @@ namespace SkyrimCraftingTool.ViewModel
         // --- Full rescan ---
         internal sealed record ScanReport(
             int Added, int Removed, int TotalAfter, int EditsStillActive,
-            System.Collections.Generic.IReadOnlyList<EditedItemDto> OrphanedEdits);
+            System.Collections.Generic.IReadOnlyList<EditedItemDto> OrphanedEdits,
+            Services.ScanInventory? Before = null, Services.ScanInventory? After = null);
 
-        internal static ScanReport BuildScanReport(HashSet<string> before, HashSet<string> after, List<EditedItemDto> editedBefore)
+        internal static ScanReport BuildScanReport(
+            HashSet<string> before, HashSet<string> after, List<EditedItemDto> editedBefore,
+            Services.ScanInventory? inventoryBefore = null, Services.ScanInventory? inventoryAfter = null)
         {
             int added = after.Count(k => !before.Contains(k));
             int removed = before.Count(k => !after.Contains(k));
@@ -770,19 +928,89 @@ namespace SkyrimCraftingTool.ViewModel
             int stillActive = itemEdits.Count(e => after.Contains(e.Key));
             var orphans = itemEdits.Where(e => !after.Contains(e.Key)).ToList();
 
-            return new ScanReport(added, removed, after.Count, stillActive, orphans);
+            return new ScanReport(added, removed, after.Count, stillActive, orphans,
+                                  inventoryBefore, inventoryAfter);
         }
 
-        private static string FormatScanReport(ScanReport r)
+        internal static string FormatScanReport(ScanReport r)
         {
             var sb = new System.Text.StringBuilder();
             sb.AppendLine("Scan complete.");
             sb.AppendLine();
+
+            // Armor and weapons keep their exact added/removed figures: those two are held as key
+            // sets in memory anyway, and they are what decides whether an edit is orphaned.
             sb.AppendLine($"Items:   +{r.Added}   -{r.Removed}     ({r.TotalAfter} total)");
             sb.AppendLine($"Your edits still applying: {r.EditsStillActive}");
+
+            AppendInventory(sb, r);
+
             if (r.OrphanedEdits.Count > 0)
                 sb.AppendLine($"⚠ {r.OrphanedEdits.Count} edit(s) no longer match any item - see the warnings strip.");
             return sb.ToString();
+        }
+
+        // The per-category breakdown. Dot leaders rather than column padding: this ends up in a
+        // MessageBox, which renders in a proportional font, so spaces would not line up anyway.
+        private static void AppendInventory(System.Text.StringBuilder sb, ScanReport r)
+        {
+            if (r.After == null || r.After.IsEmpty) return;
+
+            sb.AppendLine();
+            sb.AppendLine("Found in this scan");
+            sb.AppendLine();
+
+            AppendGroup(sb, "Records", r.After.Records, r.Before, r.After.RecordTotal);
+            sb.AppendLine();
+            AppendGroup(sb, "References", r.After.References, r.Before, r.After.ReferenceTotal);
+
+            sb.AppendLine();
+            sb.AppendLine($"{Leader("Total", 0)} {r.After.Total:n0}");
+            sb.AppendLine();
+
+            // Without this the two blocks invite a comparison they do not support: only the first
+            // one remembers anything between scans.
+            sb.AppendLine("Records keep entries that left your load order (your edits to them survive);");
+            sb.AppendLine("references are rebuilt from scratch on every scan.");
+        }
+
+        private static void AppendGroup(
+            System.Text.StringBuilder sb, string title,
+            System.Collections.Generic.IReadOnlyList<Services.ScanCategory> categories,
+            Services.ScanInventory? before, int subtotal)
+        {
+            if (categories.Count == 0) return;
+
+            sb.AppendLine(title);
+            foreach (var c in categories)
+            {
+                var value = c.IsKnown ? $"{c.Count:n0}" : "n/a";
+                sb.AppendLine($"{Leader(c.Label, 2)} {value}{Delta(before, c)}");
+            }
+            sb.AppendLine($"{Leader("subtotal", 2)} {subtotal:n0}");
+        }
+
+        // Dot leaders that pad to a fixed column, rather than a fixed run of dots. The report is
+        // shown in a MessageBox, which uses a proportional font, so nothing lines up exactly - but
+        // padding to one column keeps the numbers in roughly the same place instead of scattering
+        // them by label length.
+        private const int LeaderWidth = 26;
+
+        private static string Leader(string label, int indent)
+            => (new string(' ', indent) + label + " ").PadRight(LeaderWidth, '.');
+
+        // Net change, not added/removed: these come from row counts, and a category that gained
+        // three entries and lost three looks unchanged here. Said as a net figure so it does not
+        // read as a promise of something it cannot see.
+        private static string Delta(Services.ScanInventory? before, Services.ScanCategory now)
+        {
+            if (before == null || !now.IsKnown) return "";
+
+            var was = before.CountOf(now.Label);
+            if (was == null) return "";
+
+            int diff = now.Count - was.Value;
+            return diff == 0 ? "" : $"   ({(diff > 0 ? "+" : "")}{diff:n0})";
         }
 
         private async Task ExecuteFullScanAsync()
@@ -806,6 +1034,13 @@ namespace SkyrimCraftingTool.ViewModel
                     // and it keeps the IsEdited* shadow columns (removed items just go Active=0), so
                     // GetEditedItems still returns orphaned edits afterwards.
                     var beforeKeys = new HashSet<string>(ArmorCache.Keys.Concat(WeaponCache.Keys), StringComparer.Ordinal);
+
+                    // Read before anything writes: formid.db is dropped and rebuilt below, so after
+                    // PutIntoDataBank there is nothing left to compare against. A handful of
+                    // COUNT(*) queries, and never allowed to hold up the scan.
+                    Services.ScanInventory? inventoryBefore = null;
+                    try { inventoryBefore = Services.ScanInventoryReader.Read(); }
+                    catch (Exception invEx) { AppLogger.LogError("Scan inventory (before) failed", invEx); }
 
                     var step = Stopwatch.StartNew();
 
@@ -846,7 +1081,8 @@ namespace SkyrimCraftingTool.ViewModel
                     {
                         var editedRows = _importExportService?.GetEditedItems(ExportScope.All) ?? new List<EditedItemDto>();
                         var afterKeys = new HashSet<string>(ArmorCache.Keys.Concat(WeaponCache.Keys), StringComparer.Ordinal);
-                        report = BuildScanReport(beforeKeys, afterKeys, editedRows);
+                        var inventoryAfter = Services.ScanInventoryReader.Read();
+                        report = BuildScanReport(beforeKeys, afterKeys, editedRows, inventoryBefore, inventoryAfter);
                     }
                     catch (Exception reportEx)
                     {
@@ -945,6 +1181,10 @@ namespace SkyrimCraftingTool.ViewModel
                 }
                 EditedItemCount = edited;
 
+                // Explicitly, not only through the setter above: a reload can replace WHICH items
+                // are edited while the total stays the same, and then SetProperty raises nothing.
+                RaiseTreeEditedFlags();
+
                 if (!_isInitializing)
                     ApplyFilter(_treeSearchText);
             });
@@ -1026,6 +1266,70 @@ namespace SkyrimCraftingTool.ViewModel
                 FilteredTree.Add(n);
         }
 
+        // --- "Already in your load order" (read-only) ---
+        //
+        // What the scanned game already holds, shown next to what the patch will add - and kept
+        // strictly apart from it. A container the user selected and a container that already holds
+        // the item look the same in a list and mean the opposite; ContainerEntryVM carries the two
+        // as separate states for exactly that reason.
+        //
+        // Only DIRECT container hits are marked. An item that sits in a leveled list which hangs in
+        // five containers would otherwise mark five containers plus the list, and 86 % of all 4,312
+        // leveled lists hang in no container at all - the tree would claim placements nobody made.
+        // Those go into the summary line instead, where they can be counted without being located.
+        private readonly Dictionary<string, IReadOnlyList<Services.Placement>> _existingPlacementCache
+            = new(StringComparer.OrdinalIgnoreCase);
+
+        // --- Lists whose own properties the user changed ---
+        //
+        // Counted here so the container section can offer the way back to them. Refreshed whenever
+        // the selection changes, which is often enough to be current and cheap enough not to matter -
+        // the underlying set is cached in the store.
+        public int ChangedListCount => Services.LeveledListEditStore.EditedKeys().Count;
+
+        public string ChangedListsButtonText => ChangedListCount == 1
+            ? "1 changed list"
+            : $"{ChangedListCount} changed lists";
+
+        public bool HasChangedLists => ChangedListCount > 0;
+
+        public RelayCommand ShowChangedListsCommand => new(() =>
+        {
+            View.ChangedListsWindow.Show(System.Windows.Application.Current?.MainWindow);
+            RefreshChangedListCount();
+        });
+
+        private void RefreshChangedListCount()
+        {
+            OnPropertyChanged(nameof(ChangedListCount));
+            OnPropertyChanged(nameof(ChangedListsButtonText));
+            OnPropertyChanged(nameof(HasChangedLists));
+        }
+
+        private string _existingPlacementSummary = "";
+        public string ExistingPlacementSummary
+        {
+            get => _existingPlacementSummary;
+            private set => SetProperty(ref _existingPlacementSummary, value);
+        }
+
+        // ~3 ms against the real database (28,475 leveled-list entries, 13,158 container entries):
+        // fine once per selected item, not fine per container toggle - and every toggle comes back
+        // through OnSelectedContainersChanged. Hence the cache, cleared by a rescan, which is the
+        // only thing that changes the answer.
+        private IReadOnlyList<Services.Placement> ExistingPlacementsFor(ItemNodeVM? item)
+        {
+            if (item == null || string.IsNullOrWhiteSpace(item.Key))
+                return Array.Empty<Services.Placement>();
+
+            if (_existingPlacementCache.TryGetValue(item.Key, out var cached))
+                return cached;
+
+            var found = Services.PlacementLookup.WhereIs(item.Key);
+            _existingPlacementCache[item.Key] = found;
+            return found;
+        }
+
         internal void UpdateAllContainerSelectionFlags(ItemNodeVM? item)
         {
             var selectedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1035,8 +1339,41 @@ namespace SkyrimCraftingTool.ViewModel
                     selectedKeys.Add(sc.ContainerKey);
             }
 
+            var existing = ExistingPlacementsFor(item);
+            var heldCounts = Services.PlacementLookup.HeldPerContainer(existing);
+
+            // The leveled-list half of the same answer. It lands on the rows inside the selected
+            // containers, which is the only place a list is visible at all - the container list on
+            // the left has no row for a list, and 86% of them hang in no container anyway.
+            item?.ContainerSelection.SetExistingListKeys(
+                existing.Where(p => p.Kind == Services.PlacementKind.LeveledList).Select(p => p.Key));
+
             foreach (var vm in AllContainerVMs)
+            {
                 vm.IsSelected = selectedKeys.Contains(vm.ContainerKey);
+                vm.SetExistingPlacement(heldCounts.TryGetValue(vm.ContainerKey, out var held) ? held : 0);
+            }
+
+            ExistingPlacementSummary = BuildExistingPlacementSummary(item, existing, heldCounts);
+            RefreshChangedListCount();
+        }
+
+        private string BuildExistingPlacementSummary(
+            ItemNodeVM? item,
+            IReadOnlyList<Services.Placement> existing,
+            Dictionary<string, int> heldCounts)
+        {
+            if (item == null) return "";
+
+            // Counted against the rows the user is actually looking at: everything the lookup found
+            // minus what the current list can show. The standard view lists merchants only.
+            int visible = (ShowExpertContainers ? AllContainerVMs : LimitedContainerVMs)
+                .Count(vm => heldCounts.ContainsKey(vm.ContainerKey));
+
+            return Services.PlacementLookup.DescribeExisting(
+                heldCounts.Count,
+                existing.Count(p => p.Kind == Services.PlacementKind.LeveledList),
+                Math.Max(heldCounts.Count - visible, 0));
         }
 
         private void OnSelectedContainersChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
@@ -1103,11 +1440,54 @@ namespace SkyrimCraftingTool.ViewModel
             AllContainers = snapshot.Containers?.OrderBy(c => c.Name).ToList()
                 ?? new List<ContainerRecord>();
 
+            // The enchantment picker's catalogue, listed as "EditorID | Name".
+            //
+            // NOT the name alone, and the numbers are the reason: 473 of the 632 enchantments in the
+            // real load order share their name with at least one other - "Fortify Destruction"
+            // appears 19 times, "Fortify Block" exists as Base plus tiers 01 to 06. A list of names
+            // cannot tell a base effect from its tiers, which is exactly the choice being made here.
+            // EditorID first, so the tiers of one effect sort together.
+            var enchantments = ItemService?.GetAllEnchantments() ?? new List<EnchantmentRecord>();
+
+            // Two records can still share an EditorID across plugins - measured, exactly two pairs
+            // do, each a Skyrim.esm record and a Dawnguard.esm one. Only those get their plugin
+            // appended: putting it on all 632 would be noise for the 630 that read fine without it.
+            var ambiguous = enchantments
+                .GroupBy(EnchantmentLabel, StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() > 1)
+                .Select(g => g.Key)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            AllAvailableEnchantments = new List<FormIDRecord> { NoEnchantmentChoice() };
+            AllAvailableEnchantments.AddRange(
+                enchantments
+                    .Select(e =>
+                    {
+                        var label = EnchantmentLabel(e);
+                        if (ambiguous.Contains(label))
+                            label += $"  [{KeyFactory.SplitMasterKey(e.Key).master}]";
+
+                        return new FormIDRecord { Key = e.Key, Name = label };
+                    })
+                    .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase));
+
             _referenceResolver.Rebuild(
                 AllAvailableKeywords, AllAvailableMaterials, AllAvailableWorkbenches,
                 AllAvailablePerks, AllAvailableQuests, AllContainers);
 
             // Populate UI VM collection
+            //
+            // A rescan is the only thing that changes where an item already sits, so this is the one
+            // place the lookup cache has to be thrown away - keeping it would mark containers from
+            // the previous scan.
+            _existingPlacementCache.Clear();
+            ExistingPlacementSummary = "";
+
+            // Same reasoning for the "changed by you" marks: a rescan rebuilds the lists those edits
+            // point at, and an edit whose list left the load order stops counting.
+            Services.LeveledListEditStore.InvalidateCache();
+            RefreshChangedListCount();
+
             AllContainerVMs.Clear();
             foreach (var c in AllContainers)
             {
@@ -1344,7 +1724,7 @@ namespace SkyrimCraftingTool.ViewModel
                 if (originalArmor != null)
                     item.CaptureOriginalSnapshot(originalArmor.Name, originalArmor.Value, originalArmor.Weight,
                         originalArmor.ArmorRating, originalArmor.BodySlotMask, 0, 0, 0, 0, originalArmor.ContainerString, originalArmor.Keywords,
-                        originalArmor.ArmorType);
+                        originalArmor.ArmorType, originalArmor.ObjectEffectKey);
             }
             else
             {
@@ -1352,7 +1732,7 @@ namespace SkyrimCraftingTool.ViewModel
                 if (originalWeapon != null)
                     item.CaptureOriginalSnapshot(originalWeapon.Name, originalWeapon.Value, originalWeapon.Weight,
                         0, 0, originalWeapon.Damage, originalWeapon.Speed, originalWeapon.Reach, originalWeapon.Stagger,
-                        originalWeapon.ContainerString, originalWeapon.Keywords);
+                        originalWeapon.ContainerString, originalWeapon.Keywords, "", originalWeapon.ObjectEffectKey);
             }
 
             item.ReportRecipeIssues();
@@ -1388,10 +1768,11 @@ namespace SkyrimCraftingTool.ViewModel
                 _cacheManager.UpdateArmorKeywords(item.Key, original.Keywords);
                 _cacheManager.UpdateArmorArmorType(item.Key, original.ArmorType);
                 _cacheManager.UpdateArmorContainerString(item.Key, original.ContainerString);
+                _cacheManager.UpdateArmorObjectEffect(item.Key, original.ObjectEffectKey);
 
                 item.ApplyResetValues(original.Name, original.Value, original.Weight,
                     original.ArmorRating, original.BodySlotMask, 0, 0, 0, 0, original.ContainerString, original.Keywords,
-                    original.ArmorType);
+                    original.ArmorType, original.ObjectEffectKey);
             }
             else
             {
@@ -1413,10 +1794,11 @@ namespace SkyrimCraftingTool.ViewModel
                 _cacheManager.UpdateWeaponStagger(item.Key, original.Stagger);
                 _cacheManager.UpdateWeaponKeywords(item.Key, original.Keywords);
                 _cacheManager.UpdateWeaponContainerString(item.Key, original.ContainerString);
+                _cacheManager.UpdateWeaponObjectEffect(item.Key, original.ObjectEffectKey);
 
                 item.ApplyResetValues(original.Name, original.Value, original.Weight,
                     0, 0, original.Damage, original.Speed, original.Reach, original.Stagger,
-                    original.ContainerString, original.Keywords);
+                    original.ContainerString, original.Keywords, "", original.ObjectEffectKey);
             }
         }
 

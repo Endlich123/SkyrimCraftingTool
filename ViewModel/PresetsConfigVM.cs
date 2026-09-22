@@ -222,6 +222,7 @@ namespace SkyrimCraftingTool.ViewModel
             var allPerks = _main?.AllAvailablePerks ?? new List<FormIDRecord>();
             var allQuests = _main?.AllAvailableQuests ?? new List<FormIDRecord>();
             var allContainers = _main?.AllContainers ?? new List<ContainerRecord>();
+            var allEnchantments = _main?.AllAvailableEnchantments ?? new List<FormIDRecord>();
 
             foreach (ArmorSlotMask slot in Enum.GetValues(typeof(ArmorSlotMask)))
             {
@@ -236,7 +237,7 @@ namespace SkyrimCraftingTool.ViewModel
 
                 armorBranch.Children.Add(new PresetSlotNodeVM(config, true, displayName,
                     allKeywords, allWorkbenches, allMaterials, allPerks, allQuests, allContainers,
-                    () => OnSlotChanged(file, file.ArmorSlots, config), _main?.References));
+                    () => OnSlotChanged(file, file.ArmorSlots, config), _main?.References, allEnchantments));
             }
 
             foreach (var weapType in GetOrderedWeaponTypeKeywords(allKeywords))
@@ -246,7 +247,7 @@ namespace SkyrimCraftingTool.ViewModel
 
                 weaponBranch.Children.Add(new PresetSlotNodeVM(config, false, weapType.Name,
                     allKeywords, allWorkbenches, allMaterials, allPerks, allQuests, allContainers,
-                    () => OnSlotChanged(file, file.WeaponTypes, config), _main?.References));
+                    () => OnSlotChanged(file, file.WeaponTypes, config), _main?.References, allEnchantments));
             }
 
             return new PresetNodeVM(file, armorBranch, weaponBranch, RenamePreset, DeletePreset);

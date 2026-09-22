@@ -16,6 +16,7 @@ namespace SkyrimCraftingTool.ViewModel
         public MainContentVM ContentVM { get; }
         public EnchantmentMenuVM EnchantVM { get; }
         public PresetsConfigVM PresetsVM { get; }
+        public SettingsVM SettingsVM { get; }
 
         // Current view
         private object _currentView;
@@ -29,6 +30,7 @@ namespace SkyrimCraftingTool.ViewModel
                     OnPropertyChanged(nameof(IsMainContentActive));
                     OnPropertyChanged(nameof(IsEnchantmentActive));
                     OnPropertyChanged(nameof(IsPresetsActive));
+                    OnPropertyChanged(nameof(IsSettingsActive));
                 }
             }
         }
@@ -37,6 +39,7 @@ namespace SkyrimCraftingTool.ViewModel
         public bool IsMainContentActive => CurrentView == ContentVM;
         public bool IsEnchantmentActive => CurrentView == EnchantVM;
         public bool IsPresetsActive => CurrentView == PresetsVM;
+        public bool IsSettingsActive => CurrentView == SettingsVM;
 
         // Non-blocking issue collector, shown in the status strip at the bottom of MainWindow.
         public IssueService Issues => IssueHub.Current;
@@ -46,6 +49,7 @@ namespace SkyrimCraftingTool.ViewModel
         public ICommand OpenMainContentCommand { get; }
         public ICommand OpenEnchantmentMenuCommand { get; }
         public ICommand OpenPresetsConfigCommand { get; }
+        public ICommand OpenSettingsCommand { get; }
 
         // Log viewer + bug-report generator. Offline by design: it builds the report locally and
         // hands it over via clipboard or file. A modding tool making network calls would rightly
@@ -68,6 +72,7 @@ namespace SkyrimCraftingTool.ViewModel
             ContentVM = new MainContentVM(itemService, fileService, formIdService, cacheManager, null, keywordService, importExportService);
             EnchantVM = new EnchantmentMenuVM(_itemDB, keywordService, new List<PluginInfo>(), enchantmentService, cacheManager, importExportService);
             PresetsVM = new PresetsConfigVM(ContentVM);
+            SettingsVM = new SettingsVM(ContentVM);
 
             // EnchantmentMenuVM builds its tree from _itemDB at construction time, before any scan
             // has run (the DB is empty/missing then) — refresh it once real data exists, on both the
@@ -95,6 +100,7 @@ namespace SkyrimCraftingTool.ViewModel
             });
             OpenEnchantmentMenuCommand = new RelayCommand(() => CurrentView = EnchantVM);
             OpenPresetsConfigCommand = new RelayCommand(() => CurrentView = PresetsVM);
+            OpenSettingsCommand = new RelayCommand(() => CurrentView = SettingsVM);
 
             OpenLogViewerCommand = new RelayCommand(() =>
             {

@@ -269,6 +269,13 @@ namespace SkyrimCraftingTool.ViewModel
             {
                 var row = new ContainerEntryVM(c);
                 row.ToggleSelectedRequested += OnContainerRowToggleRequested;
+
+                // The list link. These rows are built here rather than by a ContainerSelectionVM, so
+                // nothing installed the action and the link was inert - it looked exactly like the
+                // working one in the single-item editor and did nothing.
+                foreach (var lvli in row.LVLiEntries)
+                    lvli.OpenRequested = OpenLeveledList;
+
                 ContainerTemplateRows.Add(row);
             }
 
@@ -428,6 +435,25 @@ namespace SkyrimCraftingTool.ViewModel
             CustomConditionType.GetStageDone => new QuestStageConditionViewModel(),
             _ => new PerkConditionViewModel()
         };
+
+        // The list window, opened for the WHOLE selection. The row carries one level and one amount,
+        // and the selected items all receive it - which is what the bulk apply does anyway, so the
+        // window may as well show and count all of them.
+        //
+        // The items are read at the moment of opening rather than captured once: the selection
+        // changes while this editor is on screen.
+        private void OpenLeveledList(LVLiEntryVM entry)
+        {
+            var subjects = SelectedItems
+                .Select(i => new PlacementSubject(
+                    i.Key, string.IsNullOrWhiteSpace(i.Name) ? i.EditorID : i.Name))
+                .ToList();
+
+            View.LeveledListWindow.Show(
+                System.Windows.Application.Current?.MainWindow, entry, subjects);
+
+            entry.IsListEdited = Services.LeveledListEditStore.IsEdited(entry.Key);
+        }
 
         private void OnContainerRowToggleRequested(ContainerEntryVM row)
         {
@@ -805,13 +831,16 @@ namespace SkyrimCraftingTool.ViewModel
 
                     if (templateRow.LVLiEntries.Count > 0)
                     {
-                        var levels = templateRow.LVLiEntries.ToDictionary(l => l.Key, l => l.Level);
-                        // ApplyLevels zeroes every list the template doesn't name, so compare before
-                        // and after instead of assuming a change - otherwise re-applying the same
-                        // template would report every item as changed and re-save it.
-                        var before = string.Join(";", target.LVLiEntries.Select(l => $"{l.Key},{l.Level}"));
-                        target.ApplyLevels(levels);
-                        var after = string.Join(";", target.LVLiEntries.Select(l => $"{l.Key},{l.Level}"));
+                        var placements = templateRow.LVLiEntries.ToDictionary(
+                            l => l.Key, l => new Services.LvliPlacement(l.Level, l.Count));
+                        // ApplyPlacements zeroes every list the template does not name, so compare
+                        // before and after instead of assuming a change - otherwise re-applying the
+                        // same template would report every item as changed and re-save it.
+                        // Count is part of the comparison: a template that only changes the amount is
+                        // still a change.
+                        var before = string.Join(";", target.LVLiEntries.Select(l => $"{l.Key},{l.Level},{l.Count}"));
+                        target.ApplyPlacements(placements);
+                        var after = string.Join(";", target.LVLiEntries.Select(l => $"{l.Key},{l.Level},{l.Count}"));
                         if (before != after) changed = true;
                     }
                 }
