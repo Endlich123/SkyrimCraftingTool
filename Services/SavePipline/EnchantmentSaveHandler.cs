@@ -20,6 +20,11 @@ namespace SkyrimCraftingTool.Services.SavePipline
             r.Enchantment != null &&
             (
                 r.FieldName is nameof(EnchantmentRecord.Name)
+                or nameof(EnchantmentRecord.EditorID)
+                or nameof(EnchantmentRecord.EnchantType)
+                or nameof(EnchantmentRecord.Flags)
+                or nameof(EnchantmentRecord.ChargeTime)
+                or nameof(EnchantmentRecord.EnchantmentAmount)
                 or nameof(EnchantmentRecord.CastType)
                 or nameof(EnchantmentRecord.TargetType)
                 or nameof(EnchantmentRecord.EnchantmentCost)
@@ -38,6 +43,31 @@ namespace SkyrimCraftingTool.Services.SavePipline
                 case nameof(EnchantmentRecord.Name):
                     _service.UpdateEnchantmentName(ench.Key, ench.Name);
                     _cache.UpdateEnchantmentName(ench.Key, ench.Name);
+                    break;
+
+                // Only reaches a user-created record - ItemDBHandler enforces that in the SQL.
+                // No cache counterpart: CacheManager's enchantment updates are all empty stubs, and
+                // adding a sixth one would only look like it did something.
+                case nameof(EnchantmentRecord.EditorID):
+                    _service.UpdateEnchantmentEditorId(ench.Key, ench.EditorID);
+                    break;
+
+                // No cache counterparts for these four: CacheManager's enchantment methods are all
+                // empty stubs (see the EditorID note above).
+                case nameof(EnchantmentRecord.EnchantType):
+                    _service.UpdateEnchantmentEnchantType(ench.Key, ench.EnchantType);
+                    break;
+
+                case nameof(EnchantmentRecord.Flags):
+                    _service.UpdateEnchantmentFlags(ench.Key, ench.Flags);
+                    break;
+
+                case nameof(EnchantmentRecord.ChargeTime):
+                    _service.UpdateEnchantmentChargeTime(ench.Key, ench.ChargeTime);
+                    break;
+
+                case nameof(EnchantmentRecord.EnchantmentAmount):
+                    _service.UpdateEnchantmentAmount(ench.Key, ench.EnchantmentAmount);
                     break;
 
                 case nameof(EnchantmentRecord.CastType):

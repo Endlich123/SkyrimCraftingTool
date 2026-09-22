@@ -17,6 +17,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
         string LvliKey,
         string LvliName,
         int Level,
+        int Count = 1,
         string ContainerKey = "",
         string ContainerName = "");
 
@@ -133,8 +134,9 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 bool anyLevel = false;
                 var containerName = containerNames != null && containerNames.TryGetValue(container.ContainerKey, out var cn) ? cn : "";
 
-                foreach (var (lvliKey, level) in container.Levels)
+                foreach (var (lvliKey, placement) in container.Placements)
                 {
+                    var level = placement.Level;
                     // Level 0 means "slider off". ContainerStringBuilder already drops those on
                     // write; enforcing it again here keeps a hand-edited or legacy string from
                     // smuggling one in as if it were a real placement.
@@ -143,7 +145,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
                     var name = lvliNames != null && lvliNames.TryGetValue(lvliKey, out var n) ? n : "";
                     lists.Add(new LeveledListPlacement(itemKey, itemEditorId, lvliKey, name, level,
-                        container.ContainerKey, containerName));
+                        placement.Count, container.ContainerKey, containerName));
                     anyLevel = true;
                 }
 
@@ -197,7 +199,15 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     if (levels.Count > 1)
                         conflictList.Add(new LeveledListLevelConflict(list.Key, item.Key, level, levels));
 
-                    entries.Add($"{PatchFormat.RefKey8(item.Key)}~{PatchFormat.Int(level)}~{EntryCount}");
+                    // The count follows the level that won, rather than being maximised separately -
+                    // otherwise a list reached twice could end up with one container's level and the
+                    // other's count, which is a placement the user never configured anywhere.
+                    int count = item.Where(p => p.Level == level)
+                                    .Select(p => p.Count)
+                                    .DefaultIfEmpty(1)
+                                    .Max();
+
+                    entries.Add($"{PatchFormat.RefKey8(item.Key)}~{PatchFormat.Int(level)}~{PatchFormat.Int(count)}");
                     referenced.Add(item.Key);
                 }
 
@@ -218,6 +228,63 @@ namespace SkyrimCraftingTool.Services.PatchGen
                         + ViaContainers(list),
                     Operations = new[] { "addOnceToLLs=" + string.Join(",", entries) },
                     ReferencedKeywordKeys = referenced,
+                });
+            }
+
+            return rules;
+        }
+
+        // The list's OWN properties: chance of nothing, and how it calculates.
+        //
+        // A different kind of rule from everything above it, in one crucial way. The placement rules
+        // ADD something of the user's to a list and are therefore filed under the ITEM's plugin, so
+        // they only exist while that mod does. These EDIT the list itself and reference no foreign
+        // form at all, so they belong in the list's own file - which is what leaving FilePlugin empty
+        // means (see SkyPatcherRule.FilePlugin). Skyrim.esm.ini is always loaded, and that is
+        // correct here: if Skyrim.esm is missing, so is the list.
+        //
+        // These are also the only rules in this tool that are not purely additive. chanceNone and
+        // the calc flags belong to the WHOLE list, so a change here changes the odds for every mod
+        // feeding it. That is a decision the user makes knowingly (2026-09-15) with the calculator
+        // in the list window showing the new number as they type - it is not something that should
+        // ever happen as a side effect of placing an item.
+        public static IReadOnlyList<SkyPatcherRule> BuildPropertyRules(
+            IEnumerable<LeveledListEdit> edits,
+            IReadOnlyDictionary<string, string>? lvliNames = null)
+        {
+            var rules = new List<SkyPatcherRule>();
+
+            foreach (var edit in (edits ?? Enumerable.Empty<LeveledListEdit>())
+                         .Where(e => e != null && !string.IsNullOrWhiteSpace(e.ListKey) && !e.IsEmpty)
+                         .OrderBy(e => e.ListKey, StringComparer.OrdinalIgnoreCase))
+            {
+                var operations = new List<string>();
+
+                // Only what actually differs from the scan. An edit that writes the value a list
+                // already has would make this tool the owner of a property nobody changed.
+                if (edit.ChanceNone.HasValue)
+                    operations.Add("chanceNone=" + PatchFormat.Int(Math.Clamp(edit.ChanceNone.Value, 0, 100)));
+
+                var flagOperation = LeveledListFlags.ToOperation(edit.Flags);
+                if (!string.IsNullOrEmpty(flagOperation))
+                    operations.Add(flagOperation);
+
+                if (operations.Count == 0) continue;
+
+                var (plugin, formId) = KeyFactory.SplitMasterKey(edit.ListKey);
+                var name = lvliNames != null && lvliNames.TryGetValue(edit.ListKey, out var n) ? n : "";
+
+                rules.Add(new SkyPatcherRule
+                {
+                    FilterDirective = "filterByLLs",
+                    TargetPlugin = plugin,
+                    TargetFormId = formId,
+                    Comment = (string.IsNullOrWhiteSpace(name)
+                            ? $"leveled list {edit.ListKey}"
+                            : $"leveled list {name} ({edit.ListKey})")
+                        + ": list properties changed by you - affects every item in this list",
+                    Operations = operations,
+                    ReferencedKeywordKeys = new[] { edit.ListKey },
                 });
             }
 

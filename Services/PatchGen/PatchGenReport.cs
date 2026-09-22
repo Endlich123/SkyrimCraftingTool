@@ -15,6 +15,16 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // list, not per item (see LeveledListRuleBuilder).
         public int LeveledListRuleCount { get; set; }
 
+        // Edits to a leveled list's OWN properties - chance of nothing, calculation flags. Counted
+        // apart from the placements above because they are a different promise: a placement adds
+        // something of the user's, this changes how the list behaves for everything in it.
+        public int LeveledListPropertyRuleCount { get; set; }
+
+        // One line per edited list, for the report. Deliberately not a warning: the user asked for
+        // these. But a change that reaches every mod feeding a list belongs on the record of what
+        // this patch does, in words rather than as a number.
+        public List<string> LeveledListPropertyEdits { get; } = new();
+
         // The other half of the Container tab: containers whose sliders all stayed at 0, emitted as
         // filterByContainers/addOnceToContainers.
         public int ContainerRuleCount { get; set; }
@@ -35,12 +45,21 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // assignment changed - the one enchantment edit SkyPatcher has no operation for (E-P4).
         public int EnchantmentEspOverrideCount { get; set; }
 
+        // Enchantments the user created in the tool. They exist in no plugin - the generated ESP is
+        // what brings them into the game, so they are new records, not overrides.
+        public int NewEnchantmentCount { get; set; }
+
         // Same edit as above, but with ESP generation switched off there is no route for it at all.
         // Counted separately so it can be reported as genuinely unpatched rather than silently lost.
         public int EnchantmentAssignmentChangesUnpatched { get; set; }
 
         // Absolute paths of the .ini files written (empty on a dry run).
         public List<string> WrittenFiles { get; } = new();
+
+        // Set from PatchGenOptions.DryRun so the report can describe itself honestly: everything
+        // below was worked out, nothing was written. Without it the same numbers read as a finished
+        // patch, which is the one misunderstanding a preview must not cause.
+        public bool DryRun { get; set; }
 
         // --- COBJ ESP (Phase B) ---
         public int CobjNewCount { get; set; }
@@ -52,12 +71,13 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // Non-fatal issues: dead keyword references, skipped name edits, recipes without output, etc.
         public List<string> Warnings { get; } = new();
 
-        public int SkyPatcherRuleCount => ArmorRuleCount + WeaponRuleCount + EnchantmentRuleCount + FormListRuleCount + LeveledListRuleCount + ContainerRuleCount;
+        public int SkyPatcherRuleCount => ArmorRuleCount + WeaponRuleCount + EnchantmentRuleCount + FormListRuleCount + LeveledListRuleCount + LeveledListPropertyRuleCount + ContainerRuleCount;
         public int CobjRecordCount => CobjNewCount + CobjOverrideCount;
         // Enchantment ESP overrides count too: a run whose only change is a re-pointed worn-
         // restriction list produces no rules and no COBJ records, but it definitely generated something.
         public bool AnythingGenerated =>
-            SkyPatcherRuleCount > 0 || CobjRecordCount > 0 || EnchantmentEspOverrideCount > 0;
+            SkyPatcherRuleCount > 0 || CobjRecordCount > 0 || EnchantmentEspOverrideCount > 0
+            || NewEnchantmentCount > 0;
 
         // Deliberately separate from Warnings: an ESP override is not a problem, but it IS a
         // consequence the user should take in knowingly - the record is copied wholesale, so
@@ -81,18 +101,26 @@ namespace SkyrimCraftingTool.Services.PatchGen
         {
             get
             {
-                var parts = new List<string>
-                {
+                var rules =
                     $"{ArmorRuleCount} armor rule(s), {WeaponRuleCount} weapon rule(s), " +
                     $"{EnchantmentRuleCount} enchantment rule(s), {FormListRuleCount} form-list rule(s), " +
-                    $"{LeveledListRuleCount} leveled-list rule(s), {ContainerRuleCount} container rule(s) " +
-                    $"across {WrittenFiles.Count} file(s)",
+                    $"{LeveledListRuleCount} leveled-list rule(s), " +
+                    (LeveledListPropertyRuleCount > 0 ? $"{LeveledListPropertyRuleCount} list-property rule(s), " : "") +
+                    $"{ContainerRuleCount} container rule(s)";
+
+                // A dry run writes nothing, so WrittenFiles is empty - and "across 0 file(s)" would
+                // read as "this patch produces nothing" rather than "nothing was written yet".
+                var parts = new List<string>
+                {
+                    DryRun ? rules : $"{rules} across {WrittenFiles.Count} file(s)",
                 };
                 if (CobjRecordCount > 0 || CobjEspPath != null)
                     parts.Add($"COBJ: {CobjNewCount} new + {CobjOverrideCount} override" +
                               (CobjEslFlagged ? " (ESL)" : ""));
                 if (EnchantmentEspOverrideCount > 0)
                     parts.Add($"{EnchantmentEspOverrideCount} enchantment ESP override(s)");
+                if (NewEnchantmentCount > 0)
+                    parts.Add($"{NewEnchantmentCount} new enchantment(s)");
                 if (CobjFromScratchCount > 0)
                     parts.Add($"{CobjFromScratchCount} COBJ override(s) rebuilt from scratch");
                 if (CobjConditionRewriteSkippedCount > 0)

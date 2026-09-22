@@ -36,7 +36,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
             using var cmd = c.CreateCommand();
             cmd.CommandText = @"
                 CREATE TABLE IF NOT EXISTS PatchFormIdMap (
-                    ToolKey   TEXT PRIMARY KEY,
+                    ToolKey   TEXT PRIMARY KEY COLLATE NOCASE,
                     TargetEsp TEXT NOT NULL,
                     FormId    INTEGER NOT NULL
                 );";

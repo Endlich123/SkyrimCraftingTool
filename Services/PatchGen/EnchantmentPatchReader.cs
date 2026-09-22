@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using Microsoft.Data.Sqlite;
 using SkyrimCraftingTool.Model;
 
@@ -50,9 +51,23 @@ namespace SkyrimCraftingTool.Services.PatchGen
                            EffectsEdited,
                            WornRestrictionListKey,
                            CASE WHEN IsEdited = 1 AND IsEditedWornRestrictionListKey IS NOT NULL
-                                THEN IsEditedWornRestrictionListKey ELSE WornRestrictionListKey END
+                                THEN IsEditedWornRestrictionListKey ELSE WornRestrictionListKey END,
+                           -- The three ENIT fields SkyPatcher can patch on a scanned record.
+                           Flags,
+                           CASE WHEN IsEdited = 1 AND IsEditedFlags IS NOT NULL
+                                THEN IsEditedFlags ELSE Flags END,
+                           ChargeTime,
+                           CASE WHEN IsEdited = 1 AND IsEditedChargeTime IS NOT NULL
+                                THEN IsEditedChargeTime ELSE ChargeTime END,
+                           EnchantmentAmount,
+                           CASE WHEN IsEdited = 1 AND IsEditedEnchantmentAmount IS NOT NULL
+                                THEN IsEditedEnchantmentAmount ELSE EnchantmentAmount END
                     FROM Enchantments
-                    WHERE (IsEdited = 1 OR EffectsEdited = 1) AND Active = 1";
+                    -- Original = 1 only. A user-created enchantment has no scanned record to patch,
+                    -- and its tool key is not the FormID it will end up with either - it goes the
+                    -- ESP route instead (ReadNewEnchantments below). A rule naming its tool key
+                    -- would target a record that exists nowhere.
+                    WHERE (IsEdited = 1 OR EffectsEdited = 1) AND Active = 1 AND Original = 1";
 
                 using var r = cmd.ExecuteReader();
                 while (r.Read())
@@ -68,6 +83,9 @@ namespace SkyrimCraftingTool.Services.PatchGen
                             Name = Str(r, 2),
                             EnchantmentCost = (float)Dbl(r, 4),
                             WornRestrictionListKey = Str(r, 7),
+                            Flags = (int)Lng(r, 9),
+                            ChargeTime = (float)Dbl(r, 11),
+                            EnchantmentAmount = (int)Lng(r, 13),
                         },
                         new EnchantmentRecord
                         {
@@ -76,6 +94,9 @@ namespace SkyrimCraftingTool.Services.PatchGen
                             Name = Str(r, 3),
                             EnchantmentCost = (float)Dbl(r, 5),
                             WornRestrictionListKey = Str(r, 8),
+                            Flags = (int)Lng(r, 10),
+                            ChargeTime = (float)Dbl(r, 12),
+                            EnchantmentAmount = (int)Lng(r, 14),
                         }));
 
                     if (!r.IsDBNull(6) && Convert.ToInt64(r.GetValue(6)) == 1)
@@ -135,6 +156,71 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 });
             }
             return byEnchantment;
+        }
+
+        // The enchantments the user created in the tool (Original = 0). They have no scanned
+        // original to diff against - they exist nowhere until the generated ESP writes them - so
+        // they take the ESP route rather than producing SkyPatcher rules.
+        //
+        // The effective values are read the same way the editor shows them, shadow columns and all:
+        // a user record is edited through the very same paths as a scanned one.
+        public IReadOnlyList<CobjEspBuilder.NewEnchantmentEspEntry> ReadNewEnchantments()
+        {
+            using var conn = new SqliteConnection(_connString);
+            conn.Open();
+
+            var effects = ReadEffects(conn, "EnchantmentEffects");
+            var list = new List<CobjEspBuilder.NewEnchantmentEspEntry>();
+
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                SELECT Key, EditorID,
+                       CASE WHEN IsEdited = 1 AND IsEditedName IS NOT NULL
+                            THEN IsEditedName ELSE Name END,
+                       CASE WHEN IsEdited = 1 AND IsEditedCastType IS NOT NULL
+                            THEN IsEditedCastType ELSE CastType END,
+                       CASE WHEN IsEdited = 1 AND IsEditedTargetType IS NOT NULL
+                            THEN IsEditedTargetType ELSE TargetType END,
+                       CASE WHEN IsEdited = 1 AND IsEditedEnchantmentCost IS NOT NULL
+                            THEN IsEditedEnchantmentCost ELSE EnchantmentCost END,
+                       CASE WHEN IsEdited = 1 AND IsEditedWornRestrictionListKey IS NOT NULL
+                            THEN IsEditedWornRestrictionListKey ELSE WornRestrictionListKey END,
+                       -- EnchantType has no shadow column: user-created records write the base one.
+                       EnchantType,
+                       CASE WHEN IsEdited = 1 AND IsEditedFlags IS NOT NULL
+                            THEN IsEditedFlags ELSE Flags END,
+                       CASE WHEN IsEdited = 1 AND IsEditedChargeTime IS NOT NULL
+                            THEN IsEditedChargeTime ELSE ChargeTime END,
+                       CASE WHEN IsEdited = 1 AND IsEditedEnchantmentAmount IS NOT NULL
+                            THEN IsEditedEnchantmentAmount ELSE EnchantmentAmount END
+                FROM Enchantments
+                WHERE Original = 0 AND Active = 1;";
+
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                var key = Str(r, 0);
+                var own = effects.TryGetValue(key, out var rows)
+                    ? rows.Select(e => new CobjEspBuilder.NewEnchantmentEffect(
+                                           e.MagicEffectKey, e.Magnitude, e.Duration, e.Area)).ToList()
+                    : new List<CobjEspBuilder.NewEnchantmentEffect>();
+
+                list.Add(new CobjEspBuilder.NewEnchantmentEspEntry(
+                    ToolKey: key,
+                    EditorId: Str(r, 1),
+                    Name: Str(r, 2),
+                    CastType: Str(r, 3),
+                    TargetType: Str(r, 4),
+                    Cost: (float)Dbl(r, 5),
+                    EnchantType: Str(r, 7),
+                    Flags: (int)Lng(r, 8),
+                    ChargeTime: (float)Dbl(r, 9),
+                    Amount: (int)Lng(r, 10),
+                    WornRestrictionListKey: Str(r, 6),
+                    Effects: own));
+            }
+
+            return list;
         }
 
         private static string Str(SqliteDataReader r, int i) => r.IsDBNull(i) ? "" : r.GetString(i);

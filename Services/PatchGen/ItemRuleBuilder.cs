@@ -51,8 +51,9 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 ops.Add($"armorType={armorType}");
             }
 
-            var refKeys = AppendKeywordOps(ops, original.Keywords, edited.Keywords);
+            var refKeys = AppendKeywordOps(ops, original.Keywords, edited.Keywords).ToList();
             AppendBipedSlotOps(ops, original.BodySlotMask, edited.BodySlotMask);
+            AppendObjectEffectOp(ops, refKeys, original.ObjectEffectKey, edited.ObjectEffectKey);
 
             if (ops.Count == 0) return null;
             return new SkyPatcherRule
@@ -87,7 +88,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
             if (!NumEqual(original.Weight, edited.Weight))
                 ops.Add($"weight={PatchFormat.Num(edited.Weight)}");
 
-            var refKeys = AppendKeywordOps(ops, original.Keywords, edited.Keywords);
+            var refKeys = AppendKeywordOps(ops, original.Keywords, edited.Keywords).ToList();
+            AppendObjectEffectOp(ops, refKeys, original.ObjectEffectKey, edited.ObjectEffectKey);
 
             if (ops.Count == 0) return null;
             return new SkyPatcherRule
@@ -99,6 +101,36 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 Operations = ops,
                 ReferencedKeywordKeys = refKeys,
             };
+        }
+
+        // WHICH enchantment the item wears. One operation, and the only one here that can also take
+        // something AWAY: an empty value means "no enchantment any more".
+        //
+        // THE REMOVAL FORM IS NOT CONFIRMED. Assigning an effect is documented
+        // (objectEffect=<Plugin>|<FormID>); clearing one with an empty value is the obvious reading
+        // and nothing more - the generator flags it in the report so a patch that relies on it is
+        // never silently trusted. Assignment is unaffected either way.
+        internal const string ObjectEffectRemovalOp = "objectEffect=";
+
+        private static void AppendObjectEffectOp(
+            List<string> ops, List<string> refKeys, string? original, string? edited)
+        {
+            var from = (original ?? "").Trim();
+            var to = (edited ?? "").Trim();
+
+            if (string.Equals(from, to, StringComparison.OrdinalIgnoreCase)) return;
+
+            if (to.Length == 0)
+            {
+                ops.Add(ObjectEffectRemovalOp);
+                return;
+            }
+
+            ops.Add("objectEffect=" + PatchFormat.RefKey8(to));
+
+            // Into the reference list so the dead-reference pass covers it: an enchantment from a
+            // plugin that is no longer in the scan would otherwise be written without a word.
+            refKeys.Add(to);
         }
 
         // --- helpers ---

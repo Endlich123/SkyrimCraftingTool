@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
+using SkyrimCraftingTool.Model;
+
 namespace SkyrimCraftingTool.Services.PatchGen
 {
     // Orchestrates the patch export:
@@ -50,7 +52,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
         public PatchGenReport Generate(PatchGenOptions options)
         {
-            var report = new PatchGenReport();
+            var report = new PatchGenReport { DryRun = options.DryRun };
             _enchantmentEspOverrides.Clear();
 
             GenerateSkyPatcher(options, report);
@@ -73,9 +75,19 @@ namespace SkyrimCraftingTool.Services.PatchGen
             var placements = new List<LeveledListPlacement>();
             var containerPlacements = new List<ContainerPlacement>();
 
+            // An item can now wear an enchantment the user created here. Its key inside the tool
+            // ("SkyrimCraftingTool.esp|001001") is NOT the FormID the record ends up with - the ESP
+            // hands out its own, from the persistent map. The rule has to name that one, so the
+            // allocation happens before any rule is built.
+            var userEnchantments = ResolveUserEnchantmentKeys(options, report);
+
             var armorByPlugin = new Dictionary<string, List<SkyPatcherRule>>(StringComparer.OrdinalIgnoreCase);
             foreach (var pair in _itemReader.ReadEditedArmor())
             {
+                pair.Edited.ObjectEffectKey =
+                    MapEnchantmentKey(pair.Edited.ObjectEffectKey, pair.Original.ObjectEffectKey,
+                                      pair.Edited.Key, userEnchantments, options, report);
+
                 var rule = ItemRuleBuilder.BuildArmorRule(pair.Original, pair.Edited, out var skip);
                 if (Accept(rule, skip, report))
                     report.ArmorRuleCount += Add(armorByPlugin, rule!);
@@ -88,6 +100,10 @@ namespace SkyrimCraftingTool.Services.PatchGen
             var weaponByPlugin = new Dictionary<string, List<SkyPatcherRule>>(StringComparer.OrdinalIgnoreCase);
             foreach (var pair in _itemReader.ReadEditedWeapons())
             {
+                pair.Edited.ObjectEffectKey =
+                    MapEnchantmentKey(pair.Edited.ObjectEffectKey, pair.Original.ObjectEffectKey,
+                                      pair.Edited.Key, userEnchantments, options, report);
+
                 var rule = ItemRuleBuilder.BuildWeaponRule(pair.Original, pair.Edited, out var skip);
                 if (Accept(rule, skip, report))
                     report.WeaponRuleCount += Add(weaponByPlugin, rule!);
@@ -158,6 +174,26 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     report.LeveledListRuleCount += Add(lvliByPlugin, rule);
             }
 
+            // The list's own properties, if the user changed any. Filed under the LIST's plugin
+            // rather than an item's, because these rules edit the list itself and reference nothing
+            // foreign - see LeveledListRuleBuilder.BuildPropertyRules.
+            foreach (var edit in LeveledListEditStore.ReadAll())
+            {
+                var rule = LeveledListRuleBuilder.BuildPropertyRules(new[] { edit }, lvliNames).FirstOrDefault();
+                if (rule == null || !Accept(rule, null, report)) continue;
+
+                report.LeveledListPropertyRuleCount += Add(lvliByPlugin, rule);
+
+                var name = lvliNames != null && lvliNames.TryGetValue(edit.ListKey, out var n) && !string.IsNullOrWhiteSpace(n)
+                    ? $"{n} ({edit.ListKey})"
+                    : edit.ListKey;
+
+                // Not a warning - the user asked for this. It is in the report because a change to a
+                // list's own properties affects every mod feeding that list, and that belongs on the
+                // record of what this patch does.
+                report.LeveledListPropertyEdits.Add($"{name}: {string.Join(", ", rule.Operations)}");
+            }
+
             foreach (var c in levelConflicts)
                 report.Warnings.Add(
                     $"{c.ItemKey} sits in leveled list {c.LvliKey} through more than one container, " +
@@ -188,6 +224,12 @@ namespace SkyrimCraftingTool.Services.PatchGen
             WriteCategory(options, ContainerFolder, contByPlugin, report);
         }
 
+        // The readers take a path; the service is built with a connection string.
+        private static string DbPathFrom(string connString) =>
+            connString.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase)
+                ? connString.Substring("Data Source=".Length)
+                : connString;
+
         private static string Describe(string? listKey) =>
             string.IsNullOrWhiteSpace(listKey) ? "(none)" : listKey;
 
@@ -199,6 +241,15 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     "(~ : newline) SkyPatcher can't express in fullName.");
 
             if (rule == null) return false;
+
+            // Taking an enchantment OFF is the one operation here whose syntax comes from reading
+            // the documentation rather than from a confirmed example. Assigning one is documented;
+            // clearing one with an empty value is the obvious reading and nothing more. Said out
+            // loud rather than trusted quietly - a patch that relies on it should be checked in game.
+            if (rule.Operations.Any(op => op == ItemRuleBuilder.ObjectEffectRemovalOp))
+                report.Warnings.Add(
+                    $"{rule.TargetPlugin}|{rule.TargetFormId}: removes the item's enchantment. " +
+                    "SkyPatcher documents assigning one, not clearing it - verify this one in game.");
 
             foreach (var keyword in rule.ReferencedKeywordKeys)
                 if (_references != null && !_references.IsActive(keyword))
@@ -254,22 +305,95 @@ namespace SkyrimCraftingTool.Services.PatchGen
             }
         }
 
+        // toolKey -> the key the record will really have in the generated ESP. Allocating here (and
+        // not in the ESP phase, which runs later) is what lets an item rule name the right FormID;
+        // PatchFormIdMapStore never reassigns, so the ESP phase gets the same number back.
+        //
+        // A dry run only PEEKS: it must not leave an allocation behind for a patch that was never
+        // written. An enchantment seen for the first time therefore has no id yet in a dry run, and
+        // the rule for it is withheld with a warning rather than guessed at.
+        private Dictionary<string, string> ResolveUserEnchantmentKeys(
+            PatchGenOptions options, PatchGenReport report)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (!options.GenerateCobj) return map;
+
+            string esp = options.EspNameFor(KeyFactory.UserPluginName);
+
+            foreach (var e in _enchReader.ReadNewEnchantments())
+            {
+                // The builder refuses an effectless enchantment, so there would be nothing to point
+                // at - leaving it out of the map makes the rule withhold itself below.
+                if (e.Effects.Count == 0) continue;
+
+                uint? id = options.DryRun ? _formIdMap.Peek(e.ToolKey) : _formIdMap.Allocate(e.ToolKey, esp);
+                if (id == null) continue;
+
+                map[e.ToolKey] = $"{esp}|{id.Value:X6}";
+            }
+
+            return map;
+        }
+
+        // Rewrites an item's enchantment key when it points at one of the user's own enchantments.
+        // Everything else passes through untouched.
+        private static string MapEnchantmentKey(
+            string? edited, string? original, string itemKey,
+            IReadOnlyDictionary<string, string> userEnchantments,
+            PatchGenOptions options, PatchGenReport report)
+        {
+            var key = (edited ?? "").Trim();
+            if (key.Length == 0) return key;
+
+            bool isOwn = key.StartsWith(KeyFactory.UserPluginName + "|", StringComparison.OrdinalIgnoreCase);
+            if (!isOwn) return key;
+
+            if (userEnchantments.TryGetValue(key, out var realKey))
+                return realKey;
+
+            // Its own enchantment, but nothing will exist for the rule to point at: either ESP
+            // generation is off, or the enchantment has no effects and is not being written.
+            // Falling back to the item's previous enchantment means no objectEffect op is emitted at
+            // all - better than a rule aimed at a record that does not exist.
+            report.Warnings.Add(
+                $"{itemKey}: wears {key}, an enchantment created in this tool that is not being " +
+                (options.GenerateCobj
+                    ? "written (it has no effects yet) — the assignment was left out of the patch."
+                    : "written because ESP generation is off — the assignment was left out of the patch."));
+
+            return original ?? "";
+        }
+
         // --- COBJ ESP (Phase B) ---
 
         private void GenerateCobj(PatchGenOptions options, PatchGenReport report)
         {
             var entries = _cobjReader.ReadEditedCobj();
             var enchOverrides = _enchantmentEspOverrides;
+            var newEnchantments = _enchReader.ReadNewEnchantments();
 
-            // Both kinds of override live in the same ESP, so either one on its own is reason enough
-            // to build it.
-            if (entries.Count == 0 && enchOverrides.Count == 0) return;
+            // Recipes, overridden enchantments and the user's own enchantments share the ESP, so any
+            // one of them on its own is reason enough to build it.
+            if (entries.Count == 0 && enchOverrides.Count == 0 && newEnchantments.Count == 0) return;
+
+            // A user-created enchantment's worn-restriction list goes straight into the ESP without
+            // passing through Accept(), the same blind spot the override path guards above. A list
+            // from a mod that has since left the scan would otherwise be written without a word.
+            foreach (var e in newEnchantments)
+            {
+                var list = e.WornRestrictionListKey ?? "";
+                if (!KeyFactory.IsUnsetKey(list) && _references != null && !_references.IsActive(list))
+                    report.Warnings.Add(
+                        $"{e.EditorId}: the worn-restriction list {list} is not in the current scan " +
+                        "(still written to the ESP).");
+            }
 
             if (options.DryRun)
             {
                 report.CobjNewCount = entries.Count(e => e.IsNew);
                 report.CobjOverrideCount = entries.Count(e => !e.IsNew);
                 report.EnchantmentEspOverrideCount = enchOverrides.Count;
+                report.NewEnchantmentCount = newEnchantments.Count;
                 return;
             }
 
@@ -323,8 +447,15 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 .GroupBy(e => options.EspNameFor(e.SourcePlugin), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
 
+            // The user's own enchantments have no source plugin to split by - they belong to the
+            // tool's pseudo-plugin, which maps to the same ESP its recipes go to.
+            var newEnchByEsp = newEnchantments
+                .GroupBy(_ => options.EspNameFor(KeyFactory.UserPluginName), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
             var espNames = cobjByEsp.Keys
                 .Concat(enchByEsp.Keys)
+                .Concat(newEnchByEsp.Keys)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(n => n, StringComparer.OrdinalIgnoreCase);
 
@@ -335,9 +466,12 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 var enchForEsp = enchByEsp.TryGetValue(espName, out var en)
                     ? en : new List<CobjEspBuilder.EnchantmentEspEntry>();
 
+                var newEnchForEsp = newEnchByEsp.TryGetValue(espName, out var ne)
+                    ? ne : new List<CobjEspBuilder.NewEnchantmentEspEntry>();
+
                 var res = builder.Build(
                     cobjForEsp, _formIdMap, loadOrder, options.OutputRoot, espName, options.EslWhenPossible,
-                    resolver, enchForEsp);
+                    resolver, enchForEsp, newEnchForEsp);
 
                 report.CobjNewCount += res.NewCount;
                 report.CobjOverrideCount += res.OverrideCount;
@@ -346,6 +480,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 report.CobjConditionRewriteSkippedCount += res.ConditionRewriteSkippedCount;
                 report.StaleConditionDataCount += res.StaleConditionDataCount;
                 report.EnchantmentEspOverrideCount += res.EnchantmentOverrideCount;
+                report.NewEnchantmentCount += res.NewEnchantmentCount;
                 report.Warnings.AddRange(res.Warnings);
                 report.WrittenFiles.Add(res.OutputPath);
                 espPaths.Add(res.OutputPath);

@@ -38,7 +38,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
                        Keywords, IsEditedKeywords,
                        BodySlotMask, IsEditedBodySlotMask,
                        ArmorType, IsEditedArmorType,
-                       ContainerString, IsEditedContainerString
+                       ContainerString, IsEditedContainerString,
+                       ObjectEffectKey, IsEditedObjectEffectKey
                 FROM Armor
                 -- IsEdited, NOT ""LastChanged IS NOT NULL"": ResetArmorEdits clears the flag + every
                 -- shadow but deliberately leaves LastChanged set (it feeds the import conflict
@@ -66,6 +67,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     BodySlotMask = (uint)Lng(r, 12),
                     ArmorType = Str(r, 14),
                     ContainerString = Str(r, 16),
+                    ObjectEffectKey = Str(r, 18),
                 };
 
                 var edited = new ArmorRecord
@@ -83,6 +85,9 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     // so in practice Original is always empty and this shadow IS the whole placement
                     // set - see LeveledListRuleBuilder on why that makes the feature additive-only.
                     ContainerString = r.IsDBNull(17) ? original.ContainerString : r.GetString(17),
+                    // Empty is a REAL value here, not "unset": it means the user took the
+                    // enchantment off. NULL is the one that means "not edited".
+                    ObjectEffectKey = r.IsDBNull(19) ? original.ObjectEffectKey : r.GetString(19),
                 };
 
                 pairs.Add(new ArmorPatchPair(original, edited));
@@ -106,7 +111,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
                        Value, IsEditedValue,
                        Weight, IsEditedWeight,
                        Keywords, IsEditedKeywords,
-                       ContainerString, IsEditedContainerString
+                       ContainerString, IsEditedContainerString,
+                       ObjectEffectKey, IsEditedObjectEffectKey
                 FROM Weapons
                 -- see ReadEditedArmor for why this is IsEdited and not LastChanged
                 WHERE IsEdited = 1 AND Active = 1";
@@ -130,6 +136,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     Weight = (float)Dbl(r, 14),
                     Keywords = Csv(Str(r, 16)),
                     ContainerString = Str(r, 18),
+                    ObjectEffectKey = Str(r, 20),
                 };
 
                 var edited = new WeaponRecord
@@ -146,6 +153,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     Keywords = r.IsDBNull(17) ? original.Keywords : Csv(r.GetString(17)),
                     // See ReadEditedArmor.
                     ContainerString = r.IsDBNull(19) ? original.ContainerString : r.GetString(19),
+                    ObjectEffectKey = r.IsDBNull(21) ? original.ObjectEffectKey : r.GetString(21),
                 };
 
                 pairs.Add(new WeaponPatchPair(original, edited));

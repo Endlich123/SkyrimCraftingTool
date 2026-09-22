@@ -18,6 +18,21 @@ namespace SkyrimCraftingTool.Services.Adapters
         public void UpdateEnchantmentName(string key, string name)
             => ItemDBHandler.UpdateEnchantmentName(key, name);
 
+        public void UpdateEnchantmentEditorId(string key, string editorId)
+            => ItemDBHandler.UpdateEnchantmentEditorId(key, editorId);
+
+        public void UpdateEnchantmentEnchantType(string key, string enchantType)
+            => ItemDBHandler.UpdateEnchantmentEnchantType(key, enchantType);
+
+        public void UpdateEnchantmentFlags(string key, int flags)
+            => ItemDBHandler.UpdateEnchantmentFlags(key, flags);
+
+        public void UpdateEnchantmentChargeTime(string key, float chargeTime)
+            => ItemDBHandler.UpdateEnchantmentChargeTime(key, chargeTime);
+
+        public void UpdateEnchantmentAmount(string key, int amount)
+            => ItemDBHandler.UpdateEnchantmentAmount(key, amount);
+
         public void UpdateEnchantmentCastType(string key, string castType)
             => ItemDBHandler.UpdateEnchantmentCastType(key, castType);
 
@@ -58,5 +73,10 @@ namespace SkyrimCraftingTool.Services.Adapters
         public void ResetEnchantmentEffects(string enchantmentKey) => ItemDBHandler.ResetEnchantmentEffects(enchantmentKey);
         public List<string> GetOriginalWornRestrictionKeywords(string listKey) => ItemDBHandler.GetOriginalWornRestrictionKeywords(listKey);
         public void ResetWornRestrictionKeywords(string listKey) => ItemDBHandler.ResetWornRestrictionKeywords(listKey);
+
+        public EnchantmentRecord CreateEnchantment(string editorId, string name)
+            => ItemDBHandler.CreateEnchantment(editorId, name);
+
+        public bool DeleteEnchantment(string key) => ItemDBHandler.DeleteEnchantment(key);
     }
 }

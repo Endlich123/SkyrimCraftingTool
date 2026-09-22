@@ -10,6 +10,11 @@ namespace SkyrimCraftingTool.Services
 
         // Basic fields
         void UpdateEnchantmentName(string key, string name);
+        void UpdateEnchantmentEditorId(string key, string editorId);
+        void UpdateEnchantmentEnchantType(string key, string enchantType);
+        void UpdateEnchantmentFlags(string key, int flags);
+        void UpdateEnchantmentChargeTime(string key, float chargeTime);
+        void UpdateEnchantmentAmount(string key, int amount);
         void UpdateEnchantmentCastType(string key, string castType);
         void UpdateEnchantmentTargetType(string key, string targetType);
         void UpdateEnchantmentCost(string key, float cost);
@@ -43,5 +48,10 @@ namespace SkyrimCraftingTool.Services
         void ResetEnchantmentEffects(string enchantmentKey);
         List<string> GetOriginalWornRestrictionKeywords(string listKey);
         void ResetWornRestrictionKeywords(string listKey);
+
+        // Create / delete an enchantment of the user's own (Enchantments.Original = 0). It lives
+        // under the tool's pseudo-plugin until the generated ESP gives it a real home.
+        EnchantmentRecord CreateEnchantment(string editorId, string name);
+        bool DeleteEnchantment(string key);
     }
 }

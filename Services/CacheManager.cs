@@ -141,6 +141,30 @@ namespace SkyrimCraftingTool.Services
             }
         }
 
+        // WHICH enchantment the item wears. The empty string is a value here ("none"), not a
+        // "nothing was passed" - so it is written through like any other.
+        public void UpdateArmorObjectEffect(string key, string objectEffectKey)
+        {
+            lock (_armorLock)
+            {
+                if (_snapshot.Armor.TryGetValue(key, out var rec))
+                    rec.ObjectEffectKey = objectEffectKey ?? "";
+                else
+                    _snapshot.Armor[key] = new ArmorRecord { Key = key, ObjectEffectKey = objectEffectKey ?? "" };
+            }
+        }
+
+        public void UpdateWeaponObjectEffect(string key, string objectEffectKey)
+        {
+            lock (_weaponLock)
+            {
+                if (_snapshot.Weapons.TryGetValue(key, out var rec))
+                    rec.ObjectEffectKey = objectEffectKey ?? "";
+                else
+                    _snapshot.Weapons[key] = new WeaponRecord { Key = key, ObjectEffectKey = objectEffectKey ?? "" };
+            }
+        }
+
         public void UpdateArmorKeywords(string key, List<string> keywordKeys)
         {
             lock (_armorLock)

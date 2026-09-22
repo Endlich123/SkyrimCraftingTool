@@ -79,7 +79,10 @@ namespace SkyrimCraftingTool.Services
                     k.Name.StartsWith("Vendor", StringComparison.OrdinalIgnoreCase) ||
                     k.Name.StartsWith("Material", StringComparison.OrdinalIgnoreCase));
 
-            if (category == EnchantmentCategory.Weapon)
+            // Staves share the weapon keyword set - WeapTypeStaff, VendorItemStaff and the damage
+            // types all live under the same prefixes, and a staff IS a weapon as far as keywords
+            // are concerned. Without this they would fall through to the catch-all below.
+            if (category == EnchantmentCategory.Weapon || category == EnchantmentCategory.Staff)
                 return GlobalKeywords.Where(k =>
                     k.Name.StartsWith("Weap", StringComparison.OrdinalIgnoreCase) ||
                     k.Name.StartsWith("Weapon", StringComparison.OrdinalIgnoreCase) ||

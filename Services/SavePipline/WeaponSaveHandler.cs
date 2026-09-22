@@ -31,6 +31,7 @@ namespace SkyrimCraftingTool.Services.SavePipline
                 or nameof(ItemNodeVM.Stagger)
                 or nameof(ItemNodeVM.SelectedKeywordKeys)
                 or nameof(ItemNodeVM.ContainerString)
+                or nameof(ItemNodeVM.ObjectEffectKey)
             );
 
         public Task HandleAsync(SaveRequest r)
@@ -83,6 +84,11 @@ namespace SkyrimCraftingTool.Services.SavePipline
                 case nameof(ItemNodeVM.ContainerString):
                     _itemService.UpdateWeaponContainerString(item.Key, item.ContainerString);
                     _cache.UpdateWeaponContainerString(item.Key, item.ContainerString);
+                    break;
+
+                case nameof(ItemNodeVM.ObjectEffectKey):
+                    _itemService.UpdateWeaponObjectEffect(item.Key, item.ObjectEffectKey);
+                    _cache.UpdateWeaponObjectEffect(item.Key, item.ObjectEffectKey);
                     break;
             }
 

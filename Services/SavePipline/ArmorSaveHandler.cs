@@ -28,6 +28,7 @@ namespace SkyrimCraftingTool.Services.SavePipline
                 or nameof(ItemNodeVM.ArmorRating)
                 or nameof(ItemNodeVM.BodySlotMask)
                 or nameof(ItemNodeVM.ArmorType)
+                or nameof(ItemNodeVM.ObjectEffectKey)
                 or nameof(ItemNodeVM.SelectedKeywordKeys)
                 or nameof(ItemNodeVM.ContainerString)
             );
@@ -66,6 +67,11 @@ namespace SkyrimCraftingTool.Services.SavePipline
                 case nameof(ItemNodeVM.ArmorType):
                     _itemService.UpdateArmorArmorType(item.Key, item.ArmorType);
                     _cache.UpdateArmorArmorType(item.Key, item.ArmorType);
+                    break;
+
+                case nameof(ItemNodeVM.ObjectEffectKey):
+                    _itemService.UpdateArmorObjectEffect(item.Key, item.ObjectEffectKey);
+                    _cache.UpdateArmorObjectEffect(item.Key, item.ObjectEffectKey);
                     break;
 
                 case nameof(ItemNodeVM.SelectedKeywordKeys):

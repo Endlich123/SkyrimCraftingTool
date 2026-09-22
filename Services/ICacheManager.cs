@@ -14,6 +14,8 @@ namespace SkyrimCraftingTool.Services
         void UpdateArmorRating(string key, double armorRating);
         void UpdateArmorBodySlotMask(string key, long bodySlotMask);
         void UpdateArmorArmorType(string key, string armorType);
+        void UpdateArmorObjectEffect(string key, string objectEffectKey);
+        void UpdateWeaponObjectEffect(string key, string objectEffectKey);
         void UpdateArmorKeywords(string key, List<string> keywordKeys);
         void UpdateArmorContainerString(string key, string containerString);
 

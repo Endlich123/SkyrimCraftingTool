@@ -35,6 +35,7 @@ namespace SkyrimCraftingTool.Services
             ApplyRecipe(item, matches, isTemper: false, touched);
             ApplyRecipe(item, matches, isTemper: true, touched);
             ApplyContainer(item, matches, touched);
+            ApplyEnchantment(item, matches, touched);
 
             return touched;
         }
@@ -339,7 +340,7 @@ namespace SkyrimCraftingTool.Services
                         item.ContainerSelection.ToggleContainer(entry.ContainerKey);
                         existing = item.ContainerSelection.SelectedContainers.FirstOrDefault(sc => sc.ContainerKey == entry.ContainerKey);
                     }
-                    existing?.ApplyLevels(entry.Levels);
+                    existing?.ApplyPlacements(entry.Placements);
                     changed = true;
                 }
             }
@@ -349,6 +350,24 @@ namespace SkyrimCraftingTool.Services
                 item.ContainerString = item.ContainerSelection.BuildString();
                 touched.Add(nameof(ItemNodeVM.ContainerString));
             }
+        }
+
+        // One item has one enchantment, so unlike keywords there is nothing to merge: the first
+        // enabled matching slot wins, the same tie-break the workbench field uses.
+        //
+        // An enabled field with an empty value is honoured as written and STRIPS the enchantment -
+        // "none" is a real choice here, not a missing one. Enabled is what decides whether the
+        // preset has an opinion at all.
+        private static void ApplyEnchantment(ItemNodeVM item, List<PresetSlotConfig> matches, List<string> touched)
+        {
+            var cfg = matches.FirstOrDefault(m => m.Enchantment != null && m.Enchantment.Enabled);
+            if (cfg == null) return;
+
+            string key = cfg.Enchantment.Value ?? "";
+            if (string.Equals(item.ObjectEffectKey ?? "", key, StringComparison.OrdinalIgnoreCase)) return;
+
+            item.ObjectEffectKey = key;
+            touched.Add(nameof(ItemNodeVM.ObjectEffectKey));
         }
     }
 }

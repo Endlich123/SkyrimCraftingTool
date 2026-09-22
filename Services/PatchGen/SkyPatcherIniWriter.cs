@@ -30,11 +30,11 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 if (!string.IsNullOrWhiteSpace(rule.Comment))
                     sb.Append("; ").Append(rule.Comment).Append('\n');
 
+                string targets = rule.TargetPlugin + "|" + PatchFormat.FormId8(rule.TargetFormId);
+
                 sb.Append(rule.FilterDirective)
                   .Append('=')
-                  .Append(rule.TargetPlugin)
-                  .Append('|')
-                  .Append(PatchFormat.FormId8(rule.TargetFormId))
+                  .Append(targets)
                   .Append(':')
                   .Append(string.Join(":", rule.Operations))
                   .Append('\n');

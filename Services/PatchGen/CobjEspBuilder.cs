@@ -23,6 +23,9 @@ namespace SkyrimCraftingTool.Services.PatchGen
         public int DeepCopiedCount { get; set; }
         public int FromScratchCount { get; set; }
 
+        // Enchantments the user created in the tool and that this ESP brings into existence.
+        public int NewEnchantmentCount { get; set; }
+
         // Recipes whose edited condition set was NOT written, because the real record carries
         // conditions the scan cannot represent and rewriting would have deleted them.
         public int ConditionRewriteSkippedCount { get; set; }
@@ -107,7 +110,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
             string espFileName,
             bool eslWhenPossible,
             WinningRecordResolver? resolver = null,
-            IReadOnlyList<EnchantmentEspEntry>? enchantmentOverrides = null)
+            IReadOnlyList<EnchantmentEspEntry>? enchantmentOverrides = null,
+            IReadOnlyList<NewEnchantmentEspEntry>? newEnchantments = null)
         {
             var result = new CobjEspResult();
             var modKey = ModKey.FromFileName(espFileName);
@@ -128,6 +132,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 }
             }
 
+
             foreach (var e in (enchantmentOverrides ?? Array.Empty<EnchantmentEspEntry>())
                      .OrderBy(x => x.EnchantmentKey, StringComparer.OrdinalIgnoreCase))
             {
@@ -138,6 +143,20 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 catch (Exception ex)
                 {
                     result.Warnings.Add($"{e.EnchantmentKey}: enchantment override skipped — {ex.Message}");
+                    result.SkippedCount++;
+                }
+            }
+
+            foreach (var e in (newEnchantments ?? Array.Empty<NewEnchantmentEspEntry>())
+                     .OrderBy(x => x.ToolKey, StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    BuildNewEnchantment(mod, modKey, e, map, espFileName, ref maxNewId, result);
+                }
+                catch (Exception ex)
+                {
+                    result.Warnings.Add($"{e.EditorId}: new enchantment skipped — {ex.Message}");
                     result.SkippedCount++;
                 }
             }
@@ -165,6 +184,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
             mod.WriteToBinary(path, new BinaryWriteParameters
             {
                 MastersListContent = MastersListContentOption.Iterate,
+                MastersContentCustomOverride = WithGameMaster,
                 MastersListOrdering = new MastersListOrderingByLoadOrder(ordering),
                 ModKey = ModKeyOption.NoCheck,
             });
@@ -178,6 +198,24 @@ namespace SkyrimCraftingTool.Services.PatchGen
             return result;
         }
 
+        // Skyrim.esm belongs in the master list of every generated ESP, even when nothing in it
+        // references the base game.
+        //
+        // MastersListContentOption.Iterate writes only the masters the records actually reach, so a
+        // patch touching one mod ends up with that mod alone - at master index 0. A reference into
+        // it then becomes the FormID 0x000000xx, and anything below 0x800 is the range reserved for
+        // forms hardcoded in the engine: xEdit stops before the master list and shows "could not be
+        // resolved, but is possibly hardcoded in the engine". ESL-flagged plugins routinely hold
+        // records down there (BladeAndBlunt.esp's MAG_StaggerSlowEffect20 is 0x000072), so this is
+        // not a corner case. With Skyrim.esm ahead of it the same reference is 0x010000xx and
+        // resolves. When something already pulls Skyrim.esm in, this changes nothing.
+        private static readonly ModKey GameMaster = ModKey.FromFileName("Skyrim.esm");
+
+        private static IReadOnlyCollection<ModKey> WithGameMaster(IReadOnlyCollection<ModKey> masters)
+            => masters.Contains(GameMaster)
+                ? masters
+                : masters.Prepend(GameMaster).ToList();
+
         // loadOrder first (real ordering), then any plugin referenced by the built records or by an
         // entry that isn't already in it.
         private static List<ModKey> MergeReferencedInto(
@@ -185,6 +223,11 @@ namespace SkyrimCraftingTool.Services.PatchGen
         {
             var known = new HashSet<ModKey>(loadOrder);
             var ordering = new List<ModKey>(loadOrder);
+
+            // WithGameMaster adds it to the master list, and MastersListOrderingByLoadOrder throws
+            // over a master the ordering doesn't know. Front, not back: the ordering is what decides
+            // that Skyrim.esm comes first, which is the whole point of adding it.
+            if (known.Add(GameMaster)) ordering.Insert(0, GameMaster);
 
             void AddKey(ModKey mk)
             {
@@ -226,6 +269,26 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // "wornRestrictions=" operation - so it is the one that forces an ESP override. Name, cost
         // and effects all travel as INI rules and must NOT be written here as well, or the ESP would
         // start winning over rules that are meant to compose with other mods.
+        // An enchantment the user created in the tool. Unlike the override above there is nothing to
+        // deep-copy: the record does not exist anywhere yet, so every field it gets is one the tool
+        // tracks. CastType/TargetType came from its first effect (see EnchantmentMenuVM), which is
+        // what the load order does too - 1,893 of 1,895 effect rows agree with their enchantment.
+        public sealed record NewEnchantmentEspEntry(
+            string ToolKey,
+            string EditorId,
+            string Name,
+            string CastType,
+            string TargetType,
+            float Cost,
+            string EnchantType,
+            int Flags,
+            float ChargeTime,
+            int Amount,
+            string WornRestrictionListKey,
+            IReadOnlyList<NewEnchantmentEffect> Effects);
+
+        public sealed record NewEnchantmentEffect(string MagicEffectKey, float Magnitude, int Duration, int Area);
+
         public sealed record EnchantmentEspEntry(string EnchantmentKey, string NewListKey)
         {
             // The plugin the ENCH itself comes from - used for the per-source-plugin ESP split.
@@ -237,6 +300,90 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     return bar > 0 ? EnchantmentKey[..bar] : "";
                 }
             }
+        }
+
+        // Writes an enchantment that exists nowhere else. The FormID comes from the same persistent
+        // map the new COBJ records use, so the record keeps its ID across regenerations - without
+        // that, every patch run would hand the enchantment a new FormID and every save game that
+        // carries it would lose it.
+        private static void BuildNewEnchantment(
+            SkyrimMod mod, ModKey modKey, NewEnchantmentEspEntry e, PatchFormIdMapStore map,
+            string espFileName, ref uint maxNewId, CobjEspResult result)
+        {
+            var id = map.Allocate(e.ToolKey, espFileName);
+            maxNewId = Math.Max(maxNewId, id);
+
+            var cost = (uint)Math.Max(0, Math.Round(e.Cost));
+
+            var ench = new ObjectEffect(new FormKey(modKey, id), SkyrimRelease.SkyrimSE)
+            {
+                EditorID = string.IsNullOrWhiteSpace(e.EditorId) ? $"SCT_Ench_{id:X6}" : e.EditorId,
+                Name = e.Name ?? "",
+                EnchantmentCost = cost,
+
+                // ENIT's enchant type knows exactly two values: 6 (Enchantment) and 12 (Staff
+                // Enchantment). Left at Mutagen's default the record is an "<Unknown: 0>" that
+                // matches no vanilla ENCH, so an unparseable or empty value falls back to
+                // Enchantment rather than to zero.
+                EnchantType = Enum.TryParse<ObjectEffect.EnchantTypeEnum>(e.EnchantType, ignoreCase: true, out var et)
+                    ? et
+                    : ObjectEffect.EnchantTypeEnum.Enchantment,
+
+                Flags = (ObjectEffect.Flag)e.Flags,
+                ChargeTime = e.ChargeTime,
+
+                // Still mirrored when the user left it at 0 - vanilla does the same in 1862 of 1943
+                // records, and an amount of 0 means an enchanted weapon spends nothing per hit.
+                EnchantmentAmount = e.Amount != 0 ? e.Amount : (int)cost,
+            };
+
+            if (Enum.TryParse<CastType>(e.CastType, ignoreCase: true, out var castType))
+                ench.CastType = castType;
+            if (Enum.TryParse<TargetType>(e.TargetType, ignoreCase: true, out var targetType))
+                ench.TargetType = targetType;
+
+            // The keyword FLST that decides which slots the enchantment may be worn on. The picker
+            // offers it for a tool-created enchantment exactly as it does for a scanned one, and the
+            // record it lands on is written here - the override path in BuildEnchantmentOverride
+            // only ever sees Original = 1 rows, so nothing else would pick this up.
+            //
+            // Unset is the normal case and means "no restriction", not a missing value.
+            if (!KeyFactory.IsUnsetKey(e.WornRestrictionListKey))
+                ench.WornRestrictions.SetTo(KeyFactory.ParseFormKey(e.WornRestrictionListKey));
+
+            foreach (var effect in e.Effects ?? Array.Empty<NewEnchantmentEffect>())
+            {
+                var mgef = KeyFactory.ParseFormKey(effect.MagicEffectKey);
+                if (mgef.IsNull)
+                {
+                    result.Warnings.Add($"{e.EditorId}: effect {effect.MagicEffectKey} could not be resolved — left out.");
+                    continue;
+                }
+
+                ench.Effects.Add(new Effect
+                {
+                    BaseEffect = new FormLinkNullable<IMagicEffectGetter>(mgef),
+                    Data = new EffectData
+                    {
+                        Magnitude = effect.Magnitude,
+                        Duration = effect.Duration,
+                        Area = Math.Max(0, effect.Area),
+                    },
+                });
+            }
+
+            if (ench.Effects.Count == 0)
+            {
+                // An enchantment without effects does nothing in the game and would only confuse
+                // whoever finds it in the ESP later.
+                result.Warnings.Add($"{ench.EditorID}: no effects — not written.");
+                result.SkippedCount++;
+                return;
+            }
+
+            mod.ObjectEffects.Add(ench);
+            result.NewCount++;
+            result.NewEnchantmentCount++;
         }
 
         // Deep-copies the winning ObjectEffect and changes exactly one field.

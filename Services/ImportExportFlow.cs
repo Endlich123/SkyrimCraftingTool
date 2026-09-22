@@ -50,11 +50,16 @@ namespace SkyrimCraftingTool.Services
         // A DTO with no changed fields and no edited child rows carries nothing to apply — it comes
         // from an item that was edited then reset (the reset paths leave LastChanged non-null, so an
         // old export picked it up). Drop it so it never clutters the conflict window / preview.
+        //
+        // The child lists come from ChildTables.All rather than being listed here, so a fourth unit
+        // is carried the day it is described and not the day someone remembers this method. Each is
+        // tested for null, never for Count: an EMPTY list is a payload - it means "the user removed
+        // them all" - and the export only ever sets a list when that unit's *Edited flag was up.
+        // Counting instead made "cleared to empty" indistinguishable from "never touched", so an
+        // enchantment stripped of its effects, or a recipe stripped of its conditions, was silently
+        // dropped before the preview ever saw it.
         public static bool HasPayload(EditedItemDto d) =>
-            d.Fields.Count > 0
-            || (d.EffectRows?.Count ?? 0) > 0
-            || d.WornRestrictionKeywords != null
-            || (d.ConditionRows?.Count ?? 0) > 0;
+            d.Fields.Count > 0 || ChildTables.All.Any(spec => spec.Payload(d) != null);
 
         // Preview -> (conflict window if needed) -> Apply. Returns null if the user cancelled the
         // conflict dialog; the caller does its own refresh + summary around this.

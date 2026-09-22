@@ -19,6 +19,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
     {
         private static string LogFolder => Path.Combine(AppContext.BaseDirectory, "Logs");
         public static string LastRunPath => Path.Combine(LogFolder, "last-patch-report.txt");
+        public static string LastPreviewPath => Path.Combine(LogFolder, "last-patch-preview.txt");
 
         // Warnings shown in the dialog. The saved file keeps all of them - a message box with 400
         // lines is useless, a text file with 400 lines is exactly what you want when diagnosing.
@@ -27,11 +28,24 @@ namespace SkyrimCraftingTool.Services.PatchGen
         public static string Render(PatchGenReport report, string outputRoot, bool forFile)
         {
             var sb = new StringBuilder();
+
+            // First line, before the numbers: everything below is what a real run WOULD produce, and
+            // the counts on their own look exactly like a finished patch.
+            if (report.DryRun)
+            {
+                sb.AppendLine("PREVIEW - nothing was written.");
+                sb.AppendLine("This is what Generate Patch would produce right now.");
+                sb.AppendLine();
+            }
+
             sb.AppendLine(report.Summary);
             sb.AppendLine();
 
             foreach (var f in report.WrittenFiles)
                 sb.AppendLine("  " + MakeRelative(outputRoot, f));
+
+            if (report.DryRun)
+                sb.AppendLine($"  Would be written under {outputRoot}");
 
             // Above masters and warnings on purpose: an ESP override is not an error, but it is a
             // consequence the user should take in knowingly rather than discover later.
@@ -47,6 +61,20 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 sb.AppendLine();
                 sb.AppendLine("NOTE");
                 sb.AppendLine("  " + report.EspOverrideNotice);
+            }
+
+            // The only non-additive thing this tool writes, so it gets named list by list rather
+            // than counted. Not a warning - the user set these deliberately, with the calculator in
+            // the list window showing what each one does - but a change to a list's own properties
+            // reaches every mod feeding that list, and that belongs on the record.
+            if (report.LeveledListPropertyEdits.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"Leveled lists changed by you ({report.LeveledListPropertyEdits.Count}):");
+                sb.AppendLine("  These change the odds for EVERY item in the list, not just yours.");
+
+                foreach (var edit in report.LeveledListPropertyEdits)
+                    sb.AppendLine("  " + edit);
             }
 
             if (report.CobjMasters.Count > 0)
@@ -74,13 +102,21 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
         // Overwrites rather than appends: this is "what the last run did", and the interesting run is
         // always the most recent one. Errors keep their own history in error.log.
+        //
+        // A preview goes to its own file. It must not push the last real run's report out of the way
+        // - that report is what a bug report is built from, and a preview run right after it would
+        // otherwise replace the evidence. The separate file also gives the preview somewhere to put
+        // the full warning list, which the dialog truncates.
         public static void SaveLastRun(PatchGenReport report, string outputRoot)
         {
+            var path = report.DryRun ? LastPreviewPath : LastRunPath;
+            var heading = report.DryRun ? "Patch preview" : "Patch generated";
+
             try
             {
                 Directory.CreateDirectory(LogFolder);
-                File.WriteAllText(LastRunPath,
-                    $"Patch generated {DateTime.Now:yyyy-MM-dd HH:mm:ss}" + Environment.NewLine +
+                File.WriteAllText(path,
+                    $"{heading} {DateTime.Now:yyyy-MM-dd HH:mm:ss}" + Environment.NewLine +
                     $"Output root: {outputRoot}" + Environment.NewLine +
                     new string('-', 80) + Environment.NewLine +
                     Render(report, outputRoot, forFile: true));

@@ -38,6 +38,8 @@ namespace SkyrimCraftingTool.Services.Adapters
         public void UpdateArmorRating(string key, double armorRating) => ItemDBHandler.UpdateArmorRating(key, armorRating);
         public void UpdateArmorBodySlotMask(string key, long bodySlotMask) => ItemDBHandler.UpdateArmorBodySlotMask(key, bodySlotMask);
         public void UpdateArmorArmorType(string key, string armorType) => ItemDBHandler.UpdateArmorArmorType(key, armorType);
+        public void UpdateArmorObjectEffect(string key, string objectEffectKey) => ItemDBHandler.UpdateArmorObjectEffect(key, objectEffectKey);
+        public void UpdateWeaponObjectEffect(string key, string objectEffectKey) => ItemDBHandler.UpdateWeaponObjectEffect(key, objectEffectKey);
         public void UpdateArmorKeywords(string key, List<string> keywordKeys)
         {
             var col = new System.Collections.ObjectModel.ObservableCollection<SkyrimCraftingTool.ViewModel.KeywordSelectionVM>();

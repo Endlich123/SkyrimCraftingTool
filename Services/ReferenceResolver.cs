@@ -15,7 +15,13 @@ namespace SkyrimCraftingTool.Services
             ("Skyrim.esm|088108", "CraftingSmithingSharpeningWheel"),
         };
 
-        private Dictionary<string, ReferenceLookup> _byKey = new(StringComparer.Ordinal);
+        // Case-insensitive, to match the databases: Skyrim ignores case in plugin filenames, so the
+        // same plugin can reach a key as "ccBGSSSE001-Fish.esm" from one mod and "ccbgssse001-fish.esm"
+        // from another. With an ordinal comparer, a perfectly valid reference whose key happened to
+        // arrive in the other spelling resolved to nothing and was drawn with the red dead-reference
+        // border. (The indexer is used below rather than Add, so the two spellings collapsing into one
+        // entry is a no-op, not a duplicate-key throw.)
+        private Dictionary<string, ReferenceLookup> _byKey = new(StringComparer.OrdinalIgnoreCase);
 
         // Called after every scan, from MainContentVM.ApplyCacheSnapshot, with the freshly rebuilt
         // catalogs. Later kinds win on a key collision (workbenches are a naming subset of keywords,
@@ -28,7 +34,7 @@ namespace SkyrimCraftingTool.Services
             IEnumerable<FormIDRecord>? quests,
             IEnumerable<ContainerRecord>? containers)
         {
-            var map = new Dictionary<string, ReferenceLookup>(StringComparer.Ordinal);
+            var map = new Dictionary<string, ReferenceLookup>(StringComparer.OrdinalIgnoreCase);
 
             Add(map, keywords, ReferenceKind.Keyword);
             Add(map, materials, ReferenceKind.Material);

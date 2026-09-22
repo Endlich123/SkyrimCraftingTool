@@ -34,6 +34,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 ops.Add("setFlags=costoverride");
             }
 
+            AppendEnitOps(ops, original, edited);
+
             var refKeys = AppendEffectOps(ops, original, edited);
 
             if (ops.Count == 0) return null;
@@ -79,6 +81,37 @@ namespace SkyrimCraftingTool.Services.PatchGen
         //
         // Returns every referenced MGEF key so the generator's dead-reference pass can flag effects
         // that no longer resolve against the current scan.
+        // The rest of ENIT, as far as SkyPatcher reaches. Per the official enchantment-patcher docs
+        // there is setFlags / removeFlags, chargeTime and enchantmentAmount - but no enchantType and
+        // no targetType, so those two never appear here. A record whose enchant type the user
+        // changed can only be a user-created one, and those are written by the ESP from scratch.
+        internal static void AppendEnitOps(List<string> ops, EnchantmentRecord original, EnchantmentRecord edited)
+        {
+            // Flags are a bitfield but the operations are by NAME, so the diff has to be per bit:
+            // setFlags only turns bits on, removeFlags only turns them off. Sending every set bit
+            // every time would fight other mods' rules for flags this user never touched.
+            var set = new List<string>();
+            var remove = new List<string>();
+
+            AppendFlag(set, remove, original.NoAutoCalc, edited.NoAutoCalc, "costoverride");
+            AppendFlag(set, remove, original.ExtendDurationOnRecast, edited.ExtendDurationOnRecast, "extendduration");
+
+            if (set.Count > 0) ops.Add("setFlags=" + string.Join(", ", set));
+            if (remove.Count > 0) ops.Add("removeFlags=" + string.Join(", ", remove));
+
+            if (!NumEqual(original.ChargeTime, edited.ChargeTime))
+                ops.Add($"chargeTime={PatchFormat.Num(edited.ChargeTime)}");
+
+            if (original.EnchantmentAmount != edited.EnchantmentAmount)
+                ops.Add($"enchantmentAmount={edited.EnchantmentAmount}");
+        }
+
+        private static void AppendFlag(List<string> set, List<string> remove, bool before, bool after, string name)
+        {
+            if (before == after) return;
+            (after ? set : remove).Add(name);
+        }
+
         private static IReadOnlyList<string> AppendEffectOps(
             List<string> ops, EnchantmentRecord original, EnchantmentRecord edited)
         {
