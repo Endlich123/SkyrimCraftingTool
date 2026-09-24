@@ -20,6 +20,7 @@
             <!-- where this list is rolled -->
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0" Margin="0,0,0,10">
@@ -234,14 +235,20 @@
                     <DataTemplate>
                         <Grid Margin="0,1,0,1">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="54"/>
+                                <!-- Both markers live here, side by side. They used to sit on top of
+                                     each other in one 54px cell, which was harmless while only items
+                                     were ever planned - a restored entry can be a nested LIST, and on
+                                     a real load order 91 of 340 lost entries are. -->
+                                <ColumnDefinition Width="96"/>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
 
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+
                             <!-- A nested list is linked, not expanded. Double-click opens it in a
                                  window of its own - see the code-behind. -->
-                            <TextBlock Grid.Column="0" Text="List"
+                            <TextBlock Text="List" Margin="0,0,6,0"
                                        Foreground="{DynamicResource ColorAccentLight}"
                                        FontSize="11" VerticalAlignment="Center"
                                        Visibility="{Binding IsList, Converter={StaticResource BoolToVis}}"/>
@@ -249,11 +256,28 @@
                             <!-- Not in the game yet: your patch puts it here. Marked rather than
                                  mixed in silently - what the list has and what you are adding must
                                  stay tellable apart. -->
-                            <TextBlock Grid.Column="0" Text="+ new"
-                                       Foreground="{DynamicResource ColorWarning}"
-                                       FontSize="11" FontWeight="Bold" VerticalAlignment="Center"
-                                       ToolTip="Planned by you - the patch will add this entry."
-                                       Visibility="{Binding IsPlanned, Converter={StaticResource BoolToVis}}"/>
+                            <TextBlock FontSize="11" FontWeight="Bold" VerticalAlignment="Center"
+                                       Visibility="{Binding IsPlanned, Converter={StaticResource BoolToVis}}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="+ new"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource ColorWarning}"/>
+                                        <Setter Property="ToolTip" Value="Planned by you - the patch will add this entry."/>
+                                        <Style.Triggers>
+                                            <!-- Not new: it was in this list until an override took
+                                                 it out. Same yellow the History block uses, so the
+                                                 row and the entry it came from read as one thing. -->
+                                            <DataTrigger Binding="{Binding IsRestored}" Value="True">
+                                                <Setter Property="Text" Value="+ readded"/>
+                                                <Setter Property="Foreground" Value="#D8B84A"/>
+                                                <Setter Property="ToolTip" Value="Put back by you after an override dropped it - the patch will add it again."/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
+                            </StackPanel>
 
                             <TextBlock Grid.Column="1" Text="{Binding Name}"
                                        ToolTip="{Binding Reference}"
@@ -334,7 +358,134 @@
             </StackPanel>
         </Expander>
 
-        <DockPanel Grid.Row="5" Margin="0,12,0,0">
+        <!-- HISTORY
+             Collapsed by default and hidden entirely when there is nothing to report: on most lists
+             there is nothing, and an empty box that is always there teaches people to stop looking.
+             Yellow, never the amber used for the user's own edits - "this used to be here" and "you
+             changed this" must not read alike. The strikethrough carries the same meaning without
+             colour, for anyone who cannot tell the two apart. -->
+        <Expander Grid.Row="5" Margin="0,10,0,0"
+                  Foreground="{DynamicResource ColorTextPrimary}"
+                  Visibility="{Binding HasLostEntries, Converter={StaticResource BoolToVis}}">
+            <Expander.Header>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="History"/>
+                    <TextBlock Text="{Binding LostEntries.Count, StringFormat=' (items lost to overrides: {0})'}"
+                               Foreground="{DynamicResource ColorTextTertiary}"/>
+                </StackPanel>
+            </Expander.Header>
+
+            <StackPanel Margin="0,6,0,0">
+                <TextBlock Text="{Binding LostSummary}"
+                           Foreground="{DynamicResource ColorTextTertiary}"
+                           TextWrapping="Wrap" FontSize="11" Margin="0,0,0,2"/>
+
+                <!-- Said plainly, because the obvious reading is the wrong one: a mod that drops an
+                     entry may have meant to. Nothing here is patched unless the user says so. -->
+                <TextBlock Text="A plugin may have removed these on purpose, or may simply have overwritten the list. Nothing here is written to your patch."
+                           Foreground="{DynamicResource ColorTextTertiary}"
+                           TextWrapping="Wrap" FontSize="11" Margin="0,0,0,6"/>
+
+                <!-- Selectable, not a button per row. One list measured lost 47 entries, and that is
+                     almost always one decision rather than 47 - see LostEntryVM. -->
+                <ListBox ItemsSource="{Binding LostEntries}" MaxHeight="150"
+                         Background="Transparent" BorderThickness="0"
+                         SelectionMode="Extended"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,2,0,2">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="54"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0" Text="List"
+                                           Foreground="{DynamicResource ColorAccentLight}"
+                                           FontSize="11" VerticalAlignment="Center"
+                                           Visibility="{Binding IsList, Converter={StaticResource BoolToVis}}"/>
+
+                                <!-- Struck through while it is missing, plain once it is going back:
+                                     the strikethrough says "not in the game", so it has to stop
+                                     saying that the moment the patch will put it there. -->
+                                <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" FontSize="11">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="#D8B84A"/>
+                                            <Setter Property="TextDecorations" Value="Strikethrough"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsRestored}" Value="True">
+                                                    <Setter Property="Foreground" Value="{DynamicResource ColorTextPrimary}"/>
+                                                    <Setter Property="TextDecorations" Value="{x:Null}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <TextBlock Grid.Column="2"
+                                           Text="{Binding LostFrom}"
+                                           Foreground="{DynamicResource ColorTextTertiary}"
+                                           FontSize="10" Margin="8,0,8,0"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" MaxWidth="180"
+                                           ToolTip="The last plugin this item was still in."/>
+
+                                <StackPanel Grid.Column="3" Orientation="Horizontal" MinWidth="72"
+                                            VerticalAlignment="Center">
+                                    <!-- The level and count kept for this one are a pick between
+                                         versions that disagreed, not a reading. Said here rather
+                                         than nowhere, because putting it back restores one of
+                                         several states it genuinely had. -->
+                                    <TextBlock Text="?" FontWeight="Bold"
+                                               Foreground="{DynamicResource ColorWarning}"
+                                               FontSize="11" Margin="0,0,6,0"
+                                               ToolTip="{Binding LevelNote}"
+                                               Visibility="{Binding Ambiguous, Converter={StaticResource BoolToVis}}"/>
+
+                                    <TextBlock Text="going back"
+                                               Foreground="{DynamicResource ColorAccentLight}"
+                                               FontSize="10"
+                                               Visibility="{Binding IsRestored, Converter={StaticResource BoolToVis}}"
+                                               ToolTip="The next patch adds this back at runtime - the mod that dropped it is not changed."/>
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <DockPanel Margin="0,8,0,0">
+                    <Button DockPanel.Dock="Right" Content="Undo selected" Width="110"
+                            Command="{Binding UndoSelectedCommand}"
+                            IsEnabled="{Binding HasSelectedLostEntries}"
+                            Style="{StaticResource StandardButtonStyle}"
+                            Margin="8,0,0,0"
+                            ToolTip="Take the selected entries back out of the patch."/>
+
+                    <Button DockPanel.Dock="Right" Content="Put back selected" Width="130"
+                            Command="{Binding PutBackSelectedCommand}"
+                            IsEnabled="{Binding HasSelectedLostEntries}"
+                            Style="{StaticResource StandardButtonStyle}"
+                            ToolTip="Add the selected entries back. The next patch puts them in at runtime - the mod that dropped them is not changed."/>
+
+                    <TextBlock Text="{Binding LostSelectionSummary}"
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               FontSize="11" VerticalAlignment="Center"
+                               TextWrapping="Wrap" Margin="0,0,8,0"/>
+                </DockPanel>
+            </StackPanel>
+        </Expander>
+
+        <DockPanel Grid.Row="6" Margin="0,12,0,0">
             <Button DockPanel.Dock="Right" Content="Close" Width="90" IsCancel="True"
                     Style="{StaticResource StandardButtonStyle}"/>
             <TextBlock Text="Double-click a nested list to open it."

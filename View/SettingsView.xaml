@@ -87,6 +87,30 @@
                 </StackPanel>
             </GroupBox>
 
+            <!-- A report, not a setting - but this is the one view that is always reachable, and the
+                 information is worthless where nobody finds it. It sat in the container section
+                 first, which meant it only appeared once you were already inside a container. -->
+            <GroupBox Header="Leveled lists"
+                      Style="{StaticResource DarkGroupBoxStyle}"
+                      Padding="10"
+                      Margin="0,0,0,15">
+                <StackPanel>
+
+                    <TextBlock Text="{Binding LostListsText}"
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,10"/>
+
+                    <Button Content="Review lists that lost entries"
+                            Command="{Binding ShowLostListsCommand}"
+                            IsEnabled="{Binding HasLostLists}"
+                            Style="{StaticResource StandardButtonStyle}"
+                            HorizontalAlignment="Left"
+                            ToolTip="Leveled lists an override took entries out of, most losses first."/>
+
+                </StackPanel>
+            </GroupBox>
+
             <GroupBox Header="Appearance"
                       Style="{StaticResource DarkGroupBoxStyle}"
                       Padding="10"

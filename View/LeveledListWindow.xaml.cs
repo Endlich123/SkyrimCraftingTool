@@ -31,6 +31,16 @@ namespace SkyrimCraftingTool.View
         public static void Show(Window? owner, LVLiEntryVM entry, string itemKey, string itemName)
             => Show(owner, entry, new[] { new PlacementSubject(itemKey, itemName) });
 
+        // Open a list on its own, with no item to place - for callers that arrived at the list
+        // directly rather than through an item, such as the lost-entry report. Same read-only shape
+        // a nested list gets when it is opened from another list's contents.
+        public static void ShowList(Window? owner, string listKey, string listName)
+        {
+            var window = new LeveledListWindow(new LeveledListEditorVM(listKey, listName));
+            if (owner != null) window.Owner = owner;
+            window.ShowDialog();
+        }
+
         // The multi-select opens the same window for a whole selection: one placement row, many
         // items receiving it. Nothing about the list changes with the number of items - and neither
         // does the arithmetic, which is why this is one window and not two.

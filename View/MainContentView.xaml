@@ -1555,6 +1555,7 @@
                                                                      RelativeSource={RelativeSource AncestorType=UserControl},
                                                                      Converter={StaticResource BoolToVis}}"/>
 
+
                                                 <TextBlock Text="{Binding DataContext.ExistingPlacementSummary,
                                                                   RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                            Foreground="{DynamicResource ColorTextTertiary}"
