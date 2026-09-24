@@ -69,6 +69,7 @@ namespace SkyrimCraftingTool.Model
             using var insertGlobals = PrepareUpsert(connection, "Globals", GlobalColumnNames, GlobalParamNames);
             using var insertLeveledList = PrepareUpsert(connection, "LeveledList", LeveledListColumnNames, LeveledListParamNames);
             using var insertLeveledListEntry = PrepareInsert(connection, "LeveledListEntry", LeveledListEntryColumnNames, LeveledListEntryParamNames);
+            using var insertLeveledListLost = PrepareInsert(connection, "LeveledListLostEntry", LeveledListLostColumnNames, LeveledListLostParamNames);
 
             // Multi-row "batch" counterparts of the commands above. At the row counts a full scan
             // produces (100k+), one ExecuteNonQuery() per row was the dominant cost (~140k round
@@ -90,6 +91,7 @@ namespace SkyrimCraftingTool.Model
             using var insertGlobalsBatch = PrepareUpsertBatch(connection, "Globals", GlobalColumnNames, GlobalParamNames, BatchSize);
             using var insertLeveledListBatch = PrepareUpsertBatch(connection, "LeveledList", LeveledListColumnNames, LeveledListParamNames, BatchSize);
             using var insertLeveledListEntryBatch = PrepareInsertBatch(connection, "LeveledListEntry", LeveledListEntryColumnNames, LeveledListEntryParamNames, BatchSize);
+            using var insertLeveledListLostBatch = PrepareInsertBatch(connection, "LeveledListLostEntry", LeveledListLostColumnNames, LeveledListLostParamNames, BatchSize);
 
             using var transaction = connection.BeginTransaction();
             insertArmor.Transaction = transaction;
@@ -106,6 +108,7 @@ namespace SkyrimCraftingTool.Model
             insertGlobals.Transaction = transaction;
             insertLeveledList.Transaction = transaction;
             insertLeveledListEntry.Transaction = transaction;
+            insertLeveledListLost.Transaction = transaction;
             insertArmorBatch.Transaction = transaction;
             insertWeaponBatch.Transaction = transaction;
             insertCOBJBatch.Transaction = transaction;
@@ -120,6 +123,7 @@ namespace SkyrimCraftingTool.Model
             insertGlobalsBatch.Transaction = transaction;
             insertLeveledListBatch.Transaction = transaction;
             insertLeveledListEntryBatch.Transaction = transaction;
+            insertLeveledListLostBatch.Transaction = transaction;
 
             // Parse phase runs in parallel across plugins (CPU-bound, no DB access); a second,
             // strictly sequential phase then does all SQLite writes (one connection/transaction).
@@ -205,6 +209,66 @@ namespace SkyrimCraftingTool.Model
 
                 foreach (var list in parsed.LeveledLists)
                     latestLeveledListByKey[(string)list.Values[0]] = list;
+            }
+
+            // What the overrides threw away.
+            //
+            // The loop above keeps one version per list - the last one in load order, which is the
+            // one the game uses. Every earlier version has just been walked past and dropped, and
+            // any item that only existed in one of those is now gone from the game with nothing
+            // recording that it was ever there. See LeveledListLostEntry's schema comment for why
+            // this is reported rather than repaired.
+            //
+            // Second pass rather than collecting during the first: the winner is only known once
+            // every plugin has been seen, and parsedPlugins is already in memory, so walking it
+            // again costs nothing and saves holding every version of every list.
+            var lostEntriesByList = new Dictionary<string, Dictionary<string, object[]>>(StringComparer.OrdinalIgnoreCase);
+            var winnerRefsByList = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var parsed in parsedPlugins)
+            {
+                foreach (var list in parsed.LeveledLists)
+                {
+                    string listKey = (string)list.Values[0];
+                    if (!latestLeveledListByKey.TryGetValue(listKey, out var winner) || ReferenceEquals(winner, list))
+                        continue;   // this plugin IS the winner - nothing of its own was lost
+
+                    if (!winnerRefsByList.TryGetValue(listKey, out var winnerRefs))
+                    {
+                        winnerRefs = new HashSet<string>(
+                            winner.EntryRows.Select(r => (string)r[2]), StringComparer.OrdinalIgnoreCase);
+                        winnerRefsByList[listKey] = winnerRefs;
+                    }
+
+                    foreach (var row in list.EntryRows)
+                    {
+                        string reference = (string)row[2];
+                        if (winnerRefs.Contains(reference))
+                            continue;   // still in the list, possibly at another level - not lost
+
+                        if (!lostEntriesByList.TryGetValue(listKey, out var lost))
+                            lostEntriesByList[listKey] = lost = new Dictionary<string, object[]>(StringComparer.OrdinalIgnoreCase);
+
+                        // Later plugin wins the description: if two overrides both carried the item,
+                        // the values from the one closest to the winner are the most relevant ones.
+                        //
+                        // Where those versions DISAGREE about level or count, that is a guess and
+                        // the row is flagged as one. Putting such an entry back restores one of
+                        // several states it genuinely had, and the window says so rather than
+                        // presenting the pick as a reading - see LeveledListLostEntry's schema
+                        // comment. Sticky: once ambiguous, always ambiguous, however many further
+                        // versions agree afterwards.
+                        bool ambiguous = lost.TryGetValue(reference, out var previous)
+                                         && (!Equals(previous[2], row[3])
+                                             || !Equals(previous[3], row[4])
+                                             || Convert.ToInt32(previous[5]) == 1);
+
+                        lost[reference] = new object[]
+                        {
+                            listKey, reference, row[3], row[4], parsed.PluginName, ambiguous ? 1 : 0,
+                        };
+                    }
+                }
             }
 
             // Records whose ConditionsEdited/EffectsEdited/KeywordsEdited flag is set keep their
@@ -322,6 +386,10 @@ namespace SkyrimCraftingTool.Model
             // plugin had removed would survive as a stale row.
             DeleteChildRowsForKeys(connection, transaction, "ContainerEntry", "ContainerKey", latestContainerByKey.Keys.ToList());
             DeleteChildRowsForKeys(connection, transaction, "LeveledListEntry", "ListKey", latestLeveledListByKey.Keys.ToList());
+            // Same rewrite discipline as the entries above: this is scanned data, so the scan owns
+            // it outright. Cleared for every list this scan saw, then refilled - a list whose
+            // conflict was resolved by removing a mod must not keep reporting a loss.
+            DeleteChildRowsForKeys(connection, transaction, "LeveledListLostEntry", "ListKey", latestLeveledListByKey.Keys.ToList());
 
             ExecuteRowsBatched(insertArmor, insertArmorBatch, ArmorParamNames, allArmor, BatchSize);
             ExecuteRowsBatched(insertWeapon, insertWeaponBatch, WeaponParamNames, allWeapon, BatchSize);
@@ -337,6 +405,8 @@ namespace SkyrimCraftingTool.Model
             ExecuteRowsBatched(insertGlobals, insertGlobalsBatch, GlobalParamNames, allGlobals, BatchSize);
             ExecuteRowsBatched(insertLeveledList, insertLeveledListBatch, LeveledListParamNames, allLeveledLists, BatchSize);
             ExecuteRowsBatched(insertLeveledListEntry, insertLeveledListEntryBatch, LeveledListEntryParamNames, allLeveledListEntries, BatchSize);
+            ExecuteRowsBatched(insertLeveledListLost, insertLeveledListLostBatch, LeveledListLostParamNames,
+                lostEntriesByList.Values.SelectMany(v => v.Values).ToList(), BatchSize);
 
             // Parent tables: anything not touched by this scan is no longer defined by any currently
             // active plugin — mark it inactive (hidden from Load*) instead of deleting, so its
@@ -465,6 +535,11 @@ namespace SkyrimCraftingTool.Model
 
         private sealed class ParsedPluginData
         {
+            // Which file these rows came from. Needed for the lost-entry pass, which has to say
+            // WHERE an entry was last seen - and to tell a plugin.s own version of a list from the
+            // one that won.
+            public string PluginName = "";
+
             public List<object[]> ArmorRows = new();
             public List<object[]> WeaponRows = new();
             public List<ParsedCobj> Cobjs = new();
@@ -532,6 +607,7 @@ namespace SkyrimCraftingTool.Model
         private static readonly string[] ContainerEntryParamNames = { "@containerKey", "@ordinal", "@reference", "@count" };
         private static readonly string[] LeveledListParamNames = { "@key", "@editorID", "@chanceNone", "@flags", "@globalKey" };
         private static readonly string[] LeveledListEntryParamNames = { "@listKey", "@ordinal", "@reference", "@level", "@count" };
+        private static readonly string[] LeveledListLostParamNames = { "@listKey", "@reference", "@level", "@count", "@lostFrom", "@ambiguous" };
         private static readonly string[] MagicEffectParamNames =
             { "@key", "@editorID", "@name", "@hasMag", "@hasDur", "@hasAre", "@castType", "@targetType" };
         private static readonly string[] GlobalParamNames = { "@key", "@editorID", "@value" };
@@ -542,26 +618,27 @@ namespace SkyrimCraftingTool.Model
         // needs the actual column names for its generated INSERT column list; deriving them from the
         // param names (stripping "@") is wrong wherever they differ and was the cause of the
         // "table Armor has no column named val" crash.
-        private static readonly string[] ArmorColumnNames =
+        internal static readonly string[] ArmorColumnNames =
             { "Key", "EditorID", "Name", "Weight", "Value", "ArmorRating", "BodySlotMask", "ArmorType", "Keywords", "ObjectEffectKey" };
-        private static readonly string[] WeaponColumnNames =
+        internal static readonly string[] WeaponColumnNames =
             { "Key", "EditorID", "Name", "Weight", "Value", "Damage", "Speed", "Reach", "Stagger", "Keywords", "ObjectEffectKey" };
-        private static readonly string[] CobjColumnNames =
+        internal static readonly string[] CobjColumnNames =
             { "Key", "Name", "CreatedItem", "WorkbenchKeyword", "Ingredients" };
         private static readonly string[] CobjConditionColumnNames =
             { "COBJKey", "Extra", "RunOn", "ConditionType", "Target", "Value", "CompareOperator", "Flags" };
-        private static readonly string[] EnchantmentColumnNames =
+        internal static readonly string[] EnchantmentColumnNames =
             { "Key", "EditorID", "Name", "CastType", "TargetType", "EnchantmentCost", "WornRestrictionListKey", "BaseEnchantmentKey",
               "EnchantType", "Flags", "ChargeTime", "EnchantmentAmount" };
         private static readonly string[] EnchantmentEffectColumnNames =
             { "EnchantmentKey", "MagicEffectKey", "EditorID", "Name", "Magnitude", "Duration", "Area" };
         private static readonly string[] WornRestrictionKeywordColumnNames = { "ListKey", "KeywordKey" };
-        private static readonly string[] ContainerColumnNames = { "ContainerKey", "Name" };
+        internal static readonly string[] ContainerColumnNames = { "ContainerKey", "Name" };
         private static readonly string[] ContainerLvliColumnNames = { "ContainerKey", "LVLiKey", "LVLiName" };
         private static readonly string[] ContainerEntryColumnNames = { "ContainerKey", "Ordinal", "Reference", "Count" };
         private static readonly string[] LeveledListColumnNames = { "Key", "EditorID", "ChanceNone", "Flags", "GlobalKey" };
         private static readonly string[] LeveledListEntryColumnNames = { "ListKey", "Ordinal", "Reference", "Level", "Count" };
-        private static readonly string[] MagicEffectColumnNames =
+        private static readonly string[] LeveledListLostColumnNames = { "ListKey", "Reference", "Level", "Count", "LostFrom", "Ambiguous" };
+        internal static readonly string[] MagicEffectColumnNames =
             { "Key", "EditorID", "Name", "HasMagnitude", "HasDuration", "HasArea", "CastType", "TargetType" };
         private static readonly string[] GlobalColumnNames = { "Key", "EditorID", "Value" };
 
@@ -661,7 +738,7 @@ namespace SkyrimCraftingTool.Model
         // instead of writing straight to a shared SqliteCommand's parameters.
         private ParsedPluginData ParsePluginForItemDB(string pluginName, string fullPath)
         {
-            var result = new ParsedPluginData();
+            var result = new ParsedPluginData { PluginName = pluginName };
             var mod = SkyrimMod.CreateFromBinaryOverlay(
                 fullPath, SkyrimRelease.SkyrimSE, Services.PluginReadParams.ForScan());
 

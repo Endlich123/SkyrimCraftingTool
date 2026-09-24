@@ -57,6 +57,9 @@ namespace SkyrimCraftingTool.Model
             AddColumnIfMissing(connection, "Enchantments", "IsEditedFlags", "INTEGER");
             AddColumnIfMissing(connection, "Enchantments", "IsEditedChargeTime", "REAL");
             AddColumnIfMissing(connection, "Enchantments", "IsEditedEnchantmentAmount", "INTEGER");
+            // Added after the table shipped. Stays 0 on an existing database until the next scan,
+            // which is honest: nothing knows yet whether those rows had to make the choice.
+            AddColumnIfMissing(connection, "LeveledListLostEntry", "Ambiguous", "INTEGER NOT NULL DEFAULT 0");
             AddColumnIfMissing(connection, "Container", "Active", "INTEGER NOT NULL DEFAULT 1");
             AddColumnIfMissing(connection, "MagicEffects", "Active", "INTEGER NOT NULL DEFAULT 1");
 
@@ -774,6 +777,66 @@ namespace SkyrimCraftingTool.Model
                     Level INTEGER NOT NULL DEFAULT 1,
                     Count INTEGER NOT NULL DEFAULT 1,
                     PRIMARY KEY (ListKey, Ordinal)
+                );
+
+                -- Entries that USED to be in a list and are not in the winning version any more.
+                --
+                -- A leveled list is one record, so a plugin that touches it overrides the whole
+                -- thing. Whatever an earlier plugin had added is then simply gone from the game -
+                -- silently, with nothing in the record to say it ever happened. That is the problem
+                -- a Bashed Patch exists to solve.
+                --
+                -- This table does NOT try to solve it. It records what fell out, so it can be shown;
+                -- nothing here is ever written to a patch on its own. The reason is that the cause
+                -- is not knowable: a plugin that drops an entry may be a patch removing it on
+                -- purpose, or may simply have clobbered it, and the record looks identical either
+                -- way. Guessing would mean silently undoing someone's deliberate fix. So the tool
+                -- reports and the user decides.
+                --
+                -- Keyed by (ListKey, Reference), not by ordinal: the question is which ITEM is
+                -- missing from this list, and an entry has no identity of its own (see
+                -- LeveledListEntry above). Level and Count are the values it had where it was last
+                -- seen, so restoring one can put it back as it was. LostFrom names that plugin.
+                -- Ambiguous marks the one guess in here. An entry can have stood in SEVERAL
+                -- overridden versions at DIFFERENT levels or counts, and only one set can be put
+                -- back. The value kept is the one from the version closest to the winner, on the
+                -- reasoning that it is the state the game came nearest to having - but it is a
+                -- choice, not a fact, and a row that had to make it says so rather than presenting
+                -- a guess as a reading.
+                CREATE TABLE IF NOT EXISTS LeveledListLostEntry (
+                    ListKey TEXT NOT NULL COLLATE NOCASE,
+                    Reference TEXT NOT NULL COLLATE NOCASE,
+                    Level INTEGER NOT NULL DEFAULT 1,
+                    Count INTEGER NOT NULL DEFAULT 1,
+                    LostFrom TEXT,
+                    Ambiguous INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (ListKey, Reference)
+                );
+
+                -- The user's answer to the table above: put this one back.
+                --
+                -- Separate from LeveledListLostEntry because they are different kinds of fact. That
+                -- one is scanned and the scan rewrites it wholesale on every run; this is a decision
+                -- and must outlive any number of rescans. Same split as LeveledList vs
+                -- LeveledListEdit right below.
+                --
+                -- NOT expressed as an item placement, although a placement says exactly the same
+                -- thing. A placement lives in the ITEM's ContainerString, and only Armor and Weapons
+                -- have one. Measured on the real load order: of 340 lost entries, 12 are armor and
+                -- 78 are weapons - the other 250 are nested lists, books and scrolls, record types
+                -- the scan does not carry at all. Built on placements this feature would have
+                -- silently worked for a quarter of the cases. SkyPatcher needs nothing but the
+                -- FormID, so the restoration is kept here, on the list, where every type fits.
+                --
+                -- Level and Count come from where the entry was last seen, so putting one back
+                -- restores it as it was rather than at some default.
+                CREATE TABLE IF NOT EXISTS LeveledListRestoredEntry (
+                    ListKey TEXT NOT NULL COLLATE NOCASE,
+                    Reference TEXT NOT NULL COLLATE NOCASE,
+                    Level INTEGER NOT NULL DEFAULT 1,
+                    Count INTEGER NOT NULL DEFAULT 1,
+                    LastChanged TEXT,
+                    PRIMARY KEY (ListKey, Reference)
                 );
 
                 -- What the USER changed about a list, kept strictly apart from what was scanned.
