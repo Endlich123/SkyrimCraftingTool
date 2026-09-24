@@ -21,7 +21,33 @@ namespace SkyrimCraftingTool.ViewModel
 
             BrowseOutputPathCommand = new RelayCommand(BrowseOutputPath);
             ResetOutputPathCommand = new RelayCommand(() => PatchOutputPath = "");
+
+            // This VM presents MainContentVM's state, so anything that changes there has to reach
+            // the bindings here. Only the lost-list count needs it today - it is the one value that
+            // moves while this view exists, when a rescan rebuilds the scanned data underneath it.
+            _content.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName != nameof(MainContentVM.LostListCount)) return;
+
+                OnPropertyChanged(nameof(HasLostLists));
+                OnPropertyChanged(nameof(LostListsText));
+            };
         }
+
+        // The lost-entry report lives here rather than in the container section it came from: it is
+        // about the load order as a whole, not about the item you happen to have selected, and in
+        // the container section it only appeared once you were already deep in one - which is the
+        // same reason the report had to exist at all. Presented, not owned, like everything else on
+        // this VM.
+        public bool HasLostLists => _content.HasLostLists;
+
+        public string LostListsText => _content.HasLostLists
+            ? $"{_content.LostListCount} leveled list(s) lost entries to an override — an earlier plugin " +
+              "had them and the plugin that won does not. This is a report: nothing is patched unless " +
+              "you put it back yourself."
+            : "No leveled list in your load order lost entries to an override.";
+
+        public ICommand ShowLostListsCommand => _content.ShowLostListsCommand;
 
         // --- Patch output ---
 

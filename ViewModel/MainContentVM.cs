@@ -985,7 +985,14 @@ namespace SkyrimCraftingTool.ViewModel
             foreach (var c in categories)
             {
                 var value = c.IsKnown ? $"{c.Count:n0}" : "n/a";
-                sb.AppendLine($"{Leader(c.Label, 2)} {value}{Delta(before, c)}");
+
+                // The count says how many records there are, the delta says how many came or went -
+                // and neither moves when a plugin update rewrites the ones already there. A mod that
+                // rebalances 37 armors reads as "+0" without this, which is the whole complaint the
+                // report exists to answer.
+                var changed = c.HasChanged ? $", {c.Changed:n0} changed" : "";
+
+                sb.AppendLine($"{Leader(c.Label, 2)} {value}{Delta(before, c)}{changed}");
             }
             sb.AppendLine($"{Leader("subtotal", 2)} {subtotal:n0}");
         }
@@ -1039,7 +1046,14 @@ namespace SkyrimCraftingTool.ViewModel
                     // PutIntoDataBank there is nothing left to compare against. A handful of
                     // COUNT(*) queries, and never allowed to hold up the scan.
                     Services.ScanInventory? inventoryBefore = null;
-                    try { inventoryBefore = Services.ScanInventoryReader.Read(); }
+                    Services.ScanValueSnapshot? valuesBefore = null;
+                    try
+                    {
+                        inventoryBefore = Services.ScanInventoryReader.Read();
+                        // What each record LOOKED like, so the report after can say which ones a
+                        // plugin update actually rewrote - a rebalance moves no count at all.
+                        valuesBefore = Services.ScanInventoryReader.SnapshotValues();
+                    }
                     catch (Exception invEx) { AppLogger.LogError("Scan inventory (before) failed", invEx); }
 
                     var step = Stopwatch.StartNew();
@@ -1081,7 +1095,7 @@ namespace SkyrimCraftingTool.ViewModel
                     {
                         var editedRows = _importExportService?.GetEditedItems(ExportScope.All) ?? new List<EditedItemDto>();
                         var afterKeys = new HashSet<string>(ArmorCache.Keys.Concat(WeaponCache.Keys), StringComparer.Ordinal);
-                        var inventoryAfter = Services.ScanInventoryReader.Read();
+                        var inventoryAfter = Services.ScanInventoryReader.Read(valuesBefore);
                         report = BuildScanReport(beforeKeys, afterKeys, editedRows, inventoryBefore, inventoryAfter);
                     }
                     catch (Exception reportEx)
@@ -1306,6 +1320,30 @@ namespace SkyrimCraftingTool.ViewModel
             OnPropertyChanged(nameof(HasChangedLists));
         }
 
+        // Lists that lost entries to an override. Counted once and cached, unlike ChangedListCount
+        // above: this comes from the scan and cannot change while the app is running, and the query
+        // groups over every lost row - not something to repeat on every selection change.
+        private int? _lostListCount;
+        public int LostListCount =>
+            _lostListCount ??= Services.PlacementLookup.ReadListsWithLostEntries().Count;
+
+        public string LostListsButtonText => LostListCount == 1
+            ? "1 list lost entries"
+            : $"{LostListCount} lists lost entries";
+
+        public bool HasLostLists => LostListCount > 0;
+
+        public RelayCommand ShowLostListsCommand => new(() =>
+            View.LostListsWindow.Show(System.Windows.Application.Current?.MainWindow));
+
+        private void RefreshLostListCount()
+        {
+            _lostListCount = null;
+            OnPropertyChanged(nameof(LostListCount));
+            OnPropertyChanged(nameof(LostListsButtonText));
+            OnPropertyChanged(nameof(HasLostLists));
+        }
+
         private string _existingPlacementSummary = "";
         public string ExistingPlacementSummary
         {
@@ -1487,6 +1525,13 @@ namespace SkyrimCraftingTool.ViewModel
             // point at, and an edit whose list left the load order stops counting.
             Services.LeveledListEditStore.InvalidateCache();
             RefreshChangedListCount();
+
+            // The lost-entry count is scanned data, so a rescan is the one thing that can change it.
+            // Cached rather than queried per read - it groups over every lost row - which means this
+            // is also the only place it can be let go of. Without it the settings page keeps
+            // reporting the count from startup, and offers a report for lists that may no longer
+            // have lost anything.
+            RefreshLostListCount();
 
             AllContainerVMs.Clear();
             foreach (var c in AllContainers)

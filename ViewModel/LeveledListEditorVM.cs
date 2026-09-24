@@ -113,6 +113,76 @@ namespace SkyrimCraftingTool.ViewModel
 
         public ObservableCollection<LeveledListEntryInfo> Contents { get; } = new();
 
+        // Items that used to be in this list and are not in the winning version any more. Read-only
+        // and deliberately inert: nothing here reaches a patch by itself. The tool cannot tell a
+        // deliberate removal from a collision, so it reports and the user decides - see
+        // LeveledListLostEntry in the schema.
+        public ObservableCollection<LostEntryVM> LostEntries { get; } = new();
+
+        public bool HasLostEntries => LostEntries.Count > 0;
+
+        public ICommand? PutBackSelectedCommand { get; private set; }
+        public ICommand? UndoSelectedCommand { get; private set; }
+
+        public bool HasSelectedLostEntries => LostEntries.Any(e => e.IsSelected);
+
+        public string LostSelectionSummary
+        {
+            get
+            {
+                int selected = LostEntries.Count(e => e.IsSelected);
+                int restored = LostEntries.Count(e => e.IsRestored);
+
+                var parts = new List<string>();
+                if (selected > 0) parts.Add($"{selected} selected");
+                if (restored > 0) parts.Add($"{restored} will be added back by the next patch");
+
+                return parts.Count == 0
+                    ? "Select rows to put back - Ctrl or Shift for several, Ctrl+A for all."
+                    : string.Join(" - ", parts);
+            }
+        }
+
+        private void OnLostEntryChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName != nameof(LostEntryVM.IsSelected) &&
+                e.PropertyName != nameof(LostEntryVM.IsRestored)) return;
+
+            OnPropertyChanged(nameof(HasSelectedLostEntries));
+            OnPropertyChanged(nameof(LostSelectionSummary));
+        }
+
+        // The whole selection in one write, then one rebuild. Putting 47 entries back is a single
+        // decision, so it is also a single action - and the contents above have to show the result
+        // immediately, exactly as they do when an item is placed into the list by hand.
+        private void SetSelectedRestored(bool restored)
+        {
+            foreach (var row in LostEntries.Where(e => e.IsSelected).ToList())
+            {
+                if (row.IsRestored == restored) continue;
+
+                if (restored)
+                {
+                    // Level and Count are what the entry had where it was last seen, so it goes back
+                    // as it was rather than at some invented default.
+                    LeveledListRestoreStore.Add(
+                        new RestoredEntry(ListKey, row.Reference, row.Level, row.Count), _dbPath);
+                }
+                else
+                {
+                    LeveledListRestoreStore.Remove(ListKey, row.Reference, _dbPath);
+                }
+
+                row.IsRestored = restored;
+            }
+
+            RebuildContents();
+        }
+
+        public string LostSummary => LostEntries.Count == 1
+            ? "1 item was in this list in an earlier plugin and is not in it any more."
+            : $"{LostEntries.Count} items were in this list in earlier plugins and are not in it any more.";
+
         public ICommand ResetListPropertiesCommand { get; }
 
         public LeveledListEditorVM(LVLiEntryVM entry, string itemKey, string itemName)
@@ -156,6 +226,19 @@ namespace SkyrimCraftingTool.ViewModel
             ScannedFlags = info?.Flags ?? "";
 
             _scanned = info?.Entries ?? Array.Empty<LeveledListEntryInfo>();
+
+            // Which of them the user has already put back, so the block opens showing what is
+            // still outstanding rather than offering a decision that was already made.
+            var restored = LeveledListRestoreStore.RestoredKeys(ListKey, dbPath);
+            foreach (var lost in info?.LostEntries ?? Array.Empty<LeveledListLostEntryInfo>())
+            {
+                var row = new LostEntryVM(lost, restored.Contains(lost.Reference));
+                row.PropertyChanged += OnLostEntryChanged;
+                LostEntries.Add(row);
+            }
+
+            PutBackSelectedCommand = new RelayCommand(() => SetSelectedRestored(true));
+            UndoSelectedCommand = new RelayCommand(() => SetSelectedRestored(false));
 
             // What every OTHER item is lined up to put into this list. Read once - those settings
             // cannot change while this window is open - and kept apart from the subjects of this
@@ -518,6 +601,20 @@ namespace SkyrimCraftingTool.ViewModel
                     level, count, IsList: false, IsPlanned: true));
             }
 
+            // Entries the user put back. Shown here for the same reason a placement is: the question
+            // this box answers is "what will come out of this list", and a restoration is part of
+            // that answer the moment it is made. Marked IsPlanned like any other pending addition -
+            // it is not in the game yet, the next patch is what puts it there.
+            foreach (var lost in LostEntries.Where(e => e.IsRestored))
+            {
+                if (_scanned.Any(e => string.Equals(e.Reference, lost.Reference, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+
+                Contents.Add(new LeveledListEntryInfo(
+                    ordinal++, lost.Reference, lost.Name, lost.Level, lost.Count,
+                    IsList: lost.IsList, IsPlanned: true, IsRestored: true));
+            }
+
             OnPropertyChanged(nameof(EntryCountSummary));
             OnPropertyChanged(nameof(ListEditSummary));
         }
@@ -811,6 +908,62 @@ namespace SkyrimCraftingTool.ViewModel
 
                 return "Already in this list in your load order. A placement here would have no effect - " +
                        "the patch adds an item only if the list does not already contain it.";
+            }
+        }
+    }
+
+    // One row of the History block: something an override took out, and whether the user has decided
+    // to put it back.
+    //
+    // NO ACTION OF ITS OWN. A button per row was the first shape and it does not survive contact
+    // with the real data: one list measured lost 47 entries, and answering that one row at a time is
+    // 47 decisions for what is usually a single one ("this mod pruned the list, put it all back" or
+    // "leave it"). The rows are selectable instead and the action sits once, below them.
+    public sealed class LostEntryVM : ViewModelBase
+    {
+        private readonly LeveledListLostEntryInfo _lost;
+        private bool _isRestored;
+        private bool _isSelected;
+
+        public LostEntryVM(LeveledListLostEntryInfo lost, bool isRestored)
+        {
+            _lost = lost;
+            _isRestored = isRestored;
+        }
+
+        public string Reference => _lost.Reference;
+        public string Name => _lost.Name;
+        public string LostFrom => _lost.LostFrom;
+        public bool IsList => _lost.IsList;
+        public bool Ambiguous => _lost.Ambiguous;
+
+        // Only set where the versions disagreed, so the row admits the pick was a choice.
+        public string LevelNote => _lost.Ambiguous
+            ? $"This entry stood at more than one level or count across the plugins that had it. " +
+              $"Putting it back uses level {_lost.Level}, x{_lost.Count} - from the version closest to the one that won."
+            : "";
+        public int Level => _lost.Level;
+        public int Count => _lost.Count;
+
+        public bool IsRestored
+        {
+            get => _isRestored;
+            set
+            {
+                if (_isRestored == value) return;
+                _isRestored = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set
+            {
+                if (_isSelected == value) return;
+                _isSelected = value;
+                OnPropertyChanged();
             }
         }
     }
