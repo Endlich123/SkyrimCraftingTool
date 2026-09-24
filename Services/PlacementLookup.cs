@@ -28,13 +28,29 @@ namespace SkyrimCraftingTool.Services
     // "what will come out of this list", and a placement the user has already made is part of that
     // answer. Marked, never mixed silently: what the game has and what the patch will add must stay
     // tellable apart.
+    // IsRestored narrows IsPlanned: both are rows the patch will add, but one is something the user
+    // chose to put into the list and the other is something that USED to be in it until an override
+    // dropped it. Same effect on the game, different thing to read months later - "+ new" on a
+    // vanilla item that was always meant to be there would be a small lie.
     public sealed record LeveledListEntryInfo(
         int Ordinal, string Reference, string Name, int Level, int Count, bool IsList,
-        bool IsPlanned = false);
+        bool IsPlanned = false, bool IsRestored = false);
+
+    // An item that used to be in the list and is not in the winning version any more. Name is
+    // resolved the same way an entry's is; LostFrom is the plugin it was last seen in, which is the
+    // first thing anyone asks once they see something is missing.
+    public sealed record LeveledListLostEntryInfo(
+        string Reference, string Name, int Level, int Count, string LostFrom, bool IsList,
+        bool Ambiguous = false);
+
+    // One line of the overview: a list that lost entries, and how many.
+    public sealed record LostListSummary(
+        string ListKey, string EditorId, int LostCount);
 
     public sealed record LeveledListInfo(
         string Key, string EditorId, int ChanceNone, string Flags, string GlobalKey,
-        IReadOnlyList<LeveledListEntryInfo> Entries);
+        IReadOnlyList<LeveledListEntryInfo> Entries,
+        IReadOnlyList<LeveledListLostEntryInfo> LostEntries);
 
     public static class PlacementLookup
     {
@@ -69,6 +85,18 @@ namespace SkyrimCraftingTool.Services
             }
 
             return fallback;
+        }
+
+        // An item.db from before a table existed is a normal thing to meet: the schema is brought up
+        // to date on launch, but this reader runs against whatever file it is pointed at, including
+        // in tests. A missing table degrades to "nothing to report" rather than throwing and taking
+        // the whole list window with it.
+        private static bool HasTable(SqliteConnection c, string table)
+        {
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = @n";
+            cmd.Parameters.AddWithValue("@n", table);
+            return cmd.ExecuteScalar() != null;
         }
 
         private const string FormIdAlias = "formids";
@@ -418,6 +446,48 @@ namespace SkyrimCraftingTool.Services
         // One list with its entries, in list order. Names come from whichever table knows the
         // reference; an entry whose target was never scanned keeps its raw key rather than showing
         // an empty cell, because "no name" and "not in your load order" are worth telling apart.
+        // Every list that lost something, for the overview window.
+        //
+        // WHY A WINDOW AND NOT JUST THE BLOCK IN THE LIST: the per-list block only tells you
+        // anything if you already opened that list, and lists are reached through the item that
+        // sits in them. On a real load order that means 155 affected lists nobody will ever open by
+        // accident. Reported per list, most losses first, because that is the order in which they
+        // are worth looking at.
+        public static IReadOnlyList<LostListSummary> ReadListsWithLostEntries(string? dbPath = null)
+        {
+            var result = new List<LostListSummary>();
+
+            try
+            {
+                using var c = TryOpen(dbPath);
+                if (c == null || !HasTable(c, "LeveledListLostEntry")) return result;
+
+                // Grouped in SQL rather than in memory: 340 lost rows is nothing, but this runs on
+                // window open and there is no reason to carry them all across. The lost items
+                // themselves are not named here - the row is a way in, and the list it opens shows
+                // them with the names they would have had if they were still in it.
+                using var cmd = c.CreateCommand();
+                cmd.CommandText = @"
+                    SELECT l.ListKey,
+                           COALESCE(NULLIF(ll.EditorID, ''), l.ListKey) AS listName,
+                           COUNT(*) AS lostCount
+                    FROM LeveledListLostEntry l
+                    LEFT JOIN LeveledList ll ON ll.Key = l.ListKey
+                    GROUP BY l.ListKey
+                    ORDER BY lostCount DESC, listName";
+
+                using var r = cmd.ExecuteReader();
+                while (r.Read())
+                    result.Add(new LostListSummary(r.GetString(0), r.GetString(1), r.GetInt32(2)));
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError("PlacementLookup.ReadListsWithLostEntries", ex);
+            }
+
+            return result;
+        }
+
         public static LeveledListInfo? Read(string listKey, string? dbPath = null)
         {
             if (string.IsNullOrWhiteSpace(listKey)) return null;
@@ -483,7 +553,47 @@ namespace SkyrimCraftingTool.Services
                     }
                 }
 
-                return new LeveledListInfo(listKey, editorId, chanceNone, flags, globalKey, entries);
+                // What the overrides dropped. Same joins as the entries above, so a lost item reads
+                // with the same name it would have had if it were still there. Ordered by name
+                // rather than by any stored order: there is no order left to preserve - these rows
+                // come from versions of the list that no longer exist.
+                var lost = new List<LeveledListLostEntryInfo>();
+                if (HasTable(c, "LeveledListLostEntry"))
+                {
+                    using var cmd = c.CreateCommand();
+                    cmd.CommandText = $@"
+                        SELECT l.Reference, l.Level, l.Count, l.LostFrom, l.Ambiguous,
+                               nested.EditorID,
+                               a.Name, a.EditorID,
+                               w.Name, w.EditorID
+                               {(hasReferences ? ", m.Name" : ", NULL")}
+                        FROM LeveledListLostEntry l
+                        LEFT JOIN LeveledList nested ON nested.Key = l.Reference
+                        LEFT JOIN Armor a           ON a.Key      = l.Reference
+                        LEFT JOIN Weapons w         ON w.Key      = l.Reference
+                        {(hasReferences ? "LEFT JOIN formids.Materials m ON m.Key = l.Reference" : "")}
+                        WHERE l.ListKey = @k";
+                    cmd.Parameters.AddWithValue("@k", listKey);
+                    using var r = cmd.ExecuteReader();
+                    while (r.Read())
+                    {
+                        var reference = r.GetString(0);
+
+                        // Columns 5..10 are the name candidates, in the order FirstNonEmpty should
+                        // try them; 5 is the nested list's EditorID and therefore doubles as "this
+                        // entry is a list".
+                        lost.Add(new LeveledListLostEntryInfo(
+                            reference,
+                            FirstNonEmpty(r, reference, 5, 6, 7, 8, 9, 10),
+                            r.GetInt32(1), r.GetInt32(2),
+                            r.IsDBNull(3) ? "" : r.GetString(3),
+                            IsList: !r.IsDBNull(5),
+                            Ambiguous: !r.IsDBNull(4) && r.GetInt32(4) == 1));
+                    }
+                    lost.Sort((x, y) => string.Compare(x.Name, y.Name, StringComparison.CurrentCultureIgnoreCase));
+                }
+
+                return new LeveledListInfo(listKey, editorId, chanceNone, flags, globalKey, entries, lost);
             }
             catch (Exception ex)
             {

@@ -234,6 +234,69 @@ namespace SkyrimCraftingTool.Services.PatchGen
             return rules;
         }
 
+        // Entries the user put back after an override dropped them.
+        //
+        // The same shape as a placement rule above and for the same reason: filterByLLs picks the
+        // list, addOnceToLLs supplements it at runtime. Nothing is overridden, so a restored entry
+        // cannot take anything away from the mod that dropped it - it only puts back what used to be
+        // there alongside whatever that mod added.
+        //
+        // Filed under the REFERENCE's plugin, like a placement is filed under the item's: if the mod
+        // that owns the item leaves the load order, the rule leaves with it rather than pointing at
+        // a FormID nothing defines any more. Restoring vanilla content therefore lands in
+        // Skyrim.esm.ini, which is correct - if Skyrim.esm is gone, so is everything else.
+        //
+        // addOnce, not add: the same restoration must not stack if the list already has the entry
+        // back because a conflicting mod was removed. That is also why nothing here has to be
+        // re-checked against a later scan.
+        public static IReadOnlyList<SkyPatcherRule> BuildRestoreRules(
+            IEnumerable<RestoredEntry> restored,
+            IReadOnlyDictionary<string, string>? lvliNames = null)
+        {
+            var rules = new List<SkyPatcherRule>();
+
+            foreach (var byList in (restored ?? Enumerable.Empty<RestoredEntry>())
+                         .Where(e => e != null
+                                     && !string.IsNullOrWhiteSpace(e.ListKey)
+                                     && !string.IsNullOrWhiteSpace(e.Reference))
+                         .GroupBy(e => e.ListKey, StringComparer.OrdinalIgnoreCase)
+                         .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                // One rule per (list, owning plugin): the filter names the list, but the FILE a rule
+                // goes into is decided by what it references, and one list can get entries back from
+                // several mods at once.
+                foreach (var byFile in byList
+                             .GroupBy(e => KeyFactory.SplitMasterKey(e.Reference).master, StringComparer.OrdinalIgnoreCase)
+                             .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    var entries = byFile
+                        .OrderBy(e => e.Reference, StringComparer.OrdinalIgnoreCase)
+                        .Select(e => $"{PatchFormat.RefKey8(e.Reference)}~{PatchFormat.Int(e.Level)}~{PatchFormat.Int(e.Count)}")
+                        .ToList();
+
+                    if (entries.Count == 0) continue;
+
+                    var (plugin, formId) = KeyFactory.SplitMasterKey(byList.Key);
+                    var listName = lvliNames != null && lvliNames.TryGetValue(byList.Key, out var n) && !string.IsNullOrWhiteSpace(n)
+                        ? $"{n} ({byList.Key})"
+                        : byList.Key;
+
+                    rules.Add(new SkyPatcherRule
+                    {
+                        FilterDirective = "filterByLLs",
+                        TargetPlugin = plugin,
+                        TargetFormId = formId,
+                        FilePlugin = byFile.Key,
+                        Comment = $"leveled list {listName}: {entries.Count} entry(s) put back after an override dropped them",
+                        Operations = new[] { "addOnceToLLs=" + string.Join(",", entries) },
+                        ReferencedKeywordKeys = byFile.Select(e => e.Reference).ToList(),
+                    });
+                }
+            }
+
+            return rules;
+        }
+
         // The list's OWN properties: chance of nothing, and how it calculates.
         //
         // A different kind of rule from everything above it, in one crucial way. The placement rules

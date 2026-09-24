@@ -174,6 +174,14 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     report.LeveledListRuleCount += Add(lvliByPlugin, rule);
             }
 
+            // Entries the user put back after an override dropped them. Additive like the placements
+            // above, so this can only ever add to a list, never take from it.
+            foreach (var rule in LeveledListRuleBuilder.BuildRestoreRules(LeveledListRestoreStore.ReadAll(), lvliNames))
+            {
+                if (Accept(rule, null, report))
+                    report.LeveledListRuleCount += Add(lvliByPlugin, rule);
+            }
+
             // The list's own properties, if the user changed any. Filed under the LIST's plugin
             // rather than an item's, because these rules edit the list itself and reference nothing
             // foreign - see LeveledListRuleBuilder.BuildPropertyRules.
