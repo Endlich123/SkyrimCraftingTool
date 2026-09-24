@@ -13,8 +13,8 @@
          InformationalVersion, which is what the bug report prints as "Tool version" (see
          DiagnosticsReport). Kept spelled exactly like the uploaded file name so a report and a
          download name can be compared without translating between them. -->
-    <Version>0.9.3</Version>
-    <InformationalVersion>0.9.3</InformationalVersion>
+    <Version>0.9.3.2</Version>
+    <InformationalVersion>0.9.3.2</InformationalVersion>
 
     <!-- Ship only English resources. The 13 satellite folders are localized error strings from .NET
          and third-party libraries; the tool's own UI is English either way. -->
