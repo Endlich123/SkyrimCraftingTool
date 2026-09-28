@@ -915,7 +915,13 @@ namespace SkyrimCraftingTool.ViewModel
         internal sealed record ScanReport(
             int Added, int Removed, int TotalAfter, int EditsStillActive,
             System.Collections.Generic.IReadOnlyList<EditedItemDto> OrphanedEdits,
-            Services.ScanInventory? Before = null, Services.ScanInventory? After = null);
+            Services.ScanInventory? Before = null, Services.ScanInventory? After = null,
+            // NPC groups whose membership moved, by name (G6, docs/NPC-Gruppen-Plan.md section 8). This
+            // is the one thing in the report that is not about what the SCAN found - it is about what
+            // the scan CHANGED for a saved edit, which is a different and sharper question: a group
+            // reaches NPCs by predicate, so a mod install can put 17 records nobody saw inside a change
+            // that was made for 54.
+            System.Collections.Generic.IReadOnlyList<string>? GroupDrift = null);
 
         internal static ScanReport BuildScanReport(
             HashSet<string> before, HashSet<string> after, List<EditedItemDto> editedBefore,
@@ -947,7 +953,49 @@ namespace SkyrimCraftingTool.ViewModel
 
             if (r.OrphanedEdits.Count > 0)
                 sb.AppendLine($"⚠ {r.OrphanedEdits.Count} edit(s) no longer match any item - see the warnings strip.");
+
+            // Section 8. Named, not counted: "3 groups changed" tells you something moved, "Bandit 03:
+            // 54 -> 71, 17 new from Bandit Overhaul.esp" tells you whether you meant it.
+            if (r.GroupDrift is { Count: > 0 })
+            {
+                sb.AppendLine();
+                sb.AppendLine($"⚠ NPC groups that moved ({r.GroupDrift.Count}):");
+                foreach (var line in r.GroupDrift) sb.AppendLine("   " + line);
+                sb.AppendLine("   Check them on the NPC groups tab - until you confirm them, the patch");
+                sb.AppendLine("   report marks them as unchecked.");
+            }
+
             return sb.ToString();
+        }
+
+        // The group half of the report (G6). Separate from BuildScanReport because it reads a different
+        // part of the database, and because it must be able to answer "nothing to do" without paying for
+        // the NPC tables at all: no groups, no read. Those tables are the biggest block in item.db
+        // (6.642 records with roughly 15.000 faction rows behind them), and a load order with no groups
+        // should not pay for them on every scan.
+        internal static System.Collections.Generic.List<string> BuildGroupDrift(string dbPath)
+        {
+            var drift = new System.Collections.Generic.List<string>();
+
+            var store = new Services.NpcGroupStore(dbPath);
+            var groups = store.LoadAll().Where(g => g.Active).ToList();
+            if (groups.Count == 0) return drift;
+
+            var resolver = new Services.NpcGroupResolver(Model.ItemDBHandler.LoadNpcsFrom(dbPath));
+            var snapshots = store.LoadSnapshots();
+
+            // Only the groups that MOVED. A group nobody ever confirmed is not news after a scan - it has
+            // been unchecked all along, and the group screen and the patch report both say so.
+            foreach (var d in Services.NpcGroupDiffService.CompareAll(groups, resolver, snapshots))
+            {
+                if (!d.Changed) continue;
+
+                drift.Add(d.Headline);
+                foreach (var name in d.AddedNames) drift.Add("     + " + name);
+                if (d.AddedNamesNotShown > 0) drift.Add($"     + ... and {d.AddedNamesNotShown} more");
+            }
+
+            return drift;
         }
 
         // The per-category breakdown. Dot leaders rather than column padding: this ends up in a
@@ -1097,6 +1145,15 @@ namespace SkyrimCraftingTool.ViewModel
                         var afterKeys = new HashSet<string>(ArmorCache.Keys.Concat(WeaponCache.Keys), StringComparer.Ordinal);
                         var inventoryAfter = Services.ScanInventoryReader.Read(valuesBefore);
                         report = BuildScanReport(beforeKeys, afterKeys, editedRows, inventoryBefore, inventoryAfter);
+
+                        // The group diff of section 8, folded into the same report. Inside the same
+                        // try/catch as the rest of it: a report is a nice-to-have and must never take
+                        // the scan down with it.
+                        var groupDrift = BuildGroupDrift(System.IO.Path.Combine(
+                            Model.GlobalState.Tool.InputFolder, "Item", "item.db"));
+
+                        if (groupDrift.Count > 0)
+                            report = report with { GroupDrift = groupDrift };
                     }
                     catch (Exception reportEx)
                     {
