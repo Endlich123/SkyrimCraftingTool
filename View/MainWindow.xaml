@@ -18,6 +18,20 @@
             <views:EnchantmentMenuView />
         </DataTemplate>
 
+        <DataTemplate DataType="{x:Type vm:NpcMenuVM}">
+            <views:NpcMenuView />
+        </DataTemplate>
+
+        <!-- Same view model as the NPC tab; the wrapper only carries a second type so the
+             shell can tell the tabs apart. See TemplateTabVM. -->
+        <DataTemplate DataType="{x:Type vm:TemplateTabVM}">
+            <views:TemplateListView DataContext="{Binding Npc}" />
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type vm:NpcGroupVM}">
+            <views:NpcGroupView />
+        </DataTemplate>
+
         <DataTemplate DataType="{x:Type vm:PresetsConfigVM}">
             <views:PresetsConfigView />
         </DataTemplate>
@@ -76,6 +90,32 @@
                         Command="{Binding OpenEnchantmentMenuCommand}"
                         Style="{StaticResource NavTabButtonStyle}"
                         Tag="{Binding IsEnchantmentActive}"
+                        Margin="0,10,10,0"/>
+
+                <Button Content="NPCs"
+                        Command="{Binding OpenNpcMenuCommand}"
+                        Style="{StaticResource NavTabButtonStyle}"
+                        Tag="{Binding IsNpcActive}"
+                        Margin="0,10,10,0"/>
+
+                <!-- THE TEMPLATES TAB HAS NO NAV BUTTON ANY MORE (2026-09-26).
+                     It existed because 4.039 of 6.580 NPCs take their stats from a template, so the
+                     template looked like the only lever that moves them - a faction rule on stats
+                     reached 613 NPCs and moved 110 (docs/NPC-Plan.md section 12). Measured in game on
+                     2026-09-26, that is not true of a SkyPatcher rule: three inheriting records, two
+                     different templates, all moved to the patched values (NPC-Gruppen-Plan.md section
+                     3.4). A group rule reaches them directly, so the detour is gone.
+
+                     The view itself stays reachable: following an NPC's template link still opens it
+                     (NpcVM.TemplateOpened in MainWindowVM). Only the tab is gone. -->
+
+                <!-- The group editor (docs/NPC-Gruppen-Plan.md). Its own tab rather than a pane in the
+                     NPC tab: the work unit there is one record, the work unit here is a filter set,
+                     and the two screens answer different questions. -->
+                <Button Content="NPC groups"
+                        Command="{Binding OpenNpcGroupsCommand}"
+                        Style="{StaticResource NavTabButtonStyle}"
+                        Tag="{Binding IsNpcGroupsActive}"
                         Margin="0,10,10,0"/>
 
                 <Button Content="Presets"

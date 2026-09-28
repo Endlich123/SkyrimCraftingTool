@@ -1,0 +1,915 @@
+﻿<UserControl x:Class="SkyrimCraftingTool.View.NpcGroupView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:SkyrimCraftingTool.ViewModel">
+
+    <!-- DataContext is NpcGroupVM (see the DataTemplate in MainWindow.xaml).
+         The layout follows the sketch in docs/NPC-Gruppen-Plan.md section 6: groups with their member
+         counts on the left, and on the right the definition, the values with an "is" column, and the
+         rule preview. The three things that make this screen work are the "is" column (a bad group is
+         visible instead of guessed at), the always-present preview (what the rule cannot carry is
+         written down before anything is patched), and "(without a group)" being a row with a number
+         like any other. -->
+    <Grid Margin="12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="280" MinWidth="200"/>
+            <ColumnDefinition Width="4"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- ============ left: the groups ============ -->
+        <DockPanel Grid.Column="0">
+
+            <TextBlock DockPanel.Dock="Top"
+                       Text="NPC groups"
+                       Style="{StaticResource TitelStyle}"
+                       FontSize="18"
+                       FontWeight="Bold"
+                       Margin="0,0,0,4"/>
+
+            <TextBlock DockPanel.Dock="Top"
+                       Text="{Binding GroupSummary}"
+                       Foreground="{DynamicResource ColorTextTertiary}"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,8"/>
+
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                <Button Content="Fill automatically"
+                        Command="{Binding SeedCommand}"
+                        Style="{StaticResource StandardButtonStyle}"
+                        ToolTip="Adds the groups the EditorID scheme and the biggest classes suggest. Groups that are already here are left untouched."/>
+                <Button Content="New"
+                        Command="{Binding NewGroupCommand}"
+                        Style="{StaticResource StandardButtonStyle}"
+                        Margin="6,0,0,0"/>
+            </StackPanel>
+
+            <TextBlock DockPanel.Dock="Bottom"
+                       Text="{Binding LastSeedReport}"
+                       Foreground="{DynamicResource ColorTextTertiary}"
+                       TextWrapping="Wrap"
+                       Margin="0,8,0,0"/>
+
+            <ListBox ItemsSource="{Binding Groups}"
+                     SelectedItem="{Binding SelectedGroup}"
+                     Background="{DynamicResource ColorBackgroundPanel}"
+                     BorderBrush="{DynamicResource ColorBorder}"
+                     BorderThickness="1"
+                     ScrollViewer.CanContentScroll="True"
+                     VirtualizingPanel.IsVirtualizing="True"
+                     VirtualizingPanel.VirtualizationMode="Recycling">
+                <ListBox.ItemTemplate>
+                    <DataTemplate DataType="{x:Type local:NpcGroupRowVM}">
+                        <Grid Margin="2,3">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="14"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Section 8: "!" for a group whose membership moved since it was
+                                 confirmed, "?" for one nobody has confirmed yet. In the list rather
+                                 than only in the detail pane, so a group that grew after a mod install
+                                 is visible without opening it. -->
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding DriftMark}"
+                                       FontWeight="Bold"
+                                       Foreground="{DynamicResource ColorWarning}"
+                                       ToolTip="{Binding Drift.Headline}"/>
+
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding Name}"
+                                       TextTrimming="CharacterEllipsis"/>
+
+                            <TextBlock Grid.Column="2"
+                                       Text="{Binding MemberCount}"
+                                       Foreground="{DynamicResource ColorTextTertiary}"
+                                       Margin="8,0,0,0"/>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </DockPanel>
+
+        <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
+                      Background="{DynamicResource ColorDivider}"/>
+
+        <!-- ============ right: the selected group ============ -->
+        <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" Margin="8,0,0,0">
+            <StackPanel>
+
+                <TextBox Text="{Binding GroupName, UpdateSourceTrigger=LostFocus}"
+                         Style="{StaticResource ItemTextBoxStyle}"
+                         FontSize="16"
+                         IsEnabled="{Binding HasSelection}"
+                         Margin="0,0,0,10"/>
+
+                <GroupBox Header="Definition"
+                          Style="{StaticResource DarkGroupBoxStyle}"
+                          Padding="10"
+                          Margin="0,0,0,10">
+                    <StackPanel>
+                        <ItemsControl ItemsSource="{Binding DefinitionLines}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}" Margin="0,0,0,2"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <TextBlock Text="{Binding MemberCount, StringFormat='→ {0} members'}"
+                                       FontWeight="Bold"
+                                       VerticalAlignment="Center"/>
+
+                            <Button Content="{Binding MembersButtonText}"
+                                    Command="{Binding ToggleMembersCommand}"
+                                    Style="{StaticResource StandardButtonStyle}"
+                                    Margin="12,0,0,0"/>
+
+                            <!-- Section 8: the snapshot the rescan diff compares against. A group
+                                 stays "unchecked" until somebody confirms it, which is what lets the
+                                 next scan report "54 → 71, 17 new from XYZ.esp" by name. -->
+                            <Button Content="{Binding ConfirmText}"
+                                    Command="{Binding ConfirmCommand}"
+                                    Style="{StaticResource StandardButtonStyle}"
+                                    Margin="6,0,0,0"
+                                    ToolTip="Remembers these members, so the next scan can report what changed."/>
+
+                            <Button Content="Delete group"
+                                    Command="{Binding DeleteGroupCommand}"
+                                    Style="{StaticResource ActionButtonWarmStyle}"
+                                    Margin="6,0,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+                </GroupBox>
+
+                <!-- ============ what is in the group ============
+                     The definition box above SAYS what the group is; this one is where it is decided.
+                     Two ways in, kept apart because the data model keeps them apart (section 4): the
+                     FILTER, which a re-seed may rewrite, and the BY HAND corrections, which it must
+                     never touch. Nothing here writes a member list - there is none to write, membership
+                     is resolved from these two on every read. -->
+                <GroupBox Header="What is in this group"
+                          Style="{StaticResource DarkGroupBoxStyle}"
+                          Padding="10"
+                          Margin="0,0,0,10"
+                          Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+
+                        <TextBlock Text="Filter"
+                                   FontWeight="Bold"
+                                   Foreground="{DynamicResource ColorTextSecondary}"
+                                   Margin="0,0,0,6"/>
+
+                        <ItemsControl ItemsSource="{Binding Clauses}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type local:NpcGroupClauseRowVM}">
+                                  <StackPanel Margin="0,0,0,4">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="100"/>
+                                            <ColumnDefinition Width="130"/>
+                                            <ColumnDefinition Width="*" MinWidth="160"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <ComboBox Grid.Column="0"
+                                                  ItemsSource="{Binding Axes}"
+                                                  SelectedValue="{Binding Axis}"
+                                                  SelectedValuePath="Token"
+                                                  DisplayMemberPath="Label"
+                                                  Style="{StaticResource CompactComboBoxStyle}"
+                                                  VerticalAlignment="Center"/>
+
+                                        <!-- The words follow the axis: filterByEditorIdContains is a
+                                             substring test, so "is" would be a lie about what the patch
+                                             does. -->
+                                        <ComboBox Grid.Column="1"
+                                                  ItemsSource="{Binding Modes}"
+                                                  SelectedValue="{Binding Mode}"
+                                                  SelectedValuePath="Token"
+                                                  DisplayMemberPath="Label"
+                                                  Style="{StaticResource CompactComboBoxStyle}"
+                                                  Margin="6,0,0,0"
+                                                  VerticalAlignment="Center"/>
+
+                                        <!-- Six axes pick from what the load order actually holds, with
+                                             the member count in the label - the catalogues run to
+                                             hundreds of entries, so the box filters as you type. -->
+                                        <ComboBox Grid.Column="2"
+                                                  ItemsSource="{Binding ValueOptions}"
+                                                  SelectedItem="{Binding SelectedValue, Mode=TwoWay}"
+                                                  Text="{Binding ValueFilter, UpdateSourceTrigger=PropertyChanged}"
+                                                  IsEditable="True"
+                                                  IsTextSearchEnabled="False"
+                                                  IsSynchronizedWithCurrentItem="False"
+                                                  StaysOpenOnEdit="True"
+                                                  DisplayMemberPath="Label"
+                                                  Style="{StaticResource ItemComboBoxStyle}"
+                                                  Margin="6,0,0,0"
+                                                  Visibility="{Binding IsPicker, Converter={StaticResource BoolToVis}}"/>
+
+                                        <!-- EditorID is a substring, not a key. There is nothing to pick
+                                             from, and a picker would only get in the way of typing
+                                             "EncBandit03". -->
+                                        <TextBox Grid.Column="2"
+                                                 Text="{Binding Value, UpdateSourceTrigger=LostFocus}"
+                                                 Style="{StaticResource ItemTextBoxStyle}"
+                                                 Margin="6,0,0,0"
+                                                 ToolTip="Matched anywhere in the EditorID, the way filterByEditorIdContains matches."
+                                                 Visibility="{Binding IsFreeText, Converter={StaticResource BoolToVis}}"/>
+
+                                        <!-- Which lines the undo button below would take back. Editing a
+                                             line makes it yours and the mark goes. -->
+                                        <TextBlock Grid.Column="3"
+                                                   Text="auto"
+                                                   Foreground="{DynamicResource ColorTextTertiary}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="8,0,0,0"
+                                                   ToolTip="Written by 'Exclude what other groups already cover'. Change anything on this line and it counts as yours."
+                                                   Visibility="{Binding IsAutoExcluded, Converter={StaticResource BoolToVis}}"/>
+
+                                        <Button Grid.Column="4"
+                                                Style="{StaticResource RemoveButtonStyle}"
+                                                Command="{Binding RemoveCommand}"
+                                                Margin="6,0,0,0"
+                                                ToolTip="Drops this filter line."/>
+                                    </Grid>
+
+                                    <!-- The pick lists no longer offer a value another line already
+                                         holds, so this catches the two routes that get past them: a
+                                         value typed into the EditorID box, and a group written before
+                                         the lists did. -->
+                                    <TextBlock Text="{Binding ConflictText}"
+                                               Foreground="{DynamicResource ColorWarning}"
+                                               TextWrapping="Wrap"
+                                               Margin="106,1,0,3"
+                                               Visibility="{Binding HasConflict, Converter={StaticResource BoolToVis}}"/>
+                                  </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                            <Button Content="Add filter"
+                                    Command="{Binding AddClauseCommand}"
+                                    Style="{StaticResource StandardButtonStyle}"/>
+
+                            <TextBlock Text="A new line counts only once it has a value. Lines are combined with AND."
+                                       Foreground="{DynamicResource ColorTextTertiary}"
+                                       VerticalAlignment="Center"
+                                       TextWrapping="Wrap"
+                                       Margin="10,0,0,0"/>
+                        </StackPanel>
+
+                        <TextBlock Text="No filter yet - this group holds only the NPCs added by hand below."
+                                   Foreground="{DynamicResource ColorTextTertiary}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,6,0,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasClauses}" Value="False">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+
+                        <Border Height="1"
+                                Background="{DynamicResource ColorDivider}"
+                                Margin="0,12,0,0"/>
+
+                        <TextBlock Text="By hand"
+                                   FontWeight="Bold"
+                                   Foreground="{DynamicResource ColorTextSecondary}"
+                                   Margin="0,8,0,6"/>
+
+                        <TextBox Text="{Binding MemberSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource ItemTextBoxStyle}"
+                                 ToolTip="Finds an NPC by name, EditorID or FormID."/>
+
+                        <TextBlock Text="{Binding MemberSearchSummary}"
+                                   Foreground="{DynamicResource ColorTextTertiary}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,4,0,0"/>
+
+                        <ItemsControl ItemsSource="{Binding SearchResults}"
+                                      MaxHeight="220"
+                                      Margin="0,4,0,0"
+                                      Visibility="{Binding HasSearchResults, Converter={StaticResource BoolToVis}}">
+                            <ItemsControl.Template>
+                                <ControlTemplate TargetType="ItemsControl">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                        <ItemsPresenter/>
+                                    </ScrollViewer>
+                                </ControlTemplate>
+                            </ItemsControl.Template>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type local:NpcSearchRowVM}">
+                                    <Grid Margin="0,0,0,3">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" MinWidth="140"/>
+                                            <ColumnDefinition Width="150"/>
+                                            <ColumnDefinition Width="130"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Grid.Column="0"
+                                                   Text="{Binding EditorID}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"/>
+
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding Name}"
+                                                   Foreground="{DynamicResource ColorTextSecondary}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"/>
+
+                                        <TextBlock Grid.Column="2"
+                                                   Text="{Binding ClassName}"
+                                                   Foreground="{DynamicResource ColorTextTertiary}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"/>
+
+                                        <!-- An NPC the filter already reaches gets no button, it gets a
+                                             word: pressing "Add" there would write a hand correction
+                                             that claims something the rule does on its own. -->
+                                        <Button Grid.Column="3"
+                                                Content="{Binding AddText}"
+                                                Command="{Binding AddCommand}"
+                                                IsEnabled="{Binding CanAdd}"
+                                                Style="{StaticResource StandardButtonStyle}"
+                                                Margin="6,0,0,0"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- The corrections by name, each with the button that takes it back. This is the
+                             only place a REMOVED NPC is visible at all - it is by definition not in the
+                             member list. -->
+                        <ItemsControl ItemsSource="{Binding HandCorrections}"
+                                      Margin="0,8,0,0"
+                                      Visibility="{Binding HasHandCorrections, Converter={StaticResource BoolToVis}}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type local:NpcOverrideRowVM}">
+                                    <Grid Margin="0,0,0,3">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="16"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="130"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Grid.Column="0"
+                                                   Text="{Binding Mark}"
+                                                   FontWeight="Bold"
+                                                   VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{DynamicResource ColorSuccess}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsRemoval}" Value="True">
+                                                            <Setter Property="Foreground" Value="{DynamicResource ColorDanger}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding Name}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{DynamicResource ColorTextPrimary}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsMissing}" Value="True">
+                                                            <Setter Property="Foreground" Value="{DynamicResource ColorWarning}"/>
+                                                            <Setter Property="ToolTip" Value="This NPC is not in the scanned data - a removed mod, or a group carried over from another load order."/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+
+                                        <TextBlock Grid.Column="2"
+                                                   Text="{Binding ClassName}"
+                                                   Foreground="{DynamicResource ColorTextTertiary}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"/>
+
+                                        <Button Grid.Column="3"
+                                                Style="{StaticResource RemoveButtonStyle}"
+                                                Command="{Binding UndoCommand}"
+                                                Margin="6,0,0,0"
+                                                ToolTip="Takes this correction back. The filter decides again."/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </GroupBox>
+
+                <!-- ============ overlap with other groups ============
+                     Groups MAY overlap - the pre-fill makes overlapping ones on purpose. What they may
+                     not do is overlap unseen: SkyPatcher runs both rules, and for a field both of them
+                     write, one wins by file name with nothing on screen to say which. Only there when
+                     there is something to say. -->
+                <GroupBox Header="Also in other groups"
+                          Style="{StaticResource DarkGroupBoxStyle}"
+                          Padding="10"
+                          Margin="0,0,0,10"
+                          Visibility="{Binding ShowOverlapBlock, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <TextBlock Text="{Binding OverlapHeadline}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,6">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{DynamicResource ColorTextSecondary}"/>
+                                    <Style.Triggers>
+                                        <!-- Sharing an NPC costs nothing until both groups write the same
+                                             field. Colouring every overlap would make the ones that
+                                             matter easy to miss. -->
+                                        <DataTrigger Binding="{Binding HasValueCollision}" Value="True">
+                                            <Setter Property="Foreground" Value="{DynamicResource ColorWarning}"/>
+                                            <Setter Property="FontWeight" Value="Bold"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+
+                        <ItemsControl ItemsSource="{Binding Overlaps}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type local:NpcGroupOverlapRowVM}">
+                                  <StackPanel Margin="0,0,0,3">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" MinWidth="140"/>
+                                            <ColumnDefinition Width="60"/>
+                                            <ColumnDefinition Width="140"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Grid.Column="0"
+                                                   Text="{Binding Name}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"/>
+
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding Shared}"
+                                                   HorizontalAlignment="Right"
+                                                   VerticalAlignment="Center"/>
+
+                                        <TextBlock Grid.Column="2"
+                                                   Text="{Binding Share}"
+                                                   Foreground="{DynamicResource ColorTextTertiary}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="10,0,0,0"/>
+
+                                        <Button Grid.Column="3"
+                                                Content="Show"
+                                                Command="{Binding ShowCommand}"
+                                                Style="{StaticResource StandardButtonStyle}"
+                                                Margin="6,0,0,0"/>
+                                    </Grid>
+
+                                    <TextBlock Text="{Binding CollisionText}"
+                                               Foreground="{DynamicResource ColorWarning}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,1,0,4"
+                                               Visibility="{Binding HasCollision, Converter={StaticResource BoolToVis}}"/>
+                                  </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock Text="Sharing an NPC is allowed - the pre-fill does it on purpose. It only costs something where both groups write the same value: SkyPatcher applies both rules, and one of the two wins."
+                                   Foreground="{DynamicResource ColorTextTertiary}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,6,0,0"
+                                   Visibility="{Binding HasOverlap, Converter={StaticResource BoolToVis}}"/>
+
+                        <!-- Acts on THIS group: which of two overlapping groups keeps the NPCs is a
+                             decision, and it is made by choosing where to press this. What it writes are
+                             filter lines in the editor above, removable one at a time. -->
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button Content="Exclude what other groups already cover"
+                                    Command="{Binding AutoExcludeCommand}"
+                                    Style="{StaticResource StandardButtonStyle}"
+                                    ToolTip="Adds a filter line per other group, so the NPCs they already hold drop out of this one. Only lines that take nothing else with them are added. Pressing it again recomputes its own lines rather than adding more."/>
+
+                            <!-- The way back. One press undoes one press; every line is still removable
+                                 on its own with the X above. It outlives the report because the mark is
+                                 stored with the line, so it is still here after leaving the group. -->
+                            <Button Content="{Binding RemoveAutoExcludedText}"
+                                    Command="{Binding RemoveAutoExcludedCommand}"
+                                    Style="{StaticResource ActionButtonWarmStyle}"
+                                    Visibility="{Binding HasAutoExcluded, Converter={StaticResource BoolToVis}}"
+                                    ToolTip="Takes back the lines this button wrote. A line you have edited since counts as yours and stays."/>
+                        </StackPanel>
+
+                        <StackPanel Margin="0,8,0,0"
+                                    Visibility="{Binding HasAutoExcludeReport, Converter={StaticResource BoolToVis}}">
+
+                            <TextBlock Text="{Binding AutoExcludeReport}"
+                                       FontWeight="Bold"
+                                       TextWrapping="Wrap"
+                                       Foreground="{DynamicResource ColorTextPrimary}"/>
+
+                            <ItemsControl ItemsSource="{Binding AutoExcludeNotes}" Margin="0,4,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}"
+                                                   Foreground="{DynamicResource ColorTextSecondary}"
+                                                   TextWrapping="Wrap"
+                                                   Margin="0,0,0,1"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- The half that earns the button: what it could NOT do. An auto-check that
+                                 solved eleven of thirteen overlaps and said nothing about the other two
+                                 would be worse than none, because those two need a decision. -->
+                            <ItemsControl ItemsSource="{Binding AutoExcludeProblems}" Margin="0,4,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}"
+                                                   Foreground="{DynamicResource ColorWarning}"
+                                                   TextWrapping="Wrap"
+                                                   Margin="0,0,0,2"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </StackPanel>
+                </GroupBox>
+
+                <!-- The rescan diff (section 8). Only there when there is something to say: a group that
+                     has not moved since it was confirmed says nothing at all. -->
+                <GroupBox Header="Since this group was last confirmed"
+                          Style="{StaticResource DarkGroupBoxStyle}"
+                          Padding="10"
+                          Margin="0,0,0,10"
+                          Visibility="{Binding HasDrift, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <TextBlock Text="{Binding DriftHeadline}"
+                                   Foreground="{DynamicResource ColorWarning}"
+                                   FontWeight="Bold"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,6"/>
+
+                        <ItemsControl ItemsSource="{Binding DriftAddedNames}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}"
+                                               Foreground="{DynamicResource ColorTextSecondary}"
+                                               Margin="0,0,0,1"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock Text="Until you confirm it, this group is marked as unchecked in the patch report."
+                                   Foreground="{DynamicResource ColorTextTertiary}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,6,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Header="Values"
+                          Style="{StaticResource DarkGroupBoxStyle}"
+                          Padding="10"
+                          Margin="0,0,0,10"
+                          Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="160"/>
+                                <ColumnDefinition Width="110"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="1" Text="is"
+                                       Foreground="{DynamicResource ColorTextTertiary}"/>
+                            <TextBlock Grid.Column="2" Text="how"
+                                       Foreground="{DynamicResource ColorTextTertiary}"/>
+                            <TextBlock Grid.Column="3" Text="should be"
+                                       Foreground="{DynamicResource ColorTextTertiary}"/>
+                        </Grid>
+
+                        <ItemsControl ItemsSource="{Binding Values}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type local:NpcGroupValueRowVM}">
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="90"/>
+                                            <ColumnDefinition Width="160"/>
+                                            <ColumnDefinition Width="110"/>
+                                            <ColumnDefinition Width="70"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Grid.Column="0"
+                                                   Text="{Binding Label}"
+                                                   VerticalAlignment="Center"/>
+
+                                        <!-- The spread. Coloured when it is wide, which is the whole
+                                             point: "222 - 238" and "35 - 497" must not look alike. -->
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding IsText}"
+                                                   VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{DynamicResource ColorTextSecondary}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsWide}" Value="True">
+                                                            <Setter Property="Foreground" Value="{DynamicResource ColorWarning}"/>
+                                                            <Setter Property="ToolTip" Value="This range covers very different NPCs - the group may be too coarse to edit as one."/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+
+                                        <ComboBox Grid.Column="2"
+                                                  ItemsSource="{Binding Kinds}"
+                                                  SelectedItem="{Binding Kind}"
+                                                  Style="{StaticResource CompactComboBoxStyle}"
+                                                  VerticalAlignment="Center"/>
+
+                                        <TextBox Grid.Column="3"
+                                                 Text="{Binding Low, UpdateSourceTrigger=LostFocus}"
+                                                 Style="{StaticResource ItemTextBoxStyle}"
+                                                 Margin="6,0,0,0"/>
+
+                                        <TextBox Grid.Column="4"
+                                                 Text="{Binding High, UpdateSourceTrigger=LostFocus}"
+                                                 Style="{StaticResource ItemTextBoxStyle}"
+                                                 Width="70"
+                                                 Margin="6,0,0,0"
+                                                 Visibility="{Binding WantsHigh, Converter={StaticResource BoolToVis}}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- ============ the skills, below a line of their own ============
+                             All eighteen, ordered by what a skill does to an NPC rather than by the
+                             skill menu: the weapon and armour skills decide a fight, the last five are
+                             the ones nobody but the player uses. A skill takes a single number, so
+                             these rows carry no kind selector and no second box. -->
+                        <Border Height="1"
+                                Background="{DynamicResource ColorDivider}"
+                                Margin="0,12,0,0"/>
+
+                        <TextBlock Text="Skills"
+                                   FontWeight="Bold"
+                                   Foreground="{DynamicResource ColorTextSecondary}"
+                                   Margin="0,8,0,6"/>
+
+                        <ItemsControl ItemsSource="{Binding SkillValues}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type local:NpcGroupValueRowVM}">
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="90"/>
+                                            <ColumnDefinition Width="160"/>
+                                            <ColumnDefinition Width="110"/>
+                                            <ColumnDefinition Width="70"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Grid.Column="0"
+                                                   Text="{Binding Label}"
+                                                   VerticalAlignment="Center"/>
+
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding IsText}"
+                                                   VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{DynamicResource ColorTextSecondary}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsWide}" Value="True">
+                                                            <Setter Property="Foreground" Value="{DynamicResource ColorWarning}"/>
+                                                            <Setter Property="ToolTip" Value="This range covers very different NPCs - the group may be too coarse to edit as one."/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+
+                                        <!-- Column 2 stays empty so the value boxes line up with the
+                                             attribute rows above, which have a kind selector there. -->
+                                        <TextBox Grid.Column="3"
+                                                 Text="{Binding Low, UpdateSourceTrigger=LostFocus}"
+                                                 Style="{StaticResource ItemTextBoxStyle}"
+                                                 Margin="6,0,0,0"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock Text="An empty box removes the value from the group. A span needs both ends, and a skill takes a single number."
+                                   Foreground="{DynamicResource ColorTextTertiary}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,6,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <!-- ============ perks ============
+                     ONLY ADDING: SkyPatcher has perksToAdd and no perksToRemove, so a "remove" entry
+                     could be stored and could never reach the game.
+
+                     The column that earns this block is "already have it" - the same idea as the "is"
+                     column in the values table above. An edit that changes nothing has to look different
+                     from one that does. -->
+                <GroupBox Header="Perks this group adds"
+                          Style="{StaticResource DarkGroupBoxStyle}"
+                          Padding="10"
+                          Margin="0,0,0,10"
+                          Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+
+                        <ItemsControl ItemsSource="{Binding Perks}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type local:NpcGroupPerkRowVM}">
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" MinWidth="160"/>
+                                            <ColumnDefinition Width="200"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Grid.Column="0"
+                                                   Text="{Binding Name}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"/>
+
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding Have}"
+                                                   VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{DynamicResource ColorTextTertiary}"/>
+                                                    <Style.Triggers>
+                                                        <!-- A perk every member already carries is a rule
+                                                             line that reaches the game and does nothing.
+                                                             Marked, not refused - the group may well be
+                                                             meant to hold the baseline. -->
+                                                        <DataTrigger Binding="{Binding IsRedundant}" Value="True">
+                                                            <Setter Property="Foreground" Value="{DynamicResource ColorWarning}"/>
+                                                            <Setter Property="ToolTip" Value="This line will be written and change nothing - every member carries the perk already."/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+
+                                        <Button Grid.Column="2"
+                                                Style="{StaticResource RemoveButtonStyle}"
+                                                Command="{Binding RemoveCommand}"
+                                                Margin="6,0,0,0"
+                                                ToolTip="Takes this perk off the group."/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <Grid Margin="0,4,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" MinWidth="160"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- The catalogue runs to thousands, so the box filters as you type - the
+                                 same arrangement as every other picker in this tool. -->
+                            <ComboBox Grid.Column="0"
+                                      ItemsSource="{Binding PerkChoices}"
+                                      SelectedItem="{Binding SelectedPerkToAdd, Mode=TwoWay}"
+                                      Text="{Binding PerkSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                      IsEditable="True"
+                                      IsTextSearchEnabled="False"
+                                      IsSynchronizedWithCurrentItem="False"
+                                      StaysOpenOnEdit="True"
+                                      DisplayMemberPath="Name"
+                                      Style="{StaticResource ItemComboBoxStyle}"/>
+
+                            <Button Grid.Column="1"
+                                    Content="Add perk"
+                                    Command="{Binding AddPerkCommand}"
+                                    Style="{StaticResource StandardButtonStyle}"
+                                    Margin="6,0,0,0"/>
+                        </Grid>
+
+                        <TextBlock Text="Only adding: SkyPatcher has perksToAdd and no perksToRemove, so a perk the plugins give an NPC cannot be taken away by a rule."
+                                   Foreground="{DynamicResource ColorTextTertiary}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,6,0,0"/>
+
+                        <!-- What the members bring by themselves. The baseline is what says whether an
+                             addition is worth making at all. -->
+                        <TextBlock Text="{Binding CommonPerkSummary}"
+                                   Foreground="{DynamicResource ColorTextSecondary}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,8,0,2"/>
+
+                        <ItemsControl ItemsSource="{Binding CommonPerks}"
+                                      Visibility="{Binding HasCommonPerks, Converter={StaticResource BoolToVis}}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}"
+                                               Foreground="{DynamicResource ColorTextTertiary}"
+                                               Margin="10,0,0,1"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Header="Rule preview"
+                          Style="{StaticResource DarkGroupBoxStyle}"
+                          Padding="10"
+                          Margin="0,0,0,10"
+                          Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <TextBox Text="{Binding RulePreview, Mode=OneWay}"
+                                 Style="{StaticResource ItemTextBoxStyle}"
+                                 IsReadOnly="True"
+                                 TextWrapping="Wrap"
+                                 FontFamily="Consolas"
+                                 MinHeight="46"/>
+
+                        <!-- The half of the preview that earns its place: everything the rule cannot
+                             carry, or carries only with a decision somebody still has to make. -->
+                        <ItemsControl ItemsSource="{Binding RuleProblems}" Margin="0,8,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}"
+                                               Foreground="{DynamicResource ColorWarning}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,0,0,2"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Header="Members"
+                          Style="{StaticResource DarkGroupBoxStyle}"
+                          Padding="10"
+                          Visibility="{Binding ShowMembers, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <DataGrid Style="{StaticResource DarkDataGridStyle}"
+                                  ItemsSource="{Binding Members}"
+                                  IsReadOnly="True"
+                                  MaxHeight="420">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="EditorID" Binding="{Binding EditorID}" Width="*" MinWidth="160"/>
+                                <DataGridTextColumn Header="Class" Binding="{Binding ClassName}" Width="150"/>
+                                <DataGridTextColumn Header="Level" Binding="{Binding Level}" Width="60"/>
+                                <DataGridTextColumn Header="Health" Binding="{Binding Health}" Width="60"/>
+                                <DataGridTextColumn Header="Magicka" Binding="{Binding Magicka}" Width="65"/>
+                                <DataGridTextColumn Header="Stamina" Binding="{Binding Stamina}" Width="65"/>
+                                <!-- Where the numbers came from: the record itself, a template further
+                                     up the chain, or nothing at all for an NPC that inherits from a
+                                     levelled character list. -->
+                                <DataGridTextColumn Header="Values from" Binding="{Binding Source}" Width="180"/>
+
+                                <!-- Taking one NPC out of a group it matched by rule. What this writes
+                                     is a remove-override, not a change to the filter - the filter still
+                                     means what it said, this one NPC is the exception. -->
+                                <DataGridTemplateColumn Header="" Width="34">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate DataType="{x:Type local:NpcMemberRowVM}">
+                                            <Button Style="{StaticResource RemoveButtonStyle}"
+                                                    Command="{Binding RemoveCommand}"
+                                                    Visibility="{Binding CanRemove, Converter={StaticResource BoolToVis}}"
+                                                    ToolTip="Takes this one NPC out of the group and leaves the filter alone."/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <TextBlock Text="Only the first 500 members are listed. The spread above covers all of them."
+                                   Foreground="{DynamicResource ColorTextTertiary}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,6,0,0"
+                                   Visibility="{Binding MemberListTruncated, Converter={StaticResource BoolToVis}}"/>
+                    </StackPanel>
+                </GroupBox>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

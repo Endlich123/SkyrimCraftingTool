@@ -1,0 +1,423 @@
+<UserControl x:Class="SkyrimCraftingTool.View.NpcMenuView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:SkyrimCraftingTool.ViewModel"
+             xmlns:views="clr-namespace:SkyrimCraftingTool.View">
+
+    <!-- The NPC tab (Prio 8 / N-P1, docs/NPC-Plan.md).
+         Same two-pane shape as the Items and Enchantments tabs: tree with search on the left,
+         detail on the right. The tree is Plugin -> Class -> NPC; factions are NOT a level in it
+         but a filter over it - see the class note on NpcMenuVM for why.
+
+         The editor itself lives in NpcDetailView so the Templates tab can show the same one over
+         the same view model instance (docs/NPC-Plan.md §12). -->
+
+    <UserControl.Resources>
+
+        <!-- The value half of a label/value row. The label half is ItemLabelStyle, which the rest
+             of the tool already uses; this is its counterpart so the ~30 rows below stay in step.
+             A tertiary foreground marks a field with no SkyPatcher operation - those set it
+             directly rather than using this style, so "read-only" is visible in the markup too. -->
+        <Style x:Key="NpcValueStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource ColorTextPrimary}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,0,4"/>
+        </Style>
+
+        <!-- One link field: an editable, filtering box over a catalogue. Seven of them, so it is a
+             template rather than seven copies - and the filtering is not a luxury, the catalogues
+             run to hundreds of entries. -->
+        <DataTemplate x:Key="NpcLinkPicker">
+            <ComboBox ItemsSource="{Binding Options}"
+                      SelectedItem="{Binding Selected, Mode=TwoWay}"
+                      Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                      IsEditable="True"
+                      IsTextSearchEnabled="False"
+                      IsSynchronizedWithCurrentItem="False"
+                      StaysOpenOnEdit="True"
+                      DisplayMemberPath="Name"
+                      Margin="0,0,0,4"
+                      BorderBrush="{Binding IsChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                      Style="{StaticResource ItemComboBoxStyle}"/>
+        </DataTemplate>
+
+    </UserControl.Resources>
+
+    <Grid Margin="10">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="300"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Top toolbar. Export/Import land here like on the other tabs, once there is anything to
+             export. -->
+        <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,0,0,8">
+            <TextBlock Text="{Binding NpcCount, StringFormat={}{0} NPCs}"
+                       Foreground="{DynamicResource ColorTextSecondary}"
+                       VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding PluginCount, StringFormat=· {0} plugins}"
+                       Foreground="{DynamicResource ColorTextTertiary}"
+                       VerticalAlignment="Center"
+                       Margin="10,0,0,0"/>
+        </StackPanel>
+
+        <!-- LEFT: TREE + SEARCH -->
+        <Border Grid.Row="1"
+                BorderBrush="{DynamicResource ColorBorder}"
+                BorderThickness="1"
+                Padding="5"
+                Margin="0,0,10,0"
+                Background="{DynamicResource ColorBackgroundPanel}">
+
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <!-- Filters -->
+                    <RowDefinition Height="Auto"/>
+                    <!-- Search -->
+                    <RowDefinition Height="Auto"/>
+                    <!-- Faction lens -->
+                    <RowDefinition Height="Auto"/>
+                    <!-- Collapse -->
+                    <RowDefinition Height="*"/>
+                    <!-- Tree -->
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,5">
+                    <CheckBox Content="Only edited"
+                              IsChecked="{Binding ShowOnlyEdited}"
+                              Foreground="{DynamicResource ColorTextPrimary}"
+                              VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding EditedCount, StringFormat=({0} edited)}"
+                               Foreground="{DynamicResource ColorTextSecondary}"
+                               VerticalAlignment="Center"
+                               Margin="6,0,0,0"/>
+                </StackPanel>
+
+                <TextBox Grid.Row="1"
+                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                         Tag="Search..."
+                         Background="{DynamicResource ColorBackgroundControl}"
+                         Foreground="{DynamicResource ColorTextPrimary}"
+                         BorderBrush="{DynamicResource ColorBorder}"
+                         Padding="5"
+                         Margin="0,0,0,5"
+                         ToolTip="Matches name, EditorID and FormID key. A plugin or class name matches everything below it."/>
+
+                <!-- The faction lens - what is left of the separate Factions tab
+                     (docs/NPC-Plan.md §12). "Show me who hangs together" is a filter on this tree,
+                     not a second tree. -->
+                <StackPanel Grid.Row="2" Margin="0,0,0,5">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Faction"
+                                   Style="{StaticResource ItemLabelStyle}"
+                                   VerticalAlignment="Center"/>
+                        <Button Content="clear"
+                                Command="{Binding ClearFactionFilterCommand}"
+                                Visibility="{Binding HasFactionFilter, Converter={StaticResource BoolToVis}}"
+                                Style="{StaticResource StandardButtonStyle}"
+                                Padding="6,1"
+                                Margin="8,0,0,0"/>
+                    </StackPanel>
+
+                    <TextBox Text="{Binding FactionSearchText, UpdateSourceTrigger=PropertyChanged}"
+                             Tag="Find a faction..."
+                             Background="{DynamicResource ColorBackgroundControl}"
+                             Foreground="{DynamicResource ColorTextPrimary}"
+                             BorderBrush="{DynamicResource ColorBorder}"
+                             Padding="4"
+                             Margin="0,2,0,2"/>
+
+                    <ComboBox ItemsSource="{Binding FilteredFactions}"
+                              SelectedValue="{Binding FactionFilterKey, Mode=TwoWay}"
+                              SelectedValuePath="Key"
+                              DisplayMemberPath="Name"
+                              Style="{StaticResource ItemComboBoxStyle}"
+                              ToolTip="Narrows the tree to the members of one faction."/>
+
+                    <TextBlock Text="{Binding FactionFilterNote}"
+                               Visibility="{Binding HasFactionFilter, Converter={StaticResource BoolToVis}}"
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               FontSize="11"
+                               TextWrapping="Wrap"
+                               Margin="0,4,0,0"/>
+                </StackPanel>
+
+                <UniformGrid Grid.Row="3" Columns="1" Margin="0,0,0,5">
+                    <Button Content="Collapse all [-]"
+                            Command="{Binding CollapseAllCommand}"
+                            Background="{DynamicResource ColorBackgroundHighlight}"
+                            Foreground="{DynamicResource ColorTextPrimary}"/>
+                </UniformGrid>
+
+                <TreeView Grid.Row="4"
+                          ItemsSource="{Binding FilteredTree}"
+                          SelectedItemChanged="TreeView_SelectedItemChanged"
+                          Background="{DynamicResource ColorBackgroundControl}"
+                          Foreground="{DynamicResource ColorTextPrimary}">
+
+                    <TreeView.ItemContainerStyle>
+                        <Style TargetType="TreeViewItem">
+                            <Setter Property="Padding" Value="2"/>
+                            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                            <Setter Property="VerticalContentAlignment" Value="Center"/>
+                            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                        </Style>
+                    </TreeView.ItemContainerStyle>
+
+                    <TreeView.Resources>
+                        <!-- Leaf: one NPC. -->
+                        <DataTemplate DataType="{x:Type vm:NpcNodeVM}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="●"
+                                           Foreground="{DynamicResource ColorWarning}"
+                                           Margin="0,0,4,0"
+                                           VerticalAlignment="Center"
+                                           ToolTip="Edited">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsEdited}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <TextBlock Text="{Binding DisplayName}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{DynamicResource ColorTreeLeaf}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsEdited}" Value="True">
+                                                    <Setter Property="FontWeight" Value="Bold"/>
+                                                    <Setter Property="Foreground" Value="{DynamicResource ColorWarning}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </StackPanel>
+                        </DataTemplate>
+
+                        <!-- Branch: plugin or class. The count is the point of this tree shape -
+                             905 under one class node, 3 under most - so it is on every branch. -->
+                        <HierarchicalDataTemplate DataType="{x:Type vm:NpcTreeNodeVM}"
+                                                  ItemsSource="{Binding Items}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding DisplayName}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="FontWeight" Value="Bold"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource ColorTreeBranch}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsPlugin}" Value="True">
+                                                    <Setter Property="Foreground" Value="{DynamicResource ColorTreeRoot}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <TextBlock Text="{Binding CountDisplay}"
+                                           Foreground="{DynamicResource ColorTextTertiary}"
+                                           Margin="6,0,0,0"/>
+                            </StackPanel>
+                        </HierarchicalDataTemplate>
+                    </TreeView.Resources>
+                </TreeView>
+            </Grid>
+        </Border>
+
+        <!-- RIGHT: DETAIL -->
+        <Border Grid.Row="1" Grid.Column="1"
+                BorderBrush="{DynamicResource ColorBorder}"
+                BorderThickness="1"
+                Padding="10"
+                Background="{DynamicResource ColorBackgroundPanel}">
+
+            <Grid>
+                <!-- Empty state. Deliberately a message rather than a blank panel: an empty tree next
+                     to an empty detail pane reads as "your load order has no NPCs", which would be
+                     wrong. -->
+                <TextBlock Text="{Binding EmptyStateText}"
+                           Foreground="{DynamicResource ColorTextSecondary}"
+                           TextWrapping="Wrap"
+                           MaxWidth="460"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           TextAlignment="Center">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasData}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <!-- Nothing picked, but there is data. A different message on purpose. -->
+                <TextBlock Text="Pick an NPC from the tree."
+                           Foreground="{DynamicResource ColorTextTertiary}"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding HasData}" Value="True"/>
+                                        <Condition Binding="{Binding HasSelection}" Value="False"/>
+                                    </MultiDataTrigger.Conditions>
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </MultiDataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <!-- BULK: shown instead of the detail pane while more than one NPC is selected.
+                     Ctrl-click adds one, Shift-click on a branch takes everything under it. -->
+                <Border Background="{DynamicResource ColorBackgroundPanel}"
+                        Visibility="{Binding IsMultiSelectActive, Converter={StaticResource BoolToVis}}">
+                    <!-- Same as the detail pane: the bar always has its space, so the buttons in
+                         here line up with the ones a single selection shows. -->
+                    <ScrollViewer VerticalScrollBarVisibility="Visible">
+                        <StackPanel>
+                            <TextBlock Text="{Binding MultiSelectSummary}"
+                                       FontSize="22"
+                                       Foreground="{DynamicResource ColorAccentLight}"
+                                       Margin="0,0,0,4"/>
+                            <TextBlock Text="Every change here is written to each selected NPC on its own, so any of them can still be corrected or reset by itself. Identical rules are merged into one line when the patch is generated."
+                                       Foreground="{DynamicResource ColorTextSecondary}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,0,0,14"/>
+
+                            <Expander Style="{StaticResource DarkExpanderStyle}" Header="Set a value" IsExpanded="True">
+                                <StackPanel Margin="0,10,0,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="160"/>
+                                            <ColumnDefinition Width="100"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <ComboBox ItemsSource="{Binding BulkFields}"
+                                                  SelectedItem="{Binding BulkField, Mode=TwoWay}"
+                                                  Style="{StaticResource ItemComboBoxStyle}"/>
+                                        <TextBox Grid.Column="1"
+                                                 Text="{Binding BulkValue, UpdateSourceTrigger=PropertyChanged}"
+                                                 Margin="6,0,0,5"
+                                                 TextAlignment="Right"
+                                                 Style="{StaticResource ItemTextBoxStyle}"/>
+                                        <Button Grid.Column="2" Content="Set on all" Width="100" Margin="6,0,0,5"
+                                                Command="{Binding BulkSetCommand}"
+                                                Style="{StaticResource ActionButtonStyle}"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Expander>
+
+                            <Expander Style="{StaticResource DarkExpanderStyle}" Header="Add to every one" IsExpanded="True">
+                                <StackPanel Margin="0,10,0,0">
+                                    <!-- Adding only. "Give every bandit this spell" is a sentence;
+                                         setting every bandit's whole spell list to one thing is a
+                                         way to flatten every difference between them. -->
+                                    <TextBlock Text="Pick one below, then press Add. Lists can only be added to in bulk - replacing them wholesale would flatten every difference between the selected NPCs."
+                                               Foreground="{DynamicResource ColorTextTertiary}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,0,0,8"/>
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+
+                                        <ComboBox ItemsSource="{Binding FilteredKeywords}"
+                                                  SelectedItem="{Binding SelectedKeywordToAdd, Mode=TwoWay}"
+                                                  Text="{Binding KeywordSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                  IsEditable="True" IsTextSearchEnabled="False"
+                                                  IsSynchronizedWithCurrentItem="False" StaysOpenOnEdit="True"
+                                                  DisplayMemberPath="Name" Margin="0,0,0,4"
+                                                  Style="{StaticResource ItemComboBoxStyle}"
+                                                  ToolTip="Keyword"/>
+
+                                        <ComboBox Grid.Row="1"
+                                                  ItemsSource="{Binding FilteredFactions}"
+                                                  SelectedItem="{Binding SelectedFactionToAdd, Mode=TwoWay}"
+                                                  Text="{Binding FactionSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                  IsEditable="True" IsTextSearchEnabled="False"
+                                                  IsSynchronizedWithCurrentItem="False" StaysOpenOnEdit="True"
+                                                  DisplayMemberPath="Name" Margin="0,0,0,4"
+                                                  Style="{StaticResource ItemComboBoxStyle}"
+                                                  ToolTip="Faction"/>
+
+                                        <ComboBox Grid.Row="2"
+                                                  ItemsSource="{Binding FilteredSpells}"
+                                                  SelectedItem="{Binding SelectedSpellToAdd, Mode=TwoWay}"
+                                                  Text="{Binding SpellSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                  IsEditable="True" IsTextSearchEnabled="False"
+                                                  IsSynchronizedWithCurrentItem="False" StaysOpenOnEdit="True"
+                                                  DisplayMemberPath="Name" Margin="0,0,0,4"
+                                                  Style="{StaticResource ItemComboBoxStyle}"
+                                                  ToolTip="Spell, shout or leveled spell"/>
+
+                                        <ComboBox Grid.Row="3"
+                                                  ItemsSource="{Binding FilteredPerks}"
+                                                  SelectedItem="{Binding SelectedPerkToAdd, Mode=TwoWay}"
+                                                  Text="{Binding PerkSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                  IsEditable="True" IsTextSearchEnabled="False"
+                                                  IsSynchronizedWithCurrentItem="False" StaysOpenOnEdit="True"
+                                                  DisplayMemberPath="Name" Margin="0,0,0,4"
+                                                  Style="{StaticResource ItemComboBoxStyle}"
+                                                  ToolTip="Perk"/>
+
+                                        <ComboBox Grid.Row="4"
+                                                  ItemsSource="{Binding FilteredItems}"
+                                                  SelectedItem="{Binding SelectedItemToAdd, Mode=TwoWay}"
+                                                  Text="{Binding ItemSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                  IsEditable="True" IsTextSearchEnabled="False"
+                                                  IsSynchronizedWithCurrentItem="False" StaysOpenOnEdit="True"
+                                                  DisplayMemberPath="Name"
+                                                  Style="{StaticResource ItemComboBoxStyle}"
+                                                  ToolTip="Inventory item"/>
+
+                                        <Button Grid.Row="4" Grid.Column="1"
+                                                Content="Add to all" Width="100" Margin="6,0,0,5"
+                                                VerticalAlignment="Bottom"
+                                                Command="{Binding BulkAddCommand}"
+                                                Style="{StaticResource ActionButtonStyle}"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Expander>
+
+                            <TextBlock Text="{Binding BulkStatus}"
+                                       Foreground="{DynamicResource ColorTextSecondary}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,10,0,0"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+
+                <!-- The editor, extracted so the Templates tab can show the same one over the same
+                     view model instance (docs/NPC-Plan.md §12). A template IS an NPC. -->
+                <views:NpcDetailView Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}"/>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

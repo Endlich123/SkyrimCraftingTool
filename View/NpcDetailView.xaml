@@ -1,0 +1,1024 @@
+<UserControl x:Class="SkyrimCraftingTool.View.NpcDetailView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:SkyrimCraftingTool.ViewModel">
+
+    <!-- The NPC editor, on its own so two tabs can show it (docs/NPC-Plan.md §12).
+         Its DataContext is an NpcMenuVM - the whole pane hangs off SelectedNpc and the pickers and
+         catalogues that VM holds. Extracted rather than copied: a second copy of 885 lines of
+         bindings would drift from this one the first time a field was added, and a template IS an
+         NPC, so both tabs edit the same records through the same view model instance. -->
+
+    <UserControl.Resources>
+
+        <!-- The value half of a label/value row. The label half is ItemLabelStyle, which the rest
+             of the tool already uses; this is its counterpart so the ~30 rows below stay in step.
+             A tertiary foreground marks a field with no SkyPatcher operation - those set it
+             directly rather than using this style, so "read-only" is visible in the markup too. -->
+        <Style x:Key="NpcValueStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource ColorTextPrimary}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,0,4"/>
+        </Style>
+
+        <!-- One link field: an editable, filtering box over a catalogue. Seven of them, so it is a
+             template rather than seven copies - and the filtering is not a luxury, the catalogues
+             run to hundreds of entries. -->
+        <DataTemplate x:Key="NpcLinkPicker">
+            <ComboBox ItemsSource="{Binding Options}"
+                      SelectedItem="{Binding Selected, Mode=TwoWay}"
+                      Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                      IsEditable="True"
+                      IsTextSearchEnabled="False"
+                      IsSynchronizedWithCurrentItem="False"
+                      StaysOpenOnEdit="True"
+                      DisplayMemberPath="Name"
+                      Margin="0,0,0,4"
+                      BorderBrush="{Binding IsChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                      Style="{StaticResource ItemComboBoxStyle}"/>
+        </DataTemplate>
+
+    </UserControl.Resources>
+
+                <!-- "Visible", not "Auto": with Auto the bar appears the moment the content grows
+                     past the pane and takes 17 px off the width, so every control in here shifts
+                     sideways - opening one expander moved the Add buttons, and switching between a
+                     single NPC and a multi-selection moved them back. Reserving the space costs a
+                     bar on a short record and keeps the layout still. -->
+                <ScrollViewer VerticalScrollBarVisibility="Visible"
+                              Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}">
+                    <StackPanel DataContext="{Binding SelectedNpc}">
+
+                        <TextBlock Text="{Binding DisplayName}"
+                                   FontSize="22"
+                                   Foreground="{DynamicResource ColorAccentLight}"
+                                   Margin="0,0,0,2"/>
+                        <TextBlock Text="{Binding EditorID}"
+                                   Foreground="{DynamicResource ColorTextTertiary}"
+                                   Margin="0,0,0,2"/>
+                        <TextBlock Text="{Binding Key}"
+                                   Foreground="{DynamicResource ColorTextTertiary}"
+                                   FontSize="11"
+                                   Margin="0,0,0,8"/>
+
+                        <!-- Reset sits with the record it resets, not in the toolbar: it drops every
+                             change on THIS NPC and nothing else. Hidden unless there is something to
+                             undo, so it cannot be pressed hopefully. -->
+                        <Button Content="Reset this NPC"
+                                Command="{Binding DataContext.ResetNpcCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                Style="{StaticResource StandardButtonStyle}"
+                                HorizontalAlignment="Left"
+                                Margin="0,0,0,12"
+                                ToolTip="Discards every change to this NPC and goes back to what the plugins say."
+                                Visibility="{Binding HasAnyEdit, Converter={StaticResource BoolToVis}}"/>
+
+                        <!-- The other direction: this record IS a template. Editing it moves every
+                             NPC below it, which is the reason to be here rather than on one of
+                             them - EncBandit00Template feeds 502. -->
+                        <Border Background="{DynamicResource ColorBackgroundHighlight}"
+                                BorderBrush="{DynamicResource ColorAccentLight}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="8"
+                                Margin="0,0,0,12"
+                                Visibility="{Binding IsTemplate, Converter={StaticResource BoolToVis}}">
+                            <StackPanel>
+                                <TextBlock Text="This record is a template"
+                                           FontWeight="Bold"
+                                           Foreground="{DynamicResource ColorAccentLight}"
+                                           Margin="0,0,0,4"/>
+                                <TextBlock Text="{Binding HeirDisplay}"
+                                           Foreground="{DynamicResource ColorTextPrimary}"
+                                           TextWrapping="Wrap"/>
+                                <TextBlock Text="Each of them takes only the fields its own template flags say - an edit here reaches the ones that inherit that field."
+                                           Foreground="{DynamicResource ColorTextSecondary}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- ============================================================
+                             WHAT THIS EDITOR SHOWS, AND WHY IT IS LESS THAN IT WAS
+                             (2026-09-28, before the first private test run)
+
+                             The single-NPC editor is held to the same set of fields as the
+                             GROUP editor: Stats, Level, Skills, Perks. A group is the work
+                             unit of this patcher (docs/NPC-Gruppen-Plan.md §1), and a single
+                             NPC is a group with one add-override (§4.1) - so anything the
+                             group editor cannot do is a field with no counterpart, and two
+                             editors of different reach would be two mental models to hold.
+
+                             The eight blocks below marked HIDDEN are therefore collapsed.
+                             NOTHING ELSE WAS TOUCHED: the view models, the stores, the
+                             scan and the rule builders all still carry these fields, the
+                             tests for them all still run, and bringing a block back is the
+                             one Visibility attribute on its Expander. They are expected
+                             back as the group editor grows to cover them.
+
+                             Hidden: General is NOT (it is read-only context). Factions,
+                             Keywords, Spells and shouts, Inventory, Links, Body and AI,
+                             Flags, Inherited from the template.
+                             ============================================================ -->
+
+                        <!-- ============================================================
+                             THE TEMPLATE STATE. First, above everything, and not in an
+                             expander - 61,4 % of NPCs inherit their stats from a template,
+                             and for those the numbers further down describe a field the
+                             game never reads. Finding that out in the dry run is too late
+                             (docs/NPC-Plan.md §4).
+                             ============================================================ -->
+                        <Border Background="{DynamicResource ColorBackgroundHighlight}"
+                                BorderBrush="{DynamicResource ColorWarning}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="8"
+                                Margin="0,0,0,12"
+                                Visibility="{Binding HasTemplate, Converter={StaticResource BoolToVis}}">
+                            <StackPanel>
+                                <TextBlock Text="Inherits from a template"
+                                           FontWeight="Bold"
+                                           Foreground="{DynamicResource ColorWarning}"
+                                           Margin="0,0,0,4"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding TemplateDisplay}"
+                                               Foreground="{DynamicResource ColorTextPrimary}"
+                                               TextWrapping="Wrap"
+                                               VerticalAlignment="Center"/>
+
+                                    <!-- THE JUMP. For 4.039 NPCs the record that decides their
+                                         values is not the one on screen, and 1.108 of them sit
+                                         three or more hops away. Hidden when the template is a
+                                         levelled list: there is no record to open. -->
+                                    <Button Content="open"
+                                            Command="{Binding DataContext.OpenTemplateCommand,
+                                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            Visibility="{Binding DataContext.CanOpenTemplate,
+                                                                 RelativeSource={RelativeSource AncestorType=UserControl},
+                                                                 Converter={StaticResource BoolToVis}}"
+                                            Style="{StaticResource StandardButtonStyle}"
+                                            Padding="6,1"
+                                            Margin="8,0,0,0"
+                                            ToolTip="Edit the record these values actually come from."/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding TemplateFlagsDisplay, StringFormat=Inherited: {0}}"
+                                           Foreground="{DynamicResource ColorTextSecondary}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,2,0,0"/>
+                                <TextBlock Text="{Binding StatInheritanceWarning}"
+                                           Foreground="{DynamicResource ColorWarning}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,6,0,0"
+                                           Visibility="{Binding ShowsStatInheritanceWarning, Converter={StaticResource BoolToVis}}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- GENERAL -->
+                        <Expander Style="{StaticResource DarkExpanderStyle}" Header="General" IsExpanded="True">
+                            <StackPanel Margin="0,10,0,0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="150"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Text="Name" Style="{StaticResource ItemLabelStyle}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Name}" Style="{StaticResource NpcValueStyle}"/>
+
+                                    <TextBlock Grid.Row="1" Text="Short name" Style="{StaticResource ItemLabelStyle}"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ShortName}" Style="{StaticResource NpcValueStyle}"/>
+
+                                    <TextBlock Grid.Row="2" Text="Class" Style="{StaticResource ItemLabelStyle}"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ClassDisplay}" Style="{StaticResource NpcValueStyle}"/>
+
+                                    <TextBlock Grid.Row="3" Text="Race" Style="{StaticResource ItemLabelStyle}"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding RaceDisplay}" Style="{StaticResource NpcValueStyle}"/>
+
+                                    <!-- One line, not five fields: a record stores either a fixed
+                                         level or a multiple of the player's, never both, and showing
+                                         both shapes leaves the reader to work out which applies. -->
+                                    <TextBlock Grid.Row="4" Text="Level" Style="{StaticResource ItemLabelStyle}"/>
+                                    <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding LevelDisplay}" Style="{StaticResource NpcValueStyle}"
+                                               ToolTip="Either a fixed level, or a multiplier of the player's level with its calculated minimum and maximum."/>
+
+                                    <TextBlock Grid.Row="5" Text="Weight" Style="{StaticResource ItemLabelStyle}"/>
+                                    <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding Weight}" Style="{StaticResource NpcValueStyle}"/>
+
+                                    <TextBlock Grid.Row="6" Text="Height" Style="{StaticResource ItemLabelStyle}"/>
+                                    <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding Height}" Style="{StaticResource NpcValueStyle}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Expander>
+
+                        <!-- STATS -->
+                        <Expander Style="{StaticResource DarkExpanderStyle}" Header="Stats" IsExpanded="True">
+                            <StackPanel Margin="0,10,0,0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="150"/>
+                                        <ColumnDefinition Width="90"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <!-- The prediction, above the fields it contradicts. Amber
+                                         rather than a quiet grey: an NPC whose stats the game
+                                         recomputes makes every number under this line dead data,
+                                         and that is the single most misleading thing this editor
+                                         could show without saying so. -->
+                                    <TextBlock Grid.ColumnSpan="3"
+                                               Text="{Binding PredictedStatsText}"
+                                               Foreground="{DynamicResource ColorWarning}"
+                                               TextWrapping="Wrap" FontSize="11"
+                                               Margin="0,0,0,8"
+                                               Visibility="{Binding HasPrediction, Converter={StaticResource BoolToVis}}"/>
+
+                                    <!-- The bindings commit on focus loss (WPF's default for
+                                         TextBox.Text), which is exactly one write per finished edit -
+                                         see the note on NpcEditStore. The border colour comes from
+                                         the same converter the item fields use, so "changed" looks
+                                         the same everywhere in the tool. -->
+                                    <TextBlock Text="Health" Style="{StaticResource ItemLabelStyle}"/>
+                                    <TextBox Grid.Column="1" Text="{Binding Health}"
+                                             BorderBrush="{Binding IsHealthChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                             Style="{StaticResource ItemTextBoxStyle}"/>
+
+                                    <TextBlock Grid.Row="1" Text="Magicka" Style="{StaticResource ItemLabelStyle}"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Magicka}"
+                                             BorderBrush="{Binding IsMagickaChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                             Style="{StaticResource ItemTextBoxStyle}"/>
+
+                                    <TextBlock Grid.Row="2" Text="Stamina" Style="{StaticResource ItemLabelStyle}"/>
+                                    <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Stamina}"
+                                             BorderBrush="{Binding IsStaminaChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                             Style="{StaticResource ItemTextBoxStyle}"/>
+                                </Grid>
+
+                                <!-- The record carries a second set of numbers, and it is not settled
+                                     which of the two changeStats writes. Shown only when one is
+                                     non-zero, so the open question appears where it matters. -->
+                                <TextBlock Text="{Binding OffsetsDisplay, StringFormat=Offsets: {0}}"
+                                           Foreground="{DynamicResource ColorTextTertiary}"
+                                           Margin="0,6,0,0"
+                                           TextWrapping="Wrap"
+                                           ToolTip="The ACBS offsets, a separate set of numbers from the base values above. Which of the two SkyPatcher's changeStats writes is not established yet - these are read-only until a game test settles it."
+                                           Visibility="{Binding HasOffsets, Converter={StaticResource BoolToVis}}"/>
+                            </StackPanel>
+                        </Expander>
+
+                        <!-- LEVEL -->
+                        <Expander Style="{StaticResource DarkExpanderStyle}" Header="Level" IsExpanded="True">
+                            <StackPanel Margin="0,10,0,0">
+                                <!-- Both halves stay visible when the switch flips: seeing what the
+                                     record falls back to is the whole point of changing it. -->
+                                <CheckBox Content="Scales with the player (PC Level Mult)"
+                                          IsChecked="{Binding UsesPcLevelMult}"
+                                          Style="{StaticResource ItemCheckBoxStyle}"
+                                          Margin="0,0,0,8"
+                                          ToolTip="Off means the fixed level below applies. SkyPatcher needs a fallback level with it, which is what the Level field then provides."/>
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="150"/>
+                                        <ColumnDefinition Width="90"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Text="Level" Style="{StaticResource ItemLabelStyle}"/>
+                                    <TextBox Grid.Column="1" Text="{Binding Level}"
+                                             BorderBrush="{Binding IsLevelChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                             Style="{StaticResource ItemTextBoxStyle}"/>
+
+                                    <TextBlock Grid.Row="1" Text="Calc min level" Style="{StaticResource ItemLabelStyle}"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding CalcMinLevel}"
+                                             BorderBrush="{Binding IsCalcMinLevelChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                             Style="{StaticResource ItemTextBoxStyle}"/>
+
+                                    <TextBlock Grid.Row="2" Text="Calc max level" Style="{StaticResource ItemLabelStyle}"/>
+                                    <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding CalcMaxLevel}"
+                                             BorderBrush="{Binding IsCalcMaxLevelChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                             Style="{StaticResource ItemTextBoxStyle}"/>
+
+                                    <TextBlock Grid.Row="3" Text="In the record" Style="{StaticResource ItemLabelStyle}"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2"
+                                               Text="{Binding LevelDisplay}"
+                                               Foreground="{DynamicResource ColorTextTertiary}"
+                                               VerticalAlignment="Center"
+                                               ToolTip="What the level currently amounts to, as one line."/>
+                                </Grid>
+                            </StackPanel>
+                        </Expander>
+
+                        <!-- SKILLS -->
+                        <Expander Style="{StaticResource DarkExpanderStyle}" Header="Skills" IsExpanded="False">
+                            <ItemsControl ItemsSource="{Binding Skills}" Margin="0,10,0,0">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <UniformGrid Columns="3"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,0,10,4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       Foreground="{DynamicResource ColorTextSecondary}"/>
+                                            <TextBox Grid.Column="1"
+                                                     Text="{Binding Value}"
+                                                     MinWidth="44"
+                                                     TextAlignment="Right"
+                                                     BorderBrush="{Binding IsChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                                     Style="{StaticResource ItemTextBoxStyle}"/>
+                                            <TextBlock Grid.Column="2"
+                                                       Text="{Binding OffsetDisplay}"
+                                                       Foreground="{DynamicResource ColorTextTertiary}"
+                                                       Margin="4,0,0,0"
+                                                       ToolTip="Skill offset - a separate value from the base one to its left."/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Expander>
+
+                        <!-- FACTIONS -->
+                        <!-- HIDDEN (see the note at the top of the editor). -->
+                        <Expander Style="{StaticResource DarkExpanderStyle}" IsExpanded="False" Visibility="Collapsed">
+                            <Expander.Header>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Factions"/>
+                                    <TextBlock Text="{Binding FactionCount, StringFormat=({0})}"
+                                               Foreground="{DynamicResource ColorTextTertiary}"
+                                               Margin="6,0,0,0"/>
+                                    <!-- The same dot the tree uses, so "this list differs from the
+                                         plugin" reads the same everywhere. -->
+                                    <TextBlock Text="●"
+                                               Foreground="{DynamicResource ColorWarning}"
+                                               Margin="6,0,0,0"
+                                               ToolTip="Changed"
+                                               Visibility="{Binding IsFactionsChanged, Converter={StaticResource BoolToVis}}"/>
+                                </StackPanel>
+                            </Expander.Header>
+                            <StackPanel Margin="0,10,0,0">
+                                <ItemsControl ItemsSource="{Binding Factions}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,0,0,3" ToolTip="{Binding FactionKey}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="60"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding DisplayName}"
+                                                           Foreground="{DynamicResource ColorTextPrimary}"
+                                                           VerticalAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <!-- The rank is editable now: factionsToAdd carries
+                                                     it, and there is no separate operation to set
+                                                     it. 0 is right for 94 % of memberships. -->
+                                                <TextBox Grid.Column="1"
+                                                         Text="{Binding Rank}"
+                                                         TextAlignment="Right"
+                                                         Margin="8,0,0,0"
+                                                         Style="{StaticResource ItemTextBoxStyle}"
+                                                         ToolTip="Faction rank. 0 unless the faction actually uses ranks."/>
+                                                <Button Grid.Column="2"
+                                                        Content="✕"
+                                                        Width="26"
+                                                        Margin="6,0,0,0"
+                                                        Command="{Binding DataContext.RemoveFactionCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding}"
+                                                        Style="{StaticResource StandardButtonStyle}"
+                                                        ToolTip="Remove this NPC from the faction"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <!-- Adding one. 1.458 factions is not a list anyone scrolls, so the
+                                     box filters as you type - the same picker the enchantment field
+                                     uses, for the same reason. -->
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox ItemsSource="{Binding DataContext.FilteredFactions, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                              SelectedItem="{Binding DataContext.SelectedFactionToAdd, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=TwoWay}"
+                                              Text="{Binding DataContext.FactionSearchText, RelativeSource={RelativeSource AncestorType=UserControl}, UpdateSourceTrigger=PropertyChanged}"
+                                              IsEditable="True"
+                                              IsTextSearchEnabled="False"
+                                              IsSynchronizedWithCurrentItem="False"
+                                              StaysOpenOnEdit="True"
+                                              DisplayMemberPath="Name"
+                                              Style="{StaticResource ItemComboBoxStyle}"/>
+                                    <Button Grid.Column="1"
+                                            Content="Add"
+                                            Width="70"
+                                            Margin="6,0,0,5"
+                                            Command="{Binding DataContext.AddFactionCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            Style="{StaticResource StandardButtonStyle}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Expander>
+
+                        <!-- KEYWORDS -->
+                        <!-- HIDDEN (see the note at the top of the editor). -->
+                        <Expander Style="{StaticResource DarkExpanderStyle}" IsExpanded="False" Visibility="Collapsed">
+                            <Expander.Header>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Keywords"/>
+                                    <TextBlock Text="{Binding KeywordCount, StringFormat=({0})}"
+                                               Foreground="{DynamicResource ColorTextTertiary}"
+                                               Margin="6,0,0,0"/>
+                                    <TextBlock Text="●"
+                                               Foreground="{DynamicResource ColorWarning}"
+                                               Margin="6,0,0,0"
+                                               ToolTip="Changed"
+                                               Visibility="{Binding IsKeywordsChanged, Converter={StaticResource BoolToVis}}"/>
+                                </StackPanel>
+                            </Expander.Header>
+                            <StackPanel Margin="0,10,0,0">
+                                <!-- Only 11 % of NPCs carry any keyword at all, so this says so
+                                     rather than showing an empty box that looks broken. -->
+                                <TextBlock Text="This NPC has no keywords."
+                                           Foreground="{DynamicResource ColorTextTertiary}"
+                                           FontStyle="Italic"
+                                           Margin="0,0,0,6">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasKeywords}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <ItemsControl ItemsSource="{Binding DataContext.SelectedNpcKeywords, RelativeSource={RelativeSource AncestorType=UserControl}}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel Orientation="Horizontal"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{DynamicResource ColorBackgroundHighlight}"
+                                                    CornerRadius="4" Padding="5" Margin="3"
+                                                    ToolTip="{Binding Key}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Name}"
+                                                               Foreground="{DynamicResource ColorChipText}"/>
+                                                    <Button Content="✕"
+                                                            Margin="6,0,0,0"
+                                                            Padding="2,0"
+                                                            Background="Transparent"
+                                                            BorderThickness="0"
+                                                            Foreground="{DynamicResource ColorChipText}"
+                                                            Command="{Binding DataContext.ToggleKeywordCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                            CommandParameter="{Binding Key}"
+                                                            ToolTip="Remove this keyword"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox ItemsSource="{Binding DataContext.FilteredKeywords, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                              SelectedItem="{Binding DataContext.SelectedKeywordToAdd, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=TwoWay}"
+                                              Text="{Binding DataContext.KeywordSearchText, RelativeSource={RelativeSource AncestorType=UserControl}, UpdateSourceTrigger=PropertyChanged}"
+                                              IsEditable="True"
+                                              IsTextSearchEnabled="False"
+                                              IsSynchronizedWithCurrentItem="False"
+                                              StaysOpenOnEdit="True"
+                                              DisplayMemberPath="Name"
+                                              Style="{StaticResource ItemComboBoxStyle}"/>
+                                    <Button Grid.Column="1"
+                                            Content="Add"
+                                            Width="70"
+                                            Margin="6,0,0,5"
+                                            Command="{Binding DataContext.AddKeywordCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            Style="{StaticResource StandardButtonStyle}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Expander>
+
+                        <!-- SPELLS, SHOUTS AND LEVELED SPELLS -->
+                        <!-- HIDDEN (see the note at the top of the editor). -->
+                        <Expander Style="{StaticResource DarkExpanderStyle}" IsExpanded="False" Visibility="Collapsed">
+                            <Expander.Header>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Spells and shouts"/>
+                                    <TextBlock Text="{Binding SpellCount, StringFormat=({0})}"
+                                               Foreground="{DynamicResource ColorTextTertiary}"
+                                               Margin="6,0,0,0"/>
+                                    <TextBlock Text="●"
+                                               Foreground="{DynamicResource ColorWarning}"
+                                               Margin="6,0,0,0"
+                                               ToolTip="Changed"
+                                               Visibility="{Binding IsSpellsChanged, Converter={StaticResource BoolToVis}}"/>
+                                </StackPanel>
+                            </Expander.Header>
+                            <StackPanel Margin="0,10,0,0">
+                                <ItemsControl ItemsSource="{Binding SpellRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,0,0,3" ToolTip="{Binding Key}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="80"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding DisplayName}"
+                                                           Foreground="{DynamicResource ColorTextPrimary}"
+                                                           VerticalAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <!-- Which of the three operations will carry this
+                                                     entry. Shown because the record keeps all three
+                                                     in one list and the difference is otherwise
+                                                     invisible - and "unknown" means no operation
+                                                     can carry it at all. -->
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{Binding KindDisplay}"
+                                                           Margin="8,0,0,0"
+                                                           VerticalAlignment="Center"
+                                                           ToolTip="Which SkyPatcher operation carries this entry">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="{DynamicResource ColorTextTertiary}"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsUnresolved}" Value="True">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource ColorWarning}"/>
+                                                                    <Setter Property="ToolTip" Value="This key matches no spell, shout or leveled spell - a dead reference, and no operation can carry it."/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                                <Button Grid.Column="2"
+                                                        Content="✕" Width="26" Margin="6,0,0,0"
+                                                        Command="{Binding DataContext.RemoveSpellCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding}"
+                                                        Style="{StaticResource StandardButtonStyle}"
+                                                        ToolTip="Take this spell away"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox ItemsSource="{Binding DataContext.FilteredSpells, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                              SelectedItem="{Binding DataContext.SelectedSpellToAdd, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=TwoWay}"
+                                              Text="{Binding DataContext.SpellSearchText, RelativeSource={RelativeSource AncestorType=UserControl}, UpdateSourceTrigger=PropertyChanged}"
+                                              IsEditable="True"
+                                              IsTextSearchEnabled="False"
+                                              IsSynchronizedWithCurrentItem="False"
+                                              StaysOpenOnEdit="True"
+                                              DisplayMemberPath="Name"
+                                              Style="{StaticResource ItemComboBoxStyle}"/>
+                                    <Button Grid.Column="1" Content="Add" Width="70" Margin="6,0,0,5"
+                                            Command="{Binding DataContext.AddSpellCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            Style="{StaticResource StandardButtonStyle}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Expander>
+
+                        <!-- PERKS -->
+                        <Expander Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
+                            <Expander.Header>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Perks"/>
+                                    <TextBlock Text="{Binding PerkCount, StringFormat=({0})}"
+                                               Foreground="{DynamicResource ColorTextTertiary}"
+                                               Margin="6,0,0,0"/>
+                                    <TextBlock Text="●"
+                                               Foreground="{DynamicResource ColorWarning}"
+                                               Margin="6,0,0,0"
+                                               ToolTip="Changed"
+                                               Visibility="{Binding IsPerksChanged, Converter={StaticResource BoolToVis}}"/>
+                                </StackPanel>
+                            </Expander.Header>
+                            <StackPanel Margin="0,10,0,0">
+                                <ItemsControl ItemsSource="{Binding PerkRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,0,0,3" ToolTip="{Binding Key}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="40"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding DisplayName}"
+                                                           Foreground="{DynamicResource ColorTextPrimary}"
+                                                           VerticalAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{Binding RankDisplay}"
+                                                           Foreground="{DynamicResource ColorTextTertiary}"
+                                                           VerticalAlignment="Center"
+                                                           ToolTip="Perk rank. Scanned only - perksToAdd does not take one."/>
+                                                <!-- Only a perk added here can go again: there is no
+                                                     perksToRemove, so one the plugins gave this NPC
+                                                     cannot be taken away by any patch. -->
+                                                <Button Grid.Column="2"
+                                                        Content="✕" Width="26" Margin="6,0,0,0"
+                                                        Command="{Binding DataContext.RemovePerkCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding}"
+                                                        Style="{StaticResource StandardButtonStyle}"
+                                                        ToolTip="Take this perk away again"
+                                                        Visibility="{Binding CanRemove, Converter={StaticResource BoolToVis}}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <TextBlock Text="A perk that came with the plugins cannot be removed - SkyPatcher has perksToAdd and no perksToRemove."
+                                           Foreground="{DynamicResource ColorTextTertiary}"
+                                           FontStyle="Italic"
+                                           TextWrapping="Wrap"
+                                           Margin="0,6,0,0"/>
+
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox ItemsSource="{Binding DataContext.FilteredPerks, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                              SelectedItem="{Binding DataContext.SelectedPerkToAdd, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=TwoWay}"
+                                              Text="{Binding DataContext.PerkSearchText, RelativeSource={RelativeSource AncestorType=UserControl}, UpdateSourceTrigger=PropertyChanged}"
+                                              IsEditable="True"
+                                              IsTextSearchEnabled="False"
+                                              IsSynchronizedWithCurrentItem="False"
+                                              StaysOpenOnEdit="True"
+                                              DisplayMemberPath="Name"
+                                              Style="{StaticResource ItemComboBoxStyle}"/>
+                                    <Button Grid.Column="1" Content="Add" Width="70" Margin="6,0,0,5"
+                                            Command="{Binding DataContext.AddPerkCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            Style="{StaticResource StandardButtonStyle}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Expander>
+
+                        <!-- INVENTORY -->
+                        <!-- HIDDEN (see the note at the top of the editor). -->
+                        <Expander Style="{StaticResource DarkExpanderStyle}" IsExpanded="False" Visibility="Collapsed">
+                            <Expander.Header>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Inventory"/>
+                                    <TextBlock Text="{Binding ItemCount, StringFormat=({0})}"
+                                               Foreground="{DynamicResource ColorTextTertiary}"
+                                               Margin="6,0,0,0"/>
+                                    <TextBlock Text="●"
+                                               Foreground="{DynamicResource ColorWarning}"
+                                               Margin="6,0,0,0"
+                                               ToolTip="Changed"
+                                               Visibility="{Binding IsItemsChanged, Converter={StaticResource BoolToVis}}"/>
+                                </StackPanel>
+                            </Expander.Header>
+                            <StackPanel Margin="0,10,0,0">
+                                <ItemsControl ItemsSource="{Binding ItemRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,0,0,3" ToolTip="{Binding Key}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="60"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding DisplayName}"
+                                                           Foreground="{DynamicResource ColorTextPrimary}"
+                                                           VerticalAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <TextBox Grid.Column="1"
+                                                         Text="{Binding Count}"
+                                                         TextAlignment="Right"
+                                                         Margin="8,0,0,0"
+                                                         Style="{StaticResource ItemTextBoxStyle}"
+                                                         ToolTip="How many. A changed amount is patched as a remove followed by an add, because objectsToAdd adds."/>
+                                                <Button Grid.Column="2"
+                                                        Content="✕" Width="26" Margin="6,0,0,0"
+                                                        Command="{Binding DataContext.RemoveItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding}"
+                                                        Style="{StaticResource StandardButtonStyle}"
+                                                        ToolTip="Take this out of the inventory"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="60"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox ItemsSource="{Binding DataContext.FilteredItems, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                              SelectedItem="{Binding DataContext.SelectedItemToAdd, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=TwoWay}"
+                                              Text="{Binding DataContext.ItemSearchText, RelativeSource={RelativeSource AncestorType=UserControl}, UpdateSourceTrigger=PropertyChanged}"
+                                              IsEditable="True"
+                                              IsTextSearchEnabled="False"
+                                              IsSynchronizedWithCurrentItem="False"
+                                              StaysOpenOnEdit="True"
+                                              DisplayMemberPath="Name"
+                                              Style="{StaticResource ItemComboBoxStyle}"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding DataContext.ItemCountToAdd, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                             TextAlignment="Right"
+                                             Margin="6,0,0,5"
+                                             Style="{StaticResource ItemTextBoxStyle}"
+                                             ToolTip="How many to add"/>
+                                    <Button Grid.Column="2" Content="Add" Width="70" Margin="6,0,0,5"
+                                            Command="{Binding DataContext.AddItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            Style="{StaticResource StandardButtonStyle}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Expander>
+
+                        <!-- LINKS -->
+                        <!-- HIDDEN (see the note at the top of the editor). -->
+                        <Expander Style="{StaticResource DarkExpanderStyle}" Header="Links" IsExpanded="False"
+                                  Visibility="Collapsed">
+                            <StackPanel Margin="0,10,0,0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="150"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <!-- Each of these is a picker over a catalogue the scan built.
+                                         The key travels, the name is only shown - see the class
+                                         note on NpcLinkPickerVM. -->
+                                    <TextBlock Text="Class" Style="{StaticResource ItemLabelStyle}"/>
+                                    <ContentControl Grid.Column="1"
+                                                    Content="{Binding DataContext.ClassPicker, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    ContentTemplate="{StaticResource NpcLinkPicker}"/>
+
+                                    <TextBlock Grid.Row="1" Text="Race" Style="{StaticResource ItemLabelStyle}"/>
+                                    <ContentControl Grid.Row="1" Grid.Column="1"
+                                                    Content="{Binding DataContext.RacePicker, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    ContentTemplate="{StaticResource NpcLinkPicker}"/>
+
+                                    <TextBlock Grid.Row="2" Text="Voice" Style="{StaticResource ItemLabelStyle}"/>
+                                    <ContentControl Grid.Row="2" Grid.Column="1"
+                                                    Content="{Binding DataContext.VoicePicker, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    ContentTemplate="{StaticResource NpcLinkPicker}"/>
+
+                                    <TextBlock Grid.Row="3" Text="Outfit" Style="{StaticResource ItemLabelStyle}"/>
+                                    <ContentControl Grid.Row="3" Grid.Column="1"
+                                                    Content="{Binding DataContext.OutfitPicker, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    ContentTemplate="{StaticResource NpcLinkPicker}"/>
+
+                                    <TextBlock Grid.Row="4" Text="Sleep outfit" Style="{StaticResource ItemLabelStyle}"/>
+                                    <ContentControl Grid.Row="4" Grid.Column="1"
+                                                    Content="{Binding DataContext.SleepOutfitPicker, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    ContentTemplate="{StaticResource NpcLinkPicker}"/>
+
+                                    <TextBlock Grid.Row="5" Text="Death item" Style="{StaticResource ItemLabelStyle}"/>
+                                    <ContentControl Grid.Row="5" Grid.Column="1"
+                                                    Content="{Binding DataContext.DeathItemPicker, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    ContentTemplate="{StaticResource NpcLinkPicker}"/>
+
+                                    <TextBlock Grid.Row="6" Text="Skin" Style="{StaticResource ItemLabelStyle}"/>
+                                    <ContentControl Grid.Row="6" Grid.Column="1"
+                                                    Content="{Binding DataContext.SkinPicker, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    ContentTemplate="{StaticResource NpcLinkPicker}"/>
+
+                                    <!-- The two below have no SkyPatcher operation. Editable since
+                                         N-P6 all the same: changing one makes the generator write an
+                                         override of this NPC's record. The note under them says what
+                                         that costs, because by the time the report exists the patch
+                                         is already written. -->
+                                    <TextBlock Grid.Row="7" Text="Combat style" Style="{StaticResource ItemLabelStyle}"/>
+                                    <ContentControl Grid.Row="7" Grid.Column="1"
+                                                    Content="{Binding DataContext.CombatStylePicker, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    ContentTemplate="{StaticResource NpcLinkPicker}"/>
+
+                                    <TextBlock Grid.Row="8" Text="Crime faction" Style="{StaticResource ItemLabelStyle}"/>
+                                    <ContentControl Grid.Row="8" Grid.Column="1"
+                                                    Content="{Binding DataContext.CrimeFactionPicker, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    ContentTemplate="{StaticResource NpcLinkPicker}"/>
+                                </Grid>
+
+                                <Border Background="{DynamicResource ColorBackgroundHighlight}"
+                                        BorderBrush="{DynamicResource ColorWarning}"
+                                        BorderThickness="1"
+                                        CornerRadius="4"
+                                        Padding="8"
+                                        Margin="0,8,0,0"
+                                        Visibility="{Binding NeedsEspOverride, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="{Binding EspOverrideNote}"
+                                               Foreground="{DynamicResource ColorTextPrimary}"
+                                               TextWrapping="Wrap"/>
+                                </Border>
+
+                                <TextBlock Text="Combat style and crime faction have no SkyPatcher operation - changing either one writes an ESP override of this NPC."
+                                           Foreground="{DynamicResource ColorTextTertiary}"
+                                           FontStyle="Italic"
+                                           TextWrapping="Wrap"
+                                           Margin="0,6,0,0"/>
+                            </StackPanel>
+                        </Expander>
+
+                        <!-- BODY + AI -->
+                        <!-- HIDDEN (see the note at the top of the editor). -->
+                        <Expander Style="{StaticResource DarkExpanderStyle}" Header="Body and AI" IsExpanded="False"
+                                  Visibility="Collapsed">
+                            <StackPanel Margin="0,10,0,0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="150"/>
+                                        <ColumnDefinition Width="180"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Text="Weight" Style="{StaticResource ItemLabelStyle}"/>
+                                    <TextBox Grid.Column="1" Text="{Binding Weight}"
+                                             BorderBrush="{Binding IsWeightChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                             Style="{StaticResource ItemTextBoxStyle}"/>
+
+                                    <TextBlock Grid.Row="1" Text="Height" Style="{StaticResource ItemLabelStyle}"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Height}"
+                                             BorderBrush="{Binding IsHeightChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                             Style="{StaticResource ItemTextBoxStyle}"/>
+
+                                    <!-- Fixed lists, so a plain drop-down: every value SkyPatcher
+                                         accepts is in it and nothing else can be typed. -->
+                                    <TextBlock Grid.Row="2" Text="Aggression" Style="{StaticResource ItemLabelStyle}"/>
+                                    <ComboBox Grid.Row="2" Grid.Column="1"
+                                              ItemsSource="{Binding DataContext.AggressionTokens, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                              SelectedItem="{Binding Aggression, Mode=TwoWay}"
+                                              BorderBrush="{Binding IsAggressionChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                              Style="{StaticResource ItemComboBoxStyle}"/>
+
+                                    <TextBlock Grid.Row="3" Text="Confidence" Style="{StaticResource ItemLabelStyle}"/>
+                                    <ComboBox Grid.Row="3" Grid.Column="1"
+                                              ItemsSource="{Binding DataContext.ConfidenceTokens, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                              SelectedItem="{Binding Confidence, Mode=TwoWay}"
+                                              BorderBrush="{Binding IsConfidenceChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                              Style="{StaticResource ItemComboBoxStyle}"/>
+
+                                    <TextBlock Grid.Row="4" Text="Assistance" Style="{StaticResource ItemLabelStyle}"/>
+                                    <ComboBox Grid.Row="4" Grid.Column="1"
+                                              ItemsSource="{Binding DataContext.AssistanceTokens, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                              SelectedItem="{Binding Assistance, Mode=TwoWay}"
+                                              BorderBrush="{Binding IsAssistanceChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                              Style="{StaticResource ItemComboBoxStyle}"/>
+
+                                    <TextBlock Grid.Row="5" Text="Morality" Style="{StaticResource ItemLabelStyle}"/>
+                                    <ComboBox Grid.Row="5" Grid.Column="1"
+                                              ItemsSource="{Binding DataContext.MoralityTokens, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                              SelectedItem="{Binding Morality, Mode=TwoWay}"
+                                              BorderBrush="{Binding IsMoralityChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                              Style="{StaticResource ItemComboBoxStyle}"
+                                              ToolTip="Which crimes this NPC will not commit. The record calls this field Responsibility."/>
+
+                                    <TextBlock Grid.Row="6" Text="Mood" Style="{StaticResource ItemLabelStyle}"/>
+                                    <ComboBox Grid.Row="6" Grid.Column="1"
+                                              ItemsSource="{Binding DataContext.MoodTokens, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                              SelectedItem="{Binding Mood, Mode=TwoWay}"
+                                              BorderBrush="{Binding IsMoodChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                              Style="{StaticResource ItemComboBoxStyle}"/>
+
+                                    <!-- No operation for this one. -->
+                                    <TextBlock Grid.Row="7" Text="Energy level" Style="{StaticResource ItemLabelStyle}"/>
+                                    <TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding EnergyLevel}"
+                                               Foreground="{DynamicResource ColorTextTertiary}"
+                                               VerticalAlignment="Center" Margin="0,0,0,4"/>
+                                </Grid>
+                            </StackPanel>
+                        </Expander>
+
+                        <!-- FLAGS -->
+                        <!-- HIDDEN (see the note at the top of the editor). -->
+                        <Expander Style="{StaticResource DarkExpanderStyle}" IsExpanded="False" Visibility="Collapsed">
+                            <Expander.Header>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Flags"/>
+                                    <TextBlock Text="●"
+                                               Foreground="{DynamicResource ColorWarning}"
+                                               Margin="6,0,0,0"
+                                               ToolTip="Changed"
+                                               Visibility="{Binding IsFlagsChanged, Converter={StaticResource BoolToVis}}"/>
+                                </StackPanel>
+                            </Expander.Header>
+                            <StackPanel Margin="0,10,0,0">
+                                <ItemsControl ItemsSource="{Binding FlagRows}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid Columns="3"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <CheckBox Content="{Binding Name}"
+                                                      IsChecked="{Binding IsSet}"
+                                                      Style="{StaticResource ItemCheckBoxStyle}"
+                                                      Margin="0,0,10,3"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <TextBlock Text="PC Level Mult is not here - it is the checkbox in the Level block, and the same switch in two places could be set twice with different answers."
+                                           Foreground="{DynamicResource ColorTextTertiary}"
+                                           FontStyle="Italic"
+                                           TextWrapping="Wrap"
+                                           Margin="0,6,0,0"/>
+                            </StackPanel>
+                        </Expander>
+
+                        <!-- TEMPLATE FLAGS -->
+                        <!-- HIDDEN (see the note at the top of the editor). To bring it back, restore
+                             Visibility="{Binding HasTemplate, Converter={StaticResource BoolToVis}}". -->
+                        <Expander Style="{StaticResource DarkExpanderStyle}" IsExpanded="False"
+                                  Visibility="Collapsed">
+                            <Expander.Header>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Inherited from the template"/>
+                                    <TextBlock Text="●"
+                                               Foreground="{DynamicResource ColorWarning}"
+                                               Margin="6,0,0,0"
+                                               ToolTip="Changed"
+                                               Visibility="{Binding IsTemplateFlagsChanged, Converter={StaticResource BoolToVis}}"/>
+                                </StackPanel>
+                            </Expander.Header>
+                            <StackPanel Margin="0,10,0,0">
+                                <TextBlock Text="Unticking one of these stops that part being taken from the template - which is what makes an edit to it take effect at all."
+                                           Foreground="{DynamicResource ColorTextSecondary}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,8"/>
+                                <ItemsControl ItemsSource="{Binding TemplateFlagRows}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid Columns="3"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <CheckBox Content="{Binding Name}"
+                                                      IsChecked="{Binding IsSet}"
+                                                      Style="{StaticResource ItemCheckBoxStyle}"
+                                                      Margin="0,0,10,3"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Expander>
+
+                    </StackPanel>
+                </ScrollViewer>
+
+</UserControl>
