@@ -22,6 +22,9 @@ namespace SkyrimCraftingTool.Services.Adapters
         public IEnumerable<COBJRecord> GetCOBJByPlugin(string pluginFileName) => _handler.GetCOBJByPlugin(pluginFileName);
 
         public List<EnchantmentRecord> GetAllEnchantments() => _handler.GetAllEnchantments();
+        public List<NpcRecord> GetAllNpcs() => _handler.LoadNpcs();
+        public Services.NpcLabels GetNpcLabels() => _handler.LoadNpcLabels();
+        public System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<string>> GetLeveledNpcs() => _handler.LoadLeveledNpcs();
 
         public COBJRecord CreateNewCOBJRecordForItem(ItemNodeVM item, bool isTemper) => _handler.CreateNewCOBJRecordForItem(item, isTemper);
         public System.Collections.Generic.IList<object> SearchByType(string type) => _handler.SearchByType(type);

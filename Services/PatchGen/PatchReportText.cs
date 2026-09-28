@@ -77,6 +77,21 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     sb.AppendLine("  " + edit);
             }
 
+            // Named group by group rather than counted, and for a sharper reason than the leveled lists
+            // above: a group rule reaches every NPC its filter matches AT RUNTIME, including records
+            // this database has never seen. "40 group rules" says nothing about that; the group's name
+            // and its member count do. The "NOT confirmed" mark is section 8's unchecked state - a
+            // group whose membership may have grown since anybody last looked at it.
+            if (report.NpcGroupSummaries.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"NPC groups in this patch ({report.NpcGroupSummaries.Count}):");
+                sb.AppendLine("  These reach NPCs by filter, including ones added by mods after this scan.");
+
+                foreach (var group in report.NpcGroupSummaries)
+                    sb.AppendLine("  " + group);
+            }
+
             if (report.CobjMasters.Count > 0)
             {
                 sb.AppendLine();

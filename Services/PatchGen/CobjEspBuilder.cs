@@ -39,6 +39,10 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // docs/EnchantmentPatch-Plan.md.
         public int EnchantmentOverrideCount { get; set; }
 
+        // NPC records overridden for combat style, crime faction or a removed perk - the three NPC
+        // edits no SkyPatcher operation can carry (N-P6).
+        public int NpcOverrideCount { get; set; }
+
         public bool EslFlagged { get; set; }
         public string OutputPath { get; set; } = "";
         public IReadOnlyList<string> Masters { get; set; } = Array.Empty<string>();
@@ -111,7 +115,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
             bool eslWhenPossible,
             WinningRecordResolver? resolver = null,
             IReadOnlyList<EnchantmentEspEntry>? enchantmentOverrides = null,
-            IReadOnlyList<NewEnchantmentEspEntry>? newEnchantments = null)
+            IReadOnlyList<NewEnchantmentEspEntry>? newEnchantments = null,
+            IReadOnlyList<NpcEspEntry>? npcOverrides = null)
         {
             var result = new CobjEspResult();
             var modKey = ModKey.FromFileName(espFileName);
@@ -157,6 +162,27 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 catch (Exception ex)
                 {
                     result.Warnings.Add($"{e.EditorId}: new enchantment skipped — {ex.Message}");
+                    result.SkippedCount++;
+                }
+            }
+
+            // NPC overrides (N-P6). Last, and named one by one in the report: an override is the one
+            // thing this tool writes that a later-loading mod cannot undo, so it is never silent.
+            foreach (var e in (npcOverrides ?? Array.Empty<NpcEspEntry>())
+                     .OrderBy(x => x.NpcKey, StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    if (NpcEspBuilder.Build(mod, e, resolver, result.Warnings))
+                    {
+                        result.NpcOverrideCount++;
+                        result.Warnings.Add(NpcEspBuilder.Describe(e));
+                    }
+                    else result.SkippedCount++;
+                }
+                catch (Exception ex)
+                {
+                    result.Warnings.Add($"{e.NpcKey}: NPC override skipped — {ex.Message}");
                     result.SkippedCount++;
                 }
             }

@@ -29,6 +29,19 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // filterByContainers/addOnceToContainers.
         public int ContainerRuleCount { get; set; }
 
+        // NPCs (Prio 8). One rule per edited NPC.
+        public int NpcRuleCount { get; set; }
+
+        // Group rules (G5, docs/NPC-Gruppen-Plan.md section 5). Counted apart from NpcRuleCount because
+        // the two are different things: a single-NPC rule names one record, a group rule reaches every
+        // NPC its filter matches - including ones this database has never seen.
+        public int NpcGroupRuleCount { get; set; }
+
+        // One line per group that produced rules: what it is called, how many members it resolved to,
+        // and whether it has been confirmed since the last scan (section 8). A group rule can reach
+        // NPCs nobody looked at, so the report says which groups were in the patch at all.
+        public List<string> NpcGroupSummaries { get; } = new();
+
         // COBJ overrides deep-copied from the winning record vs. rebuilt from tracked fields only.
         public int CobjDeepCopiedCount { get; set; }
         public int CobjFromScratchCount { get; set; }
@@ -44,6 +57,10 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // Enchantments overridden in the generated ESP because their worn-restriction FLST
         // assignment changed - the one enchantment edit SkyPatcher has no operation for (E-P4).
         public int EnchantmentEspOverrideCount { get; set; }
+
+        // NPC records overridden for combat style, crime faction or a removed perk - the three NPC
+        // edits no SkyPatcher operation can carry (N-P6, docs/NPC-Plan.md �3.2).
+        public int NpcEspOverrideCount { get; set; }
 
         // Enchantments the user created in the tool. They exist in no plugin - the generated ESP is
         // what brings them into the game, so they are new records, not overrides.
@@ -71,12 +88,13 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // Non-fatal issues: dead keyword references, skipped name edits, recipes without output, etc.
         public List<string> Warnings { get; } = new();
 
-        public int SkyPatcherRuleCount => ArmorRuleCount + WeaponRuleCount + EnchantmentRuleCount + FormListRuleCount + LeveledListRuleCount + LeveledListPropertyRuleCount + ContainerRuleCount;
+        public int SkyPatcherRuleCount => ArmorRuleCount + WeaponRuleCount + EnchantmentRuleCount + FormListRuleCount + LeveledListRuleCount + LeveledListPropertyRuleCount + ContainerRuleCount + NpcRuleCount + NpcGroupRuleCount;
         public int CobjRecordCount => CobjNewCount + CobjOverrideCount;
         // Enchantment ESP overrides count too: a run whose only change is a re-pointed worn-
         // restriction list produces no rules and no COBJ records, but it definitely generated something.
         public bool AnythingGenerated =>
             SkyPatcherRuleCount > 0 || CobjRecordCount > 0 || EnchantmentEspOverrideCount > 0
+            || NpcEspOverrideCount > 0
             || NewEnchantmentCount > 0;
 
         // Deliberately separate from Warnings: an ESP override is not a problem, but it IS a
@@ -114,6 +132,12 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 {
                     DryRun ? rules : $"{rules} across {WrittenFiles.Count} file(s)",
                 };
+                // The two NPC counts are named only when there are any: neither was in this line before
+                // G5, and a permanent "0 NPC rule(s)" on a patch that never touches NPCs is noise.
+                if (NpcRuleCount > 0)
+                    parts.Add($"{NpcRuleCount} NPC rule(s)");
+                if (NpcGroupRuleCount > 0)
+                    parts.Add($"{NpcGroupRuleCount} NPC group rule(s) from {NpcGroupSummaries.Count} group(s)");
                 if (CobjRecordCount > 0 || CobjEspPath != null)
                     parts.Add($"COBJ: {CobjNewCount} new + {CobjOverrideCount} override" +
                               (CobjEslFlagged ? " (ESL)" : ""));
@@ -121,6 +145,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     parts.Add($"{EnchantmentEspOverrideCount} enchantment ESP override(s)");
                 if (NewEnchantmentCount > 0)
                     parts.Add($"{NewEnchantmentCount} new enchantment(s)");
+                if (NpcEspOverrideCount > 0)
+                    parts.Add($"{NpcEspOverrideCount} NPC ESP override(s)");
                 if (CobjFromScratchCount > 0)
                     parts.Add($"{CobjFromScratchCount} COBJ override(s) rebuilt from scratch");
                 if (CobjConditionRewriteSkippedCount > 0)

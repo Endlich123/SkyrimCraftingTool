@@ -22,6 +22,15 @@ namespace SkyrimCraftingTool.Services
         // Enchantments
         List<EnchantmentRecord> GetAllEnchantments();
 
+        // NPCs (Prio 8). Read on demand rather than from the startup cache - the NPC tab may never
+        // be opened, and this is the biggest block in the database.
+        List<NpcRecord> GetAllNpcs();
+        NpcLabels GetNpcLabels();
+
+        // Levelled character lists: list key -> what it holds. For NpcStatResolver, which turns an NPC
+        // drawn from one into the range of what it can be (G8).
+        System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<string>> GetLeveledNpcs();
+
         // COBJ helpers (create/save recipes)
         COBJRecord CreateNewCOBJRecordForItem(ItemNodeVM item, bool isTemper);
         void SaveCOBJ(COBJRecord rec);

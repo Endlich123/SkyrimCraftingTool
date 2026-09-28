@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using Microsoft.Data.Sqlite;
 using SkyrimCraftingTool.Model;
 
@@ -16,6 +17,52 @@ namespace SkyrimCraftingTool.Services.PatchGen
     public sealed class PatchDataReader
     {
         private readonly string _connString;
+
+        // NPCs, edited ones only.
+        //
+        // NOT backed up with the rest of the NPC code in 2026-09-18 - this method was the one
+        // piece of the rollback that lived in a file nobody copied, and it had to be written again
+        // from its two call sites. LoadNpcsFrom takes a PATH, not a connection string, so the one
+        // this reader was built with is unpicked here rather than adding a second way to say where
+        // the database is.
+        public List<NpcRecord> ReadEditedNpcs()
+        {
+            var builder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(_connString);
+            return ItemDBHandler.LoadNpcsFrom(builder.DataSource, editedOnly: true);
+        }
+
+        // Every NPC, for the group rules: membership is computed from the predicate, so the builder needs
+        // the whole set and not only the edited rows. Same unpicking of the connection string as above.
+        public List<NpcRecord> ReadAllNpcs()
+        {
+            var builder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(_connString);
+            return ItemDBHandler.LoadNpcsFrom(builder.DataSource);
+        }
+
+        // The levelled character lists, so a group spanning NPCs drawn from one gets a real level range
+        // rather than none (G8).
+        public Dictionary<string, List<string>> ReadLeveledNpcs()
+        {
+            var builder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(_connString);
+            return ItemDBHandler.LoadLeveledNpcsFrom(builder.DataSource);
+        }
+
+        // The groups themselves. The store guards a database without the tables, so a patch run against
+        // an item.db from before G2 gets an empty list rather than an exception.
+        public List<NpcGroup> ReadNpcGroups()
+        {
+            var builder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(_connString);
+            return new NpcGroupStore(builder.DataSource).LoadAll();
+        }
+
+        // What the user last confirmed each group contains (section 8). The report holds this against the
+        // membership the rules were built from, so it can say "54 -> 71, 17 new from XYZ.esp" rather than
+        // only whether a group was checked at all.
+        public Dictionary<long, List<string>> ReadGroupSnapshots()
+        {
+            var builder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(_connString);
+            return new NpcGroupStore(builder.DataSource).LoadSnapshots();
+        }
 
         public PatchDataReader(string? connString = null)
         {

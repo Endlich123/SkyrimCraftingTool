@@ -37,9 +37,28 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // Ordered "op=value" fragments, fully formatted.
         public IReadOnlyList<string> Operations { get; init; } = Array.Empty<string>();
 
+        // More than one target on one line, as "Plugin|FormID" strings ready to write.
+        //
+        // Only the NPC rules use this, and only after merging: several NPCs that get exactly the
+        // same treatment share a line rather than taking one each (NpcRuleBuilder.MergeIdenticalRules).
+        // Empty means the single TargetPlugin/TargetFormId pair above is the target, which is how
+        // every other rule in this tool works.
+        public IReadOnlyList<string> ExplicitTargets { get; init; } = Array.Empty<string>();
+
         // Raw "Plugin|FormID" keyword keys this rule references (add + remove), 6-hex, for the
         // generator's dead-reference validation pass. Not used by the writer.
         public IReadOnlyList<string> ReferencedKeywordKeys { get; init; } = Array.Empty<string>();
+
+        // Several complete filter clauses, already formatted ("filterByClass=Skyrim.esm|01CE17",
+        // "filterByEditorIdContainsExcluded=DLC2EncBandit03"). Used by the GROUP rules (G5,
+        // docs/NPC-Gruppen-Plan.md section 5) and by nothing else.
+        //
+        // WHY IT CANNOT BE THE FIELDS ABOVE: every other rule in this tool filters on ONE record it
+        // also edits, so "directive + target" says everything. A group filters on a class, a name
+        // fragment and two flags at once, and none of those is a target. When this list is non-empty
+        // the writer emits it verbatim instead of building "directive=target" - see
+        // SkyPatcherIniWriter.
+        public IReadOnlyList<string> FilterClauses { get; init; } = Array.Empty<string>();
 
         public bool HasChanges => Operations.Count > 0;
     }

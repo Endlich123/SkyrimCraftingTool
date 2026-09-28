@@ -30,6 +30,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
         private readonly List<IDisposable> _open = new();
         private readonly Dictionary<FormKey, IConstructibleObjectGetter> _cobj = new();
         private readonly Dictionary<FormKey, IObjectEffectGetter> _ench = new();
+        private readonly Dictionary<FormKey, INpcGetter> _npc = new();
 
         private WinningRecordResolver() { }
 
@@ -42,8 +43,11 @@ namespace SkyrimCraftingTool.Services.PatchGen
             IEnumerable<(string FileName, string FullPath)> pluginsInLoadOrder,
             IReadOnlySet<FormKey> wantedCobj,
             IReadOnlySet<FormKey> wantedEnchantments,
-            ICollection<string> warnings)
+            ICollection<string> warnings,
+            IReadOnlySet<FormKey>? wantedNpcs = null)
         {
+            wantedNpcs ??= new HashSet<FormKey>();
+
             var resolver = new WinningRecordResolver();
             if (wantedCobj.Count == 0 && wantedEnchantments.Count == 0)
                 return resolver;
@@ -66,6 +70,14 @@ namespace SkyrimCraftingTool.Services.PatchGen
                         foreach (var ench in mod.ObjectEffects)
                             if (wantedEnchantments.Contains(ench.FormKey))
                                 resolver._ench[ench.FormKey] = ench;
+
+                    // NPCs (N-P6). Same one pass as the other two: opening a 120-plugin load order
+                    // again for a handful of records would double the most expensive part of the
+                    // export.
+                    if (wantedNpcs.Count > 0)
+                        foreach (var npc in mod.Npcs)
+                            if (wantedNpcs.Contains(npc.FormKey))
+                                resolver._npc[npc.FormKey] = npc;
                 }
                 catch (Exception ex)
                 {
@@ -144,6 +156,9 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
         public bool TryGetEnchantment(FormKey key, out IObjectEffectGetter winner) =>
             _ench.TryGetValue(key, out winner!);
+
+        public bool TryGetNpc(FormKey key, out INpcGetter winner) =>
+            _npc.TryGetValue(key, out winner!);
 
         public void Dispose()
         {

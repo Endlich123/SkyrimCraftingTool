@@ -20,6 +20,10 @@ namespace SkyrimCraftingTool.Services.PatchGen
         private readonly PatchFormIdMapStore _formIdMap;
         private readonly IReferenceResolver? _references;
 
+        // NPC records that need an ESP override (N-P6): combat style, crime faction, removed perks.
+        // Filled in GenerateSkyPatcher, where the edited NPCs are already read.
+        private readonly List<NpcEspEntry> _npcEspOverrides = new();
+
         public PatchGeneratorService(
             string? connString = null,
             IReferenceResolver? references = null,
@@ -157,6 +161,93 @@ namespace SkyrimCraftingTool.Services.PatchGen
             }
 
             var formListByPlugin = new Dictionary<string, List<SkyPatcherRule>>(StringComparer.OrdinalIgnoreCase);
+
+            // NPCs (Prio 8 / N-P2). One rule per edited NPC, filtered by its own FormID - see
+            // NPC-Plan.md §10 for why the single editor never emits a faction rule.
+            var npcByPlugin = new Dictionary<string, List<SkyPatcherRule>>(StringComparer.OrdinalIgnoreCase);
+            var editedNpcs = _itemReader.ReadEditedNpcs();
+
+            // The three edits no rule can carry. Collected here because the rows are already read,
+            // and handed to the ESP builder at the end of the run.
+            _npcEspOverrides.AddRange(NpcEspBuilder.EntriesFor(editedNpcs));
+
+            foreach (var npc in editedNpcs)
+            {
+                var rule = NpcRuleBuilder.Build(npc, out var inherited);
+                if (!Accept(rule, null, report)) continue;
+
+                report.NpcRuleCount += Add(npcByPlugin, rule!);
+
+                // Written as asked, but said out loud: 61,4 % of NPCs take their stats from a
+                // template, and for those the game never reads the value this rule sets. Clearing
+                // the flag is a separate operation the user has to add deliberately (N-P4), so the
+                // patch is not silently "fixed" here - it is reported.
+                if (inherited != null)
+                {
+                    report.Warnings.Add(
+                        $"{inherited.Key}: stats patched, but this NPC inherits its stats from " +
+                        $"{inherited.TemplateKey} - the game will not read them. The Stats template " +
+                        "flag has to be cleared as well (removeTemplateFlags=stats).");
+                }
+            }
+
+            // NPC GROUPS (G5, docs/NPC-Gruppen-Plan.md section 5). A different kind of rule from the one
+            // above: that one names a record, this one names a filter and reaches whatever matches it at
+            // runtime - including NPCs from mods this database has never seen. That reach is the point,
+            // and it is why every group in the patch is listed in the report by name and member count.
+            //
+            // Read once for all groups: resolving membership walks every NPC, and 40 groups over 6.642
+            // records is 40 walks, not 40 reads.
+            var groups = _itemReader.ReadNpcGroups().Where(g => g.Active).ToList();
+
+            if (groups.Count > 0)
+            {
+                // Checked over ALL groups, because the thing it catches is not a property of any one of
+                // them: SkyPatcher keeps only the last calcLevelMin/Max pair it reads (see
+                // NpcGroupRuleBuilder.ScalingCollisions). A group rule alone cannot see the collision.
+                foreach (var collision in NpcGroupRuleBuilder.ScalingCollisions(groups))
+                    report.Warnings.Add(collision);
+
+                var allNpcs = _itemReader.ReadAllNpcs();
+                var groupStats = new NpcStatResolver(allNpcs, _itemReader.ReadLeveledNpcs());
+                var snapshots = _itemReader.ReadGroupSnapshots();
+
+                foreach (var group in groups.OrderBy(g => g.SortOrder).ThenBy(g => g.Id))
+                {
+                    var set = NpcGroupRuleBuilder.BuildRules(group, allNpcs, groupStats, groups);
+
+                    foreach (var problem in set.Problems)
+                        report.Warnings.Add($"group '{group.Name}': {problem}");
+
+                    if (!set.HasRules) continue;
+
+                    foreach (var rule in set.Rules)
+                    {
+                        if (!Accept(rule, null, report)) continue;
+                        report.NpcGroupRuleCount += Add(npcByPlugin, rule);
+                    }
+
+                    // Section 8: a group may have grown members since anybody last looked at it - a mod
+                    // install is enough. Marked rather than withheld: the user asked for the patch, and
+                    // the honest answer is to name which groups moved and by how much.
+                    snapshots.TryGetValue(group.Id, out var snapshot);
+                    var drift = NpcGroupDiffService.Compare(group, set.Members, snapshot);
+
+                    report.NpcGroupSummaries.Add(
+                        $"{group.Name}: {set.Members.Count} NPC(s), {set.Rules.Count} rule(s)" +
+                        (drift.NeedsAttention ? $"  ** UNCHECKED: {drift.Detail}" : ""));
+
+                    // In the warnings too, and with names: the summaries block is a list of what the
+                    // patch did, and a group that silently took in 17 new NPCs is not that - it is
+                    // something to look at before playing.
+                    if (drift.Changed)
+                        report.Warnings.Add(
+                            $"group '{group.Name}' changed since it was confirmed: {drift.Detail}" +
+                            (drift.AddedNames.Count > 0 ? $" - {string.Join(", ", drift.AddedNames)}" : "") +
+                            (drift.AddedNamesNotShown > 0 ? $" and {drift.AddedNamesNotShown} more" : ""));
+                }
+            }
+
             foreach (var pair in _formListReader.ReadEditedFormLists())
             {
                 var rule = FormListRuleBuilder.BuildRule(pair);
@@ -230,6 +321,15 @@ namespace SkyrimCraftingTool.Services.PatchGen
             // in game (2026-09-07). Same camelCase rule as formList above.
             WriteCategory(options, LeveledListFolder, lvliByPlugin, report);
             WriteCategory(options, ContainerFolder, contByPlugin, report);
+
+            // "npc" is SkyPatcher.s own folder name, same rule as the others: passed through verbatim.
+            //
+            // Merged first: a bulk edit produces one rule per NPC, and hundreds of lines differing
+            // only in a FormID are what filterByNpcs.s comma-separated list exists to avoid.
+            foreach (var plugin in npcByPlugin.Keys.ToList())
+                npcByPlugin[plugin] = NpcRuleBuilder.MergeIdenticalRules(npcByPlugin[plugin]);
+
+            WriteCategory(options, "npc", npcByPlugin, report);
         }
 
         // The readers take a path; the service is built with a connection string.

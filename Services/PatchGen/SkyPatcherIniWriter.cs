@@ -30,7 +30,24 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 if (!string.IsNullOrWhiteSpace(rule.Comment))
                     sb.Append("; ").Append(rule.Comment).Append('\n');
 
-                string targets = rule.TargetPlugin + "|" + PatchFormat.FormId8(rule.TargetFormId);
+                // A group rule brings its own filter clauses - several of them, none of which is a
+                // target (see SkyPatcherRule.FilterClauses). Every other rule filters on the one
+                // record it edits, so "directive=target" is the whole filter.
+                if (rule.FilterClauses.Count > 0)
+                {
+                    sb.Append(string.Join(":", rule.FilterClauses))
+                      .Append(':')
+                      .Append(string.Join(":", rule.Operations))
+                      .Append('\n');
+                    continue;
+                }
+
+                // A merged NPC rule names several targets on one line (see
+                // NpcRuleBuilder.MergeIdenticalRules); every other rule names the single pair it was
+                // built with.
+                string targets = rule.ExplicitTargets.Count > 0
+                    ? string.Join(",", rule.ExplicitTargets)
+                    : rule.TargetPlugin + "|" + PatchFormat.FormId8(rule.TargetFormId);
 
                 sb.Append(rule.FilterDirective)
                   .Append('=')
