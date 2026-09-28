@@ -46,6 +46,15 @@ namespace SkyrimCraftingTool.Model
             // is a flag on the PARENT row, checked before we touch its children below.
             var conditionsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM COBJ WHERE ConditionsEdited = 1;");
             var effectsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM Enchantments WHERE EffectsEdited = 1;");
+            // Same protection for the NPC child lists: a rescan refreshes the record, never the
+            // faction or skill list the user has taken over.
+            var npcFactionsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM Npc WHERE FactionsEdited = 1;");
+            var npcSkillsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM Npc WHERE SkillsEdited = 1;");
+            // The three N-P3 lists share one flag: they are edited together on one screen, and a
+            // flag each would be three columns that are always set at the same time.
+            var npcSpellsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM Npc WHERE ListsEdited = 1;");
+            var npcPerksEditedKeys = npcSpellsEditedKeys;
+            var npcItemsEditedKeys = npcSpellsEditedKeys;
             // E3: FLST content-edit protection is per-list now (WornRestrictionListState), not per
             // enchantment. The legacy Enchantments.KeywordsEdited term is unioned in so a DB not yet
             // migrated by RepairBlankWornRestrictionEdits still protects a hand-edited list.
@@ -70,6 +79,26 @@ namespace SkyrimCraftingTool.Model
             using var insertLeveledList = PrepareUpsert(connection, "LeveledList", LeveledListColumnNames, LeveledListParamNames);
             using var insertLeveledListEntry = PrepareInsert(connection, "LeveledListEntry", LeveledListEntryColumnNames, LeveledListEntryParamNames);
             using var insertLeveledListLost = PrepareInsert(connection, "LeveledListLostEntry", LeveledListLostColumnNames, LeveledListLostParamNames);
+            using var insertLeveledNpc = PrepareUpsert(connection, "LeveledNpc", LeveledNpcColumnNames, LeveledNpcParamNames);
+            using var insertLeveledNpcEntry = PrepareInsert(connection, "LeveledNpcEntry", LeveledNpcEntryColumnNames, LeveledNpcEntryParamNames);
+            using var insertNpc = PrepareUpsert(connection, "Npc", NpcColumnNames, NpcParamNames);
+            using var insertNpcFaction = PrepareInsert(connection, "NpcFactions", NpcFactionColumnNames, NpcFactionParamNames);
+            using var insertNpcSkill = PrepareInsert(connection, "NpcSkills", NpcSkillColumnNames, NpcSkillParamNames);
+            using var insertNpcSpell = PrepareInsert(connection, "NpcSpells", NpcSpellColumnNames, NpcSpellParamNames);
+            using var insertNpcPerk = PrepareInsert(connection, "NpcPerks", NpcPerkColumnNames, NpcPerkParamNames);
+            using var insertNpcItem = PrepareInsert(connection, "NpcItems", NpcItemColumnNames, NpcItemParamNames);
+            using var insertSpells = PrepareUpsert(connection, "Spells", NamedCatalogueColumnNames, NamedCatalogueParamNames);
+            using var insertShouts = PrepareUpsert(connection, "Shouts", NamedCatalogueColumnNames, NamedCatalogueParamNames);
+            using var insertLeveledSpells = PrepareUpsert(connection, "LeveledSpells", PlainCatalogueColumnNames, PlainCatalogueParamNames);
+            using var insertPerkCatalogue = PrepareUpsert(connection, "NpcPerkCatalogue", NamedCatalogueColumnNames, NamedCatalogueParamNames);
+            using var insertFactions = PrepareUpsert(connection, "Factions", NamedCatalogueColumnNames, NamedCatalogueParamNames);
+            using var insertClasses = PrepareUpsert(connection, "Classes", ClassColumnNames, ClassParamNames);
+            using var insertClassSkills = PrepareInsert(connection, "ClassSkillWeights", ClassSkillColumnNames, ClassSkillParamNames);
+            using var insertRaces = PrepareUpsert(connection, "Races", RaceColumnNames, RaceParamNames);
+            using var insertRaceBoosts = PrepareInsert(connection, "RaceSkillBoosts", RaceBoostColumnNames, RaceBoostParamNames);
+            using var insertOutfits = PrepareUpsert(connection, "Outfits", PlainCatalogueColumnNames, PlainCatalogueParamNames);
+            using var insertVoiceTypes = PrepareUpsert(connection, "VoiceTypes", PlainCatalogueColumnNames, PlainCatalogueParamNames);
+            using var insertCombatStyles = PrepareUpsert(connection, "CombatStyles", PlainCatalogueColumnNames, PlainCatalogueParamNames);
 
             // Multi-row "batch" counterparts of the commands above. At the row counts a full scan
             // produces (100k+), one ExecuteNonQuery() per row was the dominant cost (~140k round
@@ -92,6 +121,26 @@ namespace SkyrimCraftingTool.Model
             using var insertLeveledListBatch = PrepareUpsertBatch(connection, "LeveledList", LeveledListColumnNames, LeveledListParamNames, BatchSize);
             using var insertLeveledListEntryBatch = PrepareInsertBatch(connection, "LeveledListEntry", LeveledListEntryColumnNames, LeveledListEntryParamNames, BatchSize);
             using var insertLeveledListLostBatch = PrepareInsertBatch(connection, "LeveledListLostEntry", LeveledListLostColumnNames, LeveledListLostParamNames, BatchSize);
+            using var insertLeveledNpcBatch = PrepareUpsertBatch(connection, "LeveledNpc", LeveledNpcColumnNames, LeveledNpcParamNames, BatchSize);
+            using var insertLeveledNpcEntryBatch = PrepareInsertBatch(connection, "LeveledNpcEntry", LeveledNpcEntryColumnNames, LeveledNpcEntryParamNames, BatchSize);
+            using var insertNpcBatch = PrepareUpsertBatch(connection, "Npc", NpcColumnNames, NpcParamNames, BatchSize);
+            using var insertNpcFactionBatch = PrepareInsertBatch(connection, "NpcFactions", NpcFactionColumnNames, NpcFactionParamNames, BatchSize);
+            using var insertNpcSkillBatch = PrepareInsertBatch(connection, "NpcSkills", NpcSkillColumnNames, NpcSkillParamNames, BatchSize);
+            using var insertNpcSpellBatch = PrepareInsertBatch(connection, "NpcSpells", NpcSpellColumnNames, NpcSpellParamNames, BatchSize);
+            using var insertNpcPerkBatch = PrepareInsertBatch(connection, "NpcPerks", NpcPerkColumnNames, NpcPerkParamNames, BatchSize);
+            using var insertNpcItemBatch = PrepareInsertBatch(connection, "NpcItems", NpcItemColumnNames, NpcItemParamNames, BatchSize);
+            using var insertSpellsBatch = PrepareUpsertBatch(connection, "Spells", NamedCatalogueColumnNames, NamedCatalogueParamNames, BatchSize);
+            using var insertShoutsBatch = PrepareUpsertBatch(connection, "Shouts", NamedCatalogueColumnNames, NamedCatalogueParamNames, BatchSize);
+            using var insertLeveledSpellsBatch = PrepareUpsertBatch(connection, "LeveledSpells", PlainCatalogueColumnNames, PlainCatalogueParamNames, BatchSize);
+            using var insertPerkCatalogueBatch = PrepareUpsertBatch(connection, "NpcPerkCatalogue", NamedCatalogueColumnNames, NamedCatalogueParamNames, BatchSize);
+            using var insertFactionsBatch = PrepareUpsertBatch(connection, "Factions", NamedCatalogueColumnNames, NamedCatalogueParamNames, BatchSize);
+            using var insertClassesBatch = PrepareUpsertBatch(connection, "Classes", ClassColumnNames, ClassParamNames, BatchSize);
+            using var insertClassSkillsBatch = PrepareInsertBatch(connection, "ClassSkillWeights", ClassSkillColumnNames, ClassSkillParamNames, BatchSize);
+            using var insertRacesBatch = PrepareUpsertBatch(connection, "Races", RaceColumnNames, RaceParamNames, BatchSize);
+            using var insertRaceBoostsBatch = PrepareInsertBatch(connection, "RaceSkillBoosts", RaceBoostColumnNames, RaceBoostParamNames, BatchSize);
+            using var insertOutfitsBatch = PrepareUpsertBatch(connection, "Outfits", PlainCatalogueColumnNames, PlainCatalogueParamNames, BatchSize);
+            using var insertVoiceTypesBatch = PrepareUpsertBatch(connection, "VoiceTypes", PlainCatalogueColumnNames, PlainCatalogueParamNames, BatchSize);
+            using var insertCombatStylesBatch = PrepareUpsertBatch(connection, "CombatStyles", PlainCatalogueColumnNames, PlainCatalogueParamNames, BatchSize);
 
             using var transaction = connection.BeginTransaction();
             insertArmor.Transaction = transaction;
@@ -109,6 +158,26 @@ namespace SkyrimCraftingTool.Model
             insertLeveledList.Transaction = transaction;
             insertLeveledListEntry.Transaction = transaction;
             insertLeveledListLost.Transaction = transaction;
+            insertLeveledNpc.Transaction = transaction;
+            insertLeveledNpcEntry.Transaction = transaction;
+            insertNpc.Transaction = transaction;
+            insertNpcFaction.Transaction = transaction;
+            insertNpcSkill.Transaction = transaction;
+            insertNpcSpell.Transaction = transaction;
+            insertNpcPerk.Transaction = transaction;
+            insertNpcItem.Transaction = transaction;
+            insertSpells.Transaction = transaction;
+            insertShouts.Transaction = transaction;
+            insertLeveledSpells.Transaction = transaction;
+            insertPerkCatalogue.Transaction = transaction;
+            insertFactions.Transaction = transaction;
+            insertClasses.Transaction = transaction;
+            insertClassSkills.Transaction = transaction;
+            insertRaces.Transaction = transaction;
+            insertRaceBoosts.Transaction = transaction;
+            insertOutfits.Transaction = transaction;
+            insertVoiceTypes.Transaction = transaction;
+            insertCombatStyles.Transaction = transaction;
             insertArmorBatch.Transaction = transaction;
             insertWeaponBatch.Transaction = transaction;
             insertCOBJBatch.Transaction = transaction;
@@ -124,6 +193,26 @@ namespace SkyrimCraftingTool.Model
             insertLeveledListBatch.Transaction = transaction;
             insertLeveledListEntryBatch.Transaction = transaction;
             insertLeveledListLostBatch.Transaction = transaction;
+            insertLeveledNpcBatch.Transaction = transaction;
+            insertLeveledNpcEntryBatch.Transaction = transaction;
+            insertNpcBatch.Transaction = transaction;
+            insertNpcFactionBatch.Transaction = transaction;
+            insertNpcSkillBatch.Transaction = transaction;
+            insertNpcSpellBatch.Transaction = transaction;
+            insertNpcPerkBatch.Transaction = transaction;
+            insertNpcItemBatch.Transaction = transaction;
+            insertSpellsBatch.Transaction = transaction;
+            insertShoutsBatch.Transaction = transaction;
+            insertLeveledSpellsBatch.Transaction = transaction;
+            insertPerkCatalogueBatch.Transaction = transaction;
+            insertFactionsBatch.Transaction = transaction;
+            insertClassesBatch.Transaction = transaction;
+            insertClassSkillsBatch.Transaction = transaction;
+            insertRacesBatch.Transaction = transaction;
+            insertRaceBoostsBatch.Transaction = transaction;
+            insertOutfitsBatch.Transaction = transaction;
+            insertVoiceTypesBatch.Transaction = transaction;
+            insertCombatStylesBatch.Transaction = transaction;
 
             // Parse phase runs in parallel across plugins (CPU-bound, no DB access); a second,
             // strictly sequential phase then does all SQLite writes (one connection/transaction).
@@ -190,6 +279,7 @@ namespace SkyrimCraftingTool.Model
             var latestEnchantmentByKey = new Dictionary<string, ParsedEnchantment>();
             var latestContainerByKey = new Dictionary<string, ParsedContainer>();
             var latestLeveledListByKey = new Dictionary<string, ParsedLeveledList>();
+            var latestLeveledNpcByKey = new Dictionary<string, ParsedLeveledList>();
 
             foreach (var parsed in parsedPlugins)
             {
@@ -209,6 +299,12 @@ namespace SkyrimCraftingTool.Model
 
                 foreach (var list in parsed.LeveledLists)
                     latestLeveledListByKey[(string)list.Values[0]] = list;
+
+                // Same winner rule as every other record: the last active plugin that defines the key
+                // owns it. An LVLN has no lost-entry pass - that exists for the item lists, where the
+                // tool offers to put dropped entries back.
+                foreach (var list in parsed.LeveledNpcs)
+                    latestLeveledNpcByKey[(string)list.Values[0]] = list;
             }
 
             // What the overrides threw away.
@@ -357,10 +453,134 @@ namespace SkyrimCraftingTool.Model
             // reference is real data, and Ordinal keeps the rows apart.
             var allLeveledLists = new List<object[]>();
             var allLeveledListEntries = new List<object[]>();
+            var allLeveledNpcs = new List<object[]>();
+            var allLeveledNpcEntries = new List<object[]>();
             foreach (var list in latestLeveledListByKey.Values)
             {
                 allLeveledLists.Add(list.Values);
                 allLeveledListEntries.AddRange(list.EntryRows);
+            }
+
+            foreach (var list in latestLeveledNpcByKey.Values)
+            {
+                allLeveledNpcs.Add(list.Values);
+                allLeveledNpcEntries.AddRange(list.EntryRows);
+            }
+
+            // NPCs (Prio 8 / N-P1). Winner-per-key like every other parent table, and the children
+            // come only from that winner: a later plugin that dropped a faction must not leave the
+            // earlier plugin's row behind.
+            //
+            // Child rows are skipped for any NPC whose list the user has edited, the same protection
+            // COBJ conditions and enchantment effects have - a rescan may refresh the record, never
+            // the user's own list.
+            var latestNpcByKey = new Dictionary<string, ParsedNpc>(StringComparer.OrdinalIgnoreCase);
+            foreach (var parsed in parsedPlugins)
+                foreach (var npc in parsed.Npcs)
+                    latestNpcByKey[(string)npc.Values[0]] = npc;
+
+            var allNpcs = new List<object[]>();
+            var allNpcFactions = new List<object[]>();
+            var allNpcSkills = new List<object[]>();
+            var npcFactionRewriteKeys = new List<string>();
+            var npcSkillRewriteKeys = new List<string>();
+
+            foreach (var kv in latestNpcByKey)
+            {
+                allNpcs.Add(kv.Value.Values);
+
+                if (!npcFactionsEditedKeys.Contains(kv.Key))
+                {
+                    npcFactionRewriteKeys.Add(kv.Key);
+                    allNpcFactions.AddRange(kv.Value.FactionRows);
+                }
+
+                if (!npcSkillsEditedKeys.Contains(kv.Key))
+                {
+                    npcSkillRewriteKeys.Add(kv.Key);
+                    allNpcSkills.AddRange(kv.Value.SkillRows);
+                }
+            }
+
+            // The catalogues are pure reference data with no per-plugin identity to preserve, so the
+            // last plugin defining a key simply wins - the same rule the record tables use.
+            List<object[]> Deduped(Func<ParsedPluginData, List<object[]>> pick)
+            {
+                var latest = new Dictionary<string, object[]>(StringComparer.OrdinalIgnoreCase);
+                foreach (var parsed in parsedPlugins)
+                    foreach (var row in pick(parsed))
+                        latest[(string)row[0]] = row;
+                return latest.Values.ToList();
+            }
+
+            // Child rows follow their parent's winner. A class overridden by a later plugin brings
+            // its own skill list, and keeping the earlier plugin's rows alongside it would leave a
+            // class weighted for skills its winning version never names - the same rule the leveled
+            // lists and COBJ conditions follow, one level down.
+            List<object[]> DedupedChildren(Func<ParsedPluginData, List<object[]>> pick)
+            {
+                var byParent = new Dictionary<string, List<object[]>>(StringComparer.OrdinalIgnoreCase);
+                foreach (var parsed in parsedPlugins)
+                    foreach (var group in pick(parsed).GroupBy(r => (string)r[0], StringComparer.OrdinalIgnoreCase))
+                        byParent[group.Key] = group.ToList();
+
+                return byParent.Values.SelectMany(rows => rows).ToList();
+            }
+
+            var allFactions = Deduped(p => p.FactionRows);
+            var allClasses = Deduped(p => p.ClassRows);
+            var allClassSkillWeights = DedupedChildren(p => p.ClassSkillWeightRows);
+            var allRaces = Deduped(p => p.RaceRows);
+            var allRaceSkillBoosts = DedupedChildren(p => p.RaceSkillBoostRows);
+            var allOutfits = Deduped(p => p.OutfitRows);
+            var allVoiceTypes = Deduped(p => p.VoiceTypeRows);
+            var allCombatStyles = Deduped(p => p.CombatStyleRows);
+
+            var allSpellCatalogue = Deduped(p => p.SpellCatalogueRows);
+            var allShoutCatalogue = Deduped(p => p.ShoutCatalogueRows);
+            var allLeveledSpellCatalogue = Deduped(p => p.LeveledSpellCatalogueRows);
+            var allPerkCatalogue = Deduped(p => p.PerkCatalogueRows);
+
+            // WHICH of the three a spell entry is can only be decided here, with every plugin's
+            // records in hand: the NPC record keeps spells, shouts and leveled spells in one list and
+            // the link carries nothing but a FormKey. SkyPatcher has three separate operations for
+            // them, so an entry whose kind is unknown would be unpatchable - it stays blank rather
+            // than being guessed into the wrong one.
+            var spellKinds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in allSpellCatalogue) spellKinds[(string)row[0]] = "spell";
+            foreach (var row in allShoutCatalogue) spellKinds[(string)row[0]] = "shout";
+            foreach (var row in allLeveledSpellCatalogue) spellKinds[(string)row[0]] = "levspell";
+
+            var allNpcSpells = new List<object[]>();
+            var allNpcPerks = new List<object[]>();
+            var allNpcItems = new List<object[]>();
+            var npcSpellRewriteKeys = new List<string>();
+            var npcPerkRewriteKeys = new List<string>();
+            var npcItemRewriteKeys = new List<string>();
+
+            foreach (var kv in latestNpcByKey)
+            {
+                if (!npcSpellsEditedKeys.Contains(kv.Key))
+                {
+                    npcSpellRewriteKeys.Add(kv.Key);
+                    foreach (var row in kv.Value.SpellRows)
+                    {
+                        row[2] = spellKinds.GetValueOrDefault((string)row[1], "");
+                        allNpcSpells.Add(row);
+                    }
+                }
+
+                if (!npcPerksEditedKeys.Contains(kv.Key))
+                {
+                    npcPerkRewriteKeys.Add(kv.Key);
+                    allNpcPerks.AddRange(kv.Value.PerkRows);
+                }
+
+                if (!npcItemsEditedKeys.Contains(kv.Key))
+                {
+                    npcItemRewriteKeys.Add(kv.Key);
+                    allNpcItems.AddRange(kv.Value.ItemRows);
+                }
             }
 
             // --- Write phase: strictly sequential — do not parallelize SQLite writes ---
@@ -390,6 +610,21 @@ namespace SkyrimCraftingTool.Model
             // it outright. Cleared for every list this scan saw, then refilled - a list whose
             // conflict was resolved by removing a mod must not keep reporting a loss.
             DeleteChildRowsForKeys(connection, transaction, "LeveledListLostEntry", "ListKey", latestLeveledListByKey.Keys.ToList());
+            DeleteChildRowsForKeys(connection, transaction, "LeveledNpcEntry", "ListKey", latestLeveledNpcByKey.Keys.ToList());
+            // Same rule for the NPC child lists: they have no identity of their own, so the only
+            // correct refresh is "drop this NPC.s rows, insert the ones just parsed". Keys protected
+            // by FactionsEdited/SkillsEdited were excluded above and are never touched here.
+            // Rewritten wholesale per parent, like every other child table here.
+            DeleteChildRowsForKeys(connection, transaction, "ClassSkillWeights", "ClassKey",
+                allClasses.Select(r => (string)r[0]).ToList());
+            DeleteChildRowsForKeys(connection, transaction, "RaceSkillBoosts", "RaceKey",
+                allRaces.Select(r => (string)r[0]).ToList());
+            DeleteChildRowsForKeys(connection, transaction, "NpcFactions", "NpcKey", npcFactionRewriteKeys);
+            DeleteChildRowsForKeys(connection, transaction, "NpcSkills", "NpcKey", npcSkillRewriteKeys);
+            DeleteChildRowsForKeys(connection, transaction, "NpcSpells", "NpcKey", npcSpellRewriteKeys);
+            DeleteChildRowsForKeys(connection, transaction, "NpcPerks", "NpcKey", npcPerkRewriteKeys);
+            DeleteChildRowsForKeys(connection, transaction, "NpcItems", "NpcKey", npcItemRewriteKeys);
+
 
             ExecuteRowsBatched(insertArmor, insertArmorBatch, ArmorParamNames, allArmor, BatchSize);
             ExecuteRowsBatched(insertWeapon, insertWeaponBatch, WeaponParamNames, allWeapon, BatchSize);
@@ -405,8 +640,28 @@ namespace SkyrimCraftingTool.Model
             ExecuteRowsBatched(insertGlobals, insertGlobalsBatch, GlobalParamNames, allGlobals, BatchSize);
             ExecuteRowsBatched(insertLeveledList, insertLeveledListBatch, LeveledListParamNames, allLeveledLists, BatchSize);
             ExecuteRowsBatched(insertLeveledListEntry, insertLeveledListEntryBatch, LeveledListEntryParamNames, allLeveledListEntries, BatchSize);
+            ExecuteRowsBatched(insertLeveledNpc, insertLeveledNpcBatch, LeveledNpcParamNames, allLeveledNpcs, BatchSize);
+            ExecuteRowsBatched(insertLeveledNpcEntry, insertLeveledNpcEntryBatch, LeveledNpcEntryParamNames, allLeveledNpcEntries, BatchSize);
             ExecuteRowsBatched(insertLeveledListLost, insertLeveledListLostBatch, LeveledListLostParamNames,
                 lostEntriesByList.Values.SelectMany(v => v.Values).ToList(), BatchSize);
+            ExecuteRowsBatched(insertNpc, insertNpcBatch, NpcParamNames, allNpcs, BatchSize);
+            ExecuteRowsBatched(insertNpcFaction, insertNpcFactionBatch, NpcFactionParamNames, allNpcFactions, BatchSize);
+            ExecuteRowsBatched(insertNpcSkill, insertNpcSkillBatch, NpcSkillParamNames, allNpcSkills, BatchSize);
+            ExecuteRowsBatched(insertNpcSpell, insertNpcSpellBatch, NpcSpellParamNames, allNpcSpells, BatchSize);
+            ExecuteRowsBatched(insertNpcPerk, insertNpcPerkBatch, NpcPerkParamNames, allNpcPerks, BatchSize);
+            ExecuteRowsBatched(insertNpcItem, insertNpcItemBatch, NpcItemParamNames, allNpcItems, BatchSize);
+            ExecuteRowsBatched(insertSpells, insertSpellsBatch, NamedCatalogueParamNames, allSpellCatalogue, BatchSize);
+            ExecuteRowsBatched(insertShouts, insertShoutsBatch, NamedCatalogueParamNames, allShoutCatalogue, BatchSize);
+            ExecuteRowsBatched(insertLeveledSpells, insertLeveledSpellsBatch, PlainCatalogueParamNames, allLeveledSpellCatalogue, BatchSize);
+            ExecuteRowsBatched(insertPerkCatalogue, insertPerkCatalogueBatch, NamedCatalogueParamNames, allPerkCatalogue, BatchSize);
+            ExecuteRowsBatched(insertFactions, insertFactionsBatch, NamedCatalogueParamNames, allFactions, BatchSize);
+            ExecuteRowsBatched(insertClasses, insertClassesBatch, ClassParamNames, allClasses, BatchSize);
+            ExecuteRowsBatched(insertClassSkills, insertClassSkillsBatch, ClassSkillParamNames, allClassSkillWeights, BatchSize);
+            ExecuteRowsBatched(insertRaces, insertRacesBatch, RaceParamNames, allRaces, BatchSize);
+            ExecuteRowsBatched(insertRaceBoosts, insertRaceBoostsBatch, RaceBoostParamNames, allRaceSkillBoosts, BatchSize);
+            ExecuteRowsBatched(insertOutfits, insertOutfitsBatch, PlainCatalogueParamNames, allOutfits, BatchSize);
+            ExecuteRowsBatched(insertVoiceTypes, insertVoiceTypesBatch, PlainCatalogueParamNames, allVoiceTypes, BatchSize);
+            ExecuteRowsBatched(insertCombatStyles, insertCombatStylesBatch, PlainCatalogueParamNames, allCombatStyles, BatchSize);
 
             // Parent tables: anything not touched by this scan is no longer defined by any currently
             // active plugin — mark it inactive (hidden from Load*) instead of deleting, so its
@@ -422,8 +677,22 @@ namespace SkyrimCraftingTool.Model
             MarkInactiveExcept(connection, transaction, "Enchantments", "Key", latestEnchantmentByKey.Keys, extraWhere: "Original = 1");
             MarkInactiveExcept(connection, transaction, "Container", "ContainerKey", latestContainerByKey.Keys);
             MarkInactiveExcept(connection, transaction, "MagicEffects", "Key", allMagicEffects.Select(r => (string)r[0]));
+            // real load order (a mod.s master list may lowercase a name the file itself capitalises).
+            // Measured: exactly one NPC was written and immediately marked inactive again by this.
+            MarkInactiveExcept(connection, transaction, "Npc", "Key", allNpcs.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "Factions", "Key", allFactions.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "Classes", "Key", allClasses.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "Races", "Key", allRaces.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "Outfits", "Key", allOutfits.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "VoiceTypes", "Key", allVoiceTypes.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "CombatStyles", "Key", allCombatStyles.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "Spells", "Key", allSpellCatalogue.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "Shouts", "Key", allShoutCatalogue.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "LeveledSpells", "Key", allLeveledSpellCatalogue.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "NpcPerkCatalogue", "Key", allPerkCatalogue.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "Globals", "Key", allGlobals.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "LeveledList", "Key", latestLeveledListByKey.Keys);
+            MarkInactiveExcept(connection, transaction, "LeveledNpc", "Key", latestLeveledNpcByKey.Keys);
 
             writeSw.Stop();
             Debug.WriteLine($"[ItemDB] Write phase: {writeSw.ElapsedMilliseconds} ms");
@@ -550,6 +819,25 @@ namespace SkyrimCraftingTool.Model
             public List<ParsedFormList> FormLists = new();
             public List<ParsedLeveledList> LeveledLists = new();
 
+            // LVLN. Same shape as an LVLI list - a header row plus positional entries - so it reuses
+            // ParsedLeveledList rather than carrying a second class that differs in nothing.
+            public List<ParsedLeveledList> LeveledNpcs = new();
+
+            // NPCs and the reference catalogues they point at (Prio 8 / N-P1).
+            public List<ParsedNpc> Npcs = new();
+            public List<object[]> FactionRows = new();
+            public List<object[]> ClassRows = new();
+            public List<object[]> ClassSkillWeightRows = new();
+            public List<object[]> RaceRows = new();
+            public List<object[]> RaceSkillBoostRows = new();
+            public List<object[]> OutfitRows = new();
+            public List<object[]> VoiceTypeRows = new();
+            public List<object[]> CombatStyleRows = new();
+            public List<object[]> SpellCatalogueRows = new();
+            public List<object[]> ShoutCatalogueRows = new();
+            public List<object[]> LeveledSpellCatalogueRows = new();
+            public List<object[]> PerkCatalogueRows = new();
+
         }
 
         // E3: every FLST in the plugin (not just enchant-referenced ones) and its members. Feeds the
@@ -582,6 +870,25 @@ namespace SkyrimCraftingTool.Model
         // A leveled list plus its entries. Same parent/child shape as ParsedContainer, and for the
         // same reason: only the winning plugin's version of a list may contribute entries, or a
         // later plugin that REMOVED an entry would leave the earlier one behind forever.
+        // The two stats a record does not have to name. A class that leaves a weight out is not
+        // saying "zero" so much as "nothing here", but the calculation divides by the SUM of the
+        // three - so a missing one has to count as 0 rather than propagate a null through it.
+        private static int StatWeight(System.Collections.Generic.IReadOnlyDictionary<BasicStat, byte>? weights, BasicStat stat)
+            => weights != null && weights.TryGetValue(stat, out var value) ? value : 0;
+
+        private static float Starting(IRaceGetter race, BasicStat stat)
+            => race.Starting != null && race.Starting.TryGetValue(stat, out var value) ? value : 0f;
+
+        private sealed class ParsedNpc
+        {
+            public object[] Values;
+            public List<object[]> FactionRows = new();
+            public List<object[]> SkillRows = new();
+            public List<object[]> SpellRows = new();
+            public List<object[]> PerkRows = new();
+            public List<object[]> ItemRows = new();
+        }
+
         private sealed class ParsedLeveledList
         {
             public object[] Values;
@@ -606,8 +913,62 @@ namespace SkyrimCraftingTool.Model
         private static readonly string[] ContainerLvliParamNames = { "@containerKey", "@lvliKey", "@lvliName" };
         private static readonly string[] ContainerEntryParamNames = { "@containerKey", "@ordinal", "@reference", "@count" };
         private static readonly string[] LeveledListParamNames = { "@key", "@editorID", "@chanceNone", "@flags", "@globalKey" };
+        private static readonly string[] LeveledNpcParamNames = { "@key", "@editorID" };
+        private static readonly string[] LeveledNpcEntryParamNames = { "@listKey", "@ordinal", "@reference", "@level", "@count" };
         private static readonly string[] LeveledListEntryParamNames = { "@listKey", "@ordinal", "@reference", "@level", "@count" };
         private static readonly string[] LeveledListLostParamNames = { "@listKey", "@reference", "@level", "@count", "@lostFrom", "@ambiguous" };
+
+        private static readonly string[] NpcParamNames =
+        {
+            "@key", "@editorID", "@name", "@shortName", "@classKey", "@raceKey",
+            "@usesMult", "@level", "@levelMult", "@calcMin", "@calcMax",
+            "@health", "@magicka", "@stamina", "@healthOff", "@magickaOff", "@staminaOff",
+            "@flags", "@templateFlags", "@templateKey",
+            "@voice", "@outfit", "@sleepOutfit", "@deathItem", "@skin", "@combatStyle", "@crimeFaction",
+            "@weight", "@height",
+            "@aggression", "@confidence", "@assistance", "@morality", "@mood", "@energy",
+            "@keywords",
+        };
+
+        private static readonly string[] NpcColumnNames =
+        {
+            "Key", "EditorID", "Name", "ShortName", "ClassKey", "RaceKey",
+            "UsesPcLevelMult", "Level", "LevelMult", "CalcMinLevel", "CalcMaxLevel",
+            "Health", "Magicka", "Stamina", "HealthOffset", "MagickaOffset", "StaminaOffset",
+            "Flags", "TemplateFlags", "TemplateKey",
+            "VoiceKey", "DefaultOutfitKey", "SleepOutfitKey", "DeathItemKey", "SkinKey", "CombatStyleKey", "CrimeFactionKey",
+            "Weight", "Height",
+            "Aggression", "Confidence", "Assistance", "Morality", "Mood", "EnergyLevel",
+            "Keywords",
+        };
+
+        private static readonly string[] NpcFactionParamNames = { "@npcKey", "@factionKey", "@rank" };
+        private static readonly string[] NpcFactionColumnNames = { "NpcKey", "FactionKey", "Rank" };
+
+        private static readonly string[] NpcSkillParamNames = { "@npcKey", "@skill", "@value", "@offset" };
+        private static readonly string[] NpcSpellParamNames = { "@npcKey", "@spellKey", "@kind" };
+        private static readonly string[] NpcSpellColumnNames = { "NpcKey", "SpellKey", "Kind" };
+        private static readonly string[] NpcPerkParamNames = { "@npcKey", "@perkKey", "@rank" };
+        private static readonly string[] NpcPerkColumnNames = { "NpcKey", "PerkKey", "Rank" };
+        private static readonly string[] NpcItemParamNames = { "@npcKey", "@itemKey", "@count" };
+        private static readonly string[] NpcItemColumnNames = { "NpcKey", "ItemKey", "Count" };
+        private static readonly string[] NpcSkillColumnNames = { "NpcKey", "Skill", "Value", "Offset" };
+        private static readonly string[] NamedCatalogueParamNames = { "@key", "@editorID", "@name" };
+        private static readonly string[] NamedCatalogueColumnNames = { "Key", "EditorID", "Name" };
+        private static readonly string[] PlainCatalogueParamNames = { "@key", "@editorID" };
+        private static readonly string[] PlainCatalogueColumnNames = { "Key", "EditorID" };
+
+        // Classes and races outgrew the shared catalogue shape when their AutoCalc numbers were
+        // added - they are no longer just "key, editorID, name".
+        private static readonly string[] ClassParamNames = { "@key", "@editorID", "@name", "@hw", "@mw", "@sw" };
+        private static readonly string[] ClassColumnNames = { "Key", "EditorID", "Name", "HealthWeight", "MagickaWeight", "StaminaWeight" };
+        private static readonly string[] RaceParamNames = { "@key", "@editorID", "@name", "@sh", "@sm", "@ss" };
+        private static readonly string[] RaceColumnNames = { "Key", "EditorID", "Name", "StartingHealth", "StartingMagicka", "StartingStamina" };
+        private static readonly string[] ClassSkillParamNames = { "@classKey", "@skill", "@weight" };
+        private static readonly string[] ClassSkillColumnNames = { "ClassKey", "Skill", "Weight" };
+        private static readonly string[] RaceBoostParamNames = { "@raceKey", "@skill", "@boost" };
+        private static readonly string[] RaceBoostColumnNames = { "RaceKey", "Skill", "Boost" };
+
         private static readonly string[] MagicEffectParamNames =
             { "@key", "@editorID", "@name", "@hasMag", "@hasDur", "@hasAre", "@castType", "@targetType" };
         private static readonly string[] GlobalParamNames = { "@key", "@editorID", "@value" };
@@ -636,6 +997,8 @@ namespace SkyrimCraftingTool.Model
         private static readonly string[] ContainerLvliColumnNames = { "ContainerKey", "LVLiKey", "LVLiName" };
         private static readonly string[] ContainerEntryColumnNames = { "ContainerKey", "Ordinal", "Reference", "Count" };
         private static readonly string[] LeveledListColumnNames = { "Key", "EditorID", "ChanceNone", "Flags", "GlobalKey" };
+        private static readonly string[] LeveledNpcColumnNames = { "Key", "EditorID" };
+        private static readonly string[] LeveledNpcEntryColumnNames = { "ListKey", "Ordinal", "Reference", "Level", "Count" };
         private static readonly string[] LeveledListEntryColumnNames = { "ListKey", "Ordinal", "Reference", "Level", "Count" };
         private static readonly string[] LeveledListLostColumnNames = { "ListKey", "Reference", "Level", "Count", "LostFrom", "Ambiguous" };
         internal static readonly string[] MagicEffectColumnNames =
@@ -1194,6 +1557,48 @@ namespace SkyrimCraftingTool.Model
                 result.LeveledLists.Add(parsedList);
             }
 
+            // LEVELLED CHARACTER LISTS (LVLN)
+            //
+            // Read for one reason: 1.650 NPCs take their stats from one of these rather than from a
+            // record, and until this was scanned the tool could only say "no single value" where it can
+            // now say "35 - 497, 12 candidates" (NPC-Gruppen-Plan.md section 2, case D).
+            //
+            // Only the key, the name and the entries. The LVLI block above carries chance-none, flags
+            // and a global because the container tab edits those; nothing edits an LVLN, so a column
+            // here would go stale unread.
+            foreach (var list in mod.LeveledNpcs.Records)
+            {
+                string listKey = KeyFactory.BuildMasterKey(list.FormKey);
+
+                var parsedList = new ParsedLeveledList
+                {
+                    Values = new object[] { listKey, list.EditorID ?? "" },
+                };
+
+                if (list.Entries != null)
+                {
+                    int ordinal = 0;
+                    foreach (var entry in list.Entries)
+                    {
+                        var data = entry.Data;
+                        if (data == null) continue;
+
+                        // The reference may be another LVLN rather than an NPC - these nest the same
+                        // way the item lists do. Stored as it stands; the reader follows it.
+                        parsedList.EntryRows.Add(new object[]
+                        {
+                            listKey,
+                            ordinal++,
+                            KeyFactory.BuildMasterKey(data.Reference.FormKey),
+                            (int)data.Level,
+                            (int)data.Count,
+                        });
+                    }
+                }
+
+                result.LeveledNpcs.Add(parsedList);
+            }
+
             // GLOBALS
             //
             // Only interesting because a leveled list can take its chance-none from one instead of
@@ -1251,6 +1656,239 @@ namespace SkyrimCraftingTool.Model
                     mgef.TargetType.ToString()
                 });
             }
+
+            // NPCs (Prio 8 / N-P1, docs/NPC-Plan.md)
+            //
+            // Read, not edited: this fills the base columns only, the shadow columns are the user's.
+            // Everything with a SkyPatcher operation is stored the way the patch string wants it -
+            // the AI values as their tokens, the skills under their token names - so nothing further
+            // down the chain has to translate.
+            foreach (var npc in mod.Npcs.Records)
+            {
+                string npcKey = KeyFactory.BuildMasterKey(npc.FormKey);
+                var cfg = npc.Configuration;
+
+                // The record stores EITHER a fixed level OR a multiplier of the player's, as two
+                // different types. Which one it is matters more than the number: a "level 1" NPC
+                // that is really a multiplier reads as harmless and is not.
+                bool usesMult = cfg.Level is IPcLevelMultGetter;
+                int level = cfg.Level is INpcLevelGetter fixedLevel ? fixedLevel.Level : 0;
+                float levelMult = cfg.Level is IPcLevelMultGetter mult ? mult.LevelMult : 0f;
+
+                var skills = npc.PlayerSkills;
+                var ai = npc.AIData;
+
+                result.Npcs.Add(new ParsedNpc
+                {
+                    Values = new object[]
+                    {
+                        npcKey,
+                        npc.EditorID ?? "",
+                        npc.Name?.ToString() ?? "",
+                        npc.ShortName?.ToString() ?? "",
+                        LinkKey(npc.Class.FormKey),
+                        LinkKey(npc.Race.FormKey),
+
+                        usesMult ? 1 : 0,
+                        level,
+                        (double)levelMult,
+                        (int)cfg.CalcMinLevel,
+                        (int)cfg.CalcMaxLevel,
+
+                        (int)(skills?.Health ?? 0),
+                        (int)(skills?.Magicka ?? 0),
+                        (int)(skills?.Stamina ?? 0),
+                        (int)cfg.HealthOffset,
+                        (int)cfg.MagickaOffset,
+                        (int)cfg.StaminaOffset,
+
+                        (long)(uint)cfg.Flags,
+                        (long)(uint)cfg.TemplateFlags,
+                        LinkKey(npc.Template.FormKey),
+
+                        LinkKey(npc.Voice.FormKey),
+                        LinkKey(npc.DefaultOutfit.FormKey),
+                        LinkKey(npc.SleepingOutfit.FormKey),
+                        LinkKey(npc.DeathItem.FormKey),
+                        LinkKey(npc.WornArmor.FormKey),
+                        LinkKey(npc.CombatStyle.FormKey),
+                        LinkKey(npc.CrimeFaction.FormKey),
+
+                        (double)npc.Weight,
+                        (double)npc.Height,
+
+                        // The record field the layout calls Responsibility IS the morality setting -
+                        // its values are AnyCrime/ViolenceAgainstEnemies/PropertyCrimeOnly/NoCrime,
+                        // which is exactly what setMorality takes. There is no second, numeric one.
+                        ai == null ? "" : NpcAiTokens.Token(ai.Aggression),
+                        ai == null ? "" : NpcAiTokens.Token(ai.Confidence),
+                        ai == null ? "" : NpcAiTokens.Token(ai.Assistance),
+                        ai == null ? "" : NpcAiTokens.Token(ai.Responsibility),
+                        ai == null ? "" : NpcAiTokens.Token(ai.Mood),
+                        (int)(ai?.EnergyLevel ?? 0),
+
+                        string.Join(",", (npc.Keywords ?? Array.Empty<IFormLinkGetter<IKeywordGetter>>())
+                            .Select(k => KeyFactory.BuildMasterKey(k.FormKey))),
+                    },
+                });
+
+                var parsedNpc = result.Npcs[^1];
+
+                // A membership is faction plus rank. Deduplicated on the key, because the table has
+                // PRIMARY KEY(NpcKey, FactionKey) and a record that listed one twice would collide -
+                // measured, none does, but a plain INSERT would crash rather than shrug.
+                var seenFactions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var rank in npc.Factions)
+                {
+                    string factionKey = LinkKey(rank.Faction.FormKey);
+                    if (string.IsNullOrEmpty(factionKey) || !seenFactions.Add(factionKey)) continue;
+
+                    parsedNpc.FactionRows.Add(new object[] { npcKey, factionKey, (int)rank.Rank });
+                }
+
+                // Only the skills the record actually carries. The editor fills in the missing ones
+                // itself so the 18 rows always read in the same order - that belongs on the screen,
+                // not in the database, where it would be 118.000 rows of mostly zero.
+                if (skills != null)
+                {
+                    foreach (var pair in skills.SkillValues)
+                    {
+                        string token = NpcSkillNames.Token(pair.Key);
+                        if (string.IsNullOrEmpty(token)) continue;
+
+                        skills.SkillOffsets.TryGetValue(pair.Key, out byte offset);
+                        parsedNpc.SkillRows.Add(new object[] { npcKey, token, (int)pair.Value, (int)offset });
+                    }
+                }
+                // Spells, shouts and leveled spells all live in ActorEffect. Which of the three a
+                // given entry is cannot be told from the link - it carries a FormKey and nothing
+                // else - so the kind is left blank here and filled in during the write phase, once
+                // every plugin's SPEL/SHOU/LVSP records have been collected.
+                foreach (var spell in npc.ActorEffect ?? Array.Empty<IFormLinkGetter<ISpellRecordGetter>>())
+                {
+                    string spellKey = LinkKey(spell.FormKey);
+                    if (spellKey.Length == 0) continue;
+
+                    parsedNpc.SpellRows.Add(new object[] { npcKey, spellKey, "" });
+                }
+
+                // The record carries a rank per perk; perksToAdd takes only the perk, so the rank is
+                // scanned for the screen and never patched.
+                foreach (var perk in npc.Perks ?? Array.Empty<IPerkPlacementGetter>())
+                {
+                    string perkKey = LinkKey(perk.Perk.FormKey);
+                    if (perkKey.Length == 0) continue;
+
+                    parsedNpc.PerkRows.Add(new object[] { npcKey, perkKey, (int)perk.Rank });
+                }
+
+                // Inventory. Counts are summed per item rather than kept as separate rows: the two
+                // operations address an item by its key, so two rows for one key could not be
+                // patched apart, and the sum is what the NPC actually ends up carrying.
+                //
+                // A negative count is real data (it means a leveled-item multiplier in some
+                // records), so it is summed rather than clamped.
+                var itemCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                foreach (var entry in npc.Items ?? Array.Empty<IContainerEntryGetter>())
+                {
+                    string itemKey = LinkKey(entry.Item?.Item.FormKey ?? default);
+                    if (itemKey.Length == 0) continue;
+
+                    itemCounts[itemKey] = itemCounts.GetValueOrDefault(itemKey) + (entry.Item?.Count ?? 0);
+                }
+
+                foreach (var pair in itemCounts)
+                    parsedNpc.ItemRows.Add(new object[] { npcKey, pair.Key, pair.Value });
+
+            }
+
+            // The reference catalogues. Cheap to read (1.458 factions, 180 classes, 335 races, 687
+            // outfits, 186 voice types, 270 combat styles in the real load order) and the editor
+            // cannot name anything an NPC points at without them.
+            foreach (var faction in mod.Factions.Records)
+                result.FactionRows.Add(new object[]
+                { KeyFactory.BuildMasterKey(faction.FormKey), faction.EditorID ?? "", faction.Name?.ToString() ?? "" });
+
+            // Classes and races are read for their NUMBERS, not just their names.
+            //
+            // They are the two inputs of the engine's own stat calculation, which 67,5 % of NPCs
+            // are subject to (AutoCalcStats). For those the stored Health/Magicka/Stamina is dead
+            // data - measured in game, a record saying 35 Health showed 300 - so anything that
+            // wants to state a true value has to be able to redo that calculation.
+            foreach (var cls in mod.Classes.Records)
+            {
+                string classKey = KeyFactory.BuildMasterKey(cls.FormKey);
+
+                result.ClassRows.Add(new object[]
+                {
+                    classKey,
+                    cls.EditorID ?? "",
+                    cls.Name?.ToString() ?? "",
+                    StatWeight(cls.StatWeights, BasicStat.Health),
+                    StatWeight(cls.StatWeights, BasicStat.Magicka),
+                    StatWeight(cls.StatWeights, BasicStat.Stamina),
+                });
+
+                if (cls.SkillWeights != null)
+                    foreach (var pair in cls.SkillWeights)
+                        result.ClassSkillWeightRows.Add(new object[] { classKey, pair.Key.ToString(), (int)pair.Value });
+            }
+
+            foreach (var race in mod.Races.Records)
+            {
+                string raceKey = KeyFactory.BuildMasterKey(race.FormKey);
+
+                result.RaceRows.Add(new object[]
+                {
+                    raceKey,
+                    race.EditorID ?? "",
+                    race.Name?.ToString() ?? "",
+                    Starting(race, BasicStat.Health),
+                    Starting(race, BasicStat.Magicka),
+                    Starting(race, BasicStat.Stamina),
+                });
+
+                // Seven fixed slots in the record rather than a list, most of them empty. A boost of
+                // 0 carries no information and is skipped, so a race with two bonuses stores two
+                // rows instead of seven.
+                foreach (var boost in new[]
+                         {
+                             race.SkillBoost0, race.SkillBoost1, race.SkillBoost2, race.SkillBoost3,
+                             race.SkillBoost4, race.SkillBoost5, race.SkillBoost6,
+                         })
+                {
+                    if (boost == null || boost.Boost == 0) continue;
+                    result.RaceSkillBoostRows.Add(new object[] { raceKey, boost.Skill.ToString(), (int)boost.Boost });
+                }
+            }
+
+            foreach (var outfit in mod.Outfits.Records)
+                result.OutfitRows.Add(new object[]
+                { KeyFactory.BuildMasterKey(outfit.FormKey), outfit.EditorID ?? "" });
+
+            foreach (var voice in mod.VoiceTypes.Records)
+                result.VoiceTypeRows.Add(new object[]
+                { KeyFactory.BuildMasterKey(voice.FormKey), voice.EditorID ?? "" });
+
+            foreach (var style in mod.CombatStyles.Records)
+                result.CombatStyleRows.Add(new object[]
+                { KeyFactory.BuildMasterKey(style.FormKey), style.EditorID ?? "" });
+
+            foreach (var spell in mod.Spells.Records)
+                result.SpellCatalogueRows.Add(new object[]
+                { KeyFactory.BuildMasterKey(spell.FormKey), spell.EditorID ?? "", spell.Name?.ToString() ?? "" });
+
+            foreach (var shout in mod.Shouts.Records)
+                result.ShoutCatalogueRows.Add(new object[]
+                { KeyFactory.BuildMasterKey(shout.FormKey), shout.EditorID ?? "", shout.Name?.ToString() ?? "" });
+
+            foreach (var lvsp in mod.LeveledSpells.Records)
+                result.LeveledSpellCatalogueRows.Add(new object[]
+                { KeyFactory.BuildMasterKey(lvsp.FormKey), lvsp.EditorID ?? "" });
+
+            foreach (var perk in mod.Perks.Records)
+                result.PerkCatalogueRows.Add(new object[]
+                { KeyFactory.BuildMasterKey(perk.FormKey), perk.EditorID ?? "", perk.Name?.ToString() ?? "" });
 
 
             return result;

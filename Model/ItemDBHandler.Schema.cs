@@ -92,6 +92,30 @@ namespace SkyrimCraftingTool.Model
                 AddColumnIfMissing(connection, table, "IsEditedObjectEffectKey", "TEXT");
             }
 
+            // Npc shipped before the three N-P3 lists existed, so an item.db from earlier in this
+            // development has the table but not the column. CREATE TABLE IF NOT EXISTS does nothing
+            // for an existing table - this is the only thing that adds a column to one.
+            AddColumnIfMissing(connection, "Npc", "ListsEdited", "INTEGER NOT NULL DEFAULT 0");
+
+            // N-P6 made these two editable, so an item.db from before it has the table without the
+            // columns.
+            AddColumnIfMissing(connection, "Npc", "IsEditedCombatStyleKey", "TEXT");
+            AddColumnIfMissing(connection, "Npc", "IsEditedCrimeFactionKey", "TEXT");
+
+            // The AutoCalc inputs, added after Classes and Races had shipped as name catalogues.
+            // Stay NULL on an existing database until the next scan - the scan is the only writer.
+            AddColumnIfMissing(connection, "Classes", "HealthWeight", "INTEGER");
+            AddColumnIfMissing(connection, "Classes", "MagickaWeight", "INTEGER");
+            AddColumnIfMissing(connection, "Classes", "StaminaWeight", "INTEGER");
+            AddColumnIfMissing(connection, "Races", "StartingHealth", "REAL");
+            AddColumnIfMissing(connection, "Races", "StartingMagicka", "REAL");
+            AddColumnIfMissing(connection, "Races", "StartingStamina", "REAL");
+
+            // Who wrote a filter line. Empty for every line that existed before this column did, which
+            // is the right answer: they were all written by hand or by the seeder, and the auto-check
+            // must not offer to remove something it did not add.
+            AddColumnIfMissing(connection, "NpcGroupPredicate", "Origin", "TEXT NOT NULL DEFAULT ''");
+
             RepairBlankWornRestrictionEdits(connection);
 
             // After the repairs above: those run plain UPDATE/DELETE on the existing tables, and
@@ -877,6 +901,521 @@ namespace SkyrimCraftingTool.Model
                     Value REAL,
                     Active INTEGER NOT NULL DEFAULT 1
                 );
+
+
+                -- ===================================================================
+                -- NPCs (Prio 8 / N-P1, docs/NPC-Plan.md)
+                -- ===================================================================
+                --
+                -- One row per NPC record. Same shadow-column contract as Armor/Weapons: the base
+                -- column is what the scan read, IsEdited<X> is what the user set, and a rescan
+                -- overwrites only the base one. Read back with
+                -- CASE WHEN IsEdited = 1 AND IsEditedX IS NOT NULL THEN IsEditedX ELSE X END.
+                --
+                -- Which columns have a shadow twin is a decision, not an oversight: only fields
+                -- SkyPatcher can actually change are editable. CombatStyleKey, CrimeFactionKey,
+                -- TemplateKey and EnergyLevel are scanned and shown but have no
+                -- operation - they would need an ESP override of the NPC record, which this patcher
+                -- avoids because 65 % of NPCs carry FaceGen data an override would freeze
+                -- (NPC-Plan.md section 1 and 3.2).
+                CREATE TABLE IF NOT EXISTS Npc (
+                    Key TEXT PRIMARY KEY COLLATE NOCASE,
+                    EditorID TEXT NOT NULL,
+                    Name TEXT,
+                    ShortName TEXT,
+
+                    -- Tree levels. Every NPC has exactly one class (measured: 0 without), which is
+                    -- what makes Plugin -> Class -> NPC a tree with no duplicates and no catch-all
+                    -- node - see NPC-Plan.md section 8.
+                    ClassKey TEXT COLLATE NOCASE,
+                    RaceKey TEXT COLLATE NOCASE,
+
+                    -- Level. Exactly one of Level / LevelMult is meaningful and UsesPcLevelMult says
+                    -- which: the record stores either a fixed level or a multiplier of the player's.
+                    -- CalcMin/CalcMax only bound the multiplier case.
+                    UsesPcLevelMult INTEGER NOT NULL DEFAULT 0,
+                    Level INTEGER,
+                    LevelMult REAL,
+                    CalcMinLevel INTEGER,
+                    CalcMaxLevel INTEGER,
+
+                    -- Two different things, both scanned, because it is not yet established which of
+                    -- them SkyPatcher's ""changeStats=health=200"" actually writes (NPC-Plan.md
+                    -- section 7, offene Frage 4). Guessing one and dropping the other would make
+                    -- that question unanswerable from the tool's own data.
+                    Health INTEGER,
+                    Magicka INTEGER,
+                    Stamina INTEGER,
+                    HealthOffset INTEGER,
+                    MagickaOffset INTEGER,
+                    StaminaOffset INTEGER,
+
+                    -- Raw ACBS flag bits and the template flags. Edited through setFlags/removeFlags
+                    -- and setTemplateFlags/removeTemplateFlags, so the diff is bit against bit.
+                    Flags INTEGER NOT NULL DEFAULT 0,
+                    TemplateFlags INTEGER NOT NULL DEFAULT 0,
+
+                    -- THE TEMPLATE TRAP (NPC-Plan.md section 4): 61,4 % of NPCs inherit their stats
+                    -- from the record this points at, and for those a stat edit writes a field the
+                    -- game never reads. Scanned so the editor can say so and the generator can warn.
+                    -- Not editable - SkyPatcher can change the template FLAGS but not the link.
+                    TemplateKey TEXT COLLATE NOCASE,
+
+                    VoiceKey TEXT COLLATE NOCASE,
+                    DefaultOutfitKey TEXT COLLATE NOCASE,
+                    SleepOutfitKey TEXT COLLATE NOCASE,
+                    DeathItemKey TEXT COLLATE NOCASE,
+                    SkinKey TEXT COLLATE NOCASE,
+                    CombatStyleKey TEXT COLLATE NOCASE,
+                    CrimeFactionKey TEXT COLLATE NOCASE,
+
+                    Weight REAL,
+                    Height REAL,
+
+                    -- AI data, stored as the token the matching operation takes (""aggressive"",
+                    -- ""brave"", ...) rather than as a number, so nothing has to translate later.
+                    --
+                    -- Morality comes from the record field the layout calls Responsibility - its
+                    -- values are AnyCrime/ViolenceAgainstEnemies/PropertyCrimeOnly/NoCrime, which is
+                    -- exactly what setMorality takes. There is no second, numeric responsibility
+                    -- field; an earlier draft of this table had one and it could never have been
+                    -- filled.
+                    Aggression TEXT,
+                    Confidence TEXT,
+                    Assistance TEXT,
+                    Morality TEXT,
+                    Mood TEXT,
+
+                    -- The one AI value with no operation of its own.
+                    EnergyLevel INTEGER,
+
+                    Keywords TEXT,
+
+                    IsEditedName TEXT,
+                    IsEditedShortName TEXT,
+                    IsEditedClassKey TEXT,
+                    IsEditedRaceKey TEXT,
+                    IsEditedUsesPcLevelMult INTEGER,
+                    IsEditedLevel INTEGER,
+                    IsEditedCalcMinLevel INTEGER,
+                    IsEditedCalcMaxLevel INTEGER,
+                    IsEditedHealth INTEGER,
+                    IsEditedMagicka INTEGER,
+                    IsEditedStamina INTEGER,
+                    IsEditedFlags INTEGER,
+                    IsEditedTemplateFlags INTEGER,
+                    IsEditedVoiceKey TEXT,
+                    IsEditedDefaultOutfitKey TEXT,
+                    IsEditedSleepOutfitKey TEXT,
+                    IsEditedDeathItemKey TEXT,
+                    IsEditedSkinKey TEXT,
+                    IsEditedWeight REAL,
+                    IsEditedHeight REAL,
+                    IsEditedAggression TEXT,
+                    IsEditedConfidence TEXT,
+                    IsEditedAssistance TEXT,
+                    IsEditedMorality TEXT,
+                    IsEditedMood TEXT,
+                    IsEditedKeywords TEXT,
+
+                    -- N-P6. These two have NO SkyPatcher operation: reaching them needs an ESP
+                    -- override of the NPC record, which is why N-P1 deliberately left them without a
+                    -- shadow column. That phase has arrived, and the columns with it - but the price
+                    -- has not changed, so the generator names every override it writes in the report
+                    -- (NPC-Plan.md section 1 and 3.2).
+                    IsEditedCombatStyleKey TEXT,
+                    IsEditedCrimeFactionKey TEXT,
+
+                    -- Set when a child row (skills, factions) was edited, so ""is this NPC edited""
+                    -- stays one read of one row - the same reason COBJ has ConditionsEdited.
+                    SkillsEdited INTEGER NOT NULL DEFAULT 0,
+                    FactionsEdited INTEGER NOT NULL DEFAULT 0,
+
+                    -- Spells, perks and inventory (N-P3). One flag for the three: they are edited
+                    -- on one screen and a column each would always be set together.
+                    ListsEdited INTEGER NOT NULL DEFAULT 0,
+
+                    IsEdited INTEGER DEFAULT 0,
+                    Active INTEGER NOT NULL DEFAULT 1,
+                    LastChanged TEXT,
+                    LastPatched TEXT
+                );
+
+                -- The 18 skills, one row each rather than 18 columns: that is the shape
+                -- ""changeSkills=twohanded=45,onehanded=50"" is built from, and a row per skill keeps
+                -- the diff to ""which rows differ"" instead of 18 column comparisons.
+                --
+                -- Skill is stored as SkyPatcher's own spelling (""twohanded"", ""heavyarmor""), so the
+                -- rule builder never has to translate.
+                CREATE TABLE IF NOT EXISTS NpcSkills (
+                    NpcKey TEXT NOT NULL COLLATE NOCASE,
+                    Skill TEXT NOT NULL COLLATE NOCASE,
+                    Value INTEGER,
+
+                    -- Read-only twin of Value: the record carries both a base value and an offset,
+                    -- and changeSkills only addresses one of them. Scanned so the difference stays
+                    -- visible rather than being silently averaged away.
+                    Offset INTEGER,
+
+                    IsEditedValue INTEGER,
+
+                    PRIMARY KEY (NpcKey, Skill)
+                );
+
+                -- Faction membership. A membership is faction PLUS rank
+                -- (factionsToAdd=Skyrim.esm|0001CBED=0), so rank is a column and not an afterthought
+                -- - measured on the real load order, 857 of 14.832 memberships carry a rank other
+                -- than 0, which is few but not none.
+                --
+                -- No NPC lists the same faction twice, so (NpcKey, FactionKey) is a real key.
+                CREATE TABLE IF NOT EXISTS NpcFactions (
+                    NpcKey TEXT NOT NULL COLLATE NOCASE,
+                    FactionKey TEXT NOT NULL COLLATE NOCASE,
+                    Rank INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (NpcKey, FactionKey)
+                );
+
+                -- Same lazy-snapshot pattern as WornRestrictionKeywords_Original: written once when
+                -- an NPC's faction list is first edited, so the rule builder can diff added against
+                -- removed without a rescan.
+                CREATE TABLE IF NOT EXISTS NpcFactions_Original (
+                    NpcKey TEXT NOT NULL COLLATE NOCASE,
+                    FactionKey TEXT NOT NULL COLLATE NOCASE,
+                    Rank INTEGER NOT NULL DEFAULT 0
+                );
+
+                -- ===================================================================
+                -- Reference catalogues for the NPC editor
+                -- ===================================================================
+                --
+                -- Name lookups for the records an NPC points at. They live here rather than in
+                -- formid.db for the same reason LeveledList does: formid.db is dropped and rebuilt
+                -- on every scan, and everything that reads NPC data reads item.db anyway.
+                --
+                -- Sizes in the real load order: 1.458 factions, 180 classes, 335 races, 687 outfits,
+                -- 186 voice types, 270 combat styles. Small enough to load whole.
+                CREATE TABLE IF NOT EXISTS Factions (
+                    Key TEXT PRIMARY KEY COLLATE NOCASE,
+                    EditorID TEXT,
+                    Name TEXT,
+                    Active INTEGER NOT NULL DEFAULT 1
+                );
+
+                -- Classes carry the WEIGHTS that decide an auto-calculated NPC's attributes.
+                --
+                -- Measured in game and the reason this exists: 4.440 of 6.580 NPCs (67,5 %) have
+                -- AutoCalcStats set, and for those the engine ignores the stored Health/Magicka/
+                -- Stamina entirely and recomputes them from race, class and level. A record said
+                -- 35 Health where the game showed 300. Reading the record is therefore not enough
+                -- to show a true number - the inputs of that calculation have to be read too.
+                --
+                -- StatWeights distribute the per-level gain between the three attributes;
+                -- SkillWeights decide how fast each skill climbs. Both come from CLAS.
+                CREATE TABLE IF NOT EXISTS Classes (
+                    Key TEXT PRIMARY KEY COLLATE NOCASE,
+                    EditorID TEXT,
+                    Name TEXT,
+                    HealthWeight INTEGER,
+                    MagickaWeight INTEGER,
+                    StaminaWeight INTEGER,
+                    Active INTEGER NOT NULL DEFAULT 1
+                );
+
+                -- One row per class and skill, for the skill half of the same calculation. Separate
+                -- table rather than 18 columns: the record stores a sparse dictionary, and a class
+                -- naming three skills should not carry fifteen NULLs.
+                CREATE TABLE IF NOT EXISTS ClassSkillWeights (
+                    ClassKey TEXT NOT NULL COLLATE NOCASE,
+                    Skill TEXT NOT NULL,
+                    Weight INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (ClassKey, Skill)
+                );
+
+                -- Races carry the BASE values the calculation starts from, before any level.
+                CREATE TABLE IF NOT EXISTS Races (
+                    Key TEXT PRIMARY KEY COLLATE NOCASE,
+                    EditorID TEXT,
+                    Name TEXT,
+                    StartingHealth REAL,
+                    StartingMagicka REAL,
+                    StartingStamina REAL,
+                    Active INTEGER NOT NULL DEFAULT 1
+                );
+
+                -- A race grants up to seven skill bonuses (Nord +10 two-handed, and so on). Stored
+                -- like the class weights above and for the same reason: seven slots in the record,
+                -- most of them empty on most races.
+                CREATE TABLE IF NOT EXISTS RaceSkillBoosts (
+                    RaceKey TEXT NOT NULL COLLATE NOCASE,
+                    Skill TEXT NOT NULL,
+                    Boost INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (RaceKey, Skill)
+                );
+
+                CREATE TABLE IF NOT EXISTS Outfits (
+                    Key TEXT PRIMARY KEY COLLATE NOCASE,
+                    EditorID TEXT,
+                    Active INTEGER NOT NULL DEFAULT 1
+                );
+
+                CREATE TABLE IF NOT EXISTS VoiceTypes (
+                    Key TEXT PRIMARY KEY COLLATE NOCASE,
+                    EditorID TEXT,
+                    Active INTEGER NOT NULL DEFAULT 1
+                );
+
+                CREATE TABLE IF NOT EXISTS CombatStyles (
+                    Key TEXT PRIMARY KEY COLLATE NOCASE,
+                    EditorID TEXT,
+                    Active INTEGER NOT NULL DEFAULT 1
+                );
+
+
+                -- ===================================================================
+                -- The remaining NPC list fields (Prio 8 / N-P3, docs/NPC-Plan.md)
+                -- ===================================================================
+                --
+                -- Each of the three follows the faction pattern: the live rows are what the editor
+                -- holds, an _Original snapshot is taken on the first edit, and the diff between them
+                -- is what the rule builder turns into add/remove operations.
+
+                -- Spells, shouts and leveled spells. The RECORD keeps all three in one list
+                -- (ActorEffect); SkyPatcher addresses them with three different operations
+                -- (spellsToAdd, shoutsToAdd, levSpellsToAdd). Kind is decided at scan time by looking
+                -- the key up in the three catalogues below - the alternative would be deciding it in
+                -- the rule builder, which has no way to know.
+                CREATE TABLE IF NOT EXISTS NpcSpells (
+                    NpcKey TEXT NOT NULL COLLATE NOCASE,
+                    SpellKey TEXT NOT NULL COLLATE NOCASE,
+
+                    -- ""spell"", ""shout"" or ""levspell"". Empty when the key resolved to none of the
+                    -- three, which is a dead reference and must not be guessed at.
+                    Kind TEXT NOT NULL DEFAULT '',
+
+                    PRIMARY KEY (NpcKey, SpellKey)
+                );
+
+                CREATE TABLE IF NOT EXISTS NpcSpells_Original (
+                    NpcKey TEXT NOT NULL COLLATE NOCASE,
+                    SpellKey TEXT NOT NULL COLLATE NOCASE,
+                    Kind TEXT NOT NULL DEFAULT ''
+                );
+
+                -- Perks. The record carries a rank per perk, but perksToAdd takes only the perk -
+                -- so the rank is scanned and shown and never patched.
+                --
+                -- There is no perksToRemove. A perk the plugins gave an NPC therefore cannot be
+                -- taken away by any patch this tool writes, and the editor does not offer it: an
+                -- edit the patch cannot carry is worse than no edit (NPC-Plan.md section 3.2).
+                CREATE TABLE IF NOT EXISTS NpcPerks (
+                    NpcKey TEXT NOT NULL COLLATE NOCASE,
+                    PerkKey TEXT NOT NULL COLLATE NOCASE,
+                    Rank INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (NpcKey, PerkKey)
+                );
+
+                CREATE TABLE IF NOT EXISTS NpcPerks_Original (
+                    NpcKey TEXT NOT NULL COLLATE NOCASE,
+                    PerkKey TEXT NOT NULL COLLATE NOCASE,
+                    Rank INTEGER NOT NULL DEFAULT 0
+                );
+
+                -- Inventory. objectsToAdd carries a count, objectsToRemove does not.
+                --
+                -- Keyed by (NpcKey, ItemKey) rather than positionally, unlike ContainerEntry: a
+                -- record CAN list the same item twice, but the two operations address an item by its
+                -- key, so two rows for one key could not be patched apart anyway. The counts are
+                -- summed at scan time instead, which is what the game ends up giving the NPC.
+                CREATE TABLE IF NOT EXISTS NpcItems (
+                    NpcKey TEXT NOT NULL COLLATE NOCASE,
+                    ItemKey TEXT NOT NULL COLLATE NOCASE,
+                    Count INTEGER NOT NULL DEFAULT 1,
+                    PRIMARY KEY (NpcKey, ItemKey)
+                );
+
+                CREATE TABLE IF NOT EXISTS NpcItems_Original (
+                    NpcKey TEXT NOT NULL COLLATE NOCASE,
+                    ItemKey TEXT NOT NULL COLLATE NOCASE,
+                    Count INTEGER NOT NULL DEFAULT 1
+                );
+
+                -- The catalogues these three point at. Spells, shouts and leveled spells are also
+                -- what the scan classifies ActorEffect entries against, so they are not optional.
+                CREATE TABLE IF NOT EXISTS Spells (
+                    Key TEXT PRIMARY KEY COLLATE NOCASE,
+                    EditorID TEXT,
+                    Name TEXT,
+                    Active INTEGER NOT NULL DEFAULT 1
+                );
+
+                CREATE TABLE IF NOT EXISTS Shouts (
+                    Key TEXT PRIMARY KEY COLLATE NOCASE,
+                    EditorID TEXT,
+                    Name TEXT,
+                    Active INTEGER NOT NULL DEFAULT 1
+                );
+
+                CREATE TABLE IF NOT EXISTS LeveledSpells (
+                    Key TEXT PRIMARY KEY COLLATE NOCASE,
+                    EditorID TEXT,
+                    Active INTEGER NOT NULL DEFAULT 1
+                );
+
+                CREATE TABLE IF NOT EXISTS NpcPerkCatalogue (
+                    Key TEXT PRIMARY KEY COLLATE NOCASE,
+                    EditorID TEXT,
+                    Name TEXT,
+                    Active INTEGER NOT NULL DEFAULT 1
+                );
+
+                -- The tree groups by class, and memberships are read per faction; both run over
+                -- every NPC, so both get an index rather than a scan of 6.580 rows.
+                --
+                -- A FactionRule table lived here until 2026-09-17 and went with the faction view
+                -- (docs/NPC-Plan.md section 12). It is not dropped: a database that already has one
+                -- keeps it, empty and unread, rather than this code deleting a user's table on the
+                -- next launch.
+                CREATE INDEX IF NOT EXISTS idx_Npc_ClassKey ON Npc(ClassKey);
+                CREATE INDEX IF NOT EXISTS idx_NpcFactions_FactionKey ON NpcFactions(FactionKey);
+
+                -- ===================================================================
+                -- Levelled CHARACTER lists (LVLN) — G8, docs/NPC-Gruppen-Plan.md section 2
+                -- ===================================================================
+                --
+                -- Not the same table as LeveledList above: that one holds LVLI, the item lists the
+                -- container tab is built on. This one holds LVLN, and it exists for one reason -
+                -- 1.650 NPCs take their stats from a levelled character list rather than from a
+                -- record, and without knowing what is IN that list the tool can only say ""no single
+                -- value"" where it could say ""35 - 497, 12 candidates"".
+                --
+                -- Deliberately smaller than its LVLI sibling: no ChanceNone, no Flags, no Global and
+                -- no lost-entry history. Those exist because the container tab EDITS leveled lists;
+                -- this one is read to answer a question, and a column nothing reads is a column that
+                -- goes stale without anyone noticing.
+                CREATE TABLE IF NOT EXISTS LeveledNpc (
+                    Key TEXT PRIMARY KEY COLLATE NOCASE,
+                    EditorID TEXT NOT NULL,
+                    Active INTEGER NOT NULL DEFAULT 1
+                );
+
+                -- One entry per row, positionally keyed for the same reason LeveledListEntry is: an
+                -- entry has no identity of its own, and the same NPC may sit in one list twice at two
+                -- levels.
+                --
+                -- Reference may point at another LVLN rather than at an NPC - the lists nest, the same
+                -- way the item lists do. Resolving that is the reader's job (NpcStatResolver).
+                CREATE TABLE IF NOT EXISTS LeveledNpcEntry (
+                    ListKey TEXT NOT NULL COLLATE NOCASE,
+                    Ordinal INTEGER NOT NULL,
+                    Reference TEXT NOT NULL COLLATE NOCASE,
+                    Level INTEGER NOT NULL DEFAULT 1,
+                    Count INTEGER NOT NULL DEFAULT 1,
+                    PRIMARY KEY (ListKey, Ordinal)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_LeveledNpcEntry_ListKey ON LeveledNpcEntry(ListKey);
+
+                -- ===================================================================
+                -- NPC groups (G2, docs/NPC-Gruppen-Plan.md section 4)
+                -- ===================================================================
+                --
+                -- The work unit of the NPC patcher is a NAMED FILTER SET, not the single NPC: a group
+                -- is edited once and reaches its members at runtime. A single NPC is the degenerate
+                -- case - no predicate, one add-override - so there is one editor and one rule builder
+                -- rather than two (section 4.1).
+                --
+                -- WHAT IS NOT IN HERE IS THE POINT: there is no member table. Membership is computed
+                -- from the predicate on every read (NpcGroupResolver). A stored member list would go
+                -- stale on the next rescan, and a saved change would then reach NPCs nobody ever
+                -- looked at - a new mod, and ""Bandit Stufe 3"" quietly grows from 54 members to 71
+                -- (section 8). The only member rows kept are the snapshot at the bottom, which exists
+                -- to REPORT that growth rather than to define the group.
+                CREATE TABLE IF NOT EXISTS NpcGroup (
+                    Id          INTEGER PRIMARY KEY,
+                    Name        TEXT NOT NULL,
+
+                    -- 'auto' for a group the seeder produced, 'user' for one the user made. A re-seed
+                    -- after a scan may replace its own groups; it must never touch a user's.
+                    Origin      TEXT NOT NULL,
+
+                    -- Which auto rule produced it, so a re-seed can recognise its own work
+                    -- (section 7). NULL for a user group.
+                    Seed        TEXT,
+
+                    SortOrder   INTEGER NOT NULL DEFAULT 0,
+                    Notes       TEXT,
+                    Active      INTEGER NOT NULL DEFAULT 1
+                );
+
+                -- The definition. Clauses of the same axis and mode combine per axis - AND where an
+                -- NPC can hold several values (factions, EditorID substrings, flags), OR where it
+                -- holds exactly one (class, race, mod, gender), because ANDing two classes could only
+                -- ever yield an empty group. 'includeOr' is SkyPatcher's own second reading, the one
+                -- behind filterByFactionsOr; NpcGroupResolver.MultiValued is where that lives.
+                CREATE TABLE IF NOT EXISTS NpcGroupPredicate (
+                    GroupId     INTEGER NOT NULL,
+                    Axis        TEXT NOT NULL,     -- class|race|faction|editorid|mod|flag|gender
+                    Mode        TEXT NOT NULL,     -- include|includeOr|exclude
+                    Value       TEXT NOT NULL COLLATE NOCASE,
+                    -- '' = written by hand, 'autoexclude' = written by the overlap auto-check, which
+                    -- has to recognise its own lines to take them back or replace them.
+                    Origin      TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY (GroupId, Axis, Mode, Value)
+                );
+
+                -- Hand corrections, kept apart from the predicate so a re-seed cannot throw them away.
+                --
+                -- The key is (GroupId, NpcKey) WITHOUT Mode on purpose: one NPC cannot be both added
+                -- and removed in the same group, so the contradiction is impossible rather than
+                -- resolved by whichever row happens to be read second.
+                CREATE TABLE IF NOT EXISTS NpcGroupMemberOverride (
+                    GroupId     INTEGER NOT NULL,
+                    NpcKey      TEXT NOT NULL COLLATE NOCASE,
+                    Mode        TEXT NOT NULL,     -- add|remove
+                    PRIMARY KEY (GroupId, NpcKey)
+                );
+
+                -- What the group changes about a value. Low and High are TEXT because the four kinds
+                -- carry four different things: a number, the two ends of a span, a multiplier like
+                -- 1.5, or the N of calcHealth=N (section 5.2).
+                CREATE TABLE IF NOT EXISTS NpcGroupValue (
+                    GroupId     INTEGER NOT NULL,
+                    Field       TEXT NOT NULL,     -- health|magicka|stamina|level|...
+                    Kind        TEXT NOT NULL,     -- direct|span|mult|calc
+                    Low         TEXT,
+                    High        TEXT,
+                    PRIMARY KEY (GroupId, Field)
+                );
+
+                -- Perks, spells, items, factions and keywords the group adds or removes. Extra is the
+                -- rank of a faction or the count of an item, and NULL where the operation takes
+                -- neither - perksToAdd carries no rank, objectsToRemove no count.
+                CREATE TABLE IF NOT EXISTS NpcGroupList (
+                    GroupId     INTEGER NOT NULL,
+                    Kind        TEXT NOT NULL,     -- perk|spell|item|faction|keyword
+                    TargetKey   TEXT NOT NULL COLLATE NOCASE,
+                    Mode        TEXT NOT NULL,     -- add|remove
+                    Extra       TEXT,
+                    PRIMARY KEY (GroupId, Kind, TargetKey, Mode)
+                );
+
+                -- The rescan diff, and nothing else. Written when the user CONFIRMS a group, and held
+                -- against the freshly computed membership after the next scan so the report can name
+                -- what changed: ""Bandit Stufe 3: 54 -> 71, 17 new from XYZ.esp"" (section 8). It is not
+                -- the group's member list - see the note on NpcGroup above.
+                CREATE TABLE IF NOT EXISTS NpcGroupMemberSnapshot (
+                    GroupId     INTEGER NOT NULL,
+                    NpcKey      TEXT NOT NULL COLLATE NOCASE,
+                    PRIMARY KEY (GroupId, NpcKey)
+                );
+
+                -- Every child table is read per group, which is how the editor loads one and how the
+                -- rule builder walks all of them.
+                CREATE INDEX IF NOT EXISTS idx_NpcGroupPredicate_GroupId ON NpcGroupPredicate(GroupId);
+                CREATE INDEX IF NOT EXISTS idx_NpcGroupMemberOverride_GroupId ON NpcGroupMemberOverride(GroupId);
+                CREATE INDEX IF NOT EXISTS idx_NpcGroupValue_GroupId ON NpcGroupValue(GroupId);
+                CREATE INDEX IF NOT EXISTS idx_NpcGroupList_GroupId ON NpcGroupList(GroupId);
+                CREATE INDEX IF NOT EXISTS idx_NpcGroupMemberSnapshot_GroupId ON NpcGroupMemberSnapshot(GroupId);
 
                 CREATE TABLE IF NOT EXISTS MagicEffects (
                     Key TEXT PRIMARY KEY COLLATE NOCASE,
