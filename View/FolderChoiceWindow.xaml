@@ -87,7 +87,10 @@
             <DockPanel>
                 <Button DockPanel.Dock="Right" Content="Browse…" Width="76" VerticalAlignment="Stretch" Margin="6,0,0,0"
                         Style="{StaticResource StandardButtonStyle}" Click="SelectPluginsFilePath_Click"/>
-                <TextBox x:Name="PluginsFilePathBox" Tag="MO2: profiles\&lt;profile&gt;\plugins.txt  ·  vanilla: %LocalAppData%\Skyrim Special Edition\plugins.txt"/>
+                <!-- "your profile name", not "<profile>": a tester read the angle brackets as part of the
+                     path and typed them in literally. The Browse button beside it is the way out of
+                     that, but the hint should not be sending anyone there in the first place. -->
+                <TextBox x:Name="PluginsFilePathBox" Tag="MO2: profiles\your profile name\plugins.txt  ·  vanilla: %LocalAppData%\Skyrim Special Edition\plugins.txt"/>
             </DockPanel>
         </StackPanel>
 
