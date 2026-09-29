@@ -275,11 +275,18 @@ namespace SkyrimCraftingTool.Model
             var allMagicEffects = new List<object[]>();
             var allGlobals = new List<object[]>();
 
-            var latestCobjByKey = new Dictionary<string, ParsedCobj>();
-            var latestEnchantmentByKey = new Dictionary<string, ParsedEnchantment>();
-            var latestContainerByKey = new Dictionary<string, ParsedContainer>();
-            var latestLeveledListByKey = new Dictionary<string, ParsedLeveledList>();
-            var latestLeveledNpcByKey = new Dictionary<string, ParsedLeveledList>();
+            // OrdinalIgnoreCase, not the default: a key is "Plugin|FormID", and the plugin name can
+            // reach us in two casings (a mod's master list may lowercase a name the file itself
+            // capitalises). Every Key column is declared COLLATE NOCASE, so to the database those two
+            // spellings are ONE record - but an ordinal dictionary kept them apart and let BOTH
+            // plugins' child rows through, and the child tables' composite keys are NOCASE too. That
+            // is the "UNIQUE constraint failed: WornRestrictionKeywords.ListKey, ..." a 1300-mod load
+            // order hit on the first scan. latestNpcByKey below always did this; the rest do now.
+            var latestCobjByKey = new Dictionary<string, ParsedCobj>(StringComparer.OrdinalIgnoreCase);
+            var latestEnchantmentByKey = new Dictionary<string, ParsedEnchantment>(StringComparer.OrdinalIgnoreCase);
+            var latestContainerByKey = new Dictionary<string, ParsedContainer>(StringComparer.OrdinalIgnoreCase);
+            var latestLeveledListByKey = new Dictionary<string, ParsedLeveledList>(StringComparer.OrdinalIgnoreCase);
+            var latestLeveledNpcByKey = new Dictionary<string, ParsedLeveledList>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var parsed in parsedPlugins)
             {
@@ -384,7 +391,7 @@ namespace SkyrimCraftingTool.Model
 
             var allEnchantments = new List<object[]>();
             var allEnchantmentEffects = new List<object[]>();
-            var latestEffectRow = new Dictionary<(string EnchantmentKey, string MagicEffectKey), object[]>();
+            var latestEffectRow = new Dictionary<(string EnchantmentKey, string MagicEffectKey), object[]>(NoCaseKeyPair.Instance);
             var enchantmentEffectRewriteKeys = new List<string>();
             foreach (var kv in latestEnchantmentByKey)
             {
@@ -411,7 +418,7 @@ namespace SkyrimCraftingTool.Model
             // legacy per-enchant flag) is skipped entirely so the scan never clobbers it.
             var allWornRestrictionKeywords = new List<object[]>();
             var wornRestrictionListKeysToRewrite = new List<string>();
-            var latestFormListByKey = new Dictionary<string, ParsedFormList>();
+            var latestFormListByKey = new Dictionary<string, ParsedFormList>(StringComparer.OrdinalIgnoreCase);
             foreach (var parsed in parsedPlugins)
                 foreach (var fl in parsed.FormLists)
                     latestFormListByKey[fl.ListKey] = fl;
@@ -422,7 +429,9 @@ namespace SkyrimCraftingTool.Model
                 wornRestrictionListKeysToRewrite.Add(kv.Key);
                 // FLSTs can legally list the same member twice; PRIMARY KEY(ListKey, KeywordKey)
                 // can't. Keep first occurrence (matches the old INSERT-OR-REPLACE-silently behaviour).
-                var seenMembers = new HashSet<string>();
+                // Case-insensitively, because that key column is COLLATE NOCASE - two spellings of the
+                // same member key are one row to SQLite, and an ordinal set let both of them through.
+                var seenMembers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var row in kv.Value.MemberRows)
                     if (seenMembers.Add((string)row[1]))
                         allWornRestrictionKeywords.Add(row);
@@ -430,7 +439,7 @@ namespace SkyrimCraftingTool.Model
 
             var allContainers = new List<object[]>();
             var allContainerLvli = new List<object[]>();
-            var latestLvliRow = new Dictionary<(string ContainerKey, string LvliKey), object[]>();
+            var latestLvliRow = new Dictionary<(string ContainerKey, string LvliKey), object[]>(NoCaseKeyPair.Instance);
             foreach (var container in latestContainerByKey.Values)
             {
                 allContainers.Add(container.Values);
@@ -703,6 +712,23 @@ namespace SkyrimCraftingTool.Model
             Debug.WriteLine($"[ItemDB] Commit: {commitSw.ElapsedMilliseconds} ms");
 
             InvalidateCache();
+        }
+
+        // StringComparer.OrdinalIgnoreCase for a two-string key. Every composite-key child table in
+        // the schema declares BOTH key columns COLLATE NOCASE, so a dictionary that decides "same
+        // row?" for one of them has to answer the question the same way SQLite will - an ordinal
+        // one says "two rows", the INSERT says "UNIQUE constraint failed", and the scan is over.
+        private sealed class NoCaseKeyPair : IEqualityComparer<(string, string)>
+        {
+            public static readonly NoCaseKeyPair Instance = new();
+
+            public bool Equals((string, string) x, (string, string) y) =>
+                string.Equals(x.Item1, y.Item1, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(x.Item2, y.Item2, StringComparison.OrdinalIgnoreCase);
+
+            public int GetHashCode((string, string) obj) => HashCode.Combine(
+                obj.Item1 is null ? 0 : StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Item1),
+                obj.Item2 is null ? 0 : StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Item2));
         }
 
         private static HashSet<string> ReadFlaggedKeys(SqliteConnection connection, string sql)
@@ -1764,20 +1790,28 @@ namespace SkyrimCraftingTool.Model
                 // given entry is cannot be told from the link - it carries a FormKey and nothing
                 // else - so the kind is left blank here and filled in during the write phase, once
                 // every plugin's SPEL/SHOU/LVSP records have been collected.
+                //
+                // Deduped like the factions above: an ActorEffect list may name the same spell twice
+                // (a patch merging two lists is the usual way it happens), and PRIMARY KEY(NpcKey,
+                // SpellKey) cannot hold that twice. Without this the whole scan died on
+                // "UNIQUE constraint failed: NpcSpells.NpcKey, NpcSpells.SpellKey".
+                var seenSpells = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var spell in npc.ActorEffect ?? Array.Empty<IFormLinkGetter<ISpellRecordGetter>>())
                 {
                     string spellKey = LinkKey(spell.FormKey);
-                    if (spellKey.Length == 0) continue;
+                    if (spellKey.Length == 0 || !seenSpells.Add(spellKey)) continue;
 
                     parsedNpc.SpellRows.Add(new object[] { npcKey, spellKey, "" });
                 }
 
                 // The record carries a rank per perk; perksToAdd takes only the perk, so the rank is
-                // scanned for the screen and never patched.
+                // scanned for the screen and never patched. Same first-occurrence-wins dedupe as the
+                // spells above, for the same reason: PRIMARY KEY(NpcKey, PerkKey) allows one row.
+                var seenPerks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var perk in npc.Perks ?? Array.Empty<IPerkPlacementGetter>())
                 {
                     string perkKey = LinkKey(perk.Perk.FormKey);
-                    if (perkKey.Length == 0) continue;
+                    if (perkKey.Length == 0 || !seenPerks.Add(perkKey)) continue;
 
                     parsedNpc.PerkRows.Add(new object[] { npcKey, perkKey, (int)perk.Rank });
                 }
@@ -1850,7 +1884,9 @@ namespace SkyrimCraftingTool.Model
 
                 // Seven fixed slots in the record rather than a list, most of them empty. A boost of
                 // 0 carries no information and is skipped, so a race with two bonuses stores two
-                // rows instead of seven.
+                // rows instead of seven. Nothing stops a record from naming the same skill in two
+                // slots, and PRIMARY KEY(RaceKey, Skill) holds one - first slot wins.
+                var seenBoosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var boost in new[]
                          {
                              race.SkillBoost0, race.SkillBoost1, race.SkillBoost2, race.SkillBoost3,
@@ -1858,7 +1894,9 @@ namespace SkyrimCraftingTool.Model
                          })
                 {
                     if (boost == null || boost.Boost == 0) continue;
-                    result.RaceSkillBoostRows.Add(new object[] { raceKey, boost.Skill.ToString(), (int)boost.Boost });
+                    string skill = boost.Skill.ToString();
+                    if (!seenBoosts.Add(skill)) continue;
+                    result.RaceSkillBoostRows.Add(new object[] { raceKey, skill, (int)boost.Boost });
                 }
             }
 
