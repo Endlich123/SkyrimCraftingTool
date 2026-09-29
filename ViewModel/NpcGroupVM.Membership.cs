@@ -724,6 +724,20 @@ namespace SkyrimCraftingTool.ViewModel
                 // mid-word, and an empty clause is a group that resolves to nothing.
                 if (value == null) return;
 
+                // AND THE SAME VALUE IS NOT A CHANGE - the guard Axis, Mode and Value all have, and the
+                // one this setter was missing. Without it the screen killed the process outright:
+                //
+                //   pick a value -> _valueFilter becomes that value's own label -> ValueOptions filters
+                //   by it and collapses to one entry -> the box's ItemsSource changes under WPF, which
+                //   re-applies the selection -> this setter runs AGAIN with the same choice -> Changed
+                //   -> RefreshPeers raises ValueOptions -> ItemsSource changes -> ...
+                //
+                // Synchronous all the way down, so it is recursion, not a loop: StackOverflowException,
+                // which the CLR answers by tearing the process down WITHOUT running a single one of
+                // App.xaml.cs's three handlers. No dialog, no line in error.log - the tool simply
+                // vanished. Reported on the gender and flag axes, where the collapsed list is shortest.
+                if (string.Equals(value.Token, _value, StringComparison.OrdinalIgnoreCase)) return;
+
                 _value = value.Token;
                 _valueFilter = value.Label;
 
