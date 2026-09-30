@@ -58,5 +58,17 @@ namespace SkyrimCraftingTool.ViewModel
             ? "1 entry missing"
             : $"{_summary.LostCount} entries missing";
 
+        // Who dropped them, on the overview row itself. The point of the whole change: this list was
+        // reachable only by opening every list in turn, and a row that says something is gone
+        // without saying who took it "raises more questions than it answers" (Avrie, 2026-09-30).
+        //
+        // Three shapes, and the middle one matters most - a list pruned by two different plugins is
+        // a different situation from one pruned by a single mod, and flattening them would hide it.
+        public string DroppedByText =>
+            _summary.DroppedByCount == 1 ? $"dropped by {_summary.DroppedBy}"
+            : _summary.DroppedByCount > 1 ? $"dropped by {_summary.DroppedByCount} plugins"
+            : "";
+
+        public bool HasDroppedBy => _summary.DroppedByCount > 0;
     }
 }

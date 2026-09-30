@@ -934,8 +934,52 @@ namespace SkyrimCraftingTool.ViewModel
         public string Reference => _lost.Reference;
         public string Name => _lost.Name;
         public string LostFrom => _lost.LostFrom;
+        public string AddedBy => _lost.AddedBy;
+        public string DroppedBy => _lost.DroppedBy;
         public bool IsList => _lost.IsList;
         public bool Ambiguous => _lost.Ambiguous;
+
+        // --- Who did what (Anwenderrückmeldung Avrie, 2026-09-30) ---
+        //
+        // The row used to show LostFrom, labelled "the last plugin this item was still in", and that
+        // was read as "the plugin that removed it". It is the opposite: the last one that HAD it.
+        //
+        // So the row now leads with the plugin that actually dropped it, which is the question
+        // anyone opening this window is asking. LostFrom falls back in when DroppedBy is empty -
+        // a database scanned before these columns existed - rather than showing a blank cell.
+        public string LineageText =>
+            !string.IsNullOrEmpty(DroppedBy) ? DroppedBy
+            : !string.IsNullOrEmpty(LostFrom) ? LostFrom
+            : "";
+
+        // The whole chain, because one plugin name cannot carry three different facts. Reads as
+        // prose rather than as a table: it is three sentences about one entry, and the last of them
+        // is the one that keeps this window honest.
+        public string LineageTooltip
+        {
+            get
+            {
+                var lines = new List<string>();
+
+                if (!string.IsNullOrEmpty(AddedBy))
+                    lines.Add($"Added by {AddedBy}.");
+                if (!string.IsNullOrEmpty(LostFrom))
+                    lines.Add($"Last present in {LostFrom}.");
+                if (!string.IsNullOrEmpty(DroppedBy))
+                    lines.Add($"Gone from {DroppedBy} onwards.");
+
+                if (lines.Count == 0)
+                    lines.Add("Which plugins carried this entry is not recorded - rescan to find out.");
+
+                // Never dropped, and it is the point of the whole window: a plugin that removes an
+                // entry may be doing it on purpose, and the record looks identical either way. This
+                // names who, never why.
+                lines.Add("");
+                lines.Add("A plugin dropping an entry is often deliberate. This says who, not why.");
+
+                return string.Join("\n", lines);
+            }
+        }
 
         // Only set where the versions disagreed, so the row admits the pick was a choice.
         public string LevelNote => _lost.Ambiguous

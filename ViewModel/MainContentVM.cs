@@ -55,6 +55,21 @@ namespace SkyrimCraftingTool.ViewModel
         // tree/plugin list otherwise only ever reflected what existed at app-startup, before any
         // scan had run) subscribe to this to know when to refresh themselves.
         public event Action DataLoaded;
+
+        // "Show this enchantment in the Enchantments tab" (Prio 9). Raised by the item detail's
+        // jump button; MainWindowVM switches the view and hands the key to EnchantVM.
+        //
+        // An event rather than a reference to EnchantVM, following NpcMenuVM.TemplateOpened: this
+        // view model knows nothing about the other tabs, and the one place that knows about all of
+        // them is the one that owns them.
+        public event Action<string> EnchantmentJumpRequested;
+
+        internal void RequestEnchantmentJump(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key)) return;
+            EnchantmentJumpRequested?.Invoke(key);
+        }
+
         public List<PluginInfo> ActivePlugins { get; private set; } = new();
 
         private object _selectedNode;
@@ -1826,7 +1841,7 @@ namespace SkyrimCraftingTool.ViewModel
                 if (originalArmor != null)
                     item.CaptureOriginalSnapshot(originalArmor.Name, originalArmor.Value, originalArmor.Weight,
                         originalArmor.ArmorRating, originalArmor.BodySlotMask, 0, 0, 0, 0, originalArmor.ContainerString, originalArmor.Keywords,
-                        originalArmor.ArmorType, originalArmor.ObjectEffectKey);
+                        originalArmor.ArmorType, originalArmor.ObjectEffectKey, originalArmor.EnchantAmount);
             }
             else
             {
@@ -1834,7 +1849,7 @@ namespace SkyrimCraftingTool.ViewModel
                 if (originalWeapon != null)
                     item.CaptureOriginalSnapshot(originalWeapon.Name, originalWeapon.Value, originalWeapon.Weight,
                         0, 0, originalWeapon.Damage, originalWeapon.Speed, originalWeapon.Reach, originalWeapon.Stagger,
-                        originalWeapon.ContainerString, originalWeapon.Keywords, "", originalWeapon.ObjectEffectKey);
+                        originalWeapon.ContainerString, originalWeapon.Keywords, "", originalWeapon.ObjectEffectKey, originalWeapon.EnchantAmount);
             }
 
             item.ReportRecipeIssues();
@@ -1871,10 +1886,11 @@ namespace SkyrimCraftingTool.ViewModel
                 _cacheManager.UpdateArmorArmorType(item.Key, original.ArmorType);
                 _cacheManager.UpdateArmorContainerString(item.Key, original.ContainerString);
                 _cacheManager.UpdateArmorObjectEffect(item.Key, original.ObjectEffectKey);
+                _cacheManager.UpdateArmorEnchantAmount(item.Key, original.EnchantAmount);
 
                 item.ApplyResetValues(original.Name, original.Value, original.Weight,
                     original.ArmorRating, original.BodySlotMask, 0, 0, 0, 0, original.ContainerString, original.Keywords,
-                    original.ArmorType, original.ObjectEffectKey);
+                    original.ArmorType, original.ObjectEffectKey, original.EnchantAmount);
             }
             else
             {
@@ -1897,10 +1913,11 @@ namespace SkyrimCraftingTool.ViewModel
                 _cacheManager.UpdateWeaponKeywords(item.Key, original.Keywords);
                 _cacheManager.UpdateWeaponContainerString(item.Key, original.ContainerString);
                 _cacheManager.UpdateWeaponObjectEffect(item.Key, original.ObjectEffectKey);
+                _cacheManager.UpdateWeaponEnchantAmount(item.Key, original.EnchantAmount);
 
                 item.ApplyResetValues(original.Name, original.Value, original.Weight,
                     0, 0, original.Damage, original.Speed, original.Reach, original.Stagger,
-                    original.ContainerString, original.Keywords, "", original.ObjectEffectKey);
+                    original.ContainerString, original.Keywords, "", original.ObjectEffectKey, original.EnchantAmount);
             }
         }
 

@@ -113,6 +113,15 @@ namespace SkyrimCraftingTool.ViewModel
             // exactly like a button that does nothing.
             NpcVM.TemplateOpened += () => CurrentView = TemplateVM;
 
+            // "Jump to enchantment" on an item (Prio 9). View first, then the target - same order as
+            // the template link above, and for the same reason: switching afterwards would leave the
+            // user looking at the item tab while the other tab silently changed underneath.
+            ContentVM.EnchantmentJumpRequested += key =>
+            {
+                CurrentView = EnchantVM;
+                EnchantVM.ShowEnchantment(key);
+            };
+
             PresetsVM = new PresetsConfigVM(ContentVM);
             SettingsVM = new SettingsVM(ContentVM);
 

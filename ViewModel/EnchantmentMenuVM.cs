@@ -590,25 +590,67 @@ namespace SkyrimCraftingTool.ViewModel
         // the filter runs. The target has to survive the filter, its ancestors have to be expanded
         // (an unrealised TreeViewItem cannot be selected), and the node that carries IsSelected has
         // to be the one currently IN that copy - not the original it was cloned from.
+        // The cross-view entry point (Prio 9). Another tab asks for an enchantment to be shown here;
+        // NavigateToEnchantment was already written as its own step for exactly this, so there is
+        // nothing to add but the door.
+        //
+        // Safe to call before this tab has ever been opened: the tree is built in the constructor
+        // and rebuilt on every DataLoaded, not on the view's first appearance. And selection here is
+        // pure model state (IsExpanded/IsSelected on the nodes) that the two-way bindings pick up
+        // whenever the TreeViewItems are realised - so the caller may switch the view before or
+        // after this call.
+        public void ShowEnchantment(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key)) return;
+            NavigateToEnchantment(key);
+        }
+
         private void NavigateToEnchantment(string key)
         {
             var target = FindEnchantmentLeaf(key);
             if (target?.Enchantment == null)
             {
+                // Wording kept general on purpose: this used to serve only the "Open base" button,
+                // and now carries the jump from the item tab as well.
                 IssueHub.Current.Report(new AppIssue(
                     AppIssueSeverity.Warning,
-                    $"Base enchantment {key} is not in the scanned load order - nothing to jump to.",
+                    $"Enchantment {key} is not in the scanned load order - nothing to jump to.",
                     Category: "navigation"));
                 return;
             }
 
             // A filter that hides the target would land the jump on an invisible row. Clearing it is
             // the honest way out: the user asked to be taken there, not to be taken somewhere near.
-            if (!TryFindPath(EnchantementFilteredTree, target.Enchantment, new List<EnchantmentTreeNode>()))
+            var path = new List<EnchantmentTreeNode>();
+            if (!TryFindPath(EnchantementFilteredTree, target.Enchantment, path))
+            {
                 ClearEnchantmentFiltersAndRebuild();
+                path.Clear();
 
-            SelectedEnchantment = target.Enchantment;
+                if (!TryFindPath(EnchantementFilteredTree, target.Enchantment, path))
+                {
+                    // The record is in TreeItems (FindEnchantmentLeaf found it) but not in the tree
+                    // on screen even with every filter off. Nothing sensible is left to do, and
+                    // saying so beats leaving the user on whatever row was open before - which is
+                    // what the discarded return value of TrySelectInTree used to do.
+                    IssueHub.Current.Report(new AppIssue(
+                        AppIssueSeverity.Warning,
+                        $"Enchantment {key} could not be shown in the tree.",
+                        Category: "navigation"));
+                    return;
+                }
+            }
+
             TrySelectInTree(EnchantementFilteredTree, target.Enchantment);
+
+            // The detail panel is a ContentPresenter over the NODE, so setting only the record
+            // leaves it blank - the same trap RefreshData documents. In-view jumps got away with it
+            // because the TreeView raised SelectedItemChanged and filled SelectedNode itself; a jump
+            // from another tab has no TreeView yet, so nothing raised it.
+            //
+            // path[^1], not `target`: after a filter run the tree holds a COPY carrying the same
+            // record, and the panel has to point at the node the tree is actually showing.
+            SelectedNode = path[^1];
         }
 
         private void ClearEnchantmentFiltersAndRebuild()
@@ -634,15 +676,39 @@ namespace SkyrimCraftingTool.ViewModel
             var path = new List<EnchantmentTreeNode>();
             if (!TryFindPath(roots, record, path)) return false;
 
+            // Deselect the previous row HERE, in the model.
+            //
+            // This used to be left to the control: "the TreeView clears the previously selected row
+            // on its own, and the two-way binding carries that back into its node". True - while a
+            // TreeView is attached to these nodes. It is NOT attached when the jump arrives from
+            // another tab: MainWindowVM switches CurrentView, but the ContentControl builds the
+            // enchantment view in a later layout pass, so at this moment nothing is listening.
+            //
+            // Two nodes then carry IsSelected = true, and when the TreeView finally materialises it
+            // takes the first container it realises - usually the stale one, because it sits
+            // earlier in the tree. That is the "jump does not always land on the right enchantment"
+            // the user saw: right when nothing had been selected before, wrong once it had.
+            //
+            // After the path is found, not before: a jump with no target must leave the tree as it
+            // was rather than clearing the selection on its way out.
+            ClearSelection(roots);
+
             // Ancestors first - a TreeViewItem whose parent is collapsed was never realised, and an
             // unrealised container cannot take the selection.
             for (int i = 0; i < path.Count - 1; i++)
                 path[i].IsExpanded = true;
 
-            // The TreeView clears the previously selected row on its own, and the two-way binding
-            // carries that back into its node - so nothing has to be deselected here.
             path[^1].IsSelected = true;
             return true;
+        }
+
+        private static void ClearSelection(IEnumerable<EnchantmentTreeNode> nodes)
+        {
+            foreach (var node in nodes)
+            {
+                node.IsSelected = false;
+                ClearSelection(node.Children);
+            }
         }
 
         internal static bool TryFindPath(IEnumerable<EnchantmentTreeNode> nodes, EnchantmentRecord record,

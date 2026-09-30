@@ -1129,10 +1129,10 @@ namespace SkyrimCraftingTool.ViewModel
         // survives a rescan when the enchantment's own record is rebuilt. The picker below maps it
         // to a name for the eye.
         //
-        // The empty string is a real value - "no enchantment" - and the patch expresses it by
-        // writing objectEffect with nothing after it. That is also the one part of this feature
-        // whose syntax is read from the documentation rather than confirmed, so the generator warns
-        // about it (see ItemRuleBuilder.AppendObjectEffectOp).
+        // The empty string is a real value - "no enchantment" - and the patch expresses it as
+        // objectEffect=null (confirmed in game 2026-09-30; it wrote a bare "objectEffect=" before
+        // that and quietly did nothing). The generator still warns on a strip, now about the save
+        // rather than the syntax - see ItemRuleBuilder.ObjectEffectRemovalOp.
         private string _objectEffectKey = "";
         public string ObjectEffectKey
         {
@@ -1165,6 +1165,9 @@ namespace SkyrimCraftingTool.ViewModel
                     OnPropertyChanged(nameof(SelectedEnchantment));
                     OnPropertyChanged(nameof(IsObjectEffectChanged));
                     OnPropertyChanged(nameof(HasAnyChanges));
+                    // The jump button lives or dies with this value: "(no enchantment)" has nothing
+                    // to jump to, and neither has a key whose plugin left the load order.
+                    OnPropertyChanged(nameof(CanJumpToEnchantment));
                 }
                 finally
                 {
@@ -1240,6 +1243,54 @@ namespace SkyrimCraftingTool.ViewModel
         public string ObjectEffectSummary => string.IsNullOrWhiteSpace(ObjectEffectKey)
             ? "No enchantment."
             : ObjectEffectKey;
+
+        // --- The item's own charge pool (EAMT) ---
+        //
+        // The other half of an enchanted item, and the half that was missing here. Pointing
+        // objectEffect at an enchantment links the effect; the charge the item can hold is this
+        // field, on the item's own record. Measured in xEdit by the user: without it there is no
+        // maximum charge and the weapon cannot be recharged - which is how a tester ended up with a
+        // bow that carried soul trap and could not be refilled.
+        //
+        // Right next to the enchantment picker on purpose: the two only make sense together, and
+        // splitting them across the panel is what made the missing half invisible in the first place.
+        private int _enchantAmount;
+        public int EnchantAmount
+        {
+            get => _enchantAmount;
+            set
+            {
+                if (!SetProperty(ref _enchantAmount, value)) return;
+
+                if (!IsLoading) NotifyFieldChanged(nameof(EnchantAmount));
+
+                OnPropertyChanged(nameof(IsEnchantAmountChanged));
+                OnPropertyChanged(nameof(HasAnyChanges));
+            }
+        }
+
+        // --- Sprungmarke: vom Item zu seiner Verzauberung (Prio 9) ---
+        //
+        // The Items tab ASSIGNS an enchantment, the Enchantments tab EDITS it. That split is
+        // deliberate, but it was only ever stated in a tooltip nobody opens - this is the same
+        // sentence said as a button.
+        //
+        // Resolvability is checked against AllAvailableEnchantments rather than by asking the other
+        // tab: both are built from the same scanned catalogue, so a key that has a row here has a
+        // leaf over there, and this view model stays ignorant of the tabs around it. A key that
+        // somehow slips through is caught on the far side, which greys nothing out but reports
+        // instead of moving to an empty tree.
+        public bool CanJumpToEnchantment => CanJumpTo(ObjectEffectKey, AvailableEnchantments);
+
+        // Static and taking the catalogue, so it can be tested without a MainContentVM behind it -
+        // same reason EnchantmentMenuVM.TrySelectInTree is written that way.
+        internal static bool CanJumpTo(string objectEffectKey, IEnumerable<FormIDRecord> catalogue) =>
+            !KeyFactory.IsUnsetKey(objectEffectKey)
+            && catalogue != null
+            && catalogue.Any(e => string.Equals(e.Key, objectEffectKey, StringComparison.OrdinalIgnoreCase));
+
+        public ICommand JumpToEnchantmentCommand => new RelayCommand(
+            () => Main?.RequestEnchantmentJump(ObjectEffectKey));
 
         // Keeps ArmorType in step when the user picks an armour-class keyword. This runs as a
         // normal, visible edit - the dropdown moves, the changed-marker lights up, reset undoes it -
@@ -1372,6 +1423,7 @@ namespace SkyrimCraftingTool.ViewModel
         private uint _originalBodySlotMask;
         private string _originalArmorType = "";
         private string _originalObjectEffectKey = "";
+        private int _originalEnchantAmount;
         private int _originalDamage;
         private float _originalSpeed;
         private float _originalReach;
@@ -1381,7 +1433,7 @@ namespace SkyrimCraftingTool.ViewModel
 
         public void CaptureOriginalSnapshot(string name, int value, float weight, float armorRating,
             uint bodySlotMask, int damage, float speed, float reach, float stagger, string containerString, List<string> keywordKeys,
-            string armorType = "", string objectEffectKey = "")
+            string armorType = "", string objectEffectKey = "", int enchantAmount = 0)
         {
             _originalName = name;
             _originalValue = value;
@@ -1390,6 +1442,7 @@ namespace SkyrimCraftingTool.ViewModel
             _originalBodySlotMask = bodySlotMask;
             _originalArmorType = armorType ?? "";
             _originalObjectEffectKey = objectEffectKey ?? "";
+            _originalEnchantAmount = enchantAmount;
             _originalDamage = damage;
             _originalSpeed = speed;
             _originalReach = reach;
@@ -1435,6 +1488,7 @@ namespace SkyrimCraftingTool.ViewModel
             && !string.Equals(ArmorType, _originalArmorType, StringComparison.OrdinalIgnoreCase);
         public bool IsObjectEffectChanged => _hasOriginalSnapshot
             && !string.Equals(ObjectEffectKey, _originalObjectEffectKey, StringComparison.OrdinalIgnoreCase);
+        public bool IsEnchantAmountChanged => _hasOriginalSnapshot && EnchantAmount != _originalEnchantAmount;
         public bool IsDamageChanged => _hasOriginalSnapshot && Damage != _originalDamage;
         public bool IsSpeedChanged => _hasOriginalSnapshot && Math.Abs(Speed - _originalSpeed) > 0.0001f;
         public bool IsReachChanged => _hasOriginalSnapshot && Math.Abs(Reach - _originalReach) > 0.0001f;
@@ -1446,7 +1500,7 @@ namespace SkyrimCraftingTool.ViewModel
 
         public bool HasAnyChanges =>
             IsNameChanged || IsValueChanged || IsWeightChanged || IsContainerChanged || IsKeywordsChanged ||
-            IsObjectEffectChanged ||
+            IsObjectEffectChanged || IsEnchantAmountChanged ||
             (IsArmor ? (IsArmorRatingChanged || IsBodySlotMaskChanged) : (IsDamageChanged || IsSpeedChanged || IsReachChanged || IsStaggerChanged));
 
         // Delegates to MainContentVM.ResetItemEdits, which clears this item's IsEdited* shadow columns
@@ -1479,7 +1533,7 @@ namespace SkyrimCraftingTool.ViewModel
         // as a fresh edit.
         public void ApplyResetValues(string name, int value, float weight, float armorRating,
             uint bodySlotMask, int damage, float speed, float reach, float stagger, string containerString, List<string> keywordKeys,
-            string armorType = "", string objectEffectKey = "")
+            string armorType = "", string objectEffectKey = "", int enchantAmount = 0)
         {
             IsLoading = true;
 
@@ -1504,6 +1558,7 @@ namespace SkyrimCraftingTool.ViewModel
             ContainerString = containerString;
             ContainerSelection.LoadFromString(containerString);
             ObjectEffectKey = objectEffectKey ?? "";
+            EnchantAmount = enchantAmount;
 
             var keywordSet = new HashSet<string>(keywordKeys ?? new List<string>());
             foreach (var kw in AllKeywords)
@@ -1512,7 +1567,7 @@ namespace SkyrimCraftingTool.ViewModel
             IsLoading = false;
 
             CaptureOriginalSnapshot(name, value, weight, armorRating, bodySlotMask, damage, speed, reach, stagger,
-                containerString, keywordKeys, armorType, objectEffectKey ?? "");
+                containerString, keywordKeys, armorType, objectEffectKey ?? "", enchantAmount);
         }
 
         // --------------------
@@ -1849,6 +1904,7 @@ namespace SkyrimCraftingTool.ViewModel
             BodySlotMask = rec.BodySlotMask;
             ArmorType = rec.ArmorType ?? "";
             ObjectEffectKey = rec.ObjectEffectKey ?? "";
+            EnchantAmount = rec.EnchantAmount;
 
             ContainerString = rec.ContainerString ?? "{}";
             ContainerSelection.LoadFromString(ContainerString);
@@ -1864,6 +1920,7 @@ namespace SkyrimCraftingTool.ViewModel
             Reach = rec.Reach;
             Stagger = rec.Stagger;
             ObjectEffectKey = rec.ObjectEffectKey ?? "";
+            EnchantAmount = rec.EnchantAmount;
 
             ContainerString = rec.ContainerString ?? "{}";
             ContainerSelection.LoadFromString(ContainerString);
