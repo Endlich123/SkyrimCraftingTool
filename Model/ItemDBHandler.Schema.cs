@@ -60,6 +60,16 @@ namespace SkyrimCraftingTool.Model
             // Added after the table shipped. Stays 0 on an existing database until the next scan,
             // which is honest: nothing knows yet whether those rows had to make the choice.
             AddColumnIfMissing(connection, "LeveledListLostEntry", "Ambiguous", "INTEGER NOT NULL DEFAULT 0");
+
+            // Who put the entry there and who took it away (Anwenderrückmeldung Avrie, 2026-09-30:
+            // "without knowing which plugin removed the item from the list, it tends to raise more
+            // questions than it answers").
+            //
+            // LostFrom was never the remover - it names the last plugin that still HAD the entry.
+            // Both of these are derived in the same pass that already walks every version of a list
+            // in load order; see the lost-entry block in ItemDBHandler.Scan.cs.
+            AddColumnIfMissing(connection, "LeveledListLostEntry", "AddedBy", "TEXT");
+            AddColumnIfMissing(connection, "LeveledListLostEntry", "DroppedBy", "TEXT");
             AddColumnIfMissing(connection, "Container", "Active", "INTEGER NOT NULL DEFAULT 1");
             AddColumnIfMissing(connection, "MagicEffects", "Active", "INTEGER NOT NULL DEFAULT 1");
 
@@ -90,6 +100,15 @@ namespace SkyrimCraftingTool.Model
             {
                 AddColumnIfMissing(connection, table, "ObjectEffectKey", "TEXT");
                 AddColumnIfMissing(connection, table, "IsEditedObjectEffectKey", "TEXT");
+
+                // The item's own charge pool (EAMT), and the reason it is here rather than on the
+                // enchantment: measured in xEdit by the user, an item needs its OWN enchant amount
+                // for a maximum charge - without it the enchantment is linked but the weapon cannot
+                // be recharged. objectEffect alone was never the whole story.
+                //
+                // INTEGER: the record field is a whole number of charge points.
+                AddColumnIfMissing(connection, table, "EnchantAmount", "INTEGER");
+                AddColumnIfMissing(connection, table, "IsEditedEnchantAmount", "INTEGER");
             }
 
             // Npc shipped before the three N-P3 lists existed, so an item.db from earlier in this
@@ -522,6 +541,7 @@ namespace SkyrimCraftingTool.Model
                     Keywords TEXT,
                     ContainerString TEXT,
                     ObjectEffectKey TEXT,
+                    EnchantAmount INTEGER,
 
                     IsEditedName Text,
                     IsEditedWeight REAL,
@@ -532,6 +552,7 @@ namespace SkyrimCraftingTool.Model
                     IsEditedKeywords TEXT,
                     IsEditedContainerString TEXT,
                     IsEditedObjectEffectKey TEXT,
+                    IsEditedEnchantAmount INTEGER,
 
                     IsEdited INTEGER DEFAULT 0,
                     Active INTEGER NOT NULL DEFAULT 1,
@@ -552,6 +573,7 @@ namespace SkyrimCraftingTool.Model
                     Keywords TEXT,
                     ContainerString TEXT,
                     ObjectEffectKey TEXT,
+                    EnchantAmount INTEGER,
 
                     IsEditedName Text,
                     IsEditedWeight REAL,
@@ -563,6 +585,7 @@ namespace SkyrimCraftingTool.Model
                     IsEditedKeywords TEXT,
                     IsEditedContainerString TEXT,
                     IsEditedObjectEffectKey TEXT,
+                    IsEditedEnchantAmount INTEGER,
 
                     IsEdited INTEGER DEFAULT 0,
                     Active INTEGER NOT NULL DEFAULT 1,
@@ -821,6 +844,17 @@ namespace SkyrimCraftingTool.Model
                 -- missing from this list, and an entry has no identity of its own (see
                 -- LeveledListEntry above). Level and Count are the values it had where it was last
                 -- seen, so restoring one can put it back as it was. LostFrom names that plugin.
+                --
+                -- THREE PLUGINS, AND THEY ARE THREE DIFFERENT QUESTIONS. AddedBy put the entry into
+                -- the list, LostFrom is the last version that still had it, DroppedBy is the version
+                -- right after that - the one that did not carry it forward. LostFrom alone was what
+                -- this table used to offer, and it is the least useful of the three: a tester read
+                -- it as the plugin that removed the entry, which is exactly what it is not.
+                --
+                -- DroppedBy still is not an accusation. The schema comment above holds: dropping an
+                -- entry may be deliberate, and the record looks identical either way. It names who,
+                -- never why.
+                --
                 -- Ambiguous marks the one guess in here. An entry can have stood in SEVERAL
                 -- overridden versions at DIFFERENT levels or counts, and only one set can be put
                 -- back. The value kept is the one from the version closest to the winner, on the
@@ -834,6 +868,8 @@ namespace SkyrimCraftingTool.Model
                     Count INTEGER NOT NULL DEFAULT 1,
                     LostFrom TEXT,
                     Ambiguous INTEGER NOT NULL DEFAULT 0,
+                    AddedBy TEXT,
+                    DroppedBy TEXT,
                     PRIMARY KEY (ListKey, Reference)
                 );
 

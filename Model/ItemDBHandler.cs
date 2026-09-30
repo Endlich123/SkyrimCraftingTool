@@ -261,7 +261,11 @@ namespace SkyrimCraftingTool.Model
                     CASE WHEN IsEdited = 1 AND IsEditedObjectEffectKey IS NOT NULL
                          THEN IsEditedObjectEffectKey
                          ELSE ObjectEffectKey
-                    END AS ObjectEffectKey
+                    END AS ObjectEffectKey,
+                    CASE WHEN IsEdited = 1 AND IsEditedEnchantAmount IS NOT NULL
+                         THEN IsEditedEnchantAmount
+                         ELSE EnchantAmount
+                    END AS EnchantAmount
                 FROM Armor WHERE Active = 1;";
 
             using var reader = cmd.ExecuteReader();
@@ -288,6 +292,7 @@ namespace SkyrimCraftingTool.Model
                     Keywords = keywords,
                     ContainerString = reader.IsDBNull(9) ? "{}" : reader.GetString(9),
                     ObjectEffectKey = reader.IsDBNull(10) ? "" : reader.GetString(10),
+                    EnchantAmount = reader.IsDBNull(11) ? 0 : reader.GetInt32(11),
                 });
             }
 
@@ -349,7 +354,11 @@ namespace SkyrimCraftingTool.Model
                     CASE WHEN IsEdited = 1 AND IsEditedObjectEffectKey IS NOT NULL
                          THEN IsEditedObjectEffectKey
                          ELSE ObjectEffectKey
-                    END AS ObjectEffectKey
+                    END AS ObjectEffectKey,
+                    CASE WHEN IsEdited = 1 AND IsEditedEnchantAmount IS NOT NULL
+                         THEN IsEditedEnchantAmount
+                         ELSE EnchantAmount
+                    END AS EnchantAmount
                 FROM Weapons WHERE Active = 1;";
 
             using var reader = cmd.ExecuteReader();
@@ -376,7 +385,8 @@ namespace SkyrimCraftingTool.Model
 
                     Keywords = keywords,
                     ContainerString = reader.IsDBNull(10) ? "{}" : reader.GetString(10),
-                    ObjectEffectKey = reader.IsDBNull(11) ? "" : reader.GetString(11)
+                    ObjectEffectKey = reader.IsDBNull(11) ? "" : reader.GetString(11),
+                    EnchantAmount = reader.IsDBNull(12) ? 0 : reader.GetInt32(12),
                 });
             }
 
@@ -1078,9 +1088,9 @@ namespace SkyrimCraftingTool.Model
         // the import conflict check ("local is newer than this export file"). What counts as
         // "currently edited" is the IsEdited flag, which is why GetEdited* filters on that.
         internal static readonly string[] ArmorShadowColumns =
-            { "IsEditedName", "IsEditedWeight", "IsEditedValue", "IsEditedArmorRating", "IsEditedBodySlotMask", "IsEditedArmorType", "IsEditedKeywords", "IsEditedContainerString", "IsEditedObjectEffectKey" };
+            { "IsEditedName", "IsEditedWeight", "IsEditedValue", "IsEditedArmorRating", "IsEditedBodySlotMask", "IsEditedArmorType", "IsEditedKeywords", "IsEditedContainerString", "IsEditedObjectEffectKey", "IsEditedEnchantAmount" };
         internal static readonly string[] WeaponShadowColumns =
-            { "IsEditedName", "IsEditedWeight", "IsEditedValue", "IsEditedDamage", "IsEditedSpeed", "IsEditedReach", "IsEditedStagger", "IsEditedKeywords", "IsEditedContainerString", "IsEditedObjectEffectKey" };
+            { "IsEditedName", "IsEditedWeight", "IsEditedValue", "IsEditedDamage", "IsEditedSpeed", "IsEditedReach", "IsEditedStagger", "IsEditedKeywords", "IsEditedContainerString", "IsEditedObjectEffectKey", "IsEditedEnchantAmount" };
         internal static readonly string[] CobjShadowColumns =
             { "IsEditedName", "IsEditedCreatedItem", "IsEditedWorkbenchKeyword", "IsEditedIngredients" };
         // CastType/TargetType have no UI edit path but ARE importable (AllowedImportFields), so they
@@ -1158,13 +1168,22 @@ namespace SkyrimCraftingTool.Model
             => UpdateField("Armor", "IsEditedArmorType", key, armorType);
 
         // WHICH enchantment the item wears. The empty string is a real value here - it means "none",
-        // which the patch expresses by writing objectEffect with nothing after it - so it is stored
-        // rather than turned into NULL: NULL is "not edited" and would read back as the scanned one.
+        // which the patch expresses as objectEffect=null - so it is stored rather than turned into
+        // NULL: NULL is "not edited" and would read back as the scanned one.
         public static void UpdateArmorObjectEffect(string key, string objectEffectKey)
             => UpdateField("Armor", "IsEditedObjectEffectKey", key, objectEffectKey ?? "");
 
         public static void UpdateWeaponObjectEffect(string key, string objectEffectKey)
             => UpdateField("Weapons", "IsEditedObjectEffectKey", key, objectEffectKey ?? "");
+
+        // The item's own charge pool. 0 is a real value here - "no charge" is exactly the state a
+        // broken enchanted item is in - so it is stored like any other number rather than treated
+        // as "not edited"; NULL is what means that.
+        public static void UpdateArmorEnchantAmount(string key, int enchantAmount)
+            => UpdateField("Armor", "IsEditedEnchantAmount", key, enchantAmount);
+
+        public static void UpdateWeaponEnchantAmount(string key, int enchantAmount)
+            => UpdateField("Weapons", "IsEditedEnchantAmount", key, enchantAmount);
 
         public static void UpdateArmorKeywords(string key, ObservableCollection<KeywordSelectionVM> keywords)
             => UpdateField("Armor", "IsEditedKeywords", key, SelectedKeywordsCsv(keywords));

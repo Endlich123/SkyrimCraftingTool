@@ -19,6 +19,10 @@
         // See ArmorRecord.ObjectEffectKey.
         public string ObjectEffectKey { get; set; } = "";
 
+        // The weapon's own charge pool (EAMT). See ArmorRecord.EnchantAmount - the weapon is where
+        // the missing-charge case was actually found.
+        public int EnchantAmount { get; set; }
+
         // Liste von Plugin|FormID
         public List<string> Keywords { get; set; } = new();
         public string ContainerString { get; set; } = "";

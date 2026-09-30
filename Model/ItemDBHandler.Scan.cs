@@ -287,6 +287,7 @@ namespace SkyrimCraftingTool.Model
             var latestContainerByKey = new Dictionary<string, ParsedContainer>(StringComparer.OrdinalIgnoreCase);
             var latestLeveledListByKey = new Dictionary<string, ParsedLeveledList>(StringComparer.OrdinalIgnoreCase);
             var latestLeveledNpcByKey = new Dictionary<string, ParsedLeveledList>(StringComparer.OrdinalIgnoreCase);
+            var listVersionPlugins = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var parsed in parsedPlugins)
             {
@@ -305,7 +306,18 @@ namespace SkyrimCraftingTool.Model
                     latestContainerByKey[(string)container.Values[0]] = container;
 
                 foreach (var list in parsed.LeveledLists)
-                    latestLeveledListByKey[(string)list.Values[0]] = list;
+                {
+                    string listKey = (string)list.Values[0];
+                    latestLeveledListByKey[listKey] = list;
+
+                    // Every plugin that defines this list, in load order, winner included. The
+                    // lost-entry pass below needs the ORDER to answer "who dropped it": that is the
+                    // version right after the last one that still carried the entry, and nothing
+                    // else in the scan remembers what came after what.
+                    if (!listVersionPlugins.TryGetValue(listKey, out var versions))
+                        listVersionPlugins[listKey] = versions = new List<string>();
+                    versions.Add(parsed.PluginName);
+                }
 
                 // Same winner rule as every other record: the last active plugin that defines the key
                 // owns it. An LVLN has no lost-entry pass - that exists for the item lists, where the
@@ -361,17 +373,44 @@ namespace SkyrimCraftingTool.Model
                         // presenting the pick as a reading - see LeveledListLostEntry's schema
                         // comment. Sticky: once ambiguous, always ambiguous, however many further
                         // versions agree afterwards.
-                        bool ambiguous = lost.TryGetValue(reference, out var previous)
+                        bool seenBefore = lost.TryGetValue(reference, out var previous);
+
+                        bool ambiguous = seenBefore
                                          && (!Equals(previous[2], row[3])
                                              || !Equals(previous[3], row[4])
                                              || Convert.ToInt32(previous[5]) == 1);
 
+                        // AddedBy is the mirror image of LostFrom and keeps the FIRST plugin, where
+                        // LostFrom keeps the last. The winner never carries the entry (that is what
+                        // makes it lost), so the first version seen here is genuinely the one that
+                        // introduced it.
+                        object addedBy = seenBefore ? previous[6] : parsed.PluginName;
+
                         lost[reference] = new object[]
                         {
                             listKey, reference, row[3], row[4], parsed.PluginName, ambiguous ? 1 : 0,
+                            addedBy, "",   // DroppedBy is filled in below, once the order is known
                         };
                     }
                 }
+            }
+
+            // Who dropped it: the version right AFTER the last one that still had the entry.
+            //
+            // Only resolvable once the pass above has finished, because LostFrom is not final until
+            // then - every further version that still carried the entry moves it along. Walking the
+            // recorded version order of the list and stepping one past LostFrom is the whole answer.
+            //
+            // The step always exists: LostFrom is by definition not the winner (the winner has no
+            // such entry), and the winner is the last element - so there is always something after
+            // it. The empty fallback is for a load order that changed under us mid-scan, not for a
+            // case this logic expects.
+            foreach (var (listKey, lost) in lostEntriesByList)
+            {
+                if (!listVersionPlugins.TryGetValue(listKey, out var versions)) continue;
+
+                foreach (var row in lost.Values)
+                    row[7] = ResolveDroppedBy(versions, (string)row[4]);
             }
 
             // Records whose ConditionsEdited/EffectsEdited/KeywordsEdited flag is set keep their
@@ -922,9 +961,9 @@ namespace SkyrimCraftingTool.Model
         }
 
         private static readonly string[] ArmorParamNames =
-            { "@key", "@editorID", "@name", "@weight", "@val", "@armorRating", "@slotMask", "@armorType", "@keywords", "@objectEffect" };
+            { "@key", "@editorID", "@name", "@weight", "@val", "@armorRating", "@slotMask", "@armorType", "@keywords", "@objectEffect", "@enchantAmount" };
         private static readonly string[] WeaponParamNames =
-            { "@key", "@editorID", "@name", "@weight", "@val", "@dmg", "@speed", "@reach", "@stagger", "@keywords", "@objectEffect" };
+            { "@key", "@editorID", "@name", "@weight", "@val", "@dmg", "@speed", "@reach", "@stagger", "@keywords", "@objectEffect", "@enchantAmount" };
         private static readonly string[] CobjParamNames =
             { "@key", "@name", "@createdItem", "@workbench", "@ingredients" };
         private static readonly string[] CobjConditionParamNames =
@@ -942,7 +981,7 @@ namespace SkyrimCraftingTool.Model
         private static readonly string[] LeveledNpcParamNames = { "@key", "@editorID" };
         private static readonly string[] LeveledNpcEntryParamNames = { "@listKey", "@ordinal", "@reference", "@level", "@count" };
         private static readonly string[] LeveledListEntryParamNames = { "@listKey", "@ordinal", "@reference", "@level", "@count" };
-        private static readonly string[] LeveledListLostParamNames = { "@listKey", "@reference", "@level", "@count", "@lostFrom", "@ambiguous" };
+        private static readonly string[] LeveledListLostParamNames = { "@listKey", "@reference", "@level", "@count", "@lostFrom", "@ambiguous", "@addedBy", "@droppedBy" };
 
         private static readonly string[] NpcParamNames =
         {
@@ -1006,9 +1045,9 @@ namespace SkyrimCraftingTool.Model
         // param names (stripping "@") is wrong wherever they differ and was the cause of the
         // "table Armor has no column named val" crash.
         internal static readonly string[] ArmorColumnNames =
-            { "Key", "EditorID", "Name", "Weight", "Value", "ArmorRating", "BodySlotMask", "ArmorType", "Keywords", "ObjectEffectKey" };
+            { "Key", "EditorID", "Name", "Weight", "Value", "ArmorRating", "BodySlotMask", "ArmorType", "Keywords", "ObjectEffectKey", "EnchantAmount" };
         internal static readonly string[] WeaponColumnNames =
-            { "Key", "EditorID", "Name", "Weight", "Value", "Damage", "Speed", "Reach", "Stagger", "Keywords", "ObjectEffectKey" };
+            { "Key", "EditorID", "Name", "Weight", "Value", "Damage", "Speed", "Reach", "Stagger", "Keywords", "ObjectEffectKey", "EnchantAmount" };
         internal static readonly string[] CobjColumnNames =
             { "Key", "Name", "CreatedItem", "WorkbenchKeyword", "Ingredients" };
         private static readonly string[] CobjConditionColumnNames =
@@ -1026,7 +1065,33 @@ namespace SkyrimCraftingTool.Model
         private static readonly string[] LeveledNpcColumnNames = { "Key", "EditorID" };
         private static readonly string[] LeveledNpcEntryColumnNames = { "ListKey", "Ordinal", "Reference", "Level", "Count" };
         private static readonly string[] LeveledListEntryColumnNames = { "ListKey", "Ordinal", "Reference", "Level", "Count" };
-        private static readonly string[] LeveledListLostColumnNames = { "ListKey", "Reference", "Level", "Count", "LostFrom", "Ambiguous" };
+        // The plugin that dropped an entry: the version of the list right AFTER the last one that
+        // still carried it. Static and taking the version order, so the one piece of reasoning in
+        // this feature can be tested without a load order behind it - the rest of the lost-entry
+        // pass needs real plugin files and cannot be.
+        //
+        // FindLastIndex, not FindIndex: should a plugin ever define the same list twice, the
+        // occurrence nearest the winner is the one LostFrom refers to.
+        //
+        // Returns empty when there is nothing after it. By the logic of the pass that cannot happen
+        // - LostFrom is never the winner, and the winner is last - so an empty answer means the
+        // inputs disagree, and saying nothing beats naming the wrong plugin.
+        internal static string ResolveDroppedBy(IReadOnlyList<string> versionsInLoadOrder, string lostFrom)
+        {
+            if (versionsInLoadOrder == null || string.IsNullOrEmpty(lostFrom)) return "";
+
+            for (int i = versionsInLoadOrder.Count - 1; i >= 0; i--)
+            {
+                if (!string.Equals(versionsInLoadOrder[i], lostFrom, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                return i + 1 < versionsInLoadOrder.Count ? versionsInLoadOrder[i + 1] : "";
+            }
+
+            return "";
+        }
+
+        private static readonly string[] LeveledListLostColumnNames = { "ListKey", "Reference", "Level", "Count", "LostFrom", "Ambiguous", "AddedBy", "DroppedBy" };
         internal static readonly string[] MagicEffectColumnNames =
             { "Key", "EditorID", "Name", "HasMagnitude", "HasDuration", "HasArea", "CastType", "TargetType" };
         private static readonly string[] GlobalColumnNames = { "Key", "EditorID", "Value" };
@@ -1175,7 +1240,10 @@ namespace SkyrimCraftingTool.Model
                     string.Join(",", kw),
                     // Which enchantment the record wears. Empty rather than a null key when it has
                     // none: "no enchantment" is a value the editor has to be able to show and set.
-                    armor.ObjectEffect.FormKey.IsNull ? "" : KeyFactory.BuildMasterKey(armor.ObjectEffect.FormKey)
+                    armor.ObjectEffect.FormKey.IsNull ? "" : KeyFactory.BuildMasterKey(armor.ObjectEffect.FormKey),
+                    // EAMT: the record's own charge pool, needed for a maximum charge alongside the
+                    // enchantment link. Absent on every unenchanted record, which reads as 0.
+                    (int)(armor.EnchantmentAmount ?? 0)
                 });
             }
 
@@ -1204,7 +1272,9 @@ namespace SkyrimCraftingTool.Model
                     weap.Data?.Reach ?? 0f,
                     weap.Data?.Stagger ?? 0f,
                     string.Join(",", kw),
-                    weap.ObjectEffect.FormKey.IsNull ? "" : KeyFactory.BuildMasterKey(weap.ObjectEffect.FormKey)
+                    weap.ObjectEffect.FormKey.IsNull ? "" : KeyFactory.BuildMasterKey(weap.ObjectEffect.FormKey),
+                    // See the armor block above.
+                    (int)(weap.EnchantmentAmount ?? 0)
                 });
             }
 

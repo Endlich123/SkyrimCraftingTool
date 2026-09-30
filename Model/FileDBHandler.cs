@@ -62,17 +62,38 @@ namespace SkyrimCraftingTool.Model
             var pluginsTxt = GlobalState.PluginsFilePath;
             if (!File.Exists(pluginsTxt)) return VanillaPluginNames.ToList();
 
-            var names = File.ReadAllLines(pluginsTxt)
+            return OrderWithVanillaFirst(File.ReadAllLines(pluginsTxt));
+        }
+
+        // Split out of GetPluginsFromTxt so it can be tested without a database - the constructor
+        // opens plugins.db, and this rule was wrong for a long time without anything catching it.
+        //
+        // THE ORDER IS NOT COSMETIC. This list is what ExecuteFullScanAsync hands to both
+        // FormIdService.PutIntoDataBank and ItemService.PutIntoDataBank, and the scan resolves a
+        // conflict by "last plugin wins" (latestCobjByKey[key] = cobj and friends). Hand it the
+        // wrong order and the wrong plugin's version of a record ends up in the database.
+        //
+        // What it used to do: `foreach (var v in VanillaPluginNames) names.Insert(0, v);` - each
+        // master pushed in front of the one before it, so the five came out REVERSED
+        // (Dragonborn, HearthFires, Dawnguard, Update, Skyrim). Skyrim.esm therefore won every
+        // record the DLCs and Update.esm override, which is the exact opposite of the load order
+        // and defeats the entire purpose of Update.esm. Visible in the item tree as well, which is
+        // how it was spotted.
+        //
+        // Mods were never affected: they come out of plugins.txt in its own order and sit after
+        // this block, so they still beat vanilla.
+        internal static List<string> OrderWithVanillaFirst(IEnumerable<string> pluginsTxtLines)
+        {
+            var names = pluginsTxtLines
                 .Where(l => !string.IsNullOrWhiteSpace(l) && l.StartsWith("*"))
                 .Select(l => l.TrimStart('*').Trim())
                 .ToList();
 
-            // Always add vanilla, if not already in the list
-            foreach (var v in VanillaPluginNames)
-            {
-                if (!names.Contains(v, StringComparer.OrdinalIgnoreCase))
-                    names.Insert(0, v);
-            }
+            // The vanilla masters are implicit - Skyrim SE's plugins.txt does not list them - so they
+            // go in front of everything plugins.txt does name, in one go and in their own order.
+            names.InsertRange(0, VanillaPluginNames
+                .Where(v => !names.Contains(v, StringComparer.OrdinalIgnoreCase)));
+
             return names;
         }
 

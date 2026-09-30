@@ -27,6 +27,16 @@
         // one, because the enchanted variants are separate records rather than a flag.
         public string ObjectEffectKey { get; set; } = "";
 
+        // The item's OWN charge pool (EAMT), and the second half of a working enchanted item.
+        //
+        // Measured in xEdit (2026-09-30): the enchantment link alone does not give a weapon a
+        // maximum charge - without an enchant amount on the record itself it cannot be recharged.
+        // So an item assembled by pointing objectEffect at an enchantment and nothing else is
+        // exactly the broken form a tester arrived with.
+        //
+        // 0 on every unenchanted record, which is also what an absent field reads as.
+        public int EnchantAmount { get; set; }
+
         // Liste von Plugin|FormID
         public List<string> Keywords { get; set; } = new();
         public string ContainerString { get; set; } = "";
