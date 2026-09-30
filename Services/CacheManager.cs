@@ -165,6 +165,30 @@ namespace SkyrimCraftingTool.Services
             }
         }
 
+        // The item's own charge pool (EAMT). 0 is a value like any other here - see
+        // ArmorRecord.EnchantAmount.
+        public void UpdateArmorEnchantAmount(string key, int enchantAmount)
+        {
+            lock (_armorLock)
+            {
+                if (_snapshot.Armor.TryGetValue(key, out var rec))
+                    rec.EnchantAmount = enchantAmount;
+                else
+                    _snapshot.Armor[key] = new ArmorRecord { Key = key, EnchantAmount = enchantAmount };
+            }
+        }
+
+        public void UpdateWeaponEnchantAmount(string key, int enchantAmount)
+        {
+            lock (_weaponLock)
+            {
+                if (_snapshot.Weapons.TryGetValue(key, out var rec))
+                    rec.EnchantAmount = enchantAmount;
+                else
+                    _snapshot.Weapons[key] = new WeaponRecord { Key = key, EnchantAmount = enchantAmount };
+            }
+        }
+
         public void UpdateArmorKeywords(string key, List<string> keywordKeys)
         {
             lock (_armorLock)

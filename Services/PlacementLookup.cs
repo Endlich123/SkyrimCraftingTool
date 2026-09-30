@@ -37,15 +37,24 @@ namespace SkyrimCraftingTool.Services
         bool IsPlanned = false, bool IsRestored = false);
 
     // An item that used to be in the list and is not in the winning version any more. Name is
-    // resolved the same way an entry's is; LostFrom is the plugin it was last seen in, which is the
-    // first thing anyone asks once they see something is missing.
+    // resolved the same way an entry's is.
+    //
+    // THREE PLUGINS, DELIBERATELY. AddedBy put it in, LostFrom is the last version that still had
+    // it, DroppedBy is the version right after that. For a long time only LostFrom was carried, and
+    // a tester read it as the culprit - which is the one thing it is not.
     public sealed record LeveledListLostEntryInfo(
         string Reference, string Name, int Level, int Count, string LostFrom, bool IsList,
-        bool Ambiguous = false);
+        bool Ambiguous = false, string AddedBy = "", string DroppedBy = "");
 
-    // One line of the overview: a list that lost entries, and how many.
+    // One line of the overview: a list that lost entries, how many, and who dropped them.
+    //
+    // DroppedBy is a SUMMARY across the list's lost entries, so it has two shapes: the one plugin
+    // responsible, or - when several were - how many. Without it the overview could only say that
+    // something went missing, which is the complaint that produced this field ("it tends to raise
+    // more questions than it answers").
     public sealed record LostListSummary(
-        string ListKey, string EditorId, int LostCount);
+        string ListKey, string EditorId, int LostCount,
+        string DroppedBy = "", int DroppedByCount = 0);
 
     public sealed record LeveledListInfo(
         string Key, string EditorId, int ChanceNone, string Flags, string GlobalKey,
@@ -467,10 +476,16 @@ namespace SkyrimCraftingTool.Services
                 // themselves are not named here - the row is a way in, and the list it opens shows
                 // them with the names they would have had if they were still in it.
                 using var cmd = c.CreateCommand();
+                // MIN(DroppedBy) with COUNT(DISTINCT DroppedBy) rather than a second query: where
+                // one plugin dropped everything - the common case, since a list is usually pruned in
+                // one go - the count is 1 and MIN is that plugin. Where several did, the count says
+                // so and the name is not shown at all, because naming one of three would be wrong.
                 cmd.CommandText = @"
                     SELECT l.ListKey,
                            COALESCE(NULLIF(ll.EditorID, ''), l.ListKey) AS listName,
-                           COUNT(*) AS lostCount
+                           COUNT(*) AS lostCount,
+                           MIN(NULLIF(l.DroppedBy, '')) AS droppedBy,
+                           COUNT(DISTINCT NULLIF(l.DroppedBy, '')) AS droppedByCount
                     FROM LeveledListLostEntry l
                     LEFT JOIN LeveledList ll ON ll.Key = l.ListKey
                     GROUP BY l.ListKey
@@ -478,7 +493,10 @@ namespace SkyrimCraftingTool.Services
 
                 using var r = cmd.ExecuteReader();
                 while (r.Read())
-                    result.Add(new LostListSummary(r.GetString(0), r.GetString(1), r.GetInt32(2)));
+                    result.Add(new LostListSummary(
+                        r.GetString(0), r.GetString(1), r.GetInt32(2),
+                        r.IsDBNull(3) ? "" : r.GetString(3),
+                        r.IsDBNull(4) ? 0 : r.GetInt32(4)));
             }
             catch (Exception ex)
             {
@@ -561,12 +579,15 @@ namespace SkyrimCraftingTool.Services
                 if (HasTable(c, "LeveledListLostEntry"))
                 {
                     using var cmd = c.CreateCommand();
+                    // AddedBy/DroppedBy go LAST so the name-candidate indices 5..10 below stay put -
+                    // they are positional and were getting re-numbered every time this grew.
                     cmd.CommandText = $@"
                         SELECT l.Reference, l.Level, l.Count, l.LostFrom, l.Ambiguous,
                                nested.EditorID,
                                a.Name, a.EditorID,
                                w.Name, w.EditorID
-                               {(hasReferences ? ", m.Name" : ", NULL")}
+                               {(hasReferences ? ", m.Name" : ", NULL")},
+                               l.AddedBy, l.DroppedBy
                         FROM LeveledListLostEntry l
                         LEFT JOIN LeveledList nested ON nested.Key = l.Reference
                         LEFT JOIN Armor a           ON a.Key      = l.Reference
@@ -588,7 +609,11 @@ namespace SkyrimCraftingTool.Services
                             r.GetInt32(1), r.GetInt32(2),
                             r.IsDBNull(3) ? "" : r.GetString(3),
                             IsList: !r.IsDBNull(5),
-                            Ambiguous: !r.IsDBNull(4) && r.GetInt32(4) == 1));
+                            Ambiguous: !r.IsDBNull(4) && r.GetInt32(4) == 1,
+                            // Empty on a database scanned before these existed. The display treats
+                            // that as "not known" rather than inventing a plugin name.
+                            AddedBy: r.IsDBNull(11) ? "" : r.GetString(11),
+                            DroppedBy: r.IsDBNull(12) ? "" : r.GetString(12)));
                     }
                     lost.Sort((x, y) => string.Compare(x.Name, y.Name, StringComparison.CurrentCultureIgnoreCase));
                 }

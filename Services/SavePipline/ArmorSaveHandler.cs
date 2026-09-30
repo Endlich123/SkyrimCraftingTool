@@ -29,6 +29,7 @@ namespace SkyrimCraftingTool.Services.SavePipline
                 or nameof(ItemNodeVM.BodySlotMask)
                 or nameof(ItemNodeVM.ArmorType)
                 or nameof(ItemNodeVM.ObjectEffectKey)
+                or nameof(ItemNodeVM.EnchantAmount)
                 or nameof(ItemNodeVM.SelectedKeywordKeys)
                 or nameof(ItemNodeVM.ContainerString)
             );
@@ -72,6 +73,13 @@ namespace SkyrimCraftingTool.Services.SavePipline
                 case nameof(ItemNodeVM.ObjectEffectKey):
                     _itemService.UpdateArmorObjectEffect(item.Key, item.ObjectEffectKey);
                     _cache.UpdateArmorObjectEffect(item.Key, item.ObjectEffectKey);
+                    break;
+
+                // The item's own charge pool - the other half of an enchanted item, see
+                // ArmorRecord.EnchantAmount.
+                case nameof(ItemNodeVM.EnchantAmount):
+                    _itemService.UpdateArmorEnchantAmount(item.Key, item.EnchantAmount);
+                    _cache.UpdateArmorEnchantAmount(item.Key, item.EnchantAmount);
                     break;
 
                 case nameof(ItemNodeVM.SelectedKeywordKeys):

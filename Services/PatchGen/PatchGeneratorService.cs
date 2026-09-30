@@ -350,14 +350,17 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
             if (rule == null) return false;
 
-            // Taking an enchantment OFF is the one operation here whose syntax comes from reading
-            // the documentation rather than from a confirmed example. Assigning one is documented;
-            // clearing one with an empty value is the obvious reading and nothing more. Said out
-            // loud rather than trusted quietly - a patch that relies on it should be checked in game.
+            // Taking an enchantment OFF still gets said out loud, but no longer because the syntax is
+            // a guess - "objectEffect=null" was confirmed in game on 2026-09-30 (see
+            // ItemRuleBuilder.ObjectEffectRemovalOp). What remains is the part the rule cannot
+            // promise: the patch changes the BASE record, and by the user's own experience an
+            // enchantment that has already been put on an item is not reliably gone from copies a
+            // save has already handed out. So the warning now points at the save, not at the syntax.
             if (rule.Operations.Any(op => op == ItemRuleBuilder.ObjectEffectRemovalOp))
                 report.Warnings.Add(
-                    $"{rule.TargetPlugin}|{rule.TargetFormId}: removes the item's enchantment. " +
-                    "SkyPatcher documents assigning one, not clearing it - verify this one in game.");
+                    $"{rule.TargetPlugin}|{rule.TargetFormId}: removes the item's enchantment " +
+                    "(objectEffect=null). The base record loses it, but a copy your save already " +
+                    "carries may keep it - judge this one on a freshly spawned item.");
 
             foreach (var keyword in rule.ReferencedKeywordKeys)
                 if (_references != null && !_references.IsActive(keyword))

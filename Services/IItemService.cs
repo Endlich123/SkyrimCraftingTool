@@ -48,6 +48,8 @@ namespace SkyrimCraftingTool.Services
         void UpdateArmorArmorType(string key, string armorType);
         void UpdateArmorObjectEffect(string key, string objectEffectKey);
         void UpdateWeaponObjectEffect(string key, string objectEffectKey);
+        void UpdateArmorEnchantAmount(string key, int enchantAmount);
+        void UpdateWeaponEnchantAmount(string key, int enchantAmount);
         void UpdateArmorKeywords(string key, List<string> keywordKeys);
         void UpdateArmorContainerString(string key, string containerString);
 

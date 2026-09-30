@@ -54,6 +54,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
             var refKeys = AppendKeywordOps(ops, original.Keywords, edited.Keywords).ToList();
             AppendBipedSlotOps(ops, original.BodySlotMask, edited.BodySlotMask);
             AppendObjectEffectOp(ops, refKeys, original.ObjectEffectKey, edited.ObjectEffectKey);
+            AppendEnchantAmountOp(ops, original.EnchantAmount, edited.EnchantAmount);
 
             if (ops.Count == 0) return null;
             return new SkyPatcherRule
@@ -90,6 +91,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
             var refKeys = AppendKeywordOps(ops, original.Keywords, edited.Keywords).ToList();
             AppendObjectEffectOp(ops, refKeys, original.ObjectEffectKey, edited.ObjectEffectKey);
+            AppendEnchantAmountOp(ops, original.EnchantAmount, edited.EnchantAmount);
 
             if (ops.Count == 0) return null;
             return new SkyPatcherRule
@@ -104,13 +106,20 @@ namespace SkyrimCraftingTool.Services.PatchGen
         }
 
         // WHICH enchantment the item wears. One operation, and the only one here that can also take
-        // something AWAY: an empty value means "no enchantment any more".
+        // something AWAY.
         //
-        // THE REMOVAL FORM IS NOT CONFIRMED. Assigning an effect is documented
-        // (objectEffect=<Plugin>|<FormID>); clearing one with an empty value is the obvious reading
-        // and nothing more - the generator flags it in the report so a patch that relies on it is
-        // never silently trusted. Assignment is unaffected either way.
-        internal const string ObjectEffectRemovalOp = "objectEffect=";
+        // THE REMOVAL FORM IS "null", NOT AN EMPTY VALUE, and that was wrong here until 2026-09-30.
+        // This used to emit a bare "objectEffect=" on the reading that an empty value means "no
+        // enchantment any more". It does not: tested in game on
+        //   filterByArmors=Skyrim.esm|000FCC13:objectEffect=null      -> enchantment gone
+        //   the same rule without "null"                              -> no effect at all
+        // and the documentation's own example says the same (objectEffect=null). So a strip was
+        // silently doing nothing for as long as the feature existed.
+        //
+        // "null" is also the token SkyPatcher documents for clearing deathItem and skin, which
+        // NpcRuleBuilder.AppendLinkOps already wrote - this field is what the comment over there
+        // claimed to match and did not.
+        internal const string ObjectEffectRemovalOp = "objectEffect=null";
 
         private static void AppendObjectEffectOp(
             List<string> ops, List<string> refKeys, string? original, string? edited)
@@ -131,6 +140,22 @@ namespace SkyrimCraftingTool.Services.PatchGen
             // Into the reference list so the dead-reference pass covers it: an enchantment from a
             // plugin that is no longer in the scan would otherwise be written without a word.
             refKeys.Add(to);
+        }
+
+        // The item's OWN charge pool, and the companion of the operation above. Both patchers
+        // document it (`enchantAmount`, Armor_Patcher.txt and Weapon_Patcher.txt).
+        //
+        // WHY IT IS ITS OWN OPERATION rather than something derived from the enchantment: the two
+        // are different records. objectEffect says which effect the item carries; this says how much
+        // charge the item can hold. Measured in xEdit - an item with the link and no amount has no
+        // maximum charge and cannot be recharged, which is the exact state a tester's bow was in.
+        //
+        // 0 is written like any other value. "No charge" is a real state, and an item being taken
+        // back down to it is a legitimate edit rather than an absence.
+        private static void AppendEnchantAmountOp(List<string> ops, int original, int edited)
+        {
+            if (original == edited) return;
+            ops.Add($"enchantAmount={PatchFormat.Int(edited)}");
         }
 
         // --- helpers ---

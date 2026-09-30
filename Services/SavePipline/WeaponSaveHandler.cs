@@ -32,6 +32,7 @@ namespace SkyrimCraftingTool.Services.SavePipline
                 or nameof(ItemNodeVM.SelectedKeywordKeys)
                 or nameof(ItemNodeVM.ContainerString)
                 or nameof(ItemNodeVM.ObjectEffectKey)
+                or nameof(ItemNodeVM.EnchantAmount)
             );
 
         public Task HandleAsync(SaveRequest r)
@@ -89,6 +90,13 @@ namespace SkyrimCraftingTool.Services.SavePipline
                 case nameof(ItemNodeVM.ObjectEffectKey):
                     _itemService.UpdateWeaponObjectEffect(item.Key, item.ObjectEffectKey);
                     _cache.UpdateWeaponObjectEffect(item.Key, item.ObjectEffectKey);
+                    break;
+
+                // The weapon's own charge pool - the other half of an enchanted item, and the half
+                // that decides whether it can be recharged. See ArmorRecord.EnchantAmount.
+                case nameof(ItemNodeVM.EnchantAmount):
+                    _itemService.UpdateWeaponEnchantAmount(item.Key, item.EnchantAmount);
+                    _cache.UpdateWeaponEnchantAmount(item.Key, item.EnchantAmount);
                     break;
             }
 
