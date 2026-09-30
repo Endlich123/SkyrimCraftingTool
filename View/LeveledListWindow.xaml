@@ -432,13 +432,18 @@
                                     </TextBlock.Style>
                                 </TextBlock>
 
+                                <!-- Shows the plugin that DROPPED the entry, not the last one that
+                                     had it. The old label ("the last plugin this item was still
+                                     in") was accurate and still got read as "the culprit" - so the
+                                     row now answers the question that was actually being asked, and
+                                     the tooltip carries the full chain. -->
                                 <TextBlock Grid.Column="2"
-                                           Text="{Binding LostFrom}"
+                                           Text="{Binding LineageText}"
                                            Foreground="{DynamicResource ColorTextTertiary}"
                                            FontSize="10" Margin="8,0,8,0"
                                            VerticalAlignment="Center"
                                            TextTrimming="CharacterEllipsis" MaxWidth="180"
-                                           ToolTip="The last plugin this item was still in."/>
+                                           ToolTip="{Binding LineageTooltip}"/>
 
                                 <StackPanel Grid.Column="3" Orientation="Horizontal" MinWidth="72"
                                             VerticalAlignment="Center">

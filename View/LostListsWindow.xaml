@@ -48,9 +48,24 @@
                                                TextTrimming="CharacterEllipsis"/>
                                 </DockPanel>
 
-                                <TextBlock Text="{Binding ListKey}"
-                                           Foreground="{DynamicResource ColorTextTertiary}"
-                                           FontSize="10" Margin="0,2,0,0"/>
+                                <DockPanel Margin="0,2,0,0">
+                                    <!-- Who dropped the entries, on the row itself. Without it the
+                                         overview could only say that something went missing, which
+                                         is what raised more questions than it answered. Hidden
+                                         rather than blank on a database scanned before this
+                                         existed. -->
+                                    <TextBlock DockPanel.Dock="Right"
+                                               Text="{Binding DroppedByText}"
+                                               Visibility="{Binding HasDroppedBy, Converter={StaticResource BoolToVis}}"
+                                               Foreground="{DynamicResource ColorTextTertiary}"
+                                               FontSize="10" Margin="10,0,10,0"
+                                               TextTrimming="CharacterEllipsis" MaxWidth="260"
+                                               ToolTip="The plugin whose version of this list no longer carries the entries. Dropping them may well have been deliberate - this says who, not why."/>
+
+                                    <TextBlock Text="{Binding ListKey}"
+                                               Foreground="{DynamicResource ColorTextTertiary}"
+                                               FontSize="10"/>
+                                </DockPanel>
                             </StackPanel>
                         </DockPanel>
                     </Border>

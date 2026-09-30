@@ -306,9 +306,11 @@
                                                 <RowDefinition Height="Auto" />
                                                 <!-- Cost -->
                                                 <RowDefinition Height="Auto" />
+                                                <!-- Weight -->
                                                 <RowDefinition Height="Auto" />
                                                 <!-- Enchantment -->
-                                                <!-- Weight -->
+                                                <RowDefinition Height="Auto" />
+                                                <!-- Charge (EAMT) -->
                                             </Grid.RowDefinitions>
 
                                             <!-- EditorID -->
@@ -439,24 +441,51 @@
                                                        Text="Enchantment:"
                                                        Style="{StaticResource ItemLabelStyle}"/>
 
-                                            <!-- Editable and filtering as you type, like the workbench
-                                                 picker: 632 entries are not a list anyone scrolls.
-                                                 IsTextSearchEnabled off, because the Text here is the
-                                                 SEARCH string - WPF's own type-ahead would fight it. -->
-                                            <ComboBox Grid.Row="5"
-                                                      Grid.Column="1"
-                                                      ItemsSource="{Binding FilteredEnchantments}"
-                                                      SelectedItem="{Binding SelectedEnchantment, Mode=TwoWay}"
-                                                      Text="{Binding EnchantmentSearchText, UpdateSourceTrigger=PropertyChanged}"
-                                                      IsEditable="True"
-                                                      IsTextSearchEnabled="False"
-                                                      IsSynchronizedWithCurrentItem="False"
-                                                      StaysOpenOnEdit="True"
-                                                      TextSearch.TextPath="Name"
-                                                      DisplayMemberPath="Name"
-                                                      BorderBrush="{Binding IsObjectEffectChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
-                                                      Style="{StaticResource ItemComboBoxStyle}"
-                                                      ToolTip="{Binding ObjectEffectSummary}"/>
+                                            <!-- Picker plus jump button in one cell, rather than a
+                                                 fourth grid column: every other row in this grid is
+                                                 label / control / info, and a column added for one
+                                                 button would indent all of them. -->
+                                            <DockPanel Grid.Row="5" Grid.Column="1" LastChildFill="True">
+
+                                                <!-- Sprungmarke zum Enchantment-Tab (Prio 9). Sagt als
+                                                     Knopf, was bisher nur im Info-Tooltip stand: hier
+                                                     wird zugewiesen, bearbeitet wird drüben.
+
+                                                     KEIN eigener Margin. Der erste Anlauf setzte
+                                                     "6,0,0,0" und stand damit falsch in beide
+                                                     Richtungen: 5px weiter rechts als jede Zeile
+                                                     darüber, weil die 5 aus dem Stil der Takt dieser
+                                                     Spalte sind und nicht Zierde - und 2,5px zu tief,
+                                                     weil der Bodenabstand der ComboBox das DockPanel
+                                                     um 5px höher macht und ein zentrierter Knopf ohne
+                                                     denselben Bodenabstand darin nach unten rutscht.
+                                                     Der Stil bringt 0,0,5,5 und VerticalAlignment
+                                                     schon mit, und den Abstand zur Box liefert deren
+                                                     eigener Rechtsabstand. -->
+                                                <Button DockPanel.Dock="Right"
+                                                        Content="Jump to enchantment"
+                                                        Command="{Binding JumpToEnchantmentCommand}"
+                                                        IsEnabled="{Binding CanJumpToEnchantment}"
+                                                        Style="{StaticResource StandardButtonStyle}"
+                                                        ToolTip="Opens this enchantment in the Enchantments tab, where its effects and worn restrictions can be edited. Greyed out when the item wears none, or when the enchantment's plugin is not in the scan."/>
+
+                                                <!-- Editable and filtering as you type, like the workbench
+                                                     picker: 632 entries are not a list anyone scrolls.
+                                                     IsTextSearchEnabled off, because the Text here is the
+                                                     SEARCH string - WPF's own type-ahead would fight it. -->
+                                                <ComboBox ItemsSource="{Binding FilteredEnchantments}"
+                                                          SelectedItem="{Binding SelectedEnchantment, Mode=TwoWay}"
+                                                          Text="{Binding EnchantmentSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                          IsEditable="True"
+                                                          IsTextSearchEnabled="False"
+                                                          IsSynchronizedWithCurrentItem="False"
+                                                          StaysOpenOnEdit="True"
+                                                          TextSearch.TextPath="Name"
+                                                          DisplayMemberPath="Name"
+                                                          BorderBrush="{Binding IsObjectEffectChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                                          Style="{StaticResource ItemComboBoxStyle}"
+                                                          ToolTip="{Binding ObjectEffectSummary}"/>
+                                            </DockPanel>
 
                                             <Button Grid.Row="5" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
                                                 <Button.ToolTip>
@@ -468,7 +497,44 @@
                                                                        Style="{StaticResource ToolTipTextStyle}"/>
                                                             <TextBlock Text="•  This assigns an existing enchantment - it does not edit the enchantment itself. That is the Enchantments tab."
                                                                        Style="{StaticResource ToolTipTextStyle}"/>
-                                                            <TextBlock Text="•  Choosing (no enchantment) takes it off. That one is not confirmed in game yet - the patch report says so."
+                                                            <TextBlock Text="•  Choosing (no enchantment) takes it off. The base record loses it, but a copy your save already carries may keep it - judge that on a freshly spawned item."
+                                                                       Style="{StaticResource ToolTipTextStyle}"/>
+                                                            <TextBlock Text="•  An enchantment on its own is only half of it. The charge below is what lets the item hold and recharge it."
+                                                                       Style="{StaticResource ToolTipTextStyle}"/>
+                                                        </StackPanel>
+                                                    </ToolTip>
+                                                </Button.ToolTip>
+                                            </Button>
+
+                                            <!-- The item's OWN charge pool (EAMT), directly under the
+                                                 enchantment because the two are one thing in use:
+                                                 objectEffect says WHICH effect, this says how much
+                                                 charge the item can hold. Measured in xEdit - with the
+                                                 link and no amount there is no maximum charge and the
+                                                 weapon cannot be recharged. A tester arrived with
+                                                 exactly that item. -->
+                                            <TextBlock Grid.Row="6"
+                                                       Text="Charge:"
+                                                       Style="{StaticResource ItemLabelStyle}"/>
+
+                                            <TextBox Grid.Row="6"
+                                                     Grid.Column="1"
+                                                     Text="{Binding EnchantAmount}"
+                                                     BorderBrush="{Binding IsEnchantAmountChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                                     model:NumericTextBoxBehavior.Mode="Integer"
+                                                     Style="{StaticResource ItemTextBoxStyle}"/>
+
+                                            <Button Grid.Row="6" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
+                                                <Button.ToolTip>
+                                                    <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                        <StackPanel>
+                                                            <TextBlock Text="How much enchantment charge this item can hold."
+                                                                       Style="{StaticResource ToolTipTitelStyle}"/>
+                                                            <TextBlock Text="•  This is the item's own field, not the enchantment's. An item that carries an enchantment but has no charge here cannot be recharged."
+                                                                       Style="{StaticResource ToolTipTextStyle}"/>
+                                                            <TextBlock Text="•  How many casts that is depends on the enchantment's cost, which lives in the Enchantments tab."
+                                                                       Style="{StaticResource ToolTipTextStyle}"/>
+                                                            <TextBlock Text="•  0 on every unenchanted item, and that is what it should stay there."
                                                                        Style="{StaticResource ToolTipTextStyle}"/>
                                                         </StackPanel>
                                                     </ToolTip>
