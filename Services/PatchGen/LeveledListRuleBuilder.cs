@@ -297,6 +297,75 @@ namespace SkyrimCraftingTool.Services.PatchGen
             return rules;
         }
 
+        // Objects the user decided to take OUT of a container or a list.
+        //
+        // THE ONE PLACE IN THIS FILE THAT IS NOT ADDITIVE, and everything above says why that matters:
+        // every other rule here supplements what the game loaded, so it cannot clobber another mod
+        // and the patch can be regenerated at will. These rules delete. They are built separately,
+        // counted separately and reported separately for exactly that reason - see
+        // PatchGeneratorService, which puts them in their own section of the report.
+        //
+        // ONE OPERATION PER OBJECT, NEVER PER ENTRY. removeFromLLs / removeFromContainers take an
+        // object and take every occurrence of it with them. The editor therefore folds identical
+        // entries into one row before the user ever sees them (PlacementLookup.OwnedEntry), so there
+        // is no way to ask for something this cannot express.
+        //
+        // Filed under the REFERENCE's plugin, like the restore rules: if the mod that owns the object
+        // leaves the load order, the rule leaves with it instead of naming a FormID nothing defines.
+        public static IReadOnlyList<SkyPatcherRule> BuildRemovalRules(
+            IEnumerable<RemovedEntry> removed,
+            RemovalScope scope,
+            IReadOnlyDictionary<string, string>? ownerNames = null)
+        {
+            var rules = new List<SkyPatcherRule>();
+
+            string filter = scope == RemovalScope.Container ? "filterByContainers" : "filterByLLs";
+            string op = scope == RemovalScope.Container ? "removeFromContainers" : "removeFromLLs";
+            string what = scope == RemovalScope.Container ? "container" : "leveled list";
+
+            foreach (var byOwner in (removed ?? Enumerable.Empty<RemovedEntry>())
+                         .Where(e => e != null
+                                     && !string.IsNullOrWhiteSpace(e.OwnerKey)
+                                     && !string.IsNullOrWhiteSpace(e.Reference))
+                         .GroupBy(e => e.OwnerKey, StringComparer.OrdinalIgnoreCase)
+                         .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                foreach (var byFile in byOwner
+                             .GroupBy(e => KeyFactory.SplitMasterKey(e.Reference).master, StringComparer.OrdinalIgnoreCase)
+                             .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    var entries = byFile
+                        .Select(e => e.Reference)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
+                        .Select(PatchFormat.RefKey8)
+                        .ToList();
+
+                    if (entries.Count == 0) continue;
+
+                    var (plugin, formId) = KeyFactory.SplitMasterKey(byOwner.Key);
+                    var ownerName = ownerNames != null && ownerNames.TryGetValue(byOwner.Key, out var n) && !string.IsNullOrWhiteSpace(n)
+                        ? $"{n} ({byOwner.Key})"
+                        : byOwner.Key;
+
+                    rules.Add(new SkyPatcherRule
+                    {
+                        FilterDirective = filter,
+                        TargetPlugin = plugin,
+                        TargetFormId = formId,
+                        FilePlugin = byFile.Key,
+                        // Says "every" out loud in the file itself. Someone reading the INI a year
+                        // from now has to be able to see that this is not a per-entry removal.
+                        Comment = $"{what} {ownerName}: removes every occurrence of {entries.Count} object(s)",
+                        Operations = new[] { op + "=" + string.Join(",", entries) },
+                        ReferencedKeywordKeys = byFile.Select(e => e.Reference).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                    });
+                }
+            }
+
+            return rules;
+        }
+
         // The list's OWN properties: chance of nothing, and how it calculates.
         //
         // A different kind of rule from everything above it, in one crucial way. The placement rules

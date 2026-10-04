@@ -50,6 +50,10 @@ namespace SkyrimCraftingTool.Services
         void UpdateWeaponObjectEffect(string key, string objectEffectKey);
         void UpdateArmorEnchantAmount(string key, int enchantAmount);
         void UpdateWeaponEnchantAmount(string key, int enchantAmount);
+
+        // Placeable records (books, scrolls, misc, …): one editable field, one method.
+        void UpdateWorldItemContainerString(string key, string containerString);
+        List<WorldItemRecord> LoadWorldItems();
         void UpdateArmorKeywords(string key, List<string> keywordKeys);
         void UpdateArmorContainerString(string key, string containerString);
 

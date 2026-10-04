@@ -46,6 +46,9 @@ namespace SkyrimCraftingTool.Services.Adapters
 
         public void UpdateArmorEnchantAmount(string key, int enchantAmount) => ItemDBHandler.UpdateArmorEnchantAmount(key, enchantAmount);
         public void UpdateWeaponEnchantAmount(string key, int enchantAmount) => ItemDBHandler.UpdateWeaponEnchantAmount(key, enchantAmount);
+
+        public void UpdateWorldItemContainerString(string key, string containerString) => ItemDBHandler.UpdateWorldItemContainerString(key, containerString);
+        public List<WorldItemRecord> LoadWorldItems() => ItemDBHandler.LoadWorldItems();
         public void UpdateArmorKeywords(string key, List<string> keywordKeys)
         {
             var col = new System.Collections.ObjectModel.ObservableCollection<SkyrimCraftingTool.ViewModel.KeywordSelectionVM>();

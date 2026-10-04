@@ -46,6 +46,36 @@ namespace SkyrimCraftingTool.Services
         string Reference, string Name, int Level, int Count, string LostFrom, bool IsList,
         bool Ambiguous = false, string AddedBy = "", string DroppedBy = "");
 
+    // A row in the Container/LeveledList tab's tree.
+    public sealed record OwnerSummary(string Key, string Name, int EntryCount);
+
+    // One OBJECT inside a container or a list, with every occurrence of it folded together.
+    //
+    // GROUPED, AND THAT IS THE WHOLE POINT. ContainerEntry and LeveledListEntry are keyed by ordinal
+    // because the same object may legitimately be listed twice - 3,982 list entries share
+    // (list, reference, level) with another. But the patch removes an OBJECT and takes every
+    // occurrence with it ("Removes all Potion of Extreme Healing from the filtered LL"). Offering
+    // the rows separately would let someone tick one of two identical entries and lose both in game.
+    //
+    // Occurrences is how many rows were folded in, so the view can say "x2" and mean it. TotalCount
+    // is their counts added up - a container holding 200 gold in one row and 50 in another holds 250.
+    //
+    // THE FOLD IS THE DECISION, NOT THE DISPLAY. Breakdown carries the rows that were folded in, so
+    // the view can show a list entry the way the leveled-list window shows it - "Level 8 x2" per
+    // row - while the tick above them stays one tick about the object. Showing the occurrences as
+    // separate TICKS is the thing that must not happen: the user would be ticking one of two
+    // identical entries, and the patch cannot do that.
+    public sealed record OwnedEntry(
+        string Reference, string Name, int Occurrences, int TotalCount, bool IsList, bool IsRemoved,
+        IReadOnlyList<OwnedOccurrence>? Breakdown = null);
+
+    // Who will put a row there. Scanned is the load order as it is; the other two are the patch.
+    public enum OwnedOrigin { Scanned, Planned, Readded }
+
+    // One row of a container or a leveled list. Level is 0 for a container - a chest has no levels,
+    // and ContainerEntry has no column for one.
+    public sealed record OwnedOccurrence(int Level, int Count, OwnedOrigin Origin = OwnedOrigin.Scanned);
+
     // One line of the overview: a list that lost entries, how many, and who dropped them.
     //
     // DroppedBy is a SUMMARY across the list's lost entries, so it has two shapes: the one plugin
@@ -55,6 +85,12 @@ namespace SkyrimCraftingTool.Services
     public sealed record LostListSummary(
         string ListKey, string EditorId, int LostCount,
         string DroppedBy = "", int DroppedByCount = 0);
+
+    // What one leveled list has lost, for a History that collects several of them - see
+    // PlacementLookup.ReadLostEntries. ListName is the list's EditorID, because in a container's
+    // History the row has to say which of the chest's lists it came from.
+    public sealed record LostEntryGroup(
+        string ListKey, string ListName, IReadOnlyList<LeveledListLostEntryInfo> Entries);
 
     public sealed record LeveledListInfo(
         string Key, string EditorId, int ChanceNone, string Flags, string GlobalKey,
@@ -265,21 +301,75 @@ namespace SkyrimCraftingTool.Services
         public static IReadOnlyList<PlannedPlacement> PlannedFor(string listKey, string? dbPath = null)
         {
             var planned = new List<PlannedPlacement>();
-            if (string.IsNullOrWhiteSpace(listKey)) return planned;
+
+            foreach (var (itemKey, name, containerString) in ReadPlacementStrings(listKey, dbPath, nameof(PlannedFor)))
+            {
+                var best = LowestPlacementIn(containerString, listKey);
+                if (best != null)
+                    planned.Add(new PlannedPlacement(itemKey, name, best.Value.Level, best.Value.Count));
+            }
+
+            return planned;
+        }
+
+        // The same question for a CONTAINER: which items will the patch put into this chest itself.
+        //
+        // IT IS A DIFFERENT TEST, which is why PlannedFor could not answer it and quietly returned
+        // nothing. A placement is stored as "{ContainerKey: {LVLiKey,Level; ...}}", and the sliders
+        // decide what was meant: any slider above 0 places the item into THOSE leveled lists, every
+        // slider at 0 places it into the container itself. PlannedFor looks for a raised slider on
+        // the list it was asked about; a direct container placement has none, so it matched nothing.
+        //
+        // The test below is the one LeveledListRuleBuilder.ParsePlacements makes before it writes
+        // filterByContainers + addOnceToContainers. It has to stay the same test: a view that
+        // disagrees with the rule builder either shows a row the patch never writes or hides one it
+        // does.
+        //
+        // Count is 1 because that is what the rule carries (LeveledListRuleBuilder.EntryCount) - the
+        // Container tab models a level per list, never an amount.
+        public static IReadOnlyList<PlannedPlacement> PlannedForContainer(string containerKey, string? dbPath = null)
+        {
+            var planned = new List<PlannedPlacement>();
+
+            foreach (var (itemKey, name, containerString) in ReadPlacementStrings(containerKey, dbPath, nameof(PlannedForContainer)))
+            {
+                if (IsDirectPlacementInto(containerString, containerKey))
+                    planned.Add(new PlannedPlacement(itemKey, name, Level: 0, Count: 1));
+            }
+
+            return planned;
+        }
+
+        // Every placement string that so much as mentions the key, from all THREE tables that can
+        // hold one.
+        //
+        // WorldItem was missing here, and that was a hole of its own: books, scrolls, misc items,
+        // soul gems, ammo, food, ingredients and keys are placed exactly like armor and weapons
+        // (PatchGeneratorService feeds them through the same ParsePlacements), so a book placed into
+        // a list was patched but never shown as planned - not here and not in the leveled-list
+        // window, which reads the same lookup.
+        //
+        // The shadow column, not the base one: the scan never writes ContainerString, so every
+        // placement is a user edit and lives in IsEditedContainerString. LIKE is a cheap pre-filter;
+        // the string is parsed properly by the caller, because a key can appear either as a list's
+        // or as the container's own.
+        private static IEnumerable<(string ItemKey, string Name, string ContainerString)> ReadPlacementStrings(
+            string key, string? dbPath, string what)
+        {
+            var rows = new List<(string, string, string)>();
+            if (string.IsNullOrWhiteSpace(key)) return rows;
 
             try
             {
                 using var c = TryOpen(dbPath);
-                if (c == null) return planned;
+                if (c == null) return rows;
 
-                foreach (var table in new[] { "Armor", "Weapons" })
+                foreach (var table in new[] { "Armor", "Weapons", "WorldItem" })
                 {
-                    using var cmd = c.CreateCommand();
+                    // An older database may not have WorldItem at all; the other two still answer.
+                    if (!HasTable(c, table)) continue;
 
-                    // The shadow column, not the base one: the scan never writes ContainerString, so
-                    // every placement is a user edit and lives in IsEditedContainerString. LIKE is a
-                    // cheap pre-filter - the string is parsed properly below, because a key can also
-                    // appear as the container's own key.
+                    using var cmd = c.CreateCommand();
                     cmd.CommandText = $@"
                         SELECT Key, COALESCE(NULLIF(Name, ''), EditorID), IsEditedContainerString
                         FROM {table}
@@ -287,27 +377,52 @@ namespace SkyrimCraftingTool.Services
                           AND IsEditedContainerString IS NOT NULL
                           AND IsEditedContainerString LIKE @like
                         ORDER BY 2";
-                    cmd.Parameters.AddWithValue("@like", "%" + listKey + "%");
+                    cmd.Parameters.AddWithValue("@like", "%" + key + "%");
 
                     using var r = cmd.ExecuteReader();
                     while (r.Read())
                     {
                         var itemKey = r.GetString(0);
-                        var name = r.IsDBNull(1) ? itemKey : r.GetString(1);
-                        var containerString = r.IsDBNull(2) ? "" : r.GetString(2);
-
-                        var best = LowestPlacementIn(containerString, listKey);
-                        if (best != null)
-                            planned.Add(new PlannedPlacement(itemKey, name, best.Value.Level, best.Value.Count));
+                        rows.Add((
+                            itemKey,
+                            r.IsDBNull(1) ? itemKey : r.GetString(1),
+                            r.IsDBNull(2) ? "" : r.GetString(2)));
                     }
                 }
             }
             catch (Exception ex)
             {
-                AppLogger.LogError($"PlacementLookup.PlannedFor({listKey})", ex);
+                AppLogger.LogError($"PlacementLookup.{what}({key})", ex);
             }
 
-            return planned;
+            return rows;
+        }
+
+        // "Goes straight into that container": the container is named and not one of its sliders was
+        // raised. See PlannedForContainer for why this mirrors the rule builder exactly.
+        private static bool IsDirectPlacementInto(string containerString, string containerKey)
+        {
+            List<ParsedContainerEntry> parsed;
+            try
+            {
+                parsed = ContainerStringParser.Parse(containerString);
+            }
+            catch (Exception)
+            {
+                // A malformed string costs this one item's row, never the view.
+                return false;
+            }
+
+            foreach (var container in parsed)
+            {
+                if (!string.Equals(container.ContainerKey, containerKey, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (!container.Placements.Any(p => p.Value.Level > 0))
+                    return true;
+            }
+
+            return false;
         }
 
         private static (int Level, int Count)? LowestPlacementIn(string containerString, string listKey)
@@ -462,6 +577,167 @@ namespace SkyrimCraftingTool.Services
         // sits in them. On a real load order that means 155 affected lists nobody will ever open by
         // accident. Reported per list, most losses first, because that is the order in which they
         // are worth looking at.
+        // --- The Container / LeveledList tab (2026-09-30) ---
+        //
+        // Two trees and two content views over data the scan has always collected: ContainerEntry
+        // holds every entry of every container, LeveledListEntry every entry of every list. Until
+        // now both were read only from the far side - "where does this item already appear" - so
+        // nobody could open a container and look inside it.
+
+        // The tree of containers. Only those that hold something: an empty container is a row nobody
+        // can do anything with, and the real load order has plenty of them.
+        public static IReadOnlyList<OwnerSummary> AllContainers(string? dbPath = null)
+            => ReadOwners(dbPath,
+                @"SELECT k.ContainerKey, COALESCE(NULLIF(k.Name, ''), k.ContainerKey), COUNT(e.Reference)
+                  FROM Container k
+                  JOIN ContainerEntry e ON e.ContainerKey = k.ContainerKey
+                  WHERE k.Active = 1
+                  GROUP BY k.ContainerKey
+                  ORDER BY 2",
+                "AllContainers");
+
+        // The tree of leveled lists, same rule.
+        public static IReadOnlyList<OwnerSummary> AllLeveledLists(string? dbPath = null)
+            => ReadOwners(dbPath,
+                @"SELECT l.Key, COALESCE(NULLIF(l.EditorID, ''), l.Key), COUNT(e.Reference)
+                  FROM LeveledList l
+                  JOIN LeveledListEntry e ON e.ListKey = l.Key
+                  WHERE l.Active = 1
+                  GROUP BY l.Key
+                  ORDER BY 2",
+                "AllLeveledLists");
+
+        private static IReadOnlyList<OwnerSummary> ReadOwners(string? dbPath, string sql, string what)
+        {
+            var result = new List<OwnerSummary>();
+            try
+            {
+                using var c = TryOpen(dbPath);
+                if (c == null) return result;
+
+                using var cmd = c.CreateCommand();
+                cmd.CommandText = sql;
+                using var r = cmd.ExecuteReader();
+                while (r.Read())
+                    result.Add(new OwnerSummary(r.GetString(0), r.GetString(1), r.GetInt32(2)));
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError($"PlacementLookup.{what}", ex);
+            }
+            return result;
+        }
+
+        // What is inside one container, folded per object - see OwnedEntry for why folded.
+        public static IReadOnlyList<OwnedEntry> ReadContainerContents(string containerKey, string? dbPath = null)
+            => ReadContents(RemovalScope.Container, containerKey, dbPath,
+                "FROM ContainerEntry e", "e.ContainerKey", hasLevel: false);
+
+        // The same for a leveled list.
+        public static IReadOnlyList<OwnedEntry> ReadListContents(string listKey, string? dbPath = null)
+            => ReadContents(RemovalScope.LeveledList, listKey, dbPath,
+                "FROM LeveledListEntry e", "e.ListKey", hasLevel: true);
+
+        private static IReadOnlyList<OwnedEntry> ReadContents(
+            RemovalScope scope, string ownerKey, string? dbPath,
+            string fromClause, string ownerColumn, bool hasLevel)
+        {
+            var result = new List<OwnedEntry>();
+            if (string.IsNullOrWhiteSpace(ownerKey)) return result;
+
+            try
+            {
+                using var c = TryOpen(dbPath);
+                if (c == null) return result;
+
+                bool hasReferences = TryAttachFormIds(c, dbPath);
+                bool hasWorldItems = HasTable(c, "WorldItem");
+
+                // The decisions are read once and matched in memory: one small set per owner, and a
+                // join against another table would have to cope with it not existing on an old
+                // database. RemovalStore already answers that question safely.
+                var removed = RemovalStore.RemovedKeys(scope, ownerKey, dbPath);
+
+                using var cmd = c.CreateCommand();
+                // ONE ROW PER ENTRY, folded here rather than by SQL. It used to be a GROUP BY with
+                // COUNT/SUM, which answered "how many and how much" and threw away the only thing a
+                // leveled list's rows differ in: the LEVEL. A list that hands out a sword at level 4
+                // and again at level 30 is not "a sword x2", and that is what the window next door
+                // has always shown. The aggregate is still carried - see OwnedEntry.
+                //
+                // Name resolution is the same ladder as everywhere else - nested list, armor,
+                // weapon, then formid.db's materials. The candidate columns stay at 3..8 so the
+                // positional FirstNonEmpty call below keeps working; Count and Level took 1 and 2,
+                // where the two aggregates used to be.
+                cmd.CommandText = $@"
+                    SELECT e.Reference, e.Count, {(hasLevel ? "e.Level" : "0")},
+                           nested.EditorID,
+                           a.Name, a.EditorID,
+                           w.Name, w.EditorID
+                           {(hasReferences ? ", m.Name" : ", NULL")}
+                           {(hasWorldItems ? ", wi.Name, wi.EditorID" : ", NULL, NULL")}
+                    {fromClause}
+                    LEFT JOIN LeveledList nested ON nested.Key = e.Reference
+                    LEFT JOIN Armor a           ON a.Key      = e.Reference
+                    LEFT JOIN Weapons w         ON w.Key      = e.Reference
+                    {(hasReferences ? "LEFT JOIN formids.Materials m ON m.Key = e.Reference" : "")}
+                    {(hasWorldItems ? "LEFT JOIN WorldItem wi ON wi.Key = e.Reference" : "")}
+                    WHERE {ownerColumn} = @k
+                    ORDER BY e.Ordinal";
+                cmd.Parameters.AddWithValue("@k", ownerKey);
+
+                // Insertion-ordered, so the rows of one object stay in the order the record lists
+                // them - a list read top to bottom is how anyone compares it against xEdit.
+                var byReference = new Dictionary<string, (string Name, bool IsList, List<OwnedOccurrence> Rows)>(
+                    StringComparer.OrdinalIgnoreCase);
+                var order = new List<string>();
+
+                using var r = cmd.ExecuteReader();
+                while (r.Read())
+                {
+                    var reference = r.GetString(0);
+                    int count = r.IsDBNull(1) ? 1 : r.GetInt32(1);
+                    int level = r.IsDBNull(2) ? 0 : r.GetInt32(2);
+
+                    if (!byReference.TryGetValue(reference, out var folded))
+                    {
+                        // 9 and 10 are the world item's name and EditorID, tried before formid.db's
+                        // materials dump at 8: both can hold the same key, and this database's own
+                        // table is the one a rescan keeps in step.
+                        folded = (FirstNonEmpty(r, reference, 3, 4, 5, 6, 7, 9, 10, 8), !r.IsDBNull(3), new List<OwnedOccurrence>());
+                        byReference[reference] = folded;
+                        order.Add(reference);
+                    }
+
+                    folded.Rows.Add(new OwnedOccurrence(level, count));
+                }
+
+                foreach (var reference in order)
+                {
+                    var folded = byReference[reference];
+
+                    result.Add(new OwnedEntry(
+                        reference,
+                        folded.Name,
+                        folded.Rows.Count,
+                        folded.Rows.Sum(o => o.Count),
+                        IsList: folded.IsList,
+                        IsRemoved: removed.Contains(reference),
+                        Breakdown: folded.Rows));
+                }
+
+                // Name, not "most occurrences first": someone looking for a duplicate wants the two
+                // copies next to each other, and someone looking for a known item wants it findable.
+                result.Sort((x, y) => string.Compare(x.Name, y.Name, StringComparison.CurrentCultureIgnoreCase));
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError($"PlacementLookup.ReadContents({scope}, {ownerKey})", ex);
+            }
+
+            return result;
+        }
+
         public static IReadOnlyList<LostListSummary> ReadListsWithLostEntries(string? dbPath = null)
         {
             var result = new List<LostListSummary>();
@@ -534,6 +810,7 @@ namespace SkyrimCraftingTool.Services
                 // recipe can use as an ingredient (MISC plus INGR, AMMO, SLGM, ALCH). 4,413 of 28,475
                 // entries point at one of those, and without this they were shown as a raw key.
                 bool hasReferences = TryAttachFormIds(c, dbPath);
+                bool hasWorldItems = HasTable(c, "WorldItem");
 
                 var entries = new List<LeveledListEntryInfo>();
                 using (var cmd = c.CreateCommand())
@@ -550,11 +827,13 @@ namespace SkyrimCraftingTool.Services
                                a.Name, a.EditorID,
                                w.Name, w.EditorID
                                {(hasReferences ? ", m.Name" : ", NULL")}
+                               {(hasWorldItems ? ", wi.Name, wi.EditorID" : ", NULL, NULL")}
                         FROM LeveledListEntry e
                         LEFT JOIN LeveledList nested ON nested.Key = e.Reference
                         LEFT JOIN Armor a           ON a.Key      = e.Reference
                         LEFT JOIN Weapons w         ON w.Key      = e.Reference
                         {(hasReferences ? "LEFT JOIN formids.Materials m ON m.Key = e.Reference" : "")}
+                        {(hasWorldItems ? "LEFT JOIN WorldItem wi ON wi.Key = e.Reference" : "")}
                         WHERE e.ListKey = @k
                         ORDER BY e.Ordinal";
                     cmd.Parameters.AddWithValue("@k", listKey);
@@ -566,7 +845,8 @@ namespace SkyrimCraftingTool.Services
 
                         entries.Add(new LeveledListEntryInfo(
                             r.GetInt32(0), reference,
-                            FirstNonEmpty(r, reference, 4, 5, 6, 7, 8, 9),
+                            // 10 and 11 are the world item, tried before the materials dump at 9.
+                            FirstNonEmpty(r, reference, 4, 5, 6, 7, 8, 10, 11, 9),
                             r.GetInt32(2), r.GetInt32(3), isList));
                     }
                 }
@@ -575,48 +855,11 @@ namespace SkyrimCraftingTool.Services
                 // with the same name it would have had if it were still there. Ordered by name
                 // rather than by any stored order: there is no order left to preserve - these rows
                 // come from versions of the list that no longer exist.
-                var lost = new List<LeveledListLostEntryInfo>();
-                if (HasTable(c, "LeveledListLostEntry"))
-                {
-                    using var cmd = c.CreateCommand();
-                    // AddedBy/DroppedBy go LAST so the name-candidate indices 5..10 below stay put -
-                    // they are positional and were getting re-numbered every time this grew.
-                    cmd.CommandText = $@"
-                        SELECT l.Reference, l.Level, l.Count, l.LostFrom, l.Ambiguous,
-                               nested.EditorID,
-                               a.Name, a.EditorID,
-                               w.Name, w.EditorID
-                               {(hasReferences ? ", m.Name" : ", NULL")},
-                               l.AddedBy, l.DroppedBy
-                        FROM LeveledListLostEntry l
-                        LEFT JOIN LeveledList nested ON nested.Key = l.Reference
-                        LEFT JOIN Armor a           ON a.Key      = l.Reference
-                        LEFT JOIN Weapons w         ON w.Key      = l.Reference
-                        {(hasReferences ? "LEFT JOIN formids.Materials m ON m.Key = l.Reference" : "")}
-                        WHERE l.ListKey = @k";
-                    cmd.Parameters.AddWithValue("@k", listKey);
-                    using var r = cmd.ExecuteReader();
-                    while (r.Read())
-                    {
-                        var reference = r.GetString(0);
+                var lost = ReadLostRows(c, hasReferences, new[] { listKey })
+                    .Select(row => row.Info)
+                    .ToList();
 
-                        // Columns 5..10 are the name candidates, in the order FirstNonEmpty should
-                        // try them; 5 is the nested list's EditorID and therefore doubles as "this
-                        // entry is a list".
-                        lost.Add(new LeveledListLostEntryInfo(
-                            reference,
-                            FirstNonEmpty(r, reference, 5, 6, 7, 8, 9, 10),
-                            r.GetInt32(1), r.GetInt32(2),
-                            r.IsDBNull(3) ? "" : r.GetString(3),
-                            IsList: !r.IsDBNull(5),
-                            Ambiguous: !r.IsDBNull(4) && r.GetInt32(4) == 1,
-                            // Empty on a database scanned before these existed. The display treats
-                            // that as "not known" rather than inventing a plugin name.
-                            AddedBy: r.IsDBNull(11) ? "" : r.GetString(11),
-                            DroppedBy: r.IsDBNull(12) ? "" : r.GetString(12)));
-                    }
-                    lost.Sort((x, y) => string.Compare(x.Name, y.Name, StringComparison.CurrentCultureIgnoreCase));
-                }
+                lost.Sort((x, y) => string.Compare(x.Name, y.Name, StringComparison.CurrentCultureIgnoreCase));
 
                 return new LeveledListInfo(listKey, editorId, chanceNone, flags, globalKey, entries, lost);
             }
@@ -625,6 +868,131 @@ namespace SkyrimCraftingTool.Services
                 AppLogger.LogError($"PlacementLookup.Read({listKey})", ex);
                 return null;
             }
+        }
+
+        // What several lists have lost, in one query.
+        //
+        // FOR THE HISTORY OF A CONTAINER. A chest has no override history of its own - the scan
+        // keeps only the winning version of a CONT record (see ItemDBHandler.Scan's
+        // latestContainerByKey, which has no version chain, and the LeveledListLostEntry schema
+        // comment for what the lists get instead). What a chest DOES have is the lists hanging in
+        // it, and what those lost is a real part of what the chest used to hand out. So the History
+        // there is the losses of the lists it holds, one hop down - never deeper, for the same
+        // reason the contents never expand nested lists: a nesting depth of up to 9 turns one chest
+        // into thousands of rows, and the interesting answer is almost always the next hop.
+        //
+        // Not Read() in a loop: that pulls every list's full contents to get at the lost rows, and a
+        // chest can hold dozens of lists.
+        public static IReadOnlyList<LostEntryGroup> ReadLostEntries(
+            IReadOnlyCollection<string> listKeys, string? dbPath = null)
+        {
+            var result = new List<LostEntryGroup>();
+            if (listKeys == null || listKeys.Count == 0) return result;
+
+            try
+            {
+                using var c = TryOpen(dbPath);
+                if (c == null) return result;
+
+                bool hasReferences = TryAttachFormIds(c, dbPath);
+
+                var rows = ReadLostRows(c, hasReferences, listKeys);
+
+                foreach (var group in rows.GroupBy(r => r.ListKey, StringComparer.OrdinalIgnoreCase))
+                {
+                    var entries = group
+                        .Select(r => r.Info)
+                        .OrderBy(e => e.Name, StringComparer.CurrentCultureIgnoreCase)
+                        .ToList();
+
+                    result.Add(new LostEntryGroup(
+                        group.Key,
+                        group.Select(r => r.ListName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)) ?? group.Key,
+                        entries));
+                }
+
+                // Most losses first, like the lost-lists overview: the list that dropped fifteen
+                // things is the one worth reading about.
+                result.Sort((x, y) => y.Entries.Count.CompareTo(x.Entries.Count));
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError("PlacementLookup.ReadLostEntries", ex);
+            }
+
+            return result;
+        }
+
+        // The one place the lost-entry SELECT lives, for one list or for fifty. Read() had it inline
+        // until the container History needed the same rows for several lists at once, and a second
+        // copy of a query whose name-candidate columns are POSITIONAL (see below) would have been
+        // the kind of duplicate that breaks quietly the next time a column is added.
+        private static List<(string ListKey, string ListName, LeveledListLostEntryInfo Info)> ReadLostRows(
+            SqliteConnection c, bool hasReferences, IReadOnlyCollection<string> listKeys)
+        {
+            var rows = new List<(string, string, LeveledListLostEntryInfo)>();
+            if (!HasTable(c, "LeveledListLostEntry")) return rows;
+
+            // Books, scrolls, misc, keys and the rest live here. Guarded like every other optional
+            // table: an item.db from before this one existed must still answer, and a join against a
+            // missing table takes the whole read down - quietly, since the caller logs and carries on.
+            bool hasWorldItems = HasTable(c, "WorldItem");
+
+            var names = listKeys.Select((_, i) => $"@k{i}").ToList();
+
+            using var cmd = c.CreateCommand();
+            // AddedBy/DroppedBy go LAST so the name-candidate indices 5..10 below stay put - they
+            // are positional and were getting re-numbered every time this grew. The owning list's
+            // own name goes after those, for the same reason.
+            cmd.CommandText = $@"
+                SELECT l.Reference, l.Level, l.Count, l.LostFrom, l.Ambiguous,
+                       nested.EditorID,
+                       a.Name, a.EditorID,
+                       w.Name, w.EditorID
+                       {(hasReferences ? ", m.Name" : ", NULL")},
+                       l.AddedBy, l.DroppedBy,
+                       l.ListKey, owner.EditorID
+                       {(hasWorldItems ? ", wi.Name, wi.EditorID" : ", NULL, NULL")}
+                FROM LeveledListLostEntry l
+                LEFT JOIN LeveledList nested ON nested.Key = l.Reference
+                LEFT JOIN LeveledList owner  ON owner.Key  = l.ListKey
+                LEFT JOIN Armor a            ON a.Key      = l.Reference
+                LEFT JOIN Weapons w          ON w.Key      = l.Reference
+                {(hasReferences ? "LEFT JOIN formids.Materials m ON m.Key = l.Reference" : "")}
+                {(hasWorldItems ? "LEFT JOIN WorldItem wi ON wi.Key = l.Reference" : "")}
+                WHERE l.ListKey IN ({string.Join(",", names)})";
+
+            int index = 0;
+            foreach (var key in listKeys)
+                cmd.Parameters.AddWithValue(names[index++], key);
+
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                var reference = r.GetString(0);
+
+                // Columns 5..10 plus the world item at 15/16 are the name candidates, in the order
+                // FirstNonEmpty should try them; 5 is the nested list's EditorID and therefore
+                // doubles as "this entry is a list".
+                var info = new LeveledListLostEntryInfo(
+                    reference,
+                    FirstNonEmpty(r, reference, 5, 6, 7, 8, 9, 15, 16, 10),
+                    r.GetInt32(1), r.GetInt32(2),
+                    r.IsDBNull(3) ? "" : r.GetString(3),
+                    IsList: !r.IsDBNull(5),
+                    Ambiguous: !r.IsDBNull(4) && r.GetInt32(4) == 1,
+                    // Empty on a database scanned before these existed. The display treats that as
+                    // "not known" rather than inventing a plugin name.
+                    AddedBy: r.IsDBNull(11) ? "" : r.GetString(11),
+                    DroppedBy: r.IsDBNull(12) ? "" : r.GetString(12));
+
+                rows.Add((
+                    r.GetString(13),
+                    r.IsDBNull(14) ? "" : r.GetString(14),
+                    info));
+            }
+
+            return rows;
         }
     }
 }

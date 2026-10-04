@@ -117,6 +117,16 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     placements, containerPlacements, lvliNames, containerNames);
             }
 
+            // Books, scrolls, misc, soul gems, ammo, food, ingredients, keys. They have no stats to
+            // patch, so they produce no rule of their own - only placements, which join the same two
+            // lists the armor and weapon loops above fill.
+            foreach (var (key, editorId, containerString) in _itemReader.ReadEditedWorldItems())
+            {
+                LeveledListRuleBuilder.ParsePlacements(
+                    key, editorId, containerString,
+                    placements, containerPlacements, lvliNames, containerNames);
+            }
+
             var enchByPlugin = new Dictionary<string, List<SkyPatcherRule>>(StringComparer.OrdinalIgnoreCase);
             foreach (var pair in _enchReader.ReadEditedEnchantments())
             {
@@ -305,6 +315,30 @@ namespace SkyrimCraftingTool.Services.PatchGen
             {
                 if (Accept(rule, null, report))
                     report.ContainerRuleCount += Add(contByPlugin, rule);
+            }
+
+            // What the user decided to take OUT, from the Container/LeveledList tab.
+            //
+            // EVERY OTHER RULE THIS METHOD WRITES ONLY ADDS. These delete content other mods put
+            // there, which is what makes the patch stop being safe-by-construction. They are counted
+            // apart and listed one by one in the report - not as a warning, because the user asked
+            // for them, but on the record, the same way a list-property edit is.
+            foreach (var rule in LeveledListRuleBuilder.BuildRemovalRules(
+                         RemovalStore.ReadAll(RemovalScope.LeveledList), RemovalScope.LeveledList, lvliNames))
+            {
+                if (!Accept(rule, null, report)) continue;
+
+                report.RemovalRuleCount += Add(lvliByPlugin, rule);
+                report.Removals.Add(rule.Comment);
+            }
+
+            foreach (var rule in LeveledListRuleBuilder.BuildRemovalRules(
+                         RemovalStore.ReadAll(RemovalScope.Container), RemovalScope.Container, containerNames))
+            {
+                if (!Accept(rule, null, report)) continue;
+
+                report.RemovalRuleCount += Add(contByPlugin, rule);
+                report.Removals.Add(rule.Comment);
             }
 
             if (options.DryRun) return;

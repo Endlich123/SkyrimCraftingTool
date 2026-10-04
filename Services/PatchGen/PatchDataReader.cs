@@ -255,6 +255,39 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // ContainerKey -> display name, for the "; ... via <container>" half of a rule's comment.
         // Cosmetic like ReadLeveledListNames, and fails the same way rather than taking the export
         // down with it.
+        // Placeable records the user has placed somewhere.
+        //
+        // No original/edited PAIR, unlike armor and weapons: these have exactly one editable field
+        // and the scan never writes its base column, so there is nothing to compare against. What
+        // comes back is the placement itself, which is all a rule needs.
+        public IReadOnlyList<(string Key, string EditorId, string ContainerString)> ReadEditedWorldItems()
+        {
+            var rows = new List<(string, string, string)>();
+
+            try
+            {
+                using var c = new SqliteConnection(_connString);
+                c.Open();
+
+                using var cmd = c.CreateCommand();
+                cmd.CommandText = @"
+                    SELECT Key, EditorID, IsEditedContainerString
+                    FROM WorldItem
+                    WHERE IsEdited = 1 AND Active = 1 AND IsEditedContainerString IS NOT NULL";
+
+                using var r = cmd.ExecuteReader();
+                while (r.Read())
+                    rows.Add((r.GetString(0), Str(r, 1), Str(r, 2)));
+            }
+            catch (Exception ex)
+            {
+                // An older database has no such table. Placements from armor and weapons still work.
+                AppLogger.LogError("PatchDataReader.ReadEditedWorldItems", ex);
+            }
+
+            return rows;
+        }
+
         public IReadOnlyDictionary<string, string> ReadContainerNames()
         {
             var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

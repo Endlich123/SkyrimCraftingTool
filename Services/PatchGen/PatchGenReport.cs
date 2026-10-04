@@ -25,6 +25,17 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // this patch does, in words rather than as a number.
         public List<string> LeveledListPropertyEdits { get; } = new();
 
+        // Objects taken OUT of a container or a list, from the Container/LeveledList tab.
+        //
+        // ITS OWN COUNT AND ITS OWN LIST, and that is the point of it. Every other number in this
+        // report counts something the patch ADDS - which is why the patch composes with other mods
+        // and can be regenerated at will. These take content away, and a number buried in a total
+        // would let that pass unnoticed. Same treatment as LeveledListPropertyEdits above: not a
+        // warning, because the user asked for it, but written out in words.
+        public int RemovalRuleCount { get; set; }
+
+        public List<string> Removals { get; } = new();
+
         // The other half of the Container tab: containers whose sliders all stayed at 0, emitted as
         // filterByContainers/addOnceToContainers.
         public int ContainerRuleCount { get; set; }
@@ -88,7 +99,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // Non-fatal issues: dead keyword references, skipped name edits, recipes without output, etc.
         public List<string> Warnings { get; } = new();
 
-        public int SkyPatcherRuleCount => ArmorRuleCount + WeaponRuleCount + EnchantmentRuleCount + FormListRuleCount + LeveledListRuleCount + LeveledListPropertyRuleCount + ContainerRuleCount + NpcRuleCount + NpcGroupRuleCount;
+        public int SkyPatcherRuleCount => ArmorRuleCount + WeaponRuleCount + EnchantmentRuleCount + FormListRuleCount + LeveledListRuleCount + LeveledListPropertyRuleCount + ContainerRuleCount + RemovalRuleCount + NpcRuleCount + NpcGroupRuleCount;
         public int CobjRecordCount => CobjNewCount + CobjOverrideCount;
         // Enchantment ESP overrides count too: a run whose only change is a re-pointed worn-
         // restriction list produces no rules and no COBJ records, but it definitely generated something.
