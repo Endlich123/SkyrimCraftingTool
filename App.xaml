@@ -21,8 +21,13 @@
                 <ResourceDictionary Source="Styles/Controls.xaml"/>
                 <ResourceDictionary Source="Styles/Converters.xaml"/>
                 <ResourceDictionary Source="Styles/ConditionTemplates.xaml"/>
+                <ResourceDictionary Source="Styles/PlacementTagStyle.xaml"/>
                 <ResourceDictionary Source="Styles/PresetRecipeTemplate.xaml"/>
                 <ResourceDictionary Source="Styles/LeveledListRowTemplate.xaml"/>
+                <ResourceDictionary Source="Styles/LostEntryRowTemplate.xaml"/>
+                <ResourceDictionary Source="Styles/LeveledListPropertiesPanel.xaml"/>
+                <ResourceDictionary Source="Styles/PluginTreeTemplate.xaml"/>
+                <ResourceDictionary Source="Styles/ContainerPlacementPanel.xaml"/>
             </ResourceDictionary.MergedDictionaries>
 
         </ResourceDictionary>
