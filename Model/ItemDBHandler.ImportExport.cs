@@ -564,6 +564,7 @@ namespace SkyrimCraftingTool.Model
             {
                 ["Armor"] = new HashSet<string>(ArmorShadowColumns),
                 ["Weapons"] = new HashSet<string>(WeaponShadowColumns),
+                ["WorldItem"] = new HashSet<string>(WorldItemShadowColumns),
                 ["COBJ"] = new HashSet<string>(CobjShadowColumns),
                 ["Enchantments"] = new HashSet<string>(EnchantmentShadowColumns),
                 // E3: FLST content import unit — no scalar fields, its payload is

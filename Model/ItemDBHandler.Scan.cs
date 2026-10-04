@@ -66,6 +66,7 @@ namespace SkyrimCraftingTool.Model
 
             using var insertArmor = PrepareUpsert(connection, "Armor", ArmorColumnNames, ArmorParamNames);
             using var insertWeapon = PrepareUpsert(connection, "Weapons", WeaponColumnNames, WeaponParamNames);
+            using var insertWorldItem = PrepareUpsert(connection, "WorldItem", WorldItemColumnNames, WorldItemParamNames);
             using var insertCOBJ = PrepareUpsert(connection, "COBJ", CobjColumnNames, CobjParamNames);
             using var insertCOBJCondition = PrepareInsert(connection, "COBJ_Conditions", CobjConditionColumnNames, CobjConditionParamNames);
             using var insertEnch = PrepareUpsert(connection, "Enchantments", EnchantmentColumnNames, EnchantmentParamNames);
@@ -108,6 +109,7 @@ namespace SkyrimCraftingTool.Model
             // historical 999 host-parameter limit and its 500-row multi-VALUES limit.
             using var insertArmorBatch = PrepareUpsertBatch(connection, "Armor", ArmorColumnNames, ArmorParamNames, BatchSize);
             using var insertWeaponBatch = PrepareUpsertBatch(connection, "Weapons", WeaponColumnNames, WeaponParamNames, BatchSize);
+            using var insertWorldItemBatch = PrepareUpsertBatch(connection, "WorldItem", WorldItemColumnNames, WorldItemParamNames, BatchSize);
             using var insertCOBJBatch = PrepareUpsertBatch(connection, "COBJ", CobjColumnNames, CobjParamNames, BatchSize);
             using var insertCOBJConditionBatch = PrepareInsertBatch(connection, "COBJ_Conditions", CobjConditionColumnNames, CobjConditionParamNames, BatchSize);
             using var insertEnchBatch = PrepareUpsertBatch(connection, "Enchantments", EnchantmentColumnNames, EnchantmentParamNames, BatchSize);
@@ -145,6 +147,7 @@ namespace SkyrimCraftingTool.Model
             using var transaction = connection.BeginTransaction();
             insertArmor.Transaction = transaction;
             insertWeapon.Transaction = transaction;
+            insertWorldItem.Transaction = transaction;
             insertCOBJ.Transaction = transaction;
             insertCOBJCondition.Transaction = transaction;
             insertEnch.Transaction = transaction;
@@ -180,6 +183,7 @@ namespace SkyrimCraftingTool.Model
             insertCombatStyles.Transaction = transaction;
             insertArmorBatch.Transaction = transaction;
             insertWeaponBatch.Transaction = transaction;
+            insertWorldItemBatch.Transaction = transaction;
             insertCOBJBatch.Transaction = transaction;
             insertCOBJConditionBatch.Transaction = transaction;
             insertEnchBatch.Transaction = transaction;
@@ -272,6 +276,7 @@ namespace SkyrimCraftingTool.Model
             // reduced to "last plugin per parent key" first, and only that plugin's child rows are used.
             var allArmor = new List<object[]>();
             var allWeapon = new List<object[]>();
+            var allWorldItems = new List<object[]>();
             var allMagicEffects = new List<object[]>();
             var allGlobals = new List<object[]>();
 
@@ -293,6 +298,7 @@ namespace SkyrimCraftingTool.Model
             {
                 allArmor.AddRange(parsed.ArmorRows);
                 allWeapon.AddRange(parsed.WeaponRows);
+                allWorldItems.AddRange(parsed.WorldItemRows);
                 allMagicEffects.AddRange(parsed.MagicEffectRows);
                 allGlobals.AddRange(parsed.GlobalRows);
 
@@ -676,6 +682,7 @@ namespace SkyrimCraftingTool.Model
 
             ExecuteRowsBatched(insertArmor, insertArmorBatch, ArmorParamNames, allArmor, BatchSize);
             ExecuteRowsBatched(insertWeapon, insertWeaponBatch, WeaponParamNames, allWeapon, BatchSize);
+            ExecuteRowsBatched(insertWorldItem, insertWorldItemBatch, WorldItemParamNames, allWorldItems, BatchSize);
             ExecuteRowsBatched(insertCOBJ, insertCOBJBatch, CobjParamNames, allCobj, BatchSize);
             ExecuteRowsBatched(insertCOBJCondition, insertCOBJConditionBatch, CobjConditionParamNames, allCobjConditions, BatchSize);
             ExecuteRowsBatched(insertWRK, insertWRKBatch, WornRestrictionKeywordParamNames, allWornRestrictionKeywords, BatchSize);
@@ -719,6 +726,7 @@ namespace SkyrimCraftingTool.Model
             // single scan, since nothing ever "scans" them).
             MarkInactiveExcept(connection, transaction, "Armor", "Key", allArmor.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "Weapons", "Key", allWeapon.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "WorldItem", "Key", allWorldItems.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "COBJ", "Key", latestCobjByKey.Keys, extraWhere: "Original = 1");
             // Original = 1 only: a user-created enchantment exists in no plugin, so a scan must
             // never retire it. Same guard as COBJ above.
@@ -876,6 +884,7 @@ namespace SkyrimCraftingTool.Model
 
             public List<object[]> ArmorRows = new();
             public List<object[]> WeaponRows = new();
+            public List<object[]> WorldItemRows = new();
             public List<ParsedCobj> Cobjs = new();
             public List<ParsedEnchantment> Enchantments = new();
             public List<ParsedContainer> Containers = new();
@@ -964,6 +973,8 @@ namespace SkyrimCraftingTool.Model
             { "@key", "@editorID", "@name", "@weight", "@val", "@armorRating", "@slotMask", "@armorType", "@keywords", "@objectEffect", "@enchantAmount" };
         private static readonly string[] WeaponParamNames =
             { "@key", "@editorID", "@name", "@weight", "@val", "@dmg", "@speed", "@reach", "@stagger", "@keywords", "@objectEffect", "@enchantAmount" };
+        private static readonly string[] WorldItemParamNames =
+            { "@key", "@editorID", "@name", "@kind" };
         private static readonly string[] CobjParamNames =
             { "@key", "@name", "@createdItem", "@workbench", "@ingredients" };
         private static readonly string[] CobjConditionParamNames =
@@ -1048,6 +1059,8 @@ namespace SkyrimCraftingTool.Model
             { "Key", "EditorID", "Name", "Weight", "Value", "ArmorRating", "BodySlotMask", "ArmorType", "Keywords", "ObjectEffectKey", "EnchantAmount" };
         internal static readonly string[] WeaponColumnNames =
             { "Key", "EditorID", "Name", "Weight", "Value", "Damage", "Speed", "Reach", "Stagger", "Keywords", "ObjectEffectKey", "EnchantAmount" };
+        internal static readonly string[] WorldItemColumnNames =
+            { "Key", "EditorID", "Name", "Kind" };
         internal static readonly string[] CobjColumnNames =
             { "Key", "Name", "CreatedItem", "WorkbenchKeyword", "Ingredients" };
         private static readonly string[] CobjConditionColumnNames =
@@ -1277,6 +1290,36 @@ namespace SkyrimCraftingTool.Model
                     (int)(weap.EnchantmentAmount ?? 0)
                 });
             }
+
+            // PLACEABLE RECORDS: books, scrolls, misc, soul gems, ammo, food, ingredients, keys.
+            //
+            // Key and name only - these carry nothing else the tool understands, and the single
+            // field the user can edit (the placement) is not scanned at all. One loop per Mutagen
+            // collection because that is how Mutagen exposes them; one ROW SHAPE for all of them,
+            // because WorldItem is one table with a Kind column.
+            void AddWorldItems<T>(IEnumerable<T> records, string kind)
+                where T : Mutagen.Bethesda.Skyrim.ISkyrimMajorRecordGetter
+            {
+                foreach (var rec in records)
+                {
+                    result.WorldItemRows.Add(new object[]
+                    {
+                        KeyFactory.BuildMasterKey(rec.FormKey),
+                        rec.EditorID ?? "",
+                        (rec as Mutagen.Bethesda.Plugins.Aspects.ITranslatedNamedGetter)?.Name?.ToString() ?? "",
+                        kind,
+                    });
+                }
+            }
+
+            AddWorldItems(mod.Books.Records, "Book");
+            AddWorldItems(mod.Scrolls.Records, "Scroll");
+            AddWorldItems(mod.MiscItems.Records, "Misc");
+            AddWorldItems(mod.SoulGems.Records, "SoulGem");
+            AddWorldItems(mod.Ammunitions.Records, "Ammo");
+            AddWorldItems(mod.Ingestibles.Records, "Food");
+            AddWorldItems(mod.Ingredients.Records, "Ingredient");
+            AddWorldItems(mod.Keys.Records, "Key");
 
             // COBJ
             foreach (var cobj in mod.ConstructibleObjects.Records)

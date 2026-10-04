@@ -1091,6 +1091,9 @@ namespace SkyrimCraftingTool.Model
             { "IsEditedName", "IsEditedWeight", "IsEditedValue", "IsEditedArmorRating", "IsEditedBodySlotMask", "IsEditedArmorType", "IsEditedKeywords", "IsEditedContainerString", "IsEditedObjectEffectKey", "IsEditedEnchantAmount" };
         internal static readonly string[] WeaponShadowColumns =
             { "IsEditedName", "IsEditedWeight", "IsEditedValue", "IsEditedDamage", "IsEditedSpeed", "IsEditedReach", "IsEditedStagger", "IsEditedKeywords", "IsEditedContainerString", "IsEditedObjectEffectKey", "IsEditedEnchantAmount" };
+        // One field, one shadow. The same array still feeds reset, export and import at once, so a
+        // placeable record's placement travels exactly like an armor's does.
+        internal static readonly string[] WorldItemShadowColumns = { "IsEditedContainerString" };
         internal static readonly string[] CobjShadowColumns =
             { "IsEditedName", "IsEditedCreatedItem", "IsEditedWorkbenchKeyword", "IsEditedIngredients" };
         // CastType/TargetType have no UI edit path but ARE importable (AllowedImportFields), so they
@@ -1179,6 +1182,42 @@ namespace SkyrimCraftingTool.Model
         // The item's own charge pool. 0 is a real value here - "no charge" is exactly the state a
         // broken enchanted item is in - so it is stored like any other number rather than treated
         // as "not edited"; NULL is what means that.
+        // Placeable records: one editable field, so one update method and one shadow column.
+        public static void UpdateWorldItemContainerString(string key, string containerString)
+            => UpdateField("WorldItem", "IsEditedContainerString", key, containerString ?? "{}");
+
+        // Everything placeable, with the edited placement folded in the same way LoadArmor does it.
+        public static List<WorldItemRecord> LoadWorldItems()
+        {
+            var list = new List<WorldItemRecord>();
+
+            using var connection = new SqliteConnection(ConnString);
+            connection.Open();
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = @"
+                SELECT Key, EditorID, Name, Kind,
+                    CASE WHEN IsEdited = 1 AND IsEditedContainerString IS NOT NULL
+                         THEN IsEditedContainerString
+                         ELSE ContainerString
+                    END AS ContainerString
+                FROM WorldItem WHERE Active = 1;";
+
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                list.Add(new WorldItemRecord
+                {
+                    Key = reader.GetString(0),
+                    EditorID = reader.GetString(1),
+                    Name = reader.IsDBNull(2) ? "" : reader.GetString(2),
+                    Kind = reader.GetString(3),
+                    ContainerString = reader.IsDBNull(4) ? "{}" : reader.GetString(4),
+                });
+            }
+
+            return list;
+        }
+
         public static void UpdateArmorEnchantAmount(string key, int enchantAmount)
             => UpdateField("Armor", "IsEditedEnchantAmount", key, enchantAmount);
 
@@ -1553,7 +1592,10 @@ namespace SkyrimCraftingTool.Model
             using var connection = new SqliteConnection(Normalize(connectionString));
             connection.Open();
             using var cmd = connection.CreateCommand();
-            cmd.CommandText = @"SELECT EditorID, Name, Weight, Value, ArmorRating, BodySlotMask, ArmorType, Keywords, ContainerString, ObjectEffectKey
+            // EnchantAmount goes LAST, so the indices above it stay where they are - that is the
+            // whole hazard this method's comment is about.
+            cmd.CommandText = @"SELECT EditorID, Name, Weight, Value, ArmorRating, BodySlotMask, ArmorType, Keywords, ContainerString, ObjectEffectKey,
+                                       EnchantAmount
                                  FROM Armor WHERE Key = @key";
             cmd.Parameters.AddWithValue("@key", key);
 
@@ -1574,6 +1616,7 @@ namespace SkyrimCraftingTool.Model
                 Keywords = string.IsNullOrWhiteSpace(keywordsCsv) ? new List<string>() : keywordsCsv.Split(',').ToList(),
                 ContainerString = reader.IsDBNull(8) ? "{}" : reader.GetString(8),
                 ObjectEffectKey = reader.IsDBNull(9) ? "" : reader.GetString(9),
+                EnchantAmount = reader.IsDBNull(10) ? 0 : reader.GetInt32(10),
             };
         }
 
@@ -1584,7 +1627,8 @@ namespace SkyrimCraftingTool.Model
             using var connection = new SqliteConnection(Normalize(connectionString));
             connection.Open();
             using var cmd = connection.CreateCommand();
-            cmd.CommandText = @"SELECT EditorID, Name, Weight, Value, Damage, Speed, Reach, Stagger, Keywords, ContainerString, ObjectEffectKey
+            cmd.CommandText = @"SELECT EditorID, Name, Weight, Value, Damage, Speed, Reach, Stagger, Keywords, ContainerString, ObjectEffectKey,
+                                       EnchantAmount
                                  FROM Weapons WHERE Key = @key";
             cmd.Parameters.AddWithValue("@key", key);
 
@@ -1606,6 +1650,7 @@ namespace SkyrimCraftingTool.Model
                 Keywords = string.IsNullOrWhiteSpace(keywordsCsv) ? new List<string>() : keywordsCsv.Split(',').ToList(),
                 ContainerString = reader.IsDBNull(9) ? "{}" : reader.GetString(9),
                 ObjectEffectKey = reader.IsDBNull(10) ? "" : reader.GetString(10),
+                EnchantAmount = reader.IsDBNull(11) ? 0 : reader.GetInt32(11),
             };
         }
 

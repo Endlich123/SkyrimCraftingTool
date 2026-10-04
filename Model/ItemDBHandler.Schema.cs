@@ -593,6 +593,37 @@ namespace SkyrimCraftingTool.Model
                     LastPatched TEXT
                 );
 
+                -- Records that can be PLACED and nothing else: books, scrolls, misc, soul gems,
+                -- ammo, food/potions, ingredients, keys.
+                --
+                -- ONE TABLE WITH A KIND COLUMN, NOT EIGHT TABLES. Everything about them is identical
+                -- - a key, a name, and the one field the user can edit - and eight copies would mean
+                -- eight entries in the shadow-column list, eight import whitelists and eight chances
+                -- to forget one. The sub-tabs filter on Kind; the database does not care.
+                --
+                -- ONE EDITABLE FIELD, AND THAT IS THE WHOLE POINT. These carry no stats the tool
+                -- understands and no recipe, so the entire dirty-state/reset/export/import apparatus
+                -- hangs off ContainerString alone. That is what makes them cheap to carry: they are
+                -- not stripped-down armor, they are a key with a placement.
+                --
+                -- Most of them were already being read into formid.db's Materials table for the
+                -- recipe ingredient picker - but that file is dropped and rebuilt on every scan, so
+                -- nothing editable could ever live there. Here it can.
+                CREATE TABLE IF NOT EXISTS WorldItem (
+                    Key TEXT PRIMARY KEY COLLATE NOCASE,
+                    EditorID TEXT NOT NULL,
+                    Name TEXT,
+                    Kind TEXT NOT NULL,
+                    ContainerString TEXT,
+
+                    IsEditedContainerString TEXT,
+
+                    IsEdited INTEGER DEFAULT 0,
+                    Active INTEGER NOT NULL DEFAULT 1,
+                    LastChanged TEXT,
+                    LastPatched TEXT
+                );
+
                 CREATE TABLE IF NOT EXISTS COBJ (
                     Key TEXT PRIMARY KEY COLLATE NOCASE,
                     Original INTEGER NOT NULL DEFAULT 1,
@@ -897,6 +928,46 @@ namespace SkyrimCraftingTool.Model
                     Count INTEGER NOT NULL DEFAULT 1,
                     LastChanged TEXT,
                     PRIMARY KEY (ListKey, Reference)
+                );
+
+                -- The opposite decision: take this object OUT of the list.
+                --
+                -- A SIBLING OF THE TABLE ABOVE, NOT A COLUMN ON IT. Restore and remove are opposite
+                -- answers about the same (list, reference), and one table could not say which was
+                -- meant. Restore also carries Level and Count because putting something back needs
+                -- them; removing does not.
+                --
+                -- NO LEVEL OR COUNT, AND THAT IS NOT AN OMISSION. SkyPatcher's removeFromLLs takes an
+                -- OBJECT and removes every occurrence of it - the documentation's own example reads
+                -- removes ALL Potion of Extreme Healing from the filtered LL. The optional
+                -- level/count operators narrow which occurrences are hit, they do not pick one of
+                -- several identical entries. So a decision here is
+                -- always about an object, never about a row - see LeveledListEntry's ordinal key for
+                -- why those are different things, and why the UI has to group identical entries
+                -- rather than offer them as separate ticks.
+                --
+                -- THIS IS WHERE THE ADDITIVE GUARANTEE ENDS. Everything else this tool writes only
+                -- ever adds, which is what makes the patch safe to regenerate and safe to run beside
+                -- anything else (see LeveledListRestoreStore's own comment). A row in here removes
+                -- content another mod put there. Kept in its own table, its own screen and its own
+                -- section of the patch report for exactly that reason.
+                CREATE TABLE IF NOT EXISTS LeveledListRemovedEntry (
+                    ListKey TEXT NOT NULL COLLATE NOCASE,
+                    Reference TEXT NOT NULL COLLATE NOCASE,
+                    LastChanged TEXT,
+                    PRIMARY KEY (ListKey, Reference)
+                );
+
+                -- The same decision for a container, and containers had nothing of the kind before.
+                --
+                -- ContainerEntry holds what the scan found and is rewritten wholesale on every run;
+                -- this holds what the user decided and must outlive any number of rescans. Same split
+                -- as LeveledList vs LeveledListEdit, and as the two tables above.
+                CREATE TABLE IF NOT EXISTS ContainerRemovedEntry (
+                    ContainerKey TEXT NOT NULL COLLATE NOCASE,
+                    Reference TEXT NOT NULL COLLATE NOCASE,
+                    LastChanged TEXT,
+                    PRIMARY KEY (ContainerKey, Reference)
                 );
 
                 -- What the USER changed about a list, kept strictly apart from what was scanned.
