@@ -229,6 +229,11 @@
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
                                     <Grid.RowDefinitions>
+                                        <!-- The prediction's own row. It had none, so it landed on
+                                             row 0 with Health and was painted underneath it -
+                                             declared first, drawn first. The warning was there the
+                                             whole time, unreadable behind a label and a text box. -->
+                                        <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
@@ -239,7 +244,7 @@
                                          recomputes makes every number under this line dead data,
                                          and that is the single most misleading thing this editor
                                          could show without saying so. -->
-                                    <TextBlock Grid.ColumnSpan="3"
+                                    <TextBlock Grid.Row="0" Grid.ColumnSpan="3"
                                                Text="{Binding PredictedStatsText}"
                                                Foreground="{DynamicResource ColorWarning}"
                                                TextWrapping="Wrap" FontSize="11"
@@ -251,18 +256,18 @@
                                          see the note on NpcEditStore. The border colour comes from
                                          the same converter the item fields use, so "changed" looks
                                          the same everywhere in the tool. -->
-                                    <TextBlock Text="Health" Style="{StaticResource ItemLabelStyle}"/>
-                                    <TextBox Grid.Column="1" Text="{Binding Health}"
+                                    <TextBlock Grid.Row="1" Text="Health" Style="{StaticResource ItemLabelStyle}"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Health}"
                                              BorderBrush="{Binding IsHealthChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
                                              Style="{StaticResource ItemTextBoxStyle}"/>
 
-                                    <TextBlock Grid.Row="1" Text="Magicka" Style="{StaticResource ItemLabelStyle}"/>
-                                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Magicka}"
+                                    <TextBlock Grid.Row="2" Text="Magicka" Style="{StaticResource ItemLabelStyle}"/>
+                                    <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Magicka}"
                                              BorderBrush="{Binding IsMagickaChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
                                              Style="{StaticResource ItemTextBoxStyle}"/>
 
-                                    <TextBlock Grid.Row="2" Text="Stamina" Style="{StaticResource ItemLabelStyle}"/>
-                                    <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Stamina}"
+                                    <TextBlock Grid.Row="3" Text="Stamina" Style="{StaticResource ItemLabelStyle}"/>
+                                    <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding Stamina}"
                                              BorderBrush="{Binding IsStaminaChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
                                              Style="{StaticResource ItemTextBoxStyle}"/>
                                 </Grid>

@@ -30,139 +30,11 @@
                        FontSize="11"/>
         </StackPanel>
 
-        <!-- THE TWO HALVES THAT BELONG NEXT TO EACH OTHER. Left: properties of the whole list, which
-             change the odds for every mod feeding it. Right: what those odds actually are, recomputed
-             on every change. The calculator sits here rather than in the dry-run on the user's own
-             reasoning: by the time it shows up in the dry-run it is too late. -->
-        <Grid Grid.Row="1" Margin="0,0,0,10">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="12"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-
-            <GroupBox Grid.Column="0" Style="{StaticResource DarkGroupBoxStyle}" Padding="10">
-                <GroupBox.Header>
-                    <TextBlock Text="This list" Style="{StaticResource TitelStyle}"/>
-                </GroupBox.Header>
-
-                <StackPanel>
-                    <TextBlock Text="{Binding EntryCountSummary}"
-                               Foreground="{DynamicResource ColorTextTertiary}"
-                               FontSize="11" Margin="0,0,0,8"/>
-
-                    <!-- chanceNone: how often the list hands out nothing at all. -->
-                    <TextBlock Text="Chance of nothing" Style="{StaticResource ItemLabelStyle}"/>
-                    <Grid Margin="0,2,0,2">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-
-                        <Slider Grid.Column="0" Minimum="0" Maximum="100"
-                                Value="{Binding ChanceNoneDouble, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                SmallChange="1" LargeChange="5" TickFrequency="1"
-                                VerticalAlignment="Center"/>
-                        <TextBox Grid.Column="1" Text="{Binding ChanceNone, UpdateSourceTrigger=PropertyChanged}"
-                                 model:NumericTextBoxBehavior.Mode="Integer"
-                                 Width="46" Margin="8,0,4,0"
-                                 Style="{StaticResource ItemTextBoxStyle}"/>
-                        <TextBlock Grid.Column="2" Text="%" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource ColorTextTertiary}"/>
-                    </Grid>
-                    <TextBlock Text="{Binding ChanceSummary}"
-                               Foreground="{DynamicResource ColorTextTertiary}"
-                               TextWrapping="Wrap" FontSize="11" Margin="0,0,0,10"/>
-
-                    <!-- 223 lists take their chance from a global variable instead of the number
-                         above - mostly gates that a quest or a skill level opens. Shown, not
-                         editable: pointing a list at a different global couples it to unrelated game
-                         state, and SkyPatcher can set one but never remove it. Only appears for the
-                         lists it actually applies to. -->
-                    <TextBlock Text="{Binding GlobalSummary}"
-                               Foreground="{DynamicResource ColorWarning}"
-                               TextWrapping="Wrap" FontSize="11" Margin="0,0,0,10"
-                               Visibility="{Binding HasGoverningGlobal, Converter={StaticResource BoolToVis}}"/>
-
-                    <!-- One dropdown rather than checkboxes, and that is not a simplification:
-                         SkyPatcher can only set one flag operation at a time, and ships a combined
-                         "for level and each item" precisely because two operations cannot be
-                         issued. Checkboxes would offer states the patch cannot write. -->
-                    <TextBlock Text="How the list calculates" Style="{StaticResource ItemLabelStyle}"/>
-                    <ComboBox ItemsSource="{Binding FlagOptions}"
-                              SelectedItem="{Binding SelectedFlagOption, Mode=TwoWay}"
-                              DisplayMemberPath="Label"
-                              Style="{StaticResource ItemComboBoxStyle}"
-                              Margin="0,2,0,4"/>
-                    <TextBlock Text="{Binding LevelEffectHint}"
-                               Foreground="{DynamicResource ColorTextTertiary}"
-                               TextWrapping="Wrap" FontSize="11" Margin="0,0,0,8"/>
-
-                    <TextBlock Text="{Binding SpecialLootWarning}"
-                               Foreground="{DynamicResource ColorWarning}"
-                               TextWrapping="Wrap" FontSize="11" Margin="0,0,0,8"
-                               Visibility="{Binding TouchesSpecialLoot, Converter={StaticResource BoolToVis}}"/>
-
-                    <DockPanel LastChildFill="True">
-                        <Button DockPanel.Dock="Right" Content="Reset list" Width="90"
-                                Command="{Binding ResetListPropertiesCommand}"
-                                Style="{StaticResource StandardButtonStyle}"
-                                ToolTip="Put chance and calculation back to what your load order has."/>
-                        <TextBlock Text="{Binding ListEditSummary}"
-                                   Foreground="{DynamicResource ColorTextSecondary}"
-                                   TextWrapping="Wrap" FontSize="11" VerticalAlignment="Center"
-                                   Margin="0,0,8,0"/>
-                    </DockPanel>
-                </StackPanel>
-            </GroupBox>
-
-            <GroupBox Grid.Column="2" Style="{StaticResource DarkGroupBoxStyle}" Padding="10">
-                <GroupBox.Header>
-                    <TextBlock Text="Chance calculator" Style="{StaticResource TitelStyle}"/>
-                </GroupBox.Header>
-
-                <StackPanel Visibility="{Binding CanCalculate, Converter={StaticResource BoolToVis}}">
-                    <!-- The item is named in "Your placement" below, not here: this panel answers a
-                         question about that placement, and naming the item twice on one screen makes
-                         the two blocks look like they are about different things. -->
-
-                    <!-- The player level is an input, not a detail: the same placement is worth 7.5%
-                         at level 1 and 3.75% at level 60, because more entries qualify as you rise. -->
-                    <TextBlock Text="At player level" Style="{StaticResource ItemLabelStyle}"/>
-                    <Grid Margin="0,2,0,10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-
-                        <Slider Grid.Column="0" Minimum="1" Maximum="100"
-                                Value="{Binding PlayerLevelDouble, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                SmallChange="1" LargeChange="5" TickFrequency="1"
-                                VerticalAlignment="Center"/>
-                        <TextBlock Grid.Column="1" Text="{Binding PlayerLevel}" MinWidth="28"
-                                   Margin="8,0,0,0" VerticalAlignment="Center"/>
-                    </Grid>
-
-                    <TextBlock Text="{Binding ChanceBeforeText}"
-                               Foreground="{DynamicResource ColorTextTertiary}"
-                               TextWrapping="Wrap" Margin="0,0,0,4"/>
-
-                    <TextBlock Text="{Binding ChanceAfterText}"
-                               Foreground="{DynamicResource ColorAccentLight}"
-                               FontSize="15" FontWeight="Bold"
-                               TextWrapping="Wrap" Margin="0,0,0,4"/>
-
-                    <TextBlock Text="{Binding ExpectedCountText}"
-                               Foreground="{DynamicResource ColorTextSecondary}"
-                               TextWrapping="Wrap" FontSize="11" Margin="0,0,0,10"/>
-
-                    <TextBlock Text="{Binding CalculatorCaveat}"
-                               Foreground="{DynamicResource ColorTextTertiary}"
-                               TextWrapping="Wrap" FontSize="11" FontStyle="Italic"/>
-                </StackPanel>
-            </GroupBox>
-        </Grid>
+        <!-- What this list does, and what it means for the object in question. The markup is
+             Styles/LeveledListPropertiesPanel.xaml, shared with the Container/LeveledList tab's
+             contents pane - this window is not the only place a list gets read. -->
+        <ContentPresenter Grid.Row="1" Content="{Binding}"
+                          ContentTemplate="{StaticResource LeveledListPropertiesPanel}"/>
 
         <!-- This item's placement -->
         <GroupBox Grid.Row="2" Style="{StaticResource DarkGroupBoxStyle}" Padding="10" Margin="0,0,0,10"
@@ -255,27 +127,10 @@
 
                             <!-- Not in the game yet: your patch puts it here. Marked rather than
                                  mixed in silently - what the list has and what you are adding must
-                                 stay tellable apart. -->
-                            <TextBlock FontSize="11" FontWeight="Bold" VerticalAlignment="Center"
-                                       Visibility="{Binding IsPlanned, Converter={StaticResource BoolToVis}}">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Text" Value="+ new"/>
-                                        <Setter Property="Foreground" Value="{DynamicResource ColorWarning}"/>
-                                        <Setter Property="ToolTip" Value="Planned by you - the patch will add this entry."/>
-                                        <Style.Triggers>
-                                            <!-- Not new: it was in this list until an override took
-                                                 it out. Same yellow the History block uses, so the
-                                                 row and the entry it came from read as one thing. -->
-                                            <DataTrigger Binding="{Binding IsRestored}" Value="True">
-                                                <Setter Property="Text" Value="+ readded"/>
-                                                <Setter Property="Foreground" Value="#D8B84A"/>
-                                                <Setter Property="ToolTip" Value="Put back by you after an override dropped it - the patch will add it again."/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
+                                 stay tellable apart. The words, the colours and the tooltips are
+                                 Styles/PlacementTagStyle.xaml, shared with the Container tab, which
+                                 says the same thing about the same kind of row. -->
+                            <TextBlock Style="{StaticResource PlacementTagStyle}"/>
 
                             </StackPanel>
 
@@ -391,81 +246,13 @@
                 <ListBox ItemsSource="{Binding LostEntries}" MaxHeight="150"
                          Background="Transparent" BorderThickness="0"
                          SelectionMode="Extended"
+                         ItemTemplate="{StaticResource LostEntryRowTemplate}"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
                             <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
                         </Style>
                     </ListBox.ItemContainerStyle>
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <Grid Margin="0,2,0,2">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="54"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-
-                                <TextBlock Grid.Column="0" Text="List"
-                                           Foreground="{DynamicResource ColorAccentLight}"
-                                           FontSize="11" VerticalAlignment="Center"
-                                           Visibility="{Binding IsList, Converter={StaticResource BoolToVis}}"/>
-
-                                <!-- Struck through while it is missing, plain once it is going back:
-                                     the strikethrough says "not in the game", so it has to stop
-                                     saying that the moment the patch will put it there. -->
-                                <TextBlock Grid.Column="1" Text="{Binding Name}"
-                                           VerticalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis" FontSize="11">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="Foreground" Value="#D8B84A"/>
-                                            <Setter Property="TextDecorations" Value="Strikethrough"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsRestored}" Value="True">
-                                                    <Setter Property="Foreground" Value="{DynamicResource ColorTextPrimary}"/>
-                                                    <Setter Property="TextDecorations" Value="{x:Null}"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
-
-                                <!-- Shows the plugin that DROPPED the entry, not the last one that
-                                     had it. The old label ("the last plugin this item was still
-                                     in") was accurate and still got read as "the culprit" - so the
-                                     row now answers the question that was actually being asked, and
-                                     the tooltip carries the full chain. -->
-                                <TextBlock Grid.Column="2"
-                                           Text="{Binding LineageText}"
-                                           Foreground="{DynamicResource ColorTextTertiary}"
-                                           FontSize="10" Margin="8,0,8,0"
-                                           VerticalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis" MaxWidth="180"
-                                           ToolTip="{Binding LineageTooltip}"/>
-
-                                <StackPanel Grid.Column="3" Orientation="Horizontal" MinWidth="72"
-                                            VerticalAlignment="Center">
-                                    <!-- The level and count kept for this one are a pick between
-                                         versions that disagreed, not a reading. Said here rather
-                                         than nowhere, because putting it back restores one of
-                                         several states it genuinely had. -->
-                                    <TextBlock Text="?" FontWeight="Bold"
-                                               Foreground="{DynamicResource ColorWarning}"
-                                               FontSize="11" Margin="0,0,6,0"
-                                               ToolTip="{Binding LevelNote}"
-                                               Visibility="{Binding Ambiguous, Converter={StaticResource BoolToVis}}"/>
-
-                                    <TextBlock Text="going back"
-                                               Foreground="{DynamicResource ColorAccentLight}"
-                                               FontSize="10"
-                                               Visibility="{Binding IsRestored, Converter={StaticResource BoolToVis}}"
-                                               ToolTip="The next patch adds this back at runtime - the mod that dropped it is not changed."/>
-                                </StackPanel>
-                            </Grid>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
                 </ListBox>
 
                 <DockPanel Margin="0,8,0,0">

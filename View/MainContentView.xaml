@@ -321,9 +321,7 @@
                                             <TextBox Grid.Row="0"
                                              Grid.Column="1"
                                              Text="{Binding EditorID}"
-                                             IsEnabled="False"
-                                             IsReadOnly="True"
-                                             Style="{StaticResource ItemTextBoxStyle}"/>
+                                             Style="{StaticResource CopyableIdentifierStyle}"/>
 
                                             <Button Grid.Row="0" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
                                                 <Button.ToolTip>
@@ -345,10 +343,7 @@
                                             <TextBox Grid.Row="1"
                                              Grid.Column="1"
                                              Text="{Binding Key}"
-                                             IsEnabled="False"
-                                             IsReadOnly="True" 
-                                             Style="{StaticResource ItemTextBoxStyle}"
-                                             />
+                                             Style="{StaticResource CopyableIdentifierStyle}"/>
 
                                             <Button Grid.Row="1" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
                                                 <Button.ToolTip>
@@ -1083,8 +1078,7 @@
 
                                                     <TextBox Grid.Row="0" Grid.Column="1"
                                                          Text="{Binding CraftingEditorID, Mode=OneWay}"
-                                                         Style="{StaticResource ItemTextBoxStyle}"
-                                                         IsEnabled="False"/>
+                                                         Style="{StaticResource CopyableIdentifierStyle}"/>
 
                                                     <Button Grid.Row="0" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
                                                         <Button.ToolTip>
@@ -1367,8 +1361,7 @@
                                                         Style="{StaticResource ItemLabelStyle}"
                                                         />
                                                     <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding TemperEditorID, Mode=OneWay}"
-                                                         IsEnabled="False"
-                                                       Style="{StaticResource ItemTextBoxStyle}"/>
+                                                       Style="{StaticResource CopyableIdentifierStyle}"/>
                                                     <Button Grid.Row="0" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
                                                         <Button.ToolTip>
                                                             <ToolTip Style="{StaticResource InfoTooltipStyle}">
@@ -1385,9 +1378,8 @@
                                                     <TextBlock Grid.Row="1" Grid.Column="0" Text="Workbench: " Style="{StaticResource ItemLabelStyle}"/>
 
                                                     <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding TemperWorkbenchKey, Mode=OneWay}"
-                                                     IsEnabled="False"
                                                      BorderBrush="{Binding IsTemperWorkbenchDeadRef, Converter={StaticResource BoolToDeadRefBorderConverter}}"
-                                                   Style="{StaticResource ItemTextBoxStyle}"/>
+                                                   Style="{StaticResource CopyableIdentifierStyle}"/>
                                                     <Button Grid.Row="1" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
                                                         <Button.ToolTip>
                                                             <ToolTip Style="{StaticResource InfoTooltipStyle}">
@@ -1587,198 +1579,19 @@
                                             </StackPanel>
                                         </GroupBox.Header>
 
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="2*" />
-                                                <ColumnDefinition Width="10" />
-                                                <ColumnDefinition Width="3*" />
-                                            </Grid.ColumnDefinitions>
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto"/>
-                                                <!-- "Already in your load order" summary -->
-                                                <RowDefinition Height="Auto"/>
-                                            </Grid.RowDefinitions>
+                                        <!-- The panel itself now lives in Styles/ContainerPlacementPanel.xaml -
+                                             the placement sub-tabs of the Container/LeveledList tab need the
+                                             same one, and a second copy is a mistake this project has already
+                                             paid for three times (condition templates, preset recipe block,
+                                             leveled-list row).
 
-                                            <!-- What the scanned game already has, counted in one line.
-                                                 The containers it names are marked in the list below; the leveled
-                                                 lists are only counted, deliberately - 86 % of them hang in no
-                                                 container at all, so there is no row they could be marked on
-                                                 without inventing a placement. -->
-                                            <DockPanel Grid.Row="0" Grid.ColumnSpan="3" Margin="0,0,0,10">
-                                                <!-- The way back to your own list edits. Only there when there
-                                                     are any: a chance you changed reaches every mod feeding that
-                                                     list, so it has to be reviewable - and until this existed,
-                                                     the patch report was its only trace. -->
-                                                <Button DockPanel.Dock="Right"
-                                                        Content="{Binding DataContext.ChangedListsButtonText,
-                                                                  RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                        Command="{Binding DataContext.ShowChangedListsCommand,
-                                                                  RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                        Style="{StaticResource StandardButtonStyle}"
-                                                        Margin="10,0,0,0"
-                                                        ToolTip="Leveled lists whose chance or calculation you changed - review or reset them."
-                                                        Visibility="{Binding DataContext.HasChangedLists,
-                                                                     RelativeSource={RelativeSource AncestorType=UserControl},
-                                                                     Converter={StaticResource BoolToVis}}"/>
-
-
-                                                <TextBlock Text="{Binding DataContext.ExistingPlacementSummary,
-                                                                  RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                           Foreground="{DynamicResource ColorTextTertiary}"
-                                                           TextWrapping="Wrap"
-                                                           VerticalAlignment="Center"/>
-                                            </DockPanel>
-
-                                            <!-- LEFT SIDE -->
-                                            <StackPanel Grid.Row="1" Grid.Column="0">
-
-                                                <!-- Search -->
-                                                <TextBox Text="{Binding DataContext.ContainerSearchText, 
-                                                                RelativeSource={RelativeSource AncestorType=UserControl}, 
-                                                                Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                         Style="{StaticResource ItemTextSearchBoxStyle}"
-                                                         Margin="0,0,0,6"
-                                                         />
-
-                                                <!-- Expert toggle -->
-                                                <Button Content="{Binding DataContext.ShowExpertContainers, 
-                                                              RelativeSource={RelativeSource AncestorType=UserControl},
-                                                              Converter={StaticResource BoolToExpertTextConverter}}"
-                                                    Command="{Binding DataContext.ToggleExpertContainersCommand, 
-                                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                    Style="{StaticResource StandardButtonStyle}"
-                                                    Margin="0,0,0,10"/>
-
-                                                <TextBlock Text="Containers"
-                                                   Style="{StaticResource ItemLabelStyle}"
-                                                   Margin="0,0,0,6"
-                                                   />
-
-                                                <ScrollViewer Height="180" VerticalScrollBarVisibility="Auto">
-                                                    <ItemsControl ItemsSource="{Binding DataContext.FilteredContainers, 
-                                                                RelativeSource={RelativeSource AncestorType=UserControl}}">
-                                                        <ItemsControl.ItemTemplate>
-                                                            <DataTemplate>
-                                                                <Border Padding="6"
-                                                                        Margin="0,0,0,6"
-                                                                        Background="{DynamicResource ColorBackgroundControl}"
-                                                                        CornerRadius="4">
-                                                                    <DockPanel>
-                                                                            <!-- READ-ONLY MARK, NOT A SELECTION. Visible when the scanned load
-                                                                                 order already has this item in this container. The Select button
-                                                                                 next to it says what the patch will do; these two must stay
-                                                                                 visibly different, because they mean the opposite. -->
-                                                                            <Border DockPanel.Dock="Left"
-                                                                                    Margin="0,0,8,0"
-                                                                                    Padding="5,1"
-                                                                                    CornerRadius="3"
-                                                                                    VerticalAlignment="Center"
-                                                                                    Background="{DynamicResource ColorBackgroundBase}"
-                                                                                    BorderBrush="{DynamicResource ColorAccentLight}"
-                                                                                    BorderThickness="1"
-                                                                                    ToolTip="{Binding AlreadyContainsTooltip}"
-                                                                                    Visibility="{Binding AlreadyContainsItem, Converter={StaticResource BoolToVis}}">
-                                                                                <TextBlock Text="in game"
-                                                                                           FontSize="10"
-                                                                                           Foreground="{DynamicResource ColorAccentLight}"/>
-                                                                            </Border>
-
-                                                                            <TextBlock Text="{Binding Name}"
-                                                                               Foreground="{DynamicResource ColorTextPrimary}"
-                                                                               VerticalAlignment="Center"/>
-
-                                                                        <Button Width="70"
-                                                                            HorizontalAlignment="Right"
-                                                                            Style="{StaticResource StandardButtonStyle}"
-                                                                            Command="{Binding DataContext.ToggleContainerForSelectedItemCommand, 
-                                                                                      RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                                            CommandParameter="{Binding ContainerKey}"
-                                                                            Content="{Binding IsSelected, 
-                                                                                      Converter={StaticResource BoolToSelectTextConverter}}"/>
-                                                                    </DockPanel>
-                                                                </Border>
-                                                            </DataTemplate>
-                                                        </ItemsControl.ItemTemplate>
-                                                    </ItemsControl>
-                                                </ScrollViewer>
-                                            </StackPanel>
-
-                                            <!-- SPLITTER -->
-                                            <GridSplitter Grid.Row="1" Grid.Column="1"
-                                                  Width="6"
-                                                  HorizontalAlignment="Stretch"
-                                                  Background="{DynamicResource ColorDivider}"/>
-
-                                            <!-- RIGHT SIDE -->
-                                            <StackPanel Grid.Row="1" Grid.Column="2">
-                                                <TextBlock Text="Selected Containers (for this item)"
-                                                       Style="{StaticResource ItemLabelStyle}"
-                                                       Margin="0,0,0,6"/>
-
-                                                <!-- The two placement kinds behave completely differently in game, and the
-                                                     sliders are the only thing that tells them apart - a tester expected
-                                                     "from level 3 onwards it's in the shop" and found an empty shop. -->
-                                                <TextBlock Text="Leave every slider at 0 and the item is placed in the container itself - permanently, and it will be there. Raise a slider and it goes into that leveled list instead: from that level on it can turn up when the merchant restocks (vanilla: about every 48 h), by chance rather than guaranteed."
-                                                           Foreground="{DynamicResource ColorTextTertiary}"
-                                                           TextWrapping="Wrap"
-                                                           Margin="0,0,0,8"/>
-
-                                                <ItemsControl ItemsSource="{Binding ContainerSelection.SelectedContainers}">
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate>
-                                                            <Border Padding="8"
-                                                                Margin="0,0,0,8"
-                                                                Background="{DynamicResource ColorBackgroundControl}"
-                                                                CornerRadius="4">
-
-                                                                <StackPanel>
-
-                                                                    <!-- Header -->
-                                                                    <Grid>
-                                                                        <Grid.ColumnDefinitions>
-                                                                            <ColumnDefinition Width="*" />
-                                                                            <ColumnDefinition Width="Auto" />
-                                                                        </Grid.ColumnDefinitions>
-
-                                                                        <TextBlock Grid.Column="0"
-                                                                               Text="{Binding Name}"
-                                                                               Foreground="{DynamicResource ColorTextPrimary}"
-                                                                               FontWeight="Bold"
-                                                                               VerticalAlignment="Center"/>
-
-                                                                        <Button Grid.Column="1"
-                                                                            Content="Remove"
-                                                                            Style="{StaticResource StandardButtonStyle}"
-                                                                            Command="{Binding ToggleSelectedCommand}"
-                                                                            Margin="8,0,0,0"/>
-                                                                    </Grid>
-
-                                                                    <!-- LVLi Entries: checkbox + link, nothing else.
-                                                                         Everything adjustable (level, amount, and the list's own chance/flags for reading)
-                                                                         lives in the detail window behind the name - a row that carried all of it would be
-                                                                         wider than the panel and still could not show what the list contains. -->
-                                                                    <!-- Rows come from Styles/LeveledListRowTemplate.xaml - shared by all four views that
-                                                                         show a container's leveled lists, so a change to the row cannot reach only one. -->
-                                                                    <ItemsControl ItemsSource="{Binding LVLiEntries}"/>
-
-                                                                </StackPanel>
-                                                            </Border>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
-
-                                                <StackPanel Orientation="Horizontal"
-                                                        HorizontalAlignment="Right"
-                                                        Margin="0,8,0,0">
-                                                    <Button Content="Clear Selection"
-                                                        Width="120"
-                                                        Style="{StaticResource StandardButtonStyle}"
-                                                        Command="{Binding DataContext.ClearContainerSelectionCommand, 
-                                                                  RelativeSource={RelativeSource AncestorType=UserControl}}"/>
-                                                </StackPanel>
-                                            </StackPanel>
-
-                                        </Grid>
+                                             Its DataContext is this VIEW MODEL, not the item. The panel reaches
+                                             nine members of MainContentVM plus the item itself, and it used to
+                                             do that through RelativeSource AncestorType=UserControl - a route
+                                             that silently resolves to whatever view hosts it. Passed in once
+                                             here instead; the item is reached through PlacementTarget. -->
+                                        <ContentPresenter Content="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                          ContentTemplate="{StaticResource ContainerPlacementPanelTemplate}"/>
                                     </GroupBox>
                                     </Expander>
                                 </Grid>

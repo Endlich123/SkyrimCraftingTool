@@ -111,6 +111,39 @@
                 </StackPanel>
             </GroupBox>
 
+            <!-- The nav row is wide and most sessions use part of it. Hiding a tab is cosmetic: the
+                 data behind it is untouched, and ticking it back brings it straight back. -->
+            <GroupBox Header="Main tabs"
+                      Style="{StaticResource DarkGroupBoxStyle}"
+                      Padding="10"
+                      Margin="0,0,0,15">
+                <StackPanel>
+
+                    <TextBlock Text="Which tabs the row at the top shows. Unticking one only hides the button — nothing is deleted, and nothing stops being patched."
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,10"/>
+
+                    <ItemsControl ItemsSource="{Binding NavTabs}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox Content="{Binding Label}"
+                                          IsChecked="{Binding IsVisible, Mode=TwoWay}"
+                                          Style="{StaticResource ItemCheckBoxStyle}"
+                                          Margin="0,0,0,4"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Said plainly, because it is the question anyone reading this list asks. -->
+                    <TextBlock Text="Items and Settings are always shown — hiding either would leave no way back to your items, or to this setting."
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               TextWrapping="Wrap"
+                               Margin="0,10,0,0"/>
+
+                </StackPanel>
+            </GroupBox>
+
             <GroupBox Header="Appearance"
                       Style="{StaticResource DarkGroupBoxStyle}"
                       Padding="10"

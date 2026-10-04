@@ -444,11 +444,14 @@
                             <TextBlock Grid.Row="1"
                                        Text="Key:"
                                        Style="{StaticResource ItemLabelStyle}"/>
-                            <TextBlock Grid.Row="1"
-                                       Grid.Column="1"
-                                       Text="{Binding Key}"
-                                       Foreground="{DynamicResource ColorTextPrimary}"
-                                       Margin="5"/>
+                            <!-- The same shape the item editor gives an identifier: a framed,
+                                 read-only box you can select and copy out of. See
+                                 CopyableIdentifierStyle - a plain TextBlock cannot be selected at
+                                 all, and a key is read to be pasted somewhere. -->
+                            <TextBox Grid.Row="1"
+                                     Grid.Column="1"
+                                     Text="{Binding Key, Mode=OneWay}"
+                                     Style="{StaticResource CopyableIdentifierStyle}"/>
                             <Button Grid.Row="1" Grid.Column="2" Style="{StaticResource InfoButtonStyle}">
                                 <Button.ToolTip>
                                     <ToolTip Style="{StaticResource InfoTooltipStyle}">
@@ -467,16 +470,16 @@
                             <TextBlock Grid.Row="2"
                                        Text="EditorID:"
                                        Style="{StaticResource ItemLabelStyle}"/>
-                            <TextBlock Grid.Row="2"
-                                       Grid.Column="1"
-                                       Text="{Binding EditorID}"
-                                       Foreground="{DynamicResource ColorTextPrimary}"
-                                       Margin="5">
+                            <TextBox Grid.Row="2"
+                                     Grid.Column="1"
+                                     Text="{Binding EditorID, Mode=OneWay}">
                                 <!-- Trigger rather than an inverse converter: there is no inverted
                                      BooleanToVisibility in Converters.xaml, and this is the one
-                                     place that needs one. -->
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
+                                     place that needs one. BasedOn, because a Style element and a
+                                     Style attribute cannot both be set - and the shared read-only
+                                     look is what makes this row match the item editor. -->
+                                <TextBox.Style>
+                                    <Style TargetType="TextBox" BasedOn="{StaticResource CopyableIdentifierStyle}">
                                         <Setter Property="Visibility" Value="Visible"/>
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding DataContext.IsUserCreatedSelected, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
@@ -484,8 +487,8 @@
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
+                                </TextBox.Style>
+                            </TextBox>
                             <TextBox Grid.Row="2"
                                      Grid.Column="1"
                                      Text="{Binding EditorID, UpdateSourceTrigger=PropertyChanged}"
@@ -891,8 +894,7 @@
                                             <TextBox Grid.Row="0"
                                                      Grid.Column="1"
                                                      Text="{Binding Model.EditorID}"
-                                                     IsEnabled="False"
-                                                     Style="{StaticResource ItemTextBoxStyle}"/>
+                                                     Style="{StaticResource CopyableIdentifierStyle}"/>
 
                                             <!-- Name -->
                                             <TextBlock Grid.Row="1"
@@ -901,8 +903,7 @@
                                             <TextBox Grid.Row="1"
                                                      Grid.Column="1"
                                                      Text="{Binding Model.Name}"
-                                                     IsEnabled="False"
-                                                     Style="{StaticResource ItemTextBoxStyle}"/>
+                                                     Style="{StaticResource CopyableIdentifierStyle}"/>
 
                                             <!-- Key -->
                                             <TextBlock Grid.Row="2"
@@ -911,8 +912,7 @@
                                             <TextBox Grid.Row="2"
                                                      Grid.Column="1"
                                                      Text="{Binding Model.MagicEffectKey}"
-                                                     IsEnabled="False"
-                                                     Style="{StaticResource ItemTextBoxStyle}"/>
+                                                     Style="{StaticResource CopyableIdentifierStyle}"/>
 
                                             <!-- Magnitude -->
                                             <TextBlock Grid.Row="3"

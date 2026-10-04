@@ -40,6 +40,10 @@
             <views:SettingsView />
         </DataTemplate>
 
+        <DataTemplate DataType="{x:Type vm:WorldContentVM}">
+            <views:WorldContentView />
+        </DataTemplate>
+
     </Window.Resources>
 
 
@@ -50,15 +54,22 @@
              which still owns the command (services + autosave flush live there). -->
         <DockPanel DockPanel.Dock="Top" Background="{DynamicResource ColorBackgroundBase}">
 
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="0,10,12,0">
+            <!-- TOP, not centred. These have a fixed height and the default Stretch alignment, which
+                 WPF resolves by centring them in whatever height they are given. While the nav row
+                 was one line that looked like the top; the moment it wraps, the header doubles and
+                 the action buttons slide down to float between the two rows. They belong beside the
+                 FIRST row of tabs, whatever the row does below. -->
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                        VerticalAlignment="Top" Margin="0,10,12,0">
                 <!-- The two patch toggles that used to sit here moved into the Settings view:
                      "One ESP per plugin" as-is, and "Write patch next to app" replaced by a free
                      output-folder picker, which covers that case and every other one. -->
 
-                <!-- Width/Height/Margin match NavTabButtonStyle (150x30, top offset 10) so the
-                     button lines up with the Items/Enchantments/Presets tabs opposite it.
-                     ActionButtonStyle only sets MinHeight and carries its own margin, which left
-                     it visibly smaller and 5px too high. -->
+                <!-- Height and the top offset match the nav tabs opposite, so the two groups sit on
+                     one line. The WIDTHS are their own: these three say what they do and keep the
+                     size that fits, while the nav tabs now size to their labels. ActionButtonStyle
+                     only sets MinHeight and carries its own margin, which left it visibly smaller
+                     and 5px too high. -->
                 <!-- Bug report: builds a local text report (versions, paths, DB state, log).
                      Nothing is sent anywhere - see LogViewerWindow. -->
                 <Button Content="Log / Bug report"
@@ -80,23 +91,43 @@
                         ToolTip="SkyPatcher INIs for every edited armor, weapon, enchantment and form list, plus SkyrimCraftingTool.esp for created/edited recipes and re-pointed worn-restriction lists."/>
             </StackPanel>
 
-            <StackPanel Orientation="Horizontal">
+            <!-- A WrapPanel, and that is the whole guarantee: a StackPanel in the fill slot of a
+                 DockPanel does not shrink and does not scroll, it is simply cut off at the right
+                 edge - and the last button in the row is Settings. At the window's own minimum
+                 width of 900 the row was over 600px too long, so the one tab that must always be
+                 reachable was the one that disappeared.
+                 Wrapping costs a second row of header at narrow widths, which is a price paid only
+                 by someone who has already made the window that small; nothing is ever unreachable.
+                 The tabs they never use can be switched off in Settings, which puts the row back on
+                 one line. -->
+            <!-- THE INSETS BELONG TO THE PANEL, THE GAPS TO THE BUTTONS. On one line the two are
+                 indistinguishable; wrapped, they are not:
+                   a left margin on the first button indents row one and leaves every row under it
+                   starting 12px further left;
+                   a top margin on every button is a gap BETWEEN rows as well as above the first one,
+                   so 10 above plus 6 below put the rows 16px apart while the buttons beside each
+                   other sat 7px apart.
+                 The panel now carries the 12/10 offset into the header, and each button carries 7 to
+                 its right and 7 below: one gap, both directions. -->
+            <WrapPanel Orientation="Horizontal" Margin="12,10,0,0">
                 <Button Content="Items"
                         Command="{Binding OpenMainContentCommand}"
                         Style="{StaticResource NavTabButtonStyle}"
                         Tag="{Binding IsMainContentActive}"
-                        Margin="12,10,10,0"/>
+                        Margin="0,0,7,7"/>
                 <Button Content="Enchantments"
                         Command="{Binding OpenEnchantmentMenuCommand}"
                         Style="{StaticResource NavTabButtonStyle}"
                         Tag="{Binding IsEnchantmentActive}"
-                        Margin="0,10,10,0"/>
+                        Visibility="{Binding ShowEnchantments, Converter={StaticResource BoolToVis}}"
+                        Margin="0,0,7,7"/>
 
                 <Button Content="NPCs"
                         Command="{Binding OpenNpcMenuCommand}"
                         Style="{StaticResource NavTabButtonStyle}"
                         Tag="{Binding IsNpcActive}"
-                        Margin="0,10,10,0"/>
+                        Visibility="{Binding ShowNpcs, Converter={StaticResource BoolToVis}}"
+                        Margin="0,0,7,7"/>
 
                 <!-- THE TEMPLATES TAB HAS NO NAV BUTTON ANY MORE (2026-09-26).
                      It existed because 4.039 of 6.580 NPCs take their stats from a template, so the
@@ -116,20 +147,31 @@
                         Command="{Binding OpenNpcGroupsCommand}"
                         Style="{StaticResource NavTabButtonStyle}"
                         Tag="{Binding IsNpcGroupsActive}"
-                        Margin="0,10,10,0"/>
+                        Visibility="{Binding ShowNpcGroups, Converter={StaticResource BoolToVis}}"
+                        Margin="0,0,7,7"/>
+
+                <!-- Where things are taken OUT of containers and lists. Its own tab because this is
+                     the one part of the tool that is not additive - see WorldContentVM. -->
+                <Button Content="Container/LeveledList"
+                        Command="{Binding OpenWorldCommand}"
+                        Style="{StaticResource NavTabButtonStyle}"
+                        Tag="{Binding IsWorldActive}"
+                        Visibility="{Binding ShowWorld, Converter={StaticResource BoolToVis}}"
+                        Margin="0,0,7,7"/>
 
                 <Button Content="Presets"
                         Command="{Binding OpenPresetsConfigCommand}"
                         Style="{StaticResource NavTabButtonStyle}"
                         Tag="{Binding IsPresetsActive}"
-                        Margin="0,10,10,0"/>
+                        Visibility="{Binding ShowPresets, Converter={StaticResource BoolToVis}}"
+                        Margin="0,0,7,7"/>
 
                 <Button Content="Settings"
                         Command="{Binding OpenSettingsCommand}"
                         Style="{StaticResource NavTabButtonStyle}"
                         Tag="{Binding IsSettingsActive}"
-                        Margin="0,10,10,0"/>
-            </StackPanel>
+                        Margin="0,0,7,7"/>
+            </WrapPanel>
         </DockPanel>
 
         <Border DockPanel.Dock="Top"
