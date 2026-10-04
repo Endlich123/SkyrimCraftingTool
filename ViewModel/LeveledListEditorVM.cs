@@ -527,6 +527,38 @@ namespace SkyrimCraftingTool.ViewModel
         // still shows its properties and contents, but the calculator has no subject.
         public bool CanCalculate => !string.IsNullOrWhiteSpace(ItemKey);
 
+        // An empty box with a heading is worse than no box: it looks broken rather than waiting. The
+        // calculator works out the chance of ONE object coming out of this list, so without one it
+        // says what it is missing - the same reason the History block hides itself rather than
+        // standing there empty.
+        public bool IsWaitingForSubject => !CanCalculate;
+
+        public string CalculatorWaitingText =>
+            "This works out the chance of one object coming out of this list. Pick the object it is about - "
+            + "tick a row in the contents, or open this list from the item you are placing.";
+
+        // What the box says about itself while it is closed. Three facts, because a collapsed panel
+        // that says nothing is a panel nobody opens: how much is in the list, how often it hands out
+        // nothing, and whether you have changed it.
+        public string HeaderLine
+        {
+            get
+            {
+                var parts = new List<string>
+                {
+                    Contents.Count == 1 ? "1 entry" : $"{Contents.Count} entries",
+                    $"nothing {ChanceNone}%",
+                };
+
+                // The number above is what the record stores; a global overrides it at runtime, and
+                // saying only the number would be the lie this field already warns about.
+                if (HasGoverningGlobal) parts.Add("from a global");
+                if (HasListEdit) parts.Add("changed by you");
+
+                return string.Join("  ·  ", parts);
+            }
+        }
+
         private IReadOnlyDictionary<string, OddsOverride>? Overrides()
         {
             if (!HasListEdit) return null;
@@ -919,7 +951,7 @@ namespace SkyrimCraftingTool.ViewModel
     // with the real data: one list measured lost 47 entries, and answering that one row at a time is
     // 47 decisions for what is usually a single one ("this mod pruned the list, put it all back" or
     // "leave it"). The rows are selectable instead and the action sits once, below them.
-    public sealed class LostEntryVM : ViewModelBase
+    public sealed class LostEntryVM : ViewModelBase, IOwnerPaneRow
     {
         private readonly LeveledListLostEntryInfo _lost;
         private bool _isRestored;
@@ -934,6 +966,25 @@ namespace SkyrimCraftingTool.ViewModel
         public string Reference => _lost.Reference;
         public string Name => _lost.Name;
         public string LostFrom => _lost.LostFrom;
+
+        // Which list lost this entry, for the one place where that is not already obvious: a
+        // container's History collects the losses of the several leveled lists hanging in it, and a
+        // row that did not say where it came from would be unusable there. Left empty in this
+        // window, where every row belongs to the list on screen - the row template hides the column
+        // when it is not set.
+        public string FromList { get; init; } = "";
+        public string FromListKey { get; init; } = "";
+
+        public bool HasFromList => !string.IsNullOrWhiteSpace(FromList);
+
+        // Which half of the Container/LeveledList tab's pane this row sits in, where the contents and
+        // the history are one grouped list. Unset in the leveled-list window, which shows the lost
+        // entries in a box of their own - see OwnerContentsVM.RebuildRows.
+        public string Section { get; set; } = "";
+
+        public string FromListTooltip => HasFromList
+            ? $"Lost from the leveled list {FromList} ({FromListKey}), which this container holds."
+            : "";
         public string AddedBy => _lost.AddedBy;
         public string DroppedBy => _lost.DroppedBy;
         public bool IsList => _lost.IsList;

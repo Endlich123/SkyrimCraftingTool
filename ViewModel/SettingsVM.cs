@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using System.IO;
 using System.Windows.Input;
 
@@ -11,9 +13,40 @@ namespace SkyrimCraftingTool.ViewModel
     //
     // Theme selection applies through ThemeService, which owns both the palette and the AppPrefs
     // key for it - same principle: this VM presents, it does not own.
+    // One row per hideable tab, so the settings list cannot drift from the nav row it is about -
+    // the label comes from NavTabService, which is what the buttons are named after.
+    public sealed class NavTabToggleVM : ViewModelBase
+    {
+        private readonly Services.NavTab _tab;
+
+        public NavTabToggleVM(Services.NavTab tab, string label)
+        {
+            _tab = tab;
+            Label = label;
+        }
+
+        public string Label { get; }
+
+        public bool IsVisible
+        {
+            get => Services.NavTabService.IsVisible(_tab);
+            set
+            {
+                if (IsVisible == value) return;
+
+                Services.NavTabService.SetVisible(_tab, value);
+                OnPropertyChanged();
+            }
+        }
+    }
+
     public class SettingsVM : ViewModelBase
     {
         private readonly MainContentVM _content;
+
+        // The nav row the user can thin out. Items and Settings are not in this list - see
+        // NavTabService for why they are not offered rather than forced on.
+        public IReadOnlyList<NavTabToggleVM> NavTabs { get; }
 
         public SettingsVM(MainContentVM content)
         {
@@ -21,6 +54,10 @@ namespace SkyrimCraftingTool.ViewModel
 
             BrowseOutputPathCommand = new RelayCommand(BrowseOutputPath);
             ResetOutputPathCommand = new RelayCommand(() => PatchOutputPath = "");
+
+            NavTabs = Services.NavTabService.Hideable
+                .Select(h => new NavTabToggleVM(h.Tab, h.Label))
+                .ToList();
 
             // This VM presents MainContentVM's state, so anything that changes there has to reach
             // the bindings here. Only the lost-list count needs it today - it is the one value that

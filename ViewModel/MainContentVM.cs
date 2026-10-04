@@ -81,6 +81,10 @@ namespace SkyrimCraftingTool.ViewModel
             {
                 if (SetProperty(ref _selectedNode, value))
                 {
+                    // The placement panel follows the selection - it is bound to this view model,
+                    // not to the item, so nothing else would tell it the item changed.
+                    OnPropertyChanged(nameof(PlacementTarget));
+
                     if (value is ItemNodeVM item)
                     {
                         EnsureItemHydrated(item);
@@ -112,48 +116,30 @@ namespace SkyrimCraftingTool.ViewModel
         // TreeView itself only supports single-select - item-level clicks get intercepted in
         // MainContentView (PreviewMouseLeftButtonDown, style of CategoryNodeVM.Items) and evaluated
         // here, instead of using TreeView.SelectedItem/SelectedItemChanged.
-        private ItemNodeVM? _selectionAnchor;
         public ObservableCollection<ItemNodeVM> SelectedItems { get; } = new();
 
         // Drives the visibility of MultiSelectDetailView in MainContentView.xaml.
         public bool IsMultiSelectActive => SelectedItems.Count > 1;
 
+        // THE ARITHMETIC IS SHARED (MultiSelectState), the bookkeeping is this tab's. It was written
+        // here first and then copied into the two Container/LeveledList trees; this is the copy
+        // going away. The state is handed SelectedItems rather than keeping a list of its own, so
+        // there is still exactly one collection and the bulk editor reads the same one it always
+        // did.
+        //
+        // One behaviour changed with the move, and it is the edge the old code left silent: a Shift
+        // click whose ANCHOR has since been filtered out of the tree used to do nothing at all. It
+        // now selects the clicked item on its own - see MultiSelectState.
+        private MultiSelectState<ItemNodeVM>? _pick;
+
+        private MultiSelectState<ItemNodeVM> Pick => _pick ??= new MultiSelectState<ItemNodeVM>(
+            GetFlatItemNodes,
+            SetItemSelected,
+            SelectedItems);
+
         public void HandleItemNodeClick(ItemNodeVM clicked, bool ctrl, bool shift)
         {
-            if (shift && _selectionAnchor != null)
-            {
-                var flat = GetFlatItemNodes();
-                int anchorIndex = flat.IndexOf(_selectionAnchor);
-                int clickedIndex = flat.IndexOf(clicked);
-
-                if (anchorIndex >= 0 && clickedIndex >= 0)
-                {
-                    if (!ctrl)
-                    {
-                        foreach (var item in SelectedItems.ToList())
-                            SetItemSelected(item, false);
-                    }
-
-                    int lo = Math.Min(anchorIndex, clickedIndex);
-                    int hi = Math.Max(anchorIndex, clickedIndex);
-                    for (int i = lo; i <= hi; i++)
-                        SetItemSelected(flat[i], true);
-                }
-            }
-            else if (ctrl)
-            {
-                SetItemSelected(clicked, !clicked.IsSelected);
-                _selectionAnchor = clicked;
-            }
-            else
-            {
-                foreach (var item in SelectedItems.ToList())
-                    if (item != clicked)
-                        SetItemSelected(item, false);
-
-                SetItemSelected(clicked, true);
-                _selectionAnchor = clicked;
-            }
+            Pick.Handle(clicked, ctrl, shift);
 
             // The single-detail panel stays active for exactly one selection, as before;
             // at 0 or 2+ items it's the (MultiSelectDetailView's) domain.
@@ -163,21 +149,16 @@ namespace SkyrimCraftingTool.ViewModel
         // Called from MainContentView's native TreeView.SelectedItemChanged handler whenever the user
         // navigates via single-select semantics (plugin/category clicks, arrow keys) after having
         // multi-selected items - see the comment there for why this needs to run first.
-        internal void ClearMultiSelection()
-        {
-            foreach (var item in SelectedItems.ToList())
-                SetItemSelected(item, false);
-            _selectionAnchor = null;
-        }
+        internal void ClearMultiSelection() => Pick.Clear();
 
+        // What being picked MEANS for an item, which is this tab's half of the arrangement above.
+        // Membership of SelectedItems is MultiSelectState's - adding to it here as well would put
+        // every item in twice.
         private void SetItemSelected(ItemNodeVM item, bool value)
         {
-            if (item.IsSelected == value)
-                return;
-
             item.IsSelected = value;
 
-            if (value)
+            if (value && !item.HasLoadedDetails)
             {
                 // Items only get lazily "hydrated" (Keywords/Crafting/Temper/autosave wiring), so far
                 // exclusively on single-select via SelectedNode. For multi-selection this needs to
@@ -185,13 +166,7 @@ namespace SkyrimCraftingTool.ViewModel
                 // stays null even though the item actually already has a saved recipe. HasLoadedDetails
                 // avoids an item getting fully re-hydrated again on every repeated click/re-selection
                 // (noticeable on larger Shift range-selections).
-                if (!item.HasLoadedDetails)
-                    LoadSelectedItemDetails(item);
-                SelectedItems.Add(item);
-            }
-            else
-            {
-                SelectedItems.Remove(item);
+                LoadSelectedItemDetails(item);
             }
 
             OnPropertyChanged(nameof(IsMultiSelectActive));
@@ -506,6 +481,26 @@ namespace SkyrimCraftingTool.ViewModel
             return "";
         }
 
+
+        // What the shared placement panel is placing (Styles/ContainerPlacementPanel.xaml).
+        //
+        // The panel's DataContext is this view model rather than the item, so it needs a way back to
+        // the item's ContainerSelection. Exactly what the two container commands already act on -
+        // SelectedNode when it happens to be an item - so this is that rule written down once
+        // instead of repeated in every binding.
+        public ItemNodeVM PlacementTarget => SelectedNode as ItemNodeVM;
+
+        // The armor / weapon rows for the Container tab's placement sub-tabs.
+        //
+        // THE SAME INSTANCES THIS TREE HOLDS. Handing out copies would give one record two dirty
+        // flags and two ContainerStrings, and a preset writing a placement through
+        // PresetFile.Container would land on whichever of the two nobody is looking at.
+        internal IReadOnlyList<IPlaceable> PlaceableItems(bool isArmor)
+            => GetFlatItemNodes()
+                .Where(i => i.IsArmor == isArmor)
+                .OrderBy(i => i.Display, StringComparer.CurrentCultureIgnoreCase)
+                .Cast<IPlaceable>()
+                .ToList();
 
         // limited list (e.g. only 20 containers)
         public ObservableCollection<ContainerEntryVM> LimitedContainerVMs { get; } = new();

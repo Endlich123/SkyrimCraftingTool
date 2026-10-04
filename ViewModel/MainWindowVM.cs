@@ -23,6 +23,8 @@ namespace SkyrimCraftingTool.ViewModel
         // between the two would mean a selection in one silently changing what the other patches.
         public NpcGroupVM NpcGroupsVM { get; }
         public PresetsConfigVM PresetsVM { get; }
+        public WorldContentVM WorldVM { get; }
+
         public SettingsVM SettingsVM { get; }
 
         // Current view
@@ -40,9 +42,46 @@ namespace SkyrimCraftingTool.ViewModel
                     OnPropertyChanged(nameof(IsNpcActive));
                     OnPropertyChanged(nameof(IsTemplatesActive));
                     OnPropertyChanged(nameof(IsNpcGroupsActive));
+                    OnPropertyChanged(nameof(IsWorldActive));
                     OnPropertyChanged(nameof(IsSettingsActive));
                 }
             }
+        }
+
+        // --- Which tabs the nav row shows ---
+        //
+        // The row is wide, and most sessions only use part of it. Which tabs are hidden is the
+        // user's choice, kept by NavTabService; Items and Settings are not offered as toggles at
+        // all, so there is no setting that can leave someone with no way back to their items or to
+        // this very preference.
+        public bool ShowEnchantments => Services.NavTabService.IsVisible(Services.NavTab.Enchantments);
+        public bool ShowNpcs => Services.NavTabService.IsVisible(Services.NavTab.Npcs);
+        public bool ShowNpcGroups => Services.NavTabService.IsVisible(Services.NavTab.NpcGroups);
+        public bool ShowWorld => Services.NavTabService.IsVisible(Services.NavTab.World);
+        public bool ShowPresets => Services.NavTabService.IsVisible(Services.NavTab.Presets);
+
+        private void OnNavTabsChanged()
+        {
+            OnPropertyChanged(nameof(ShowEnchantments));
+            OnPropertyChanged(nameof(ShowNpcs));
+            OnPropertyChanged(nameof(ShowNpcGroups));
+            OnPropertyChanged(nameof(ShowWorld));
+            OnPropertyChanged(nameof(ShowPresets));
+
+            // Hiding the tab you are standing on would otherwise leave its view up with no button
+            // leading back to it - the one state where a cosmetic setting turns into a trap.
+            if (IsCurrentViewHidden()) CurrentView = ContentVM;
+        }
+
+        private bool IsCurrentViewHidden()
+        {
+            if (CurrentView == EnchantVM) return !ShowEnchantments;
+            if (CurrentView == NpcVM) return !ShowNpcs;
+            if (CurrentView == NpcGroupsVM) return !ShowNpcGroups;
+            if (CurrentView == WorldVM) return !ShowWorld;
+            if (CurrentView == PresetsVM) return !ShowPresets;
+
+            return false;
         }
 
         // Active status of the nav tabs, for the button highlight in MainWindow.xaml
@@ -52,6 +91,7 @@ namespace SkyrimCraftingTool.ViewModel
         public bool IsNpcActive => CurrentView == NpcVM;
         public bool IsTemplatesActive => CurrentView == TemplateVM;
         public bool IsNpcGroupsActive => CurrentView == NpcGroupsVM;
+        public bool IsWorldActive => CurrentView == WorldVM;
         public bool IsSettingsActive => CurrentView == SettingsVM;
 
         // Non-blocking issue collector, shown in the status strip at the bottom of MainWindow.
@@ -65,6 +105,7 @@ namespace SkyrimCraftingTool.ViewModel
         public ICommand OpenTemplatesCommand { get; }
         public ICommand OpenNpcGroupsCommand { get; }
         public ICommand OpenPresetsConfigCommand { get; }
+        public ICommand OpenWorldCommand { get; }
         public ICommand OpenSettingsCommand { get; }
 
         // Log viewer + bug-report generator. Offline by design: it builds the report locally and
@@ -122,8 +163,16 @@ namespace SkyrimCraftingTool.ViewModel
                 EnchantVM.ShowEnchantment(key);
             };
 
+            // The same item.db the NPC stores use. Removals are decisions, so they live beside the
+            // other decision tables rather than in the volatile formid.db.
+            WorldVM = new WorldContentVM(ContentVM, itemService, npcDbPath);
+
             PresetsVM = new PresetsConfigVM(ContentVM);
             SettingsVM = new SettingsVM(ContentVM);
+
+            // The nav row follows the setting rather than reading it once: the checkboxes live on
+            // the Settings tab, which is on screen while they are being ticked.
+            Services.NavTabService.Changed += OnNavTabsChanged;
 
             // EnchantmentMenuVM builds its tree from _itemDB at construction time, before any scan
             // has run (the DB is empty/missing then) — refresh it once real data exists, on both the
@@ -138,6 +187,7 @@ namespace SkyrimCraftingTool.ViewModel
             // (docs/NPC-Gruppen-Plan.md section 8). So the tab drops what it is holding and resolves
             // again on the next visit.
             ContentVM.DataLoaded += () => NpcGroupsVM.Invalidate();
+            ContentVM.DataLoaded += () => WorldVM.Invalidate();
             ContentVM.DataLoaded += () =>
             {
                 IssueHub.Current.Clear("scan");
@@ -177,6 +227,14 @@ namespace SkyrimCraftingTool.ViewModel
                 CurrentView = NpcGroupsVM;
             });
             OpenPresetsConfigCommand = new RelayCommand(() => CurrentView = PresetsVM);
+            // Loaded on arrival, not at startup: a real load order has thousands of containers and
+            // nobody pays for them until they open the tab.
+            OpenWorldCommand = new RelayCommand(() =>
+            {
+                WorldVM.EnsureLoaded();
+                CurrentView = WorldVM;
+            });
+
             OpenSettingsCommand = new RelayCommand(() => CurrentView = SettingsVM);
 
             OpenLogViewerCommand = new RelayCommand(() =>

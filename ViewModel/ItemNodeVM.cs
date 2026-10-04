@@ -13,7 +13,7 @@ using System.Windows.Input;
 
 namespace SkyrimCraftingTool.ViewModel
 {
-    public class ItemNodeVM : ViewModelBase
+    public class ItemNodeVM : ViewModelBase, IPlaceable
     {
         private readonly IKeywordService _keywordService;
 
@@ -1280,6 +1280,44 @@ namespace SkyrimCraftingTool.ViewModel
         // leaf over there, and this view model stays ignorant of the tabs around it. A key that
         // somehow slips through is caught on the far side, which greys nothing out but reports
         // instead of moving to an empty tree.
+        // --- IPlaceable: the same item, shown in the placement sub-tabs of the Container tab ---
+        //
+        // The SAME instance the tree holds, never a copy. Two view models over one record would keep
+        // two dirty flags and two ContainerStrings, and a preset writing a placement
+        // (PresetFile.Container) would land on whichever one the user is not looking at.
+        //
+        // Placement is written the way the item editor writes it - through ContainerString, which is
+        // a tracked field with a save handler, change marker and reset behind it. Nothing new, just
+        // the same route reached from another screen.
+        public string Display => string.IsNullOrWhiteSpace(Name) ? EditorID : Name;
+
+        public void CommitPlacement() => ContainerString = ContainerSelection.BuildString();
+
+        // The same write, awaited past the shared save debouncer. A loop of CommitPlacement() calls
+        // across records would cancel itself down to the last one - see MainContentVM.
+        // PersistFieldAsync, which exists for that exact failure in the item tab's bulk editor.
+        public async Task CommitPlacementAsync()
+        {
+            CommitPlacement();
+
+            if (Main != null)
+                await Main.PersistFieldAsync(this, nameof(ContainerString));
+        }
+
+        public string PlacementString => ContainerString;
+
+        // The string is what is stored, so the string is what is written - the selection is reloaded
+        // from it afterwards rather than being the source of it. See IPlaceable for why the round
+        // trip through the selection was wrong.
+        public async Task SetPlacementAsync(string containerString)
+        {
+            ContainerString = containerString ?? "{}";
+            ContainerSelection.LoadFromString(ContainerString);
+
+            if (Main != null)
+                await Main.PersistFieldAsync(this, nameof(ContainerString));
+        }
+
         public bool CanJumpToEnchantment => CanJumpTo(ObjectEffectKey, AvailableEnchantments);
 
         // Static and taking the catalogue, so it can be tested without a MainContentVM behind it -
