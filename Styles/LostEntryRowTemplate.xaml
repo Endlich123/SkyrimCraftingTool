@@ -1,0 +1,102 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:local="clr-namespace:SkyrimCraftingTool.ViewModel">
+
+    <!-- One entry a leveled list USED to have and the winning version does not.
+         KEYED rather than implicit, although it carries a DataType: the Container/LeveledList tab
+         shows these rows in the same grouped list as the contents, and wraps this row in a tick box
+         of its own. An implicit template cannot be wrapped - there is no way to ask for "the
+         template I am replacing" - so both places name it.
+
+         Shared for the reason the LVLi row next door is shared: it is rendered in TWO places - the
+         leveled-list window, where it has always lived, and the contents pane of the
+         Container/LeveledList tab. The LVLi row's comment records what happens
+         otherwise: the slider there was replaced by a link in one view and three others silently
+         kept a row with no way to set an amount.
+
+         The ROW carries no action, and that is the division of labour: putting an entry back is a
+         decision over a SELECTION ("one list measured lost 47 entries, and that is almost always
+         one decision rather than 47"), so the ListBox around this row supplies the selection and
+         the buttons, in both places that show it. Both write the same LeveledListRestoreStore, so a
+         restoration made in either is one fact - which is also why IsRestored here is enough to
+         render it. -->
+    <DataTemplate x:Key="LostEntryRowTemplate" DataType="{x:Type local:LostEntryVM}">
+        <Grid Margin="0,2,0,2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="54"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0" Text="List"
+                       Foreground="{DynamicResource ColorAccentLight}"
+                       FontSize="11" VerticalAlignment="Center"
+                       Visibility="{Binding IsList, Converter={StaticResource BoolToVis}}"/>
+
+            <!-- WHICH list lost it, and only where that is not already obvious. In the leveled-list
+                 window every row belongs to the list on screen, so this stays empty there; in a
+                 container's History the rows come from the several lists hanging in the chest, and
+                 without this the row would not say where it is from. -->
+            <TextBlock Grid.Column="1" Text="{Binding FromList}"
+                       Visibility="{Binding HasFromList, Converter={StaticResource BoolToVis}}"
+                       Foreground="{DynamicResource ColorTreeBranch}"
+                       FontSize="10" VerticalAlignment="Center"
+                       Margin="0,0,6,0"
+                       TextTrimming="CharacterEllipsis" MaxWidth="140"
+                       ToolTip="{Binding FromListTooltip}"/>
+
+            <!-- Struck through while it is missing, plain once it is going back: the strikethrough
+                 says "not in the game", so it has to stop saying that the moment the patch will put
+                 it there. -->
+            <TextBlock Grid.Column="2" Text="{Binding Name}"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" FontSize="11">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Foreground" Value="#D8B84A"/>
+                        <Setter Property="TextDecorations" Value="Strikethrough"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsRestored}" Value="True">
+                                <Setter Property="Foreground" Value="{DynamicResource ColorTextPrimary}"/>
+                                <Setter Property="TextDecorations" Value="{x:Null}"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+
+            <!-- Shows the plugin that DROPPED the entry, not the last one that had it. The old label
+                 ("the last plugin this item was still in") was accurate and still got read as "the
+                 culprit" - so the row answers the question that was actually being asked, and the
+                 tooltip carries the full chain. -->
+            <TextBlock Grid.Column="3"
+                       Text="{Binding LineageText}"
+                       Foreground="{DynamicResource ColorTextTertiary}"
+                       FontSize="10" Margin="8,0,8,0"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" MaxWidth="180"
+                       ToolTip="{Binding LineageTooltip}"/>
+
+            <StackPanel Grid.Column="4" Orientation="Horizontal" MinWidth="72"
+                        VerticalAlignment="Center">
+                <!-- The level and count kept for this one are a pick between versions that
+                     disagreed, not a reading. Said here rather than nowhere, because putting it back
+                     restores one of several states it genuinely had. -->
+                <TextBlock Text="?" FontWeight="Bold"
+                           Foreground="{DynamicResource ColorWarning}"
+                           FontSize="11" Margin="0,0,6,0"
+                           ToolTip="{Binding LevelNote}"
+                           Visibility="{Binding Ambiguous, Converter={StaticResource BoolToVis}}"/>
+
+                <TextBlock Text="going back"
+                           Foreground="{DynamicResource ColorAccentLight}"
+                           FontSize="10"
+                           Visibility="{Binding IsRestored, Converter={StaticResource BoolToVis}}"
+                           ToolTip="The next patch adds this back at runtime - the mod that dropped it is not changed."/>
+            </StackPanel>
+        </Grid>
+    </DataTemplate>
+
+</ResourceDictionary>

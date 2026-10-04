@@ -1,0 +1,212 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Where an item is placed: the container list on the left, what is selected on the right.
+         Shared by the item editor and the Container/LeveledList tab's placement sub-tabs.
+
+         WHY IT IS SHARED. It was written inside MainContentView and could only be used there. The
+         placement sub-tabs need exactly the same panel for books, scrolls and the rest, and a second
+         copy would be the fourth time this project pays for one - the condition templates (six
+         files), the preset recipe block (two) and the leveled-list row (four views, three of them
+         silently left behind) are the standing evidence.
+
+         THE DATA CONTEXT IS THE HOST, NOT THE ITEM, and that is the one real change made while
+         lifting it out. Inside MainContentView the panel reached nine members of MainContentVM
+         through "DataContext.X, RelativeSource AncestorType=UserControl" - a route that resolves to
+         whatever view model the surrounding view happens to have. LeveledListRowTemplate documents
+         why that is a trap. So the host is passed in deliberately and every binding here is a plain
+         one; the item being placed is reached through the host's PlacementTarget.
+
+         WHAT A HOST HAS TO OFFER (MainContentVM and PlacementListVM both do):
+           PlacementTarget                        - the thing being placed; carries ContainerSelection
+           ExistingPlacementSummary               - "already in your load order", one line
+           HasChangedLists / ChangedListsButtonText / ShowChangedListsCommand
+           ContainerSearchText
+           ShowExpertContainers / ToggleExpertContainersCommand
+           FilteredContainers
+           ToggleContainerForSelectedItemCommand  - takes a container key
+           ClearContainerSelectionCommand -->
+    <DataTemplate x:Key="ContainerPlacementPanelTemplate">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="3*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <!-- "Already in your load order" summary -->
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- What the scanned game already has, counted in one line.
+                 The containers it names are marked in the list below; the leveled
+                 lists are only counted, deliberately - 86 % of them hang in no
+                 container at all, so there is no row they could be marked on
+                 without inventing a placement. -->
+            <DockPanel Grid.Row="0" Grid.ColumnSpan="3" Margin="0,0,0,10">
+                <!-- The way back to your own list edits. Only there when there
+                     are any: a chance you changed reaches every mod feeding that
+                     list, so it has to be reviewable - and until this existed,
+                     the patch report was its only trace. -->
+                <Button DockPanel.Dock="Right"
+                        Content="{Binding ChangedListsButtonText}"
+                        Command="{Binding ShowChangedListsCommand}"
+                        Style="{StaticResource StandardButtonStyle}"
+                        Margin="10,0,0,0"
+                        ToolTip="Leveled lists whose chance or calculation you changed - review or reset them."
+                        Visibility="{Binding HasChangedLists, Converter={StaticResource BoolToVis}}"/>
+
+                <TextBlock Text="{Binding ExistingPlacementSummary}"
+                           Foreground="{DynamicResource ColorTextTertiary}"
+                           TextWrapping="Wrap"
+                           VerticalAlignment="Center"/>
+            </DockPanel>
+
+            <!-- LEFT SIDE -->
+            <StackPanel Grid.Row="1" Grid.Column="0">
+
+                <!-- Search -->
+                <TextBox Text="{Binding ContainerSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                         Style="{StaticResource ItemTextSearchBoxStyle}"
+                         Margin="0,0,0,6"/>
+
+                <!-- Expert toggle -->
+                <Button Content="{Binding ShowExpertContainers, Converter={StaticResource BoolToExpertTextConverter}}"
+                        Command="{Binding ToggleExpertContainersCommand}"
+                        Style="{StaticResource StandardButtonStyle}"
+                        Margin="0,0,0,10"/>
+
+                <TextBlock Text="Containers"
+                           Style="{StaticResource ItemLabelStyle}"
+                           Margin="0,0,0,6"/>
+
+                <ScrollViewer Height="180" VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding FilteredContainers}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Padding="6"
+                                        Margin="0,0,0,6"
+                                        Background="{DynamicResource ColorBackgroundControl}"
+                                        CornerRadius="4">
+                                    <DockPanel>
+                                        <!-- READ-ONLY MARK, NOT A SELECTION. Visible when the scanned load
+                                             order already has this item in this container. The Select button
+                                             next to it says what the patch will do; these two must stay
+                                             visibly different, because they mean the opposite. -->
+                                        <Border DockPanel.Dock="Left"
+                                                Margin="0,0,8,0"
+                                                Padding="5,1"
+                                                CornerRadius="3"
+                                                VerticalAlignment="Center"
+                                                Background="{DynamicResource ColorBackgroundBase}"
+                                                BorderBrush="{DynamicResource ColorAccentLight}"
+                                                BorderThickness="1"
+                                                ToolTip="{Binding AlreadyContainsTooltip}"
+                                                Visibility="{Binding AlreadyContainsItem, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="in game"
+                                                       FontSize="10"
+                                                       Foreground="{DynamicResource ColorAccentLight}"/>
+                                        </Border>
+
+                                        <TextBlock Text="{Binding Name}"
+                                                   Foreground="{DynamicResource ColorTextPrimary}"
+                                                   VerticalAlignment="Center"/>
+
+                                        <!-- The row's own DataContext is a container, so the command has to
+                                             be reached on the host. One level up from here is the
+                                             ItemsControl, whose DataContext IS the host - bound by element
+                                             rather than by ancestor TYPE, so it cannot latch onto the wrong
+                                             view model in another view. -->
+                                        <Button Width="70"
+                                                HorizontalAlignment="Right"
+                                                Style="{StaticResource StandardButtonStyle}"
+                                                Command="{Binding DataContext.ToggleContainerForSelectedItemCommand,
+                                                          RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                CommandParameter="{Binding ContainerKey}"
+                                                Content="{Binding IsSelected, Converter={StaticResource BoolToSelectTextConverter}}"/>
+                                    </DockPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </StackPanel>
+
+            <!-- SPLITTER -->
+            <GridSplitter Grid.Row="1" Grid.Column="1"
+                          Width="6"
+                          HorizontalAlignment="Stretch"
+                          Background="{DynamicResource ColorDivider}"/>
+
+            <!-- RIGHT SIDE -->
+            <StackPanel Grid.Row="1" Grid.Column="2">
+                <TextBlock Text="Selected Containers (for this item)"
+                           Style="{StaticResource ItemLabelStyle}"
+                           Margin="0,0,0,6"/>
+
+                <!-- The two placement kinds behave completely differently in game, and the
+                     sliders are the only thing that tells them apart - a tester expected
+                     "from level 3 onwards it's in the shop" and found an empty shop. -->
+                <TextBlock Text="Leave every slider at 0 and the item is placed in the container itself - permanently, and it will be there. Raise a slider and it goes into that leveled list instead: from that level on it can turn up when the merchant restocks (vanilla: about every 48 h), by chance rather than guaranteed."
+                           Foreground="{DynamicResource ColorTextTertiary}"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,8"/>
+
+                <ItemsControl ItemsSource="{Binding PlacementTarget.ContainerSelection.SelectedContainers}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Padding="8"
+                                    Margin="0,0,0,8"
+                                    Background="{DynamicResource ColorBackgroundControl}"
+                                    CornerRadius="4">
+
+                                <StackPanel>
+
+                                    <!-- Header -->
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Grid.Column="0"
+                                                   Text="{Binding Name}"
+                                                   Foreground="{DynamicResource ColorTextPrimary}"
+                                                   FontWeight="Bold"
+                                                   VerticalAlignment="Center"/>
+
+                                        <Button Grid.Column="1"
+                                                Content="Remove"
+                                                Style="{StaticResource StandardButtonStyle}"
+                                                Command="{Binding ToggleSelectedCommand}"
+                                                Margin="8,0,0,0"/>
+                                    </Grid>
+
+                                    <!-- LVLi Entries: checkbox + link, nothing else.
+                                         Everything adjustable (level, amount, and the list's own chance/flags for reading)
+                                         lives in the detail window behind the name - a row that carried all of it would be
+                                         wider than the panel and still could not show what the list contains. -->
+                                    <!-- Rows come from Styles/LeveledListRowTemplate.xaml - shared by all four views that
+                                         show a container's leveled lists, so a change to the row cannot reach only one. -->
+                                    <ItemsControl ItemsSource="{Binding LVLiEntries}"/>
+
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <StackPanel Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            Margin="0,8,0,0">
+                    <Button Content="Clear Selection"
+                            Width="120"
+                            Style="{StaticResource StandardButtonStyle}"
+                            Command="{Binding ClearContainerSelectionCommand}"/>
+                </StackPanel>
+            </StackPanel>
+
+        </Grid>
+    </DataTemplate>
+</ResourceDictionary>

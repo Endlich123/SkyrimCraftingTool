@@ -109,6 +109,23 @@
         <Setter Property="FontSize" Value="11"/>
     </Style>
 
+    <!-- An identifier the user reads and copies, and must never edit: an EditorID, a key, a COBJ
+         origin.
+         DISABLED IS NOT READ-ONLY, and that was the bug. These were IsEnabled="False", which greys
+         the box AND takes it out of the focus order - so the text could not be clicked into, could
+         not be selected, and could not be copied. For a FormID that is about to be typed into xEdit
+         or a SkyPatcher rule by hand, that is the one thing it is there for.
+         IsReadOnly keeps every keystroke out while leaving the text selectable. The caret is hidden
+         and the box stays out of the tab order so it still reads as "not a field you fill in", and
+         the muted foreground keeps the greyed look it had. -->
+    <Style x:Key="CopyableIdentifierStyle" TargetType="TextBox" BasedOn="{StaticResource ItemTextBoxStyle}">
+        <Setter Property="IsReadOnly" Value="True"/>
+        <Setter Property="IsReadOnlyCaretVisible" Value="False"/>
+        <Setter Property="IsTabStop" Value="False"/>
+        <Setter Property="Foreground" Value="{DynamicResource ColorTextMuted}"/>
+        <Setter Property="ToolTip" Value="Read-only. Select the text and copy it with Ctrl+C."/>
+    </Style>
+
     <Style x:Key="ItemTextSearchBoxStyle" TargetType="TextBox">
         <Setter Property="Background" Value="{DynamicResource ColorBackgroundControl}"/>
         <Setter Property="Foreground" Value="{DynamicResource ColorTextPrimary}"/>
@@ -835,8 +852,16 @@
     <!-- Nav tab buttons (MainWindow) - one accent (ColorAccent) marks only the active tab, so
          navigation doesn't compete with the views' semantic action colors (green/blue/amber).
          Active status comes via Tag="{Binding IsXActive}" per button. -->
+    <!-- SIZED TO ITS LABEL, not to a fixed 150. Seven tabs at 150 plus the action buttons opposite
+         them needed about 1,550px of header; the window may be 900 wide, so the row was cut off at
+         the right - and the last button is Settings, the one thing that must never be unreachable.
+         By their labels the same seven come to roughly 640px, which is what keeps the WrapPanel in
+         MainWindow from having to wrap at the widths anyone actually uses. The MinWidth is for the
+         short ones - "NPCs" on its own would be a stub next to "Container/LeveledList" - and it is
+         deliberately below what the longest label needs, or it would hand back the width this just
+         saved. -->
     <Style x:Key="NavTabButtonStyle" TargetType="Button">
-        <Setter Property="Width" Value="150"/>
+        <Setter Property="MinWidth" Value="78"/>
         <Setter Property="Height" Value="30"/>
         <Setter Property="Padding" Value="10,5"/>
         <Setter Property="Background" Value="{DynamicResource ColorBackgroundControl}"/>
@@ -875,15 +900,149 @@
                         <!-- Active tab (after Hover, so it takes precedence). DataTrigger instead of
                              Trigger: "Tag" is of type object, a normal Trigger would parse "True" as
                              a string and never match against the bound bool. -->
+                        <!-- The accent fill is the marker, and it is enough: a blue tab with
+                             on-accent text next to six grey ones. Bold came off with the fixed
+                             width - a button that sizes to its label and then bolds it re-measures
+                             the whole row on every click, shoving the tabs after it sideways and,
+                             near the edge, across a wrap. The sub-tab row made the same call for
+                             the same reason. -->
                         <DataTrigger Binding="{Binding RelativeSource={RelativeSource Self}, Path=Tag}" Value="True">
                             <Setter TargetName="border" Property="Background"
                                 Value="{DynamicResource ColorAccent}"/>
                             <Setter Property="Foreground"
                                 Value="{DynamicResource ColorTextOnAccent}"/>
-                            <Setter Property="FontWeight" Value="Bold"/>
                         </DataTrigger>
 
                     </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ===================== -->
+    <!--      TABS             -->
+    <!-- ===================== -->
+
+    <!-- The sub-tabs of the Container/LeveledList tab are the only TabControl in the tool, and
+         until now they were the only control still wearing WPF's own chrome: light-grey gradient
+         headers on a white panel, next to a dark window. Every other tab strip in the app is a row
+         of NavTabButtonStyle buttons, so these are templated to match - same control background,
+         same border, same hover, same accent fill when active.
+
+         Same exception as OnAccentTextStyle, for the same reason: the header is rendered through a
+         TextBlock (here the one in the TabControl's ItemTemplate), the app-wide implicit TextBlock
+         style SETS Foreground, and a setter beats an inherited value - so without this the header
+         would stay ColorTextPrimary and the active tab would lose its on-accent text colour. -->
+    <Style x:Key="OnTabTextStyle" TargetType="TextBlock">
+        <Setter Property="Foreground"
+                Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=TabItem}}"/>
+    </Style>
+
+    <!-- Deliberately NOT bold when selected, unlike NavTabButtonStyle: those buttons have a fixed
+         Width of 150, these size to their label. Bolding one would re-measure the whole strip and,
+         with twelve sub-tabs wrapping over two rows, shuffle the rest onto another line on every
+         click. The accent fill is the active marker. -->
+    <Style x:Key="ThemedTabItemStyle" TargetType="TabItem">
+        <Setter Property="Background" Value="{DynamicResource ColorBackgroundControl}"/>
+        <Setter Property="Foreground" Value="{DynamicResource ColorTextSecondary}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource ColorBorder}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="12,5"/>
+        <Setter Property="Margin" Value="0,0,4,4"/>
+        <Setter Property="MinHeight" Value="28"/>
+
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TabItem">
+                    <Border x:Name="border"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter ContentSource="Header"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          RecognizesAccessKey="True">
+                            <ContentPresenter.Resources>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource OnTabTextStyle}"/>
+                            </ContentPresenter.Resources>
+                        </ContentPresenter>
+                    </Border>
+
+                    <ControlTemplate.Triggers>
+
+                        <!-- Hover -->
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="border" Property="Background"
+                                    Value="{DynamicResource ColorBackgroundHighlight}"/>
+                        </Trigger>
+
+                        <!-- Active tab, after Hover so it takes precedence. -->
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="border" Property="Background"
+                                    Value="{DynamicResource ColorAccent}"/>
+                            <Setter TargetName="border" Property="BorderBrush"
+                                    Value="{DynamicResource ColorAccentLight}"/>
+                            <Setter Property="Foreground"
+                                    Value="{DynamicResource ColorTextOnAccent}"/>
+                        </Trigger>
+
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground"
+                                    Value="{DynamicResource ColorTextTertiary}"/>
+                        </Trigger>
+
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- The frame around the tabs. The default template paints a bordered panel behind the content
+         in the system colours; this one passes the control's own Background/BorderBrush through
+         (the view asks for Transparent and no border) and keeps only a 1px divider under the strip
+         - the same line that separates the nav row from the content in MainWindow. -->
+    <Style x:Key="ThemedTabControlStyle" TargetType="TabControl">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Foreground" Value="{DynamicResource ColorTextPrimary}"/>
+        <Setter Property="ItemContainerStyle" Value="{StaticResource ThemedTabItemStyle}"/>
+
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TabControl">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- TabPanel, not a StackPanel: it is what wraps the strip onto a second row
+                             once the twelve sub-tabs no longer fit the window width. -->
+                        <TabPanel Grid.Row="0"
+                                  IsItemsHost="True"
+                                  Panel.ZIndex="1"
+                                  KeyboardNavigation.TabIndex="1"/>
+
+                        <Border Grid.Row="1"
+                                BorderBrush="{DynamicResource ColorBorder}"
+                                BorderThickness="0,0,0,1"
+                                Margin="0,0,0,8"/>
+
+                        <Border Grid.Row="2"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                KeyboardNavigation.TabNavigation="Local"
+                                KeyboardNavigation.TabIndex="2">
+                            <ContentPresenter x:Name="PART_SelectedContentHost"
+                                              ContentSource="SelectedContent"
+                                              Margin="{TemplateBinding Padding}"
+                                              SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                        </Border>
+                    </Grid>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
