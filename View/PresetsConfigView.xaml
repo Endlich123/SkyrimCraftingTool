@@ -293,6 +293,14 @@
                                     <ContentControl Content="{Binding TemperRecipe}"/>
                                 </Expander>
 
+                                <!-- Breakdown Recipe: the same editor, read the other way round -
+                                     the material list is what the recipe PRODUCES, capped at one
+                                     entry, and the workbench picker offers only the two breakdown
+                                     benches. -->
+                                <Expander Style="{StaticResource DarkExpanderStyle}" Header="Breakdown Recipe" IsExpanded="False">
+                                    <ContentControl Content="{Binding BreakdownRecipe}"/>
+                                </Expander>
+
                                 <!-- Container -->
                                 <Expander Style="{StaticResource DarkExpanderStyle}" Header="Container" IsExpanded="False">
                                     <StackPanel Margin="0,10,0,0">

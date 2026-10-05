@@ -54,6 +54,19 @@
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="Margin" Value="2,0,0,3"/>
         </Style>
+
+        <Style x:Key="HintText" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource ColorTextTertiary}"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="2,4,0,0"/>
+        </Style>
+
+        <Style TargetType="RadioButton">
+            <Setter Property="Margin" Value="0,0,16,0"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
     </Window.Resources>
 
     <Grid Margin="14">
@@ -62,9 +75,24 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Margin="0,0,0,8">
+        <!-- The manager question comes FIRST because it decides ONE thing the paths cannot say:
+             which copy of a duplicated plugin file the scan reads (see Services/PluginPathPicker).
+             Two answers, because every manager that deploys behaves identically here. -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,10">
+            <TextBlock Style="{StaticResource FieldLabel}" Text="Mod manager"/>
+            <StackPanel Orientation="Horizontal">
+                <RadioButton x:Name="Mo2Radio" Content="Mod Organizer 2" GroupName="Manager" Checked="ManagerChanged"/>
+                <RadioButton x:Name="OtherRadio" Content="Other Manager (Vortex, etc) / Base Game" GroupName="Manager" Checked="ManagerChanged"/>
+            </StackPanel>
+        </StackPanel>
+
+        <StackPanel Grid.Row="2" Margin="0,0,0,8">
             <TextBlock Style="{StaticResource FieldLabel}" Text="Game Data folder"/>
             <DockPanel>
                 <Button DockPanel.Dock="Right" Content="Browse…" Width="76" VerticalAlignment="Stretch" Margin="6,0,0,0"
@@ -73,8 +101,8 @@
             </DockPanel>
         </StackPanel>
 
-        <StackPanel Grid.Row="1" Margin="0,0,0,8">
-            <TextBlock Style="{StaticResource FieldLabel}" Text="Mods folder"/>
+        <StackPanel Grid.Row="3" Margin="0,0,0,8">
+            <TextBlock x:Name="ModsFolderLabel" Style="{StaticResource FieldLabel}" Text="Mods folder"/>
             <DockPanel>
                 <Button DockPanel.Dock="Right" Content="Browse…" Width="76" VerticalAlignment="Stretch" Margin="6,0,0,0"
                         Style="{StaticResource StandardButtonStyle}" Click="SelectModDirectoryPath_Click"/>
@@ -82,7 +110,7 @@
             </DockPanel>
         </StackPanel>
 
-        <StackPanel Grid.Row="2" Margin="0,0,0,8">
+        <StackPanel Grid.Row="4" Margin="0,0,0,8">
             <TextBlock Style="{StaticResource FieldLabel}" Text="plugins.txt"/>
             <DockPanel>
                 <Button DockPanel.Dock="Right" Content="Browse…" Width="76" VerticalAlignment="Stretch" Margin="6,0,0,0"
@@ -94,7 +122,22 @@
             </DockPanel>
         </StackPanel>
 
-        <Button Grid.Row="3" Content="Save" Height="32" Width="120" HorizontalAlignment="Right" Margin="0,6,0,0"
+        <!-- MO2 only, and filled in from the plugins.txt above - the two live in the same profile
+             folder. This is the mod PRIORITY, the only thing that can say which copy of a
+             duplicated plugin file MO2 actually loads. Optional: without it the scan still works,
+             it just falls back to "a mod folder beats the game folder" without the ordering. -->
+        <StackPanel x:Name="ModListPanel" Grid.Row="5" Margin="0,0,0,8" Visibility="Collapsed">
+            <TextBlock Style="{StaticResource FieldLabel}" Text="modlist.txt (found next to plugins.txt — decides which copy of a duplicated plugin wins)"/>
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="Browse…" Width="76" VerticalAlignment="Stretch" Margin="6,0,0,0"
+                        Style="{StaticResource StandardButtonStyle}" Click="SelectModListFilePath_Click"/>
+                <TextBox x:Name="ModListFilePathBox" Tag="profiles\your profile name\modlist.txt"/>
+            </DockPanel>
+        </StackPanel>
+
+        <TextBlock x:Name="StatusText" Grid.Row="6" Style="{StaticResource HintText}"/>
+
+        <Button Grid.Row="7" Content="Save" Height="32" Width="120" HorizontalAlignment="Right" Margin="0,10,0,0"
                 Style="{StaticResource ActionButtonStyle}" Click="SaveAndClose_Click"/>
     </Grid>
 </Window>

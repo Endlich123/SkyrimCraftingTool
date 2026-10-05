@@ -551,6 +551,96 @@
                 </StackPanel>
             </Expander>
 
+            <!-- Breakdown Recipe: unlike Temper the workbench IS settable (it is what separates a
+                 smelter breakdown from a tanning-rack one and cannot be derived from the item), and
+                 the material row is what the recipe PRODUCES - at most one, because a COBJ creates
+                 one KIND of object. -->
+            <Expander Style="{StaticResource DarkExpanderStyle}" Header="Breakdown Recipe" IsExpanded="False">
+                <StackPanel Margin="0,10,0,0">
+                    <CheckBox Content="Workbench"
+                              IsChecked="{Binding IncludeBreakdownBench}"
+                              Style="{StaticResource ItemCheckBoxStyle}"
+                              Margin="0,0,0,4"/>
+
+                    <ComboBox ItemsSource="{Binding BreakdownBenches}"
+                              SelectedItem="{Binding SelectedBreakdownBench, Mode=TwoWay}"
+                              DisplayMemberPath="Name"
+                              IsSynchronizedWithCurrentItem="False"
+                              Style="{StaticResource ItemComboBoxStyle}"
+                              Margin="0,0,0,10"/>
+
+                    <CheckBox Content="Output"
+                              IsChecked="{Binding IncludeBreakdownOutput}"
+                              Style="{StaticResource ItemCheckBoxStyle}"
+                              Margin="0,0,0,4"/>
+
+                    <ItemsControl ItemsSource="{Binding BreakdownOutputTemplate}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="60"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <ComboBox Grid.Column="0"
+                                              ItemsSource="{Binding LocalMaterialsView}"
+                                              SelectedItem="{Binding SelectedMaterial}" IsSynchronizedWithCurrentItem="False"
+                                              Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                              ToolTip="{Binding Key}"
+                                              DisplayMemberPath="Name"
+                                              IsEditable="True"
+                                              IsTextSearchEnabled="False"
+                                              StaysOpenOnEdit="True"
+                                              Style="{StaticResource ItemComboBoxStyle}"/>
+
+                                    <TextBox Grid.Column="1"
+                                             TextAlignment="Center"
+                                             ToolTip="Amount"
+                                             Text="{Binding Count, UpdateSourceTrigger=PropertyChanged}"
+                                             model:NumericTextBoxBehavior.Mode="Integer"
+                                             model:NumericTextBoxBehavior.Min="1"
+                                             Style="{StaticResource ItemTextBoxStyle}"/>
+
+                                    <Button Grid.Column="2"
+                                            Command="{Binding DataContext.RemoveBreakdownOutputCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip="Remove Material"
+                                            Style="{StaticResource RemoveButtonStyle}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Button Command="{Binding AddBreakdownOutputCommand}"
+                            IsEnabled="{Binding CanAddBreakdownOutput}"
+                            Style="{StaticResource AddButtonStyle}"
+                            HorizontalAlignment="Left"
+                            ToolTip="Pick the material this item breaks down into"
+                            Margin="0,0,0,10"/>
+
+                    <CheckBox Content="Conditions"
+                              IsChecked="{Binding IncludeBreakdownConditions}"
+                              Style="{StaticResource ItemCheckBoxStyle}"
+                              Margin="0,0,0,4"/>
+
+                    <ItemsControl ItemsSource="{Binding BreakdownConditionsTemplate}"
+                                  ItemTemplate="{StaticResource ConditionRowTemplate}"/>
+
+                    <Button Command="{Binding AddBreakdownConditionCommand}"
+                            Style="{StaticResource AddButtonStyle}"
+                            HorizontalAlignment="Left"
+                            ToolTip="Add Condition"
+                            Margin="0,0,0,10"/>
+
+                    <Button Content="Apply to Selection"
+                            Command="{Binding ApplyBreakdownRecipeCommand}"
+                            Style="{StaticResource ActionButtonStyle}"
+                            HorizontalAlignment="Left"/>
+                </StackPanel>
+            </Expander>
+
             <!-- Container: additive (union). Left: selection catalog (by default only vendors, like
                  LimitedContainerVMs in the single-item editor); right: the template with LVLi levels,
                  which get applied 1:1 to every affected item. -->

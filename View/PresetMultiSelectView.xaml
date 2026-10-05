@@ -235,6 +235,20 @@
                 </StackPanel>
             </Expander>
 
+            <!-- Breakdown Recipe: the same editor read the other way round - the material list is
+                 what the recipe PRODUCES, capped at one entry, and the workbench offers only the
+                 smelter and the tanning rack. -->
+            <Expander Style="{StaticResource DarkExpanderStyle}" Header="Breakdown Recipe" IsExpanded="False">
+                <StackPanel>
+                    <ContentControl Content="{Binding BreakdownRecipe}"/>
+                    <Button Content="Apply Breakdown Recipe to selection"
+                            Command="{Binding ApplyBreakdownCommand}"
+                            Style="{StaticResource ActionButtonStyle}"
+                            HorizontalAlignment="Left"
+                            Margin="0,10,0,0"/>
+                </StackPanel>
+            </Expander>
+
             <!-- Container: the same catalog + selection editor as the single-slot editor in
                  PresetsConfigView, so a bulk edit can set the field the single-slot editor already
                  had. The whole "{ContainerKey: {LVLiKey,Level; ...}}" string is copied to every

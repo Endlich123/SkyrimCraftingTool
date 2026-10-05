@@ -211,6 +211,8 @@
                                         <RowDefinition Height="Auto"/>
                                         <!-- Temper -->
                                         <RowDefinition Height="Auto"/>
+                                        <!-- Breakdown -->
+                                        <RowDefinition Height="Auto"/>
                                         <!-- Container -->
                                     </Grid.RowDefinitions>
 
@@ -995,6 +997,15 @@
                                         <Expander.Header>
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="Crafting Recipe"/>
+                                                <!-- Only when there IS something hidden. Measured: 305 of ~8,700 items have
+                                                     more than one crafting recipe, so on most items this stays away. -->
+                                                <Button Content="other recipes"
+                                                        Margin="8,0,0,0"
+                                                        Command="{Binding ShowOtherRecipesCommand}"
+                                                        CommandParameter="Crafting"
+                                                        ToolTip="This item has more than one crafting recipe. Choose which one the editor shows, or take one out."
+                                                        Visibility="{Binding HasOtherCraftingRecipes, Converter={StaticResource BoolToVis}}"
+                                                        Style="{StaticResource StandardButtonStyle}"/>
                                                 <!-- HasCraftingChanges also covers a recipe the user
                                                      created outright, which has no scanned original
                                                      to differ from. -->
@@ -1286,6 +1297,13 @@
                                         <Expander.Header>
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="Temper Recipe"/>
+                                                <Button Content="other recipes"
+                                                        Margin="8,0,0,0"
+                                                        Command="{Binding ShowOtherRecipesCommand}"
+                                                        CommandParameter="Temper"
+                                                        ToolTip="This item has more than one temper recipe. Choose which one the editor shows, or take one out."
+                                                        Visibility="{Binding HasOtherTemperRecipes, Converter={StaticResource BoolToVis}}"
+                                                        Style="{StaticResource StandardButtonStyle}"/>
                                                 <TextBlock Style="{StaticResource ChangedDotStyle}"
                                                            ToolTip="The temper recipe was changed or newly created."
                                                            Visibility="{Binding HasTemperChanges, Converter={StaticResource BoolToVis}}"/>
@@ -1528,8 +1546,192 @@
                                             </StackPanel>
                                         </GroupBox>
                                     </Expander>
-                                    <!-- Container Section -->
+                                    <!-- Breakdown: recipes that CONSUME this item.
+                                         Read-only for now; editing and creating comes next. -->
                                     <Expander Grid.Row="6" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
+                                        <Expander.Header>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Breakdown"/>
+                                                <Button Content="other recipes"
+                                                        Margin="8,0,0,0"
+                                                        Command="{Binding ShowOtherRecipesCommand}"
+                                                        CommandParameter="Breakdown"
+                                                        ToolTip="This item has more than one breakdown recipe. Choose which one the editor shows, or take one out."
+                                                        Visibility="{Binding HasOtherBreakdownRecipes, Converter={StaticResource BoolToVis}}"
+                                                        Style="{StaticResource StandardButtonStyle}"/>
+                                                <TextBlock Style="{StaticResource ChangedDotStyle}"
+                                                           ToolTip="The breakdown recipe was changed or newly created."
+                                                           Visibility="{Binding HasBreakdownChanges, Converter={StaticResource BoolToVis}}"/>
+                                            </StackPanel>
+                                        </Expander.Header>
+                                        <GroupBox Style="{StaticResource DarkGroupBoxStyle}"
+                                                  Margin="0,15,0,0"
+                                                  Padding="10">
+                                            <GroupBox.Header>
+                                                <DockPanel LastChildFill="False">
+                                                    <TextBlock Text="Used up by" Style="{StaticResource TitelStyle}"/>
+                                                    <!-- Reset sits on the recipe, not on the item: the section edits one
+                                                         record, and "Reset ALL" on the item reverts every breakdown
+                                                         recipe including the ones not on screen. -->
+                                                    <Button DockPanel.Dock="Right"
+                                                            Content="Reset Changes"
+                                                            Command="{Binding BreakdownRecipe.ResetCommand}"
+                                                            IsEnabled="{Binding HasBreakdownChanges}"
+                                                            ToolTip="Revert this breakdown recipe to its scanned state (a recipe created here is removed)"
+                                                            Style="{StaticResource ActionButtonStyle}"/>
+                                                    <Button Margin="10,0,0,0" Style="{StaticResource InfoButtonStyle}">
+                                                        <Button.ToolTip>
+                                                            <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                                <StackPanel>
+                                                                    <TextBlock Text="Recipes that consume this item instead of creating it."
+                                                                               Style="{StaticResource ToolTipTitelStyle}"/>
+                                                                    <TextBlock Text="•  Breakdown: melting it down at the smelter or the tanning rack."
+                                                                               Style="{StaticResource ToolTipTextStyle}"/>
+                                                                    <TextBlock Text="•  Other benches mean a recipe that turns this item into another one."
+                                                                               Style="{StaticResource ToolTipTextStyle}"/>
+                                                                    <TextBlock Text="•  Vanilla has none of these for armour and weapons - they come from mods such as CCOR or Ars Metallica."
+                                                                               Style="{StaticResource ToolTipTextStyle}"/>
+                                                                    <TextBlock Text="•  Read-only for now."
+                                                                               Style="{StaticResource ToolTipTextStyle}"/>
+                                                                </StackPanel>
+                                                            </ToolTip>
+                                                        </Button.ToolTip>
+                                                    </Button>
+                                                </DockPanel>
+                                            </GroupBox.Header>
+
+                                            <StackPanel>
+                                                <TextBlock Text="This item cannot be broken down."
+                                                           Foreground="{DynamicResource ColorTextTertiary}"
+                                                           TextWrapping="Wrap"
+                                                           Visibility="{Binding BreakdownRecipeAbsent, Converter={StaticResource BoolToVis}}"/>
+
+                                                <!-- ONE recipe, like Crafting and Temper. Swapping which one is
+                                                     shown and deleting the others is the planned multi-recipe
+                                                     window, which covers every recipe type at once. -->
+                                                <ContentControl Content="{Binding BreakdownRecipe}"
+                                                                Visibility="{Binding HasBreakdownRecipe, Converter={StaticResource BoolToVis}}">
+                                                    <ContentControl.ContentTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel>
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="150"/>
+                                                                        <ColumnDefinition Width="Auto"/>
+                                                                        <ColumnDefinition Width="*"/>
+                                                                        <ColumnDefinition Width="60"/>
+                                                                        <ColumnDefinition Width="Auto"/>
+                                                                    </Grid.ColumnDefinitions>
+
+                                                                    <!-- NO local Margin on any of these. ItemComboBoxStyle and
+                                                                         ItemTextBoxStyle both carry Margin="0,0,5,5", and
+                                                                         overriding it per element with "0,0,8,0" dropped the
+                                                                         BOTTOM 5px on some but not others - which is exactly
+                                                                         what made the row look staggered. Horizontal spacing
+                                                                         comes from the column definitions instead. -->
+                                                                    <ComboBox Grid.Column="0"
+                                                                              VerticalAlignment="Center"
+                                                                              ItemsSource="{Binding AvailableBenches}"
+                                                                              DisplayMemberPath="Name"
+                                                                              SelectedItem="{Binding SelectedBench, Mode=TwoWay}"
+                                                                              IsSynchronizedWithCurrentItem="False"
+                                                                              Style="{StaticResource ItemComboBoxStyle}"/>
+
+                                                                    <TextBlock Grid.Column="1" Text="gives"
+                                                                               Margin="0,0,5,5"
+                                                                               VerticalAlignment="Center"
+                                                                               Foreground="{DynamicResource ColorTextTertiary}"/>
+
+                                                                    <!-- The output: the same material + amount pair the Crafting
+                                                                         and Temper sections use for their ingredients, read as
+                                                                         the result instead of as a cost - same order, same
+                                                                         column widths, same behaviour attributes. Always
+                                                                         exactly one: a COBJ creates one KIND of object. -->
+                                                                    <ComboBox Grid.Column="2"
+                                                                              VerticalAlignment="Center"
+                                                                              IsEditable="True"
+                                                                              IsTextSearchEnabled="False"
+                                                                              StaysOpenOnEdit="True"
+                                                                              IsSynchronizedWithCurrentItem="False"
+                                                                              ItemsSource="{Binding Output.LocalMaterialsView}"
+                                                                              DisplayMemberPath="Name"
+                                                                              ToolTip="{Binding Output.Key}"
+                                                                              BorderBrush="{Binding Output.IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
+                                                                              Text="{Binding Output.SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                                              SelectedItem="{Binding Output.SelectedMaterial, Mode=TwoWay}"
+                                                                              Style="{StaticResource ItemComboBoxStyle}"/>
+
+                                                                    <TextBox Grid.Column="3"
+                                                                             VerticalAlignment="Center"
+                                                                             TextAlignment="Center"
+                                                                             Text="{Binding Output.Count, UpdateSourceTrigger=PropertyChanged}"
+                                                                             model:NumericTextBoxBehavior.Mode="Integer"
+                                                                             model:NumericTextBoxBehavior.Min="1"
+                                                                             Style="{StaticResource ItemTextBoxStyle}"/>
+
+                                                                    <Button Grid.Column="4"
+                                                                            VerticalAlignment="Center"
+                                                                            Command="{Binding DeleteCommand}"
+                                                                            ToolTip="Remove this recipe (only possible for recipes this tool created)"
+                                                                            Visibility="{Binding IsUserCreated, Converter={StaticResource BoolToVis}}"
+                                                                            Style="{StaticResource RemoveButtonStyle}"/>
+                                                                </Grid>
+
+                                                                <!-- Only when the recipe really has further inputs. Bound via
+                                                                     its own flag rather than StringFormat, which renders the
+                                                                     " + " separator even for an empty string - that stray
+                                                                     plus was visible in the first build. -->
+                                                                <TextBlock Text="{Binding OtherIngredients}"
+                                                                           Margin="0,4,0,0"
+                                                                           TextWrapping="Wrap"
+                                                                           Foreground="{DynamicResource ColorTextTertiary}"
+                                                                           Visibility="{Binding HasOtherIngredients, Converter={StaticResource BoolToVis}}"/>
+
+                                                                <TextBlock Text="No output picked yet — this recipe is skipped when the patch is generated."
+                                                                           Margin="0,4,0,0"
+                                                                           TextWrapping="Wrap"
+                                                                           Foreground="{DynamicResource ColorTextTertiary}"
+                                                                           Visibility="{Binding IsIncomplete, Converter={StaticResource BoolToVis}}"/>
+
+                                                                <!-- Conditions. Vanilla smelter recipes have none; mods hang a
+                                                                     HasPerk on theirs, and without this they were invisible on
+                                                                     a recipe this section otherwise owns completely. -->
+                                                                <StackPanel Margin="0,8,0,0">
+                                                                    <TextBlock Text="Conditions:" Style="{StaticResource ItemLabelStyle}"/>
+                                                                    <Border BorderBrush="{Binding AreConditionsChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
+                                                                            BorderThickness="0,0,0,2" Margin="0,0,0,5"
+                                                                            ToolTip="A colored line here means the Conditions differ from how they looked when this recipe was loaded."/>
+
+                                                                    <ItemsControl ItemsSource="{Binding Conditions}"
+                                                                                  ItemTemplate="{StaticResource ConditionRowTemplate}"/>
+
+                                                                    <Button Command="{Binding AddConditionCommand}"
+                                                                            ToolTip="Add Condition"
+                                                                            Style="{StaticResource AddButtonStyle}"/>
+                                                                </StackPanel>
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ContentControl.ContentTemplate>
+                                                </ContentControl>
+
+                                                <!-- IsEnabled, not CanExecute: this project's RelayCommand never
+                                                     raises CanExecuteChanged, so a command-driven state would
+                                                     stay at whatever it was when the panel was first drawn. -->
+                                                <!-- No HorizontalAlignment, like every other "+" in this view: the
+                                                     style sets a fixed Width, and a fixed size under the default
+                                                     Stretch centres the element. Setting Left here was what made
+                                                     this one sit off to the side. -->
+                                                <Button Command="{Binding AddBreakdownRecipeCommand}"
+                                                        IsEnabled="{Binding BreakdownRecipeAbsent}"
+                                                        ToolTip="Add a breakdown recipe"
+                                                        Margin="0,10,0,0"
+                                                        Style="{StaticResource AddButtonStyle}"/>
+                                            </StackPanel>
+                                        </GroupBox>
+                                    </Expander>
+
+                                    <!-- Container Section -->
+                                    <Expander Grid.Row="7" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
                                         <Expander.Header>
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="Container"/>
