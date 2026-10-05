@@ -976,7 +976,7 @@ namespace SkyrimCraftingTool.Model
         private static readonly string[] WorldItemParamNames =
             { "@key", "@editorID", "@name", "@kind" };
         private static readonly string[] CobjParamNames =
-            { "@key", "@name", "@createdItem", "@workbench", "@ingredients" };
+            { "@key", "@name", "@createdItem", "@createdCount", "@workbench", "@ingredients" };
         private static readonly string[] CobjConditionParamNames =
             { "@cobjKey", "@extra", "@runOn", "@type", "@target", "@value", "@op", "@flags" };
         private static readonly string[] EnchantmentParamNames =
@@ -1062,7 +1062,7 @@ namespace SkyrimCraftingTool.Model
         internal static readonly string[] WorldItemColumnNames =
             { "Key", "EditorID", "Name", "Kind" };
         internal static readonly string[] CobjColumnNames =
-            { "Key", "Name", "CreatedItem", "WorkbenchKeyword", "Ingredients" };
+            { "Key", "Name", "CreatedItem", "CreatedObjectCount", "WorkbenchKeyword", "Ingredients" };
         private static readonly string[] CobjConditionColumnNames =
             { "COBJKey", "Extra", "RunOn", "ConditionType", "Target", "Value", "CompareOperator", "Flags" };
         internal static readonly string[] EnchantmentColumnNames =
@@ -1344,7 +1344,7 @@ namespace SkyrimCraftingTool.Model
 
                 var parsedCobj = new ParsedCobj
                 {
-                    Values = new object[] { key, cobj.EditorID ?? "", createdKey, workbench, string.Join(",", ingredients) }
+                    Values = new object[] { key, cobj.EditorID ?? "", createdKey, (int)(cobj.CreatedObjectCount ?? 1), workbench, string.Join(",", ingredients) }
                 };
 
                 // --------------------------------

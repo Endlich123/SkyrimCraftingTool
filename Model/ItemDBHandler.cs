@@ -7,6 +7,7 @@ using SkyrimCraftingTool.Services;
 using SkyrimCraftingTool.ViewModel;
 using System.Collections.ObjectModel;
 using System.Data;
+using System.Globalization;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -420,14 +421,18 @@ namespace SkyrimCraftingTool.Model
                          THEN IsEditedCreatedItem 
                          ELSE CreatedItem 
                     END AS CreatedItem,
-                    CASE WHEN IsEdited = 1 AND IsEditedWorkbenchKeyword IS NOT NULL 
-                         THEN IsEditedWorkbenchKeyword 
-                         ELSE WorkbenchKeyword 
+                    CASE WHEN IsEdited = 1 AND IsEditedWorkbenchKeyword IS NOT NULL
+                         THEN IsEditedWorkbenchKeyword
+                         ELSE WorkbenchKeyword
                     END AS WorkbenchKeyword,
-                    CASE WHEN IsEdited = 1 AND IsEditedIngredients IS NOT NULL 
+                    CASE WHEN IsEdited = 1 AND IsEditedIngredients IS NOT NULL
                          THEN IsEditedIngredients
-                         ELSE Ingredients 
-                    END AS Ingredients
+                         ELSE Ingredients
+                    END AS Ingredients,
+                    CASE WHEN IsEdited = 1 AND IsEditedCreatedObjectCount IS NOT NULL
+                         THEN IsEditedCreatedObjectCount
+                         ELSE CreatedObjectCount
+                    END AS CreatedObjectCount
                 FROM COBJ WHERE Active = 1;";
 
             using var reader = cmd.ExecuteReader();
@@ -446,10 +451,34 @@ namespace SkyrimCraftingTool.Model
                     CreatedItemKey = reader.GetString(3),
                     WorkbenchKeywordKey = reader.IsDBNull(4) ? "" : reader.GetString(4),
                     IngredientKeys = ingredients,
+                    // The shadow column is TEXT like every other one, so the CASE above can hand
+                    // back either an INTEGER (base) or a TEXT (edited). GetInt32 would throw on the
+                    // second; read it loosely and fall back to 1, which is what an absent NAM1 means.
+                    CreatedObjectCount = ReadCountOrOne(reader, 6),
                 });
             }
 
             return list;
+        }
+
+        // A created-object count that may arrive as an INTEGER (the scanned base column) or as TEXT
+        // (the shadow column every edited field uses). Anything unreadable, missing or below 1
+        // becomes 1: a recipe that produces zero objects is not a thing, and a 0 here would reach
+        // the ESP and make a working recipe do nothing.
+        internal static int ReadCountOrOne(SqliteDataReader reader, int ordinal)
+        {
+            if (reader.IsDBNull(ordinal)) return 1;
+
+            var value = reader.GetValue(ordinal);
+            var parsed = value switch
+            {
+                long l => (int)l,
+                int i => i,
+                string s when int.TryParse(s, out var n) => n,
+                _ => 1,
+            };
+
+            return parsed < 1 ? 1 : parsed;
         }
 
         private List<COBJConditionRecord> LoadCOBJConditions()
@@ -1095,7 +1124,7 @@ namespace SkyrimCraftingTool.Model
         // placeable record's placement travels exactly like an armor's does.
         internal static readonly string[] WorldItemShadowColumns = { "IsEditedContainerString" };
         internal static readonly string[] CobjShadowColumns =
-            { "IsEditedName", "IsEditedCreatedItem", "IsEditedWorkbenchKeyword", "IsEditedIngredients" };
+            { "IsEditedName", "IsEditedCreatedItem", "IsEditedCreatedObjectCount", "IsEditedWorkbenchKeyword", "IsEditedIngredients" };
         // CastType/TargetType have no UI edit path but ARE importable (AllowedImportFields), so they
         // must be cleared too — otherwise a later edit revives the orphaned shadow.
         //
@@ -1267,6 +1296,7 @@ namespace SkyrimCraftingTool.Model
                     Original,
                     Name,
                     CreatedItem,
+                    CreatedObjectCount,
                     WorkbenchKeyword,
                     Ingredients,
                     IsEdited,
@@ -1276,6 +1306,7 @@ namespace SkyrimCraftingTool.Model
                     0,
                     $Name,
                     $CreatedItem,
+                    $CreatedObjectCount,
                     $WorkbenchKeyword,
                     $Ingredients,
                     1,
@@ -1285,6 +1316,9 @@ namespace SkyrimCraftingTool.Model
             cmd.Parameters.AddWithValue("$Key", rec.Key);
             cmd.Parameters.AddWithValue("$Name", rec.Name);
             cmd.Parameters.AddWithValue("$CreatedItem", rec.CreatedItemKey);
+            // A user-created recipe has no scanned original, so the base column IS the value - no
+            // shadow needed. Clamped like everywhere else: zero objects is not a recipe.
+            cmd.Parameters.AddWithValue("$CreatedObjectCount", rec.CreatedObjectCount < 1 ? 1 : rec.CreatedObjectCount);
             cmd.Parameters.AddWithValue("$WorkbenchKeyword", rec.WorkbenchKeywordKey);
             cmd.Parameters.AddWithValue("$Ingredients", string.Join(",", rec.IngredientKeys));
             cmd.Parameters.AddWithValue("$Now", NowIso());
@@ -1316,6 +1350,7 @@ namespace SkyrimCraftingTool.Model
                     IsEdited = 1,
                     IsEditedName = $Name,
                     IsEditedCreatedItem = $CreatedItem,
+                    IsEditedCreatedObjectCount = $CreatedObjectCount,
                     IsEditedWorkbenchKeyword = $WorkbenchKeyword,
                     IsEditedIngredients = $Ingredients,
                     LastChanged = $Now
@@ -1324,6 +1359,10 @@ namespace SkyrimCraftingTool.Model
             cmd.Parameters.AddWithValue("$Key", rec.Key);
             cmd.Parameters.AddWithValue("$Name", rec.Name);
             cmd.Parameters.AddWithValue("$CreatedItem", rec.CreatedItemKey);
+            // TEXT, like every other shadow column - LoadCOBJ and CobjPatchReader both read it
+            // loosely because the CASE that picks base-or-shadow can return either type.
+            cmd.Parameters.AddWithValue("$CreatedObjectCount",
+                (rec.CreatedObjectCount < 1 ? 1 : rec.CreatedObjectCount).ToString(CultureInfo.InvariantCulture));
             cmd.Parameters.AddWithValue("$WorkbenchKeyword", rec.WorkbenchKeywordKey);
             cmd.Parameters.AddWithValue("$Ingredients", string.Join(",", rec.IngredientKeys));
             cmd.Parameters.AddWithValue("$Now", NowIso());
@@ -1365,7 +1404,12 @@ namespace SkyrimCraftingTool.Model
             using var connection = new SqliteConnection(ConnString);
             connection.Open();
             using var cmd = connection.CreateCommand();
-            cmd.CommandText = "SELECT Original, Name, CreatedItem, WorkbenchKeyword, Ingredients FROM COBJ WHERE Key = @key";
+            // CreatedObjectCount is in here because the Breakdown section compares against this
+            // baseline: without it an edited output amount could never be told from the scanned
+            // one, so the change marker would stay blank and Reset would leave the amount behind.
+            cmd.CommandText =
+                "SELECT Original, Name, CreatedItem, WorkbenchKeyword, Ingredients, CreatedObjectCount " +
+                "FROM COBJ WHERE Key = @key";
             cmd.Parameters.AddWithValue("@key", key);
 
             using var reader = cmd.ExecuteReader();
@@ -1384,6 +1428,7 @@ namespace SkyrimCraftingTool.Model
                 CreatedItemKey = reader.IsDBNull(2) ? "" : reader.GetString(2),
                 WorkbenchKeywordKey = reader.IsDBNull(3) ? "" : reader.GetString(3),
                 IngredientKeys = ingredients,
+                CreatedObjectCount = ReadCountOrOne(reader, 5),
             };
         }
 
@@ -1504,6 +1549,41 @@ namespace SkyrimCraftingTool.Model
             };
 
             return rec;
+        }
+
+        // A new breakdown recipe: the item goes on the INGREDIENT side, and what it produces is
+        // chosen by the user afterwards.
+        //
+        // Deliberately NOT a third branch of CreateNewCOBJRecordForItem. That method derives its
+        // workbench from isTemper + IsArmor and always sets CreatedItem to the item itself - both
+        // of which are exactly wrong here. Threading a third kind through it would have turned one
+        // bool into an enum across the save handlers and the preset apply path for no gain; a
+        // breakdown recipe simply is a different shape.
+        //
+        // CreatedItemKey stays EMPTY on purpose. There is no sensible guess ("iron armour melts
+        // into iron" is wrong as often as it is right, and mod materials have no convention at
+        // all), and the ESP builder already skips an entry with no created item and says so in the
+        // report, so an unfinished row cannot produce a broken record.
+        public COBJRecord CreateNewBreakdownRecordForItem(ItemNodeVM item, string workbenchKeywordKey)
+        {
+            string pluginName = KeyFactory.UserPluginName;
+            string newKey;
+            do
+            {
+                string formID = Count().ToString("X6");
+                newKey = pluginName + "|" + formID;
+            } while (CobjKeyExists(newKey));
+
+            return new COBJRecord
+            {
+                Key = newKey,
+                Name = item.Name,
+                CreatedItemKey = "",
+                CreatedObjectCount = 1,
+                WorkbenchKeywordKey = workbenchKeywordKey,
+                IngredientKeys = new List<string> { $"{item.Key}*1" },
+                Original = 0,
+            };
         }
 
         public int Count()

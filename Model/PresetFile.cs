@@ -47,6 +47,15 @@ namespace SkyrimCraftingTool.Model
         public RecipeConfig CraftRecipe { get; set; } = new();
         public RecipeConfig TemperRecipe { get; set; } = new();
 
+        // Breakdown: the same RecipeConfig shape, read the other way round.
+        //
+        // Its "Ingredients" list holds what the recipe PRODUCES, capped at one entry - a COBJ
+        // creates one KIND of object - and WorkbenchKey picks between the smelter and the tanning
+        // rack. Reusing RecipeConfig rather than inventing a third class is what makes this purely
+        // additive: a preset file written before this existed deserializes with every FieldValue's
+        // Enabled at false, so Apply touches nothing. No migration, no SchemaVersion bump.
+        public RecipeConfig BreakdownRecipe { get; set; } = new();
+
         // Same serialized format as Armor/Weapons.ContainerString (built/parsed via
         // ContainerSelectionVM.BuildString/LoadFromString, see ContainerStringBuilder/Parser).
         public FieldValue<string> Container { get; set; } = new() { Value = "{}" };

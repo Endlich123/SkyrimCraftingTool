@@ -44,6 +44,12 @@ namespace SkyrimCraftingTool.Model
         /// <summary>
         /// Runs the complete scan process and updates the database.
         /// </summary>
+        // What the last RefreshPluginDatabase had to decide between. Empty on a setup where no
+        // plugin file name occurs twice; one entry per duplicated name otherwise. Kept so the scan
+        // report can name them instead of resolving them silently.
+        public IReadOnlyList<Services.PluginPathConflict> LastPathConflicts { get; private set; }
+            = System.Array.Empty<Services.PluginPathConflict>();
+
         public void RefreshPluginDatabase()
         {
             // 1. Read plugins from plugins.txt
@@ -52,9 +58,39 @@ namespace SkyrimCraftingTool.Model
             // 2. Search the disk for the real paths
             var allFoundFiles = ScanFileSystemForPlugins(activeNames);
 
-            // 3. Sync the database
-            SyncDatabase(activeNames, allFoundFiles);
+            // 3. Reduce to ONE path per file name.
+            //
+            // Without this step a plugin that exists in two places was handed to the scan twice and
+            // written twice, and the winner was whatever SQLite happened to return first - see
+            // Services/PluginPathPicker for the measurements. Everything downstream
+            // (GetActivePlugins -> PluginInfo.FullPaths -> SelectMany in both scans) assumes this
+            // list is already resolved.
+            var selection = Services.PluginPathPicker.PickOnePerFileName(
+                allFoundFiles,
+                GlobalState.GameDataPath,
+                GlobalState.ModDirectoryPath,
+                GlobalState.ManagerKind,
+                Services.ModListOrder.Read(GlobalState.ModListFilePath));
 
+            LastPathConflicts = selection.Conflicts;
+            LogPathConflicts(selection.Conflicts);
+
+            // 4. Sync the database
+            SyncDatabase(activeNames, selection.Chosen);
+        }
+
+        private static void LogPathConflicts(IReadOnlyList<Services.PluginPathConflict> conflicts)
+        {
+            if (conflicts == null || conflicts.Count == 0) return;
+
+            // One summary line plus the detail, because on a big modlist this is routinely dozens of
+            // entries (96 on the setup it was found on - every vanilla master and every Creation
+            // Club file) and a per-line warning would bury everything else in the log.
+            AppLogger.LogWarning(
+                $"Plugin paths: {conflicts.Count} file name(s) exist more than once; one copy was chosen per name.");
+
+            foreach (var c in conflicts)
+                AppLogger.LogWarning($"  {c.FileName}: using '{c.Chosen}' ({c.Reason}); ignored {c.Discarded.Count} other copy/copies.");
         }
 
         private List<string> GetPluginsFromTxt()
@@ -97,21 +133,47 @@ namespace SkyrimCraftingTool.Model
             return names;
         }
 
+        // The three extensions a plugin can have. The "*.es*" wildcard alone is NOT this list:
+        // Windows matches it against "Skyrim.esm.ini" and ".eslcache" too, and those used to be
+        // collected and carried around until the file-name filter further down happened to drop
+        // them. Checking the real extension keeps the junk out of the candidate set entirely.
+        private static readonly string[] PluginExtensions = { ".esm", ".esp", ".esl" };
+
         private List<string> ScanFileSystemForPlugins(List<string> filterList)
         {
             var paths = new List<string>();
-            var searchDirs = new[] { GlobalState.GameDataPath, GlobalState.ModDirectoryPath };
 
-            foreach (var dir in searchDirs.Where(Directory.Exists))
+            // Distinct: under Vortex and a manual install the mod folder IS the game folder, so
+            // without this every file there is found twice.
+            var searchDirs = new[] { GlobalState.GameDataPath, GlobalState.ModDirectoryPath }
+                .Where(d => !string.IsNullOrWhiteSpace(d))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Where(Directory.Exists);
+
+            var wanted = new HashSet<string>(filterList ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+
+            foreach (var dir in searchDirs)
             {
-                // We search for all .es* files
                 var files = Directory.GetFiles(dir, "*.es*", SearchOption.AllDirectories);
-                paths.AddRange(files);
+
+                foreach (var file in files)
+                {
+                    if (!PluginExtensions.Contains(Path.GetExtension(file), StringComparer.OrdinalIgnoreCase))
+                        continue;
+
+                    // filterList was accepted and then ignored here; the filtering happened only in
+                    // SyncDatabase. Doing it now means the duplicate resolution below never has to
+                    // rank copies of a plugin that is not even active.
+                    if (wanted.Count > 0 && !wanted.Contains(Path.GetFileName(file)))
+                        continue;
+
+                    paths.Add(file);
+                }
             }
             return paths;
         }
 
-        private void SyncDatabase(List<string> activeNames, List<string> foundPaths)
+        private void SyncDatabase(List<string> activeNames, IReadOnlyList<string> foundPaths)
         {
             using var connection = new SqliteConnection($"Data Source={DbPath}");
             connection.Open();

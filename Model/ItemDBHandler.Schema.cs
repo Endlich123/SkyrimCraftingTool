@@ -29,6 +29,12 @@ namespace SkyrimCraftingTool.Model
             AddColumnIfMissing(connection, "Weapons", "Active", "INTEGER NOT NULL DEFAULT 1");
             AddColumnIfMissing(connection, "COBJ", "Active", "INTEGER NOT NULL DEFAULT 1");
             AddColumnIfMissing(connection, "COBJ", "ConditionsEdited", "INTEGER NOT NULL DEFAULT 0");
+
+            // How many objects a recipe produces (NAM1). DEFAULT 1 is not a placeholder: it is what
+            // every row in an existing database effectively already meant, since nothing read or
+            // wrote the value before. The real numbers arrive with the next scan.
+            AddColumnIfMissing(connection, "COBJ", "CreatedObjectCount", "INTEGER NOT NULL DEFAULT 1");
+            AddColumnIfMissing(connection, "COBJ", "IsEditedCreatedObjectCount", "TEXT");
             AddColumnIfMissing(connection, "Armor", "ArmorType", "TEXT");
             AddColumnIfMissing(connection, "Armor", "IsEditedArmorType", "TEXT");
             AddColumnIfMissing(connection, "COBJ_Conditions", "CompareOperator", "TEXT");
@@ -629,11 +635,13 @@ namespace SkyrimCraftingTool.Model
                     Original INTEGER NOT NULL DEFAULT 1,
                     Name TEXT NOT NULL,
                     CreatedItem TEXT NOT NULL,
+                    CreatedObjectCount INTEGER NOT NULL DEFAULT 1,
                     WorkbenchKeyword TEXT,
                     Ingredients TEXT,
 
                     IsEditedName TEXT,
                     IsEditedCreatedItem TEXT,
+                    IsEditedCreatedObjectCount TEXT,
                     IsEditedWorkbenchKeyword TEXT,
                     IsEditedIngredients TEXT,
 
@@ -968,6 +976,36 @@ namespace SkyrimCraftingTool.Model
                     Reference TEXT NOT NULL COLLATE NOCASE,
                     LastChanged TEXT,
                     PRIMARY KEY (ContainerKey, Reference)
+                );
+
+                -- Take this recipe out of the game. Third scope of the same removal store.
+                --
+                -- ItemKey is the ARMO/WEAP the recipe belongs to, Reference the COBJ. Only a MOD's
+                -- recipe is ever listed here: one the tool created is simply deleted, row and all,
+                -- because nothing in any plugin would bring it back. A row here becomes an ESP
+                -- override carrying the Deleted record flag.
+                CREATE TABLE IF NOT EXISTS RecipeRemovedEntry (
+                    ItemKey TEXT NOT NULL COLLATE NOCASE,
+                    Reference TEXT NOT NULL COLLATE NOCASE,
+                    LastChanged TEXT,
+                    PRIMARY KEY (ItemKey, Reference)
+                );
+
+                -- Which recipe of a kind the item's editor shows and edits.
+                --
+                -- The order recipes come out of the database in is stable in practice, so this is
+                -- NOT about scan drift: it is about the make-this-the-main-one button surviving a
+                -- restart. Absent means the first one, which is what every item without a decision
+                -- gets.
+                --
+                -- Keyed by the ITEM, not by the recipe's created object: a breakdown recipe creates
+                -- a material, so its CreatedItem says nothing about which item it belongs to.
+                CREATE TABLE IF NOT EXISTS MainRecipe (
+                    ItemKey TEXT NOT NULL COLLATE NOCASE,
+                    Kind TEXT NOT NULL COLLATE NOCASE,
+                    CobjKey TEXT NOT NULL COLLATE NOCASE,
+                    LastChanged TEXT,
+                    PRIMARY KEY (ItemKey, Kind)
                 );
 
                 -- What the USER changed about a list, kept strictly apart from what was scanned.
