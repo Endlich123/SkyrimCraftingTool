@@ -919,6 +919,127 @@ namespace SkyrimCraftingTool.ViewModel
         public string TemperEditorID =>
             TemperRecipe?.Key ?? "(no temper recipe)";
 
+        // Recipes that CONSUME this item, rather than create it - breakdown at the smelter or the
+        // tanning rack, plus the variant-conversion recipes outfit mods ship.
+        //
+        // A LIST, not a slot, and that is measured rather than assumed: on the author's modlist 15
+        // armours have a breakdown at BOTH benches and 143 have more than one consuming recipe. A
+        // single value would hide the rest, which is the same trap the craft side still has with
+        // FirstOrDefault (see docs/TODO.md).
+        //
+        // Filled by MainContentVM.LoadSelectedItemDetails.
+        //
+        // ONE recipe is shown, the first, exactly like Crafting and Temper do with their own
+        // FirstOrDefault. The full list is kept because swapping which one is "main" and deleting
+        // the others is the planned multi-recipe window - that feature is meant to cover every
+        // recipe type at once instead of this section growing a second shape of its own.
+        private ObservableCollection<BreakdownRecipeVM> _breakdownRecipes = new();
+
+        public ObservableCollection<BreakdownRecipeVM> BreakdownRecipes
+        {
+            get => _breakdownRecipes;
+            set
+            {
+                if (SetProperty(ref _breakdownRecipes, value))
+                    RaiseBreakdownChanged();
+            }
+        }
+
+        // Every crafting / temper recipe this item has, not just the one on screen. Filled by
+        // MainContentVM.LoadSelectedItemDetails; the "other recipes" window lists everything in
+        // here except the main one.
+        public List<COBJRecord> AllCraftingRecipes { get; set; } = new();
+        public List<COBJRecord> AllTemperRecipes { get; set; } = new();
+        public List<COBJRecord> AllBreakdownRecipes { get; set; } = new();
+
+        // The ones the user took out. They stay in the All* lists above so the window can show them
+        // struck through with a Restore button - a removal is a decision, and the decision is
+        // undoable.
+        public IReadOnlyCollection<string> RemovedRecipeKeys { get; set; } = Array.Empty<string>();
+
+        public int OtherCraftingCount => System.Math.Max(0, AllCraftingRecipes.Count - 1);
+        public int OtherTemperCount => System.Math.Max(0, AllTemperRecipes.Count - 1);
+
+        public bool HasOtherCraftingRecipes => OtherCraftingCount > 0;
+        public bool HasOtherTemperRecipes => OtherTemperCount > 0;
+
+        public void RaiseOtherRecipeCounts()
+        {
+            OnPropertyChanged(nameof(OtherCraftingCount));
+            OnPropertyChanged(nameof(OtherTemperCount));
+            OnPropertyChanged(nameof(HasOtherCraftingRecipes));
+            OnPropertyChanged(nameof(HasOtherTemperRecipes));
+        }
+
+        // Opens the little window listing this item's OTHER recipes of one kind, where each row can
+        // be made the main one or taken out. Deliberately one window for all three kinds rather than
+        // a second shape per section.
+        public ICommand ShowOtherRecipesCommand => new RelayCommand<string>(kindName =>
+        {
+            if (!Enum.TryParse<Services.RecipeKind>(kindName, out var kind)) return;
+            View.OtherRecipesWindow.Show(System.Windows.Application.Current?.MainWindow, this, kind);
+        });
+
+        // The first entry IS the main one: MainContentVM.LoadBreakdownRecipes puts the stored
+        // decision there when there is one. Resolving it here instead would hit the database on
+        // every binding read.
+        public BreakdownRecipeVM? BreakdownRecipe => BreakdownRecipes.FirstOrDefault();
+
+        public bool HasBreakdownRecipe => BreakdownRecipe != null;
+
+        // Drives both the placeholder line and the add button's enabled state. A separate property
+        // rather than an inverting converter, which this project does not have - and the button
+        // binds IsEnabled rather than relying on CanExecute, because RelayCommand here never
+        // raises CanExecuteChanged, so a command-based state would stick at whatever it was when
+        // the row was first drawn.
+        public bool BreakdownRecipeAbsent => BreakdownRecipe == null;
+
+        // How many further breakdown recipes exist behind the one on screen. Shown in the header so
+        // nothing is hidden silently while the swap/delete window is still missing.
+        // Counted over ALL of them, removed included: the window is also the only way back from a
+        // removal, so the button that opens it must not disappear once the last visible one is gone.
+        public int OtherBreakdownCount => System.Math.Max(0, AllBreakdownRecipes.Count - 1);
+
+        public bool HasOtherBreakdownRecipes => OtherBreakdownCount > 0;
+
+        // Add/remove changes the collection, not the property, so the derived flags need a nudge.
+        // Also raised by the row itself whenever one of its fields changes, so the section header's
+        // change dot and the item-wide "anything edited?" flags follow along.
+        public void RaiseBreakdownChanged()
+        {
+            OnPropertyChanged(nameof(BreakdownRecipe));
+            OnPropertyChanged(nameof(HasBreakdownRecipe));
+            OnPropertyChanged(nameof(BreakdownRecipeAbsent));
+            OnPropertyChanged(nameof(OtherBreakdownCount));
+            OnPropertyChanged(nameof(HasOtherBreakdownRecipes));
+            OnPropertyChanged(nameof(HasBreakdownChanges));
+            OnPropertyChanged(nameof(HasAnyItemOrRecipeChanges));
+
+            // The tree badge, the edited count and the "only edited" filter all hang off IsEdited,
+            // and every OTHER edit reaches it through NotifyFieldChanged. Breakdown edits do not go
+            // through that - they carry a record, not a field name - so without this the item was
+            // marked edited nowhere above itself: no badge on the plugin node, no entry in the
+            // count.
+            RefreshEditedState();
+        }
+
+        public bool HasBreakdownChanges => BreakdownRecipe?.HasChanges == true;
+
+        // Defaults to the smelter; the bench is switched in the row's own dropdown. One button
+        // rather than one per bench: the two differ by a single field on the record, which the row
+        // already edits.
+        public ICommand AddBreakdownRecipeCommand => new RelayCommand(() =>
+            CreateBreakdownRecipe(BreakdownRecipeVM.SmelterKey));
+
+        // Also the route preset-apply takes, which is why it returns the row rather than being a
+        // plain command body: the preset has to fill the new recipe in straight away.
+        public BreakdownRecipeVM? CreateBreakdownRecipe(string workbenchKey)
+        {
+            Main?.AddBreakdownRecipe(this, workbenchKey);
+            return BreakdownRecipe;
+        }
+
+
         private ObservableCollection<BaseConditionViewModel> _temperConditions
             = new ObservableCollection<BaseConditionViewModel>();
 
@@ -1844,8 +1965,9 @@ namespace SkyrimCraftingTool.ViewModel
             RefreshEditedState();
         });
 
-        // Item fields OR either recipe has pending edits vs the scanned baseline.
-        public bool HasAnyItemOrRecipeChanges => HasAnyChanges || HasCraftingChanges || HasTemperChanges;
+        // Item fields OR any recipe has pending edits vs the scanned baseline.
+        public bool HasAnyItemOrRecipeChanges =>
+            HasAnyChanges || HasCraftingChanges || HasTemperChanges || HasBreakdownChanges;
 
         // One click to revert everything on this item back to its scanned state.
         public ICommand ResetAllChangesCommand => new RelayCommand(() =>
@@ -1871,6 +1993,12 @@ namespace SkyrimCraftingTool.ViewModel
             if (_hasOriginalSnapshot) Main?.ResetItemEdits(this);
             if (HasCraftingChanges) Main?.ResetCraftingRecipeEdits(this);
             if (HasTemperChanges) Main?.ResetTemperRecipeEdits(this);
+
+            // Every breakdown recipe, not just the one on screen: "revert everything on this item"
+            // has to mean that even while the swap/delete window for the others is still missing.
+            // Over a copy, because resetting a tool-created recipe removes it from the collection.
+            foreach (var row in BreakdownRecipes.ToList())
+                if (row.HasChanges) Main?.ResetBreakdownRecipeEdits(this, row);
 
             RefreshEditedState();
             return true;

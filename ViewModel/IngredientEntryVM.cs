@@ -15,10 +15,21 @@ namespace SkyrimCraftingTool.ViewModel
         private readonly ItemNodeVM? _parentItem;
         private readonly bool _isTemper;
 
-        public IngredientEntryVM(ItemNodeVM? parentItem, bool isTemper = false)
+        // Set instead of the isTemper routing when this row does not belong to the item's crafting
+        // or temper ingredient list at all. The Breakdown section reuses this very row as its
+        // OUTPUT line - same material picker, same amount box, same dead-reference handling - and
+        // routes its changes to the one recipe it belongs to, because an item can have several
+        // breakdown recipes and "which one changed" cannot be expressed as a field name.
+        //
+        // A callback rather than a third enum value on purpose: crafting and temper keep working
+        // exactly as before, and nothing about their two-way routing had to be touched.
+        private readonly System.Action? _onChanged;
+
+        public IngredientEntryVM(ItemNodeVM? parentItem, bool isTemper = false, System.Action? onChanged = null)
         {
             _parentItem = parentItem;
             _isTemper = isTemper;
+            _onChanged = onChanged;
         }
 
         private string _key;
@@ -172,6 +183,15 @@ namespace SkyrimCraftingTool.ViewModel
 
         private void NotifyParent()
         {
+            // BEFORE the _parentItem guard, not after. A breakdown output row has no owning item -
+            // it belongs to one of several recipes, not to the item's own ingredient lists - so the
+            // null check below would swallow its changes entirely.
+            if (_onChanged != null)
+            {
+                _onChanged();
+                return;
+            }
+
             if (_parentItem == null || _parentItem.IsLoading)
                 return;
 

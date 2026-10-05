@@ -187,6 +187,53 @@ namespace SkyrimCraftingTool.ViewModel
             set => SetProperty(ref _includeTemperIngredients, value);
         }
 
+        // --- Breakdown Recipe ---
+        // Unlike Temper, the workbench IS settable here - it is the one thing that distinguishes a
+        // smelter breakdown from a tanning-rack one, and it cannot be derived from the item
+        // (ArmorType says nothing about leather vs. metal, and modded armour keywords are a
+        // lottery). The material list is what the recipe PRODUCES and holds at most one row: a COBJ
+        // creates one KIND of object.
+        public IReadOnlyList<FormIDRecord> BreakdownBenches => BreakdownRecipeVM.Benches;
+
+        private FormIDRecord _selectedBreakdownBench;
+        public FormIDRecord SelectedBreakdownBench
+        {
+            get => _selectedBreakdownBench;
+            set => SetProperty(ref _selectedBreakdownBench, value);
+        }
+
+        public ObservableCollection<BaseConditionViewModel> BreakdownConditionsTemplate { get; } = new();
+        public ObservableCollection<IngredientEntryVM> BreakdownOutputTemplate { get; } = new();
+
+        public bool CanAddBreakdownOutput => BreakdownOutputTemplate.Count < 1;
+
+        public ICommand AddBreakdownConditionCommand { get; }
+        public ICommand RemoveBreakdownConditionCommand { get; }
+        public ICommand AddBreakdownOutputCommand { get; }
+        public ICommand RemoveBreakdownOutputCommand { get; }
+        public ICommand ApplyBreakdownRecipeCommand { get; }
+
+        private bool _includeBreakdownBench = true;
+        public bool IncludeBreakdownBench
+        {
+            get => _includeBreakdownBench;
+            set => SetProperty(ref _includeBreakdownBench, value);
+        }
+
+        private bool _includeBreakdownOutput = true;
+        public bool IncludeBreakdownOutput
+        {
+            get => _includeBreakdownOutput;
+            set => SetProperty(ref _includeBreakdownOutput, value);
+        }
+
+        private bool _includeBreakdownConditions;
+        public bool IncludeBreakdownConditions
+        {
+            get => _includeBreakdownConditions;
+            set => SetProperty(ref _includeBreakdownConditions, value);
+        }
+
         // --- Container (additive) ---
         // Own ContainerEntryVM instances, decoupled from the single-item editor: MainContentVM.AllContainerVMs
         // gets continuously resynced via UpdateAllContainerSelectionFlags(SelectedNode) (among other things,
@@ -299,6 +346,24 @@ namespace SkyrimCraftingTool.ViewModel
             AddTemperIngredientCommand = new RelayCommand(() => AddIngredientTemplateRow(TemperIngredientsTemplate));
             RemoveTemperIngredientCommand = new RelayCommand<IngredientEntryVM>(ing => { if (ing != null) TemperIngredientsTemplate.Remove(ing); });
 
+            AddBreakdownConditionCommand = new RelayCommand(() => BreakdownConditionsTemplate.Add(new PerkConditionViewModel()));
+            RemoveBreakdownConditionCommand = new RelayCommand<BaseConditionViewModel>(c => { if (c != null) BreakdownConditionsTemplate.Remove(c); });
+            AddBreakdownOutputCommand = new RelayCommand(() =>
+            {
+                if (!CanAddBreakdownOutput) return;
+                AddIngredientTemplateRow(BreakdownOutputTemplate);
+                OnPropertyChanged(nameof(CanAddBreakdownOutput));
+            });
+            RemoveBreakdownOutputCommand = new RelayCommand<IngredientEntryVM>(ing =>
+            {
+                if (ing == null) return;
+                BreakdownOutputTemplate.Remove(ing);
+                OnPropertyChanged(nameof(CanAddBreakdownOutput));
+            });
+            ApplyBreakdownRecipeCommand = new RelayCommand(async () => await ApplyBreakdownRecipeAsync());
+
+            _selectedBreakdownBench = BreakdownRecipeVM.Benches.FirstOrDefault();
+
             // See ItemNodeVM's own SubscribeConditionEvents/ReplaceConditionForTypeChange (the
             // single-item editor had the exact same "changing Type doesn't swap the Target/Value
             // editor" bug once - fixed there by forcing a fresh CLR instance of the right subclass
@@ -307,6 +372,7 @@ namespace SkyrimCraftingTool.ViewModel
             // reassigned wholesale (readonly auto-properties), so a one-time Subscribe here is enough.
             SubscribeConditionTemplateEvents(CraftingConditionsTemplate);
             SubscribeConditionTemplateEvents(TemperConditionsTemplate);
+            SubscribeConditionTemplateEvents(BreakdownConditionsTemplate);
 
             SelectedItems.CollectionChanged += OnSelectedItemsChanged;
         }
@@ -361,6 +427,19 @@ namespace SkyrimCraftingTool.ViewModel
         // showing the OLD editor since the object's actual type never changed.
         private bool _isReplacingTemplateConditionType;
 
+        // The shared ConditionRowTemplate (Styles/ConditionTemplates.xaml) binds its Remove button to
+        // this one name on whatever owns the condition list - ItemNodeVM has it as an alias too. The
+        // three template collections here would each need their own command otherwise, which the
+        // one shared template cannot express, so it finds the owning collection itself.
+        public ICommand RemoveConditionCommand => new RelayCommand<BaseConditionViewModel>(condition =>
+        {
+            if (condition == null) return;
+
+            if (CraftingConditionsTemplate.Remove(condition)) return;
+            if (TemperConditionsTemplate.Remove(condition)) return;
+            BreakdownConditionsTemplate.Remove(condition);
+        });
+
         private void SubscribeConditionTemplateEvents(ObservableCollection<BaseConditionViewModel> collection)
         {
             foreach (var condition in collection)
@@ -388,6 +467,7 @@ namespace SkyrimCraftingTool.ViewModel
 
             var collection = CraftingConditionsTemplate.Contains(condition) ? CraftingConditionsTemplate
                 : TemperConditionsTemplate.Contains(condition) ? TemperConditionsTemplate
+                : BreakdownConditionsTemplate.Contains(condition) ? BreakdownConditionsTemplate
                 : null;
             if (collection == null) return;
 
@@ -640,6 +720,85 @@ namespace SkyrimCraftingTool.ViewModel
             StatusMessage = changed == 0
                 ? "No change (the keyword was already set that way on all items, or is read-only)."
                 : $"Keyword {(select ? "added" : "removed")} on {changed} item(s).";
+        }
+
+        // The breakdown block. Its own method rather than a third branch of ApplyRecipeAsync: a
+        // breakdown record has a different shape - the item sits on the ingredient side and what is
+        // set here is what comes OUT - so the ingredient cloning below would write the wrong half of
+        // it, and the isTemper branching stays untouched.
+        private async Task ApplyBreakdownRecipeAsync()
+        {
+            if (!IncludeBreakdownBench && !IncludeBreakdownOutput && !IncludeBreakdownConditions)
+            {
+                StatusMessage = "Please select at least one field to apply (Workbench/Output/Conditions).";
+                return;
+            }
+
+            if (IncludeBreakdownBench && SelectedBreakdownBench == null)
+            {
+                StatusMessage = "Please select a Workbench first.";
+                return;
+            }
+
+            var output = BreakdownOutputTemplate.FirstOrDefault(e => !string.IsNullOrEmpty(e.Key));
+            if (IncludeBreakdownOutput && output == null)
+            {
+                StatusMessage = "Please pick the material the breakdown produces.";
+                return;
+            }
+
+            int applied = 0;
+
+            foreach (var target in SelectedItems.ToList())
+            {
+                // Hydrate first, same reason as ApplyRecipeAsync: an item that was never clicked
+                // individually has no BreakdownRecipes loaded, so the create below would add a
+                // SECOND recipe next to the one already on disk.
+                _main.EnsureItemHydrated(target);
+
+                var bench = IncludeBreakdownBench
+                    ? SelectedBreakdownBench.Key
+                    : BreakdownRecipeVM.SmelterKey;
+
+                var row = target.BreakdownRecipe ?? target.CreateBreakdownRecipe(bench);
+                if (row == null) continue;
+
+                if (IncludeBreakdownBench)
+                {
+                    row.SelectedBench = BreakdownRecipeVM.Benches
+                        .FirstOrDefault(b => string.Equals(b.Key, bench, StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (IncludeBreakdownOutput && output != null)
+                {
+                    var entry = row.OutputRow.FirstOrDefault();
+                    if (entry != null)
+                    {
+                        // The public setter, so the row reaches its record - see the same note in
+                        // PresetApplyService.ApplyBreakdown.
+                        var material = _main.AllAvailableMaterials?
+                            .FirstOrDefault(m => string.Equals(m.Key, output.Key, StringComparison.OrdinalIgnoreCase));
+
+                        if (material != null) entry.SelectedMaterial = material;
+                        else entry.Key = output.Key;
+
+                        entry.Count = output.Count < 1 ? 1 : output.Count;
+                    }
+                }
+
+                if (IncludeBreakdownConditions)
+                    CloneConditionsInto(BreakdownConditionsTemplate, row.Conditions, target);
+
+                applied++;
+            }
+
+            // The row debounces its own writes, so give them a moment to land before the status
+            // line claims the work is done.
+            await Task.Delay(400);
+
+            StatusMessage = applied == 0
+                ? "No item was changed."
+                : $"Breakdown recipe applied to {applied} item(s).";
         }
 
         private async Task ApplyRecipeAsync(bool isTemper)

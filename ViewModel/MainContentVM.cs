@@ -557,6 +557,7 @@ namespace SkyrimCraftingTool.ViewModel
                 new WeaponSaveHandler(_itemService, _cacheManager),
                 new CraftingSaveHandler(_itemService, _cacheManager),
                 new TemperSaveHandler(_itemService, _cacheManager),
+                new BreakdownSaveHandler(_itemService, _cacheManager),
             });
 
             CollapseAllCommand = new RelayCommand(() => ExpandAll(false));
@@ -1532,12 +1533,20 @@ namespace SkyrimCraftingTool.ViewModel
             AllAvailableKeywords = snapshot.Keywords?.OrderBy(k => k.Name).ToList()
                 ?? new List<FormIDRecord>();
 
+            // The two tempering keywords are excluded because the Temper section pins its own
+            // workbench; the SMELTER is excluded for a different reason - crafting an armour in a
+            // furnace is not a thing. It belongs to the Breakdown section, which pins it the same
+            // way Temper does.
+            //
+            // The TANNING RACK deliberately stays: unlike the furnace it is a real crafting bench
+            // (leather from pelts, leather strips), so it is needed in BOTH lists.
             AllAvailableWorkbenches =
                 snapshot.Keywords?
                     .Where(k =>
                         k.Name.StartsWith("Crafting", StringComparison.OrdinalIgnoreCase) &&
                         k.Key != "Skyrim.esm|088108" &&
-                        k.Key != "Skyrim.esm|0ADB78")
+                        k.Key != "Skyrim.esm|0ADB78" &&
+                        k.Key != BreakdownRecipeVM.SmelterKey)
                     .OrderBy(k => k.Name)
                     .ToList()
                 ?? new List<FormIDRecord>();
@@ -1707,6 +1716,300 @@ namespace SkyrimCraftingTool.ViewModel
                 list.Add(rec);
         }
 
+        // The BREAKDOWN recipes for this item: the ones at the smelter or the tanning rack that
+        // consume it.
+        //
+        // An earlier version listed EVERY recipe consuming the item, including the
+        // variant-conversion recipes outfit mods ship, shown read-only. In the running UI that was
+        // simply confusing - a Steel Circlet showed a greyed "CraftingSmithingForge gives 1x
+        // <raw key>" line, which is a crafting recipe for a DIFFERENT item (the Steel Armored
+        // Circlet) and belongs to that item's own Crafting section. Those are gone from here.
+        //
+        // Scanned on demand instead of kept as a second index, deliberately. A
+        // _cobjByIngredient dictionary would have to be maintained on every recipe edit - and an
+        // ingredient edit is exactly what changes which items a recipe consumes, so the index would
+        // go stale in the one case it exists for. One pass over the recipe lists that are already
+        // in memory is ~5k key comparisons on a large modlist, which is nothing next to the
+        // thousands of KeywordSelectionVMs this same method builds a few lines below.
+        //
+        // Breakdown recipes come first: they are what the section is for. The rest - the
+        // variant-conversion recipes outfit mods ship, which on the author's modlist outnumber the
+        // real breakdowns - follow, because "which recipe eats this item" is the useful question
+        // either way.
+        private void LoadBreakdownRecipes(ItemNodeVM item)
+        {
+            var found = new List<BreakdownRecipeVM>();
+            var all = new List<COBJRecord>();
+            var removed = RemovalStore.RemovedKeys(RemovalScope.Recipe, item.Key);
+
+            foreach (var list in RecipeCacheByCreatedItem.Values)
+            {
+                foreach (var recipe in list)
+                {
+                    if (recipe.IngredientKeys == null) continue;
+                    if (!BreakdownRecipeVM.IsBreakdownWorkbench(recipe.WorkbenchKeywordKey)) continue;
+
+                    bool consumesIt = recipe.IngredientKeys.Any(raw =>
+                        string.Equals(BreakdownRecipeVM.ParseIngredient(raw).Key, item.Key,
+                            StringComparison.OrdinalIgnoreCase));
+
+                    if (!consumesIt) continue;
+
+                    // The window needs every one of them; only the editor skips the removed.
+                    all.Add(recipe);
+                    if (!removed.Contains(recipe.Key))
+                        found.Add(NewBreakdownRow(recipe, item));
+                }
+            }
+
+            item.AllBreakdownRecipes = all;
+
+            var sorted = found
+                .OrderBy(r => r.WorkbenchName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(r => r.OutputName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            // The MAIN one goes first, because that is what the section shows
+            // (ItemNodeVM.BreakdownRecipe is the first entry). Resolving the decision here rather
+            // than in the property keeps it to one database read per load instead of one per
+            // binding evaluation.
+            var ordered = sorted;
+            var main = MainRecipeStore.Choose(
+                sorted, r => r.Key, MainRecipeStore.MainFor(item.Key, RecipeKind.Breakdown));
+
+            if (main != null && sorted.IndexOf(main) > 0)
+            {
+                ordered = new List<BreakdownRecipeVM> { main };
+                ordered.AddRange(sorted.Where(r => !ReferenceEquals(r, main)));
+            }
+
+            var collection = new ObservableCollection<BreakdownRecipeVM>(ordered);
+
+            // Same null-safe shape as ItemNodeVM.RefreshKeywordView: there is no Application in a
+            // test host, and the existing Dispatcher.Invoke calls further down only get away with
+            // assuming one because they sit behind a recipe-exists check the tests never satisfy.
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher != null && !dispatcher.CheckAccess())
+                dispatcher.Invoke(() => item.BreakdownRecipes = collection);
+            else
+                item.BreakdownRecipes = collection;
+        }
+
+        // One editable breakdown row, wired to the save pipeline and to the material catalogue.
+        private BreakdownRecipeVM NewBreakdownRow(COBJRecord recipe, ItemNodeVM item)
+        {
+            var row = new BreakdownRecipeVM(
+                recipe,
+                item.Key,
+                FormIdService,
+                save: rec => PersistBreakdownAsync(item, rec),
+                delete: vm => DeleteBreakdownRecipe(item, vm),
+                reset: vm => ResetBreakdownRecipeEdits(item, vm),
+                changed: item.RaiseBreakdownChanged,
+                saveConditions: PersistBreakdownConditions);
+
+            // Same wiring the crafting and temper ingredient rows get, otherwise the material
+            // ComboBox stays empty until the next restart.
+            InitializeRecipeIngredients(row.OutputRow);
+
+            // The catalogues the shared condition templates read off this object. Must be in place
+            // BEFORE the conditions are loaded - ConditionMapper.ToViewModel resolves a perk or a
+            // quest against them, and without them every existing condition would come back with an
+            // empty picker and look like a dead reference.
+            row.AttachConditionCatalogues(item.AllAvailablePerks, item.AllAvailableQuests);
+            row.LoadConditions(ItemService.GetCOBJConditions(recipe.Key));
+
+            // The baseline the change marker and Reset compare against. A row whose COBJ the
+            // database does not know keeps no snapshot, and then nothing counts as changed - there
+            // would be nothing to restore it to.
+            var original = ItemService.GetOriginalCOBJ(recipe.Key);
+            if (original != null)
+            {
+                row.CaptureOriginalSnapshot(original);
+                // The DB column is the only honest source: InsertCOBJ flips the in-memory Original
+                // to 1 right after writing, so the record itself cannot be asked. See the comment
+                // on BreakdownRecipeVM.IsUserCreated.
+                row.MarkUserCreated(original.Original == 0);
+            }
+
+            return row;
+        }
+
+        // Mirrors ResetCraftingRecipeEdits, including its two awkward cases.
+        internal void ResetBreakdownRecipeEdits(ItemNodeVM item, BreakdownRecipeVM row)
+        {
+            if (item == null || row == null) return;
+
+            var key = row.Key;
+
+            ItemService.ResetCOBJEdits(key);
+            var original = ItemService.GetOriginalCOBJ(key);
+
+            // No COBJ row behind it at all - it lives only in the ViewModel. Dropping it puts the
+            // item into the state the database already says it is in, instead of leaving a Reset
+            // button that stays enabled and does nothing on every further click.
+            if (original == null)
+            {
+                AppLogger.LogWarning(
+                    $"ResetBreakdownRecipeEdits: no COBJ row for key {key} (item {item.Key}) - dropping the ViewModel-only recipe.");
+                item.BreakdownRecipes.Remove(row);
+                item.RaiseBreakdownChanged();
+                return;
+            }
+
+            // A recipe the tool created never existed in a plugin: clearing the shadow columns would
+            // only bring back the empty just-created stub rather than undoing it. Delete it outright
+            // so no orphaned row is left to be patched into the ESP later.
+            if (original.Original == 0)
+            {
+                DeleteBreakdownRecipe(item, row);
+                return;
+            }
+
+            _cacheManager?.UpdateRecipe(original);
+
+            var index = item.BreakdownRecipes.IndexOf(row);
+            var restored = NewBreakdownRow(original, item);
+
+            if (index >= 0) item.BreakdownRecipes[index] = restored;
+            else item.BreakdownRecipes.Add(restored);
+
+            item.RaiseBreakdownChanged();
+        }
+
+        // Straight to the pipeline, NOT through _saveDebouncer. That one keeps a single pending
+        // action for the whole view model, so a second breakdown row edited within the window
+        // would cancel the first one's save - exactly what the Debouncer doc warns about for
+        // multi-target paths. Each row debounces its own keystrokes instead (see
+        // BreakdownRecipeVM.QueueSave), so what arrives here is already coalesced.
+        private void PersistBreakdownAsync(ItemNodeVM item, COBJRecord recipe)
+        {
+            _ = _saveRequestService.SaveAsync(new SaveRequest(item, BreakdownSaveHandler.FieldName)
+            {
+                Recipe = recipe,
+            });
+        }
+
+        // --- The other recipes: make one the main, or take one out ---
+
+        // Stores the decision and reloads the item, so the editor shows the newly chosen recipe.
+        internal void MakeRecipeMain(ItemNodeVM item, RecipeKind kind, string cobjKey)
+        {
+            if (item == null || string.IsNullOrWhiteSpace(cobjKey)) return;
+
+            MainRecipeStore.Set(item.Key, kind, cobjKey);
+            ReloadItemDetails(item);
+        }
+
+        // Two very different cases behind one button.
+        //
+        // A recipe the TOOL created never existed in any plugin, so the row is simply deleted - no
+        // patch involvement at all. A MOD's recipe cannot be deleted from the database: the next
+        // scan would read it straight back in. It gets a removal DECISION instead, which the patch
+        // turns into an ESP override carrying the Deleted record flag.
+        //
+        // This is the second place in the whole tool that takes away content another mod put there
+        // (RemovalStore's own note calls that out for containers and leveled lists), which is why
+        // the decision lives in that same store and is reported separately.
+        internal void RemoveRecipe(ItemNodeVM item, RecipeKind kind, string cobjKey, bool isUserCreated)
+        {
+            if (item == null || string.IsNullOrWhiteSpace(cobjKey)) return;
+
+            // ALWAYS a decision, never a hard delete - including for a recipe the tool created.
+            //
+            // Deleting the row outright was the first version and it was wrong in use: the recipe
+            // simply vanished from the list with no way back, while a mod's recipe stayed visible
+            // and restorable. Two different behaviours behind one button, and the irreversible one
+            // was the one that looked harmless.
+            //
+            // The patch tells the two apart instead: a mod's recipe gets an override carrying the
+            // Deleted record flag, a tool-created one is simply not written at all - it never
+            // existed in the game, so leaving it out IS its removal.
+            RemovalStore.Add(RemovalScope.Recipe, new RemovedEntry(item.Key, cobjKey));
+
+            // A main-recipe decision pointing at a removed recipe would send the editor looking for
+            // one it no longer shows.
+            MainRecipeStore.ForgetRecipe(cobjKey);
+
+            ReloadItemDetails(item);
+        }
+
+        // Undo for a removed MOD recipe: drop the decision, and the next load shows it again.
+        internal void RestoreRecipe(ItemNodeVM item, string cobjKey)
+        {
+            if (item == null || string.IsNullOrWhiteSpace(cobjKey)) return;
+
+            RemovalStore.Remove(RemovalScope.Recipe, item.Key, cobjKey);
+            ReloadItemDetails(item);
+        }
+
+        // Re-runs the detail load so every snapshot is taken against whatever is now the main
+        // recipe. Without the re-baseline the change markers would keep comparing the NEW main
+        // against the OLD one's scanned values and report edits nobody made.
+        private void ReloadItemDetails(ItemNodeVM item)
+        {
+            item.IsLoading = true;
+            try
+            {
+                LoadSelectedItemDetails(item);
+            }
+            finally
+            {
+                item.IsLoading = false;
+            }
+
+            item.RaiseBreakdownChanged();
+            item.RaiseOtherRecipeCounts();
+        }
+
+        // Conditions live in their own table and have their own reset path, so they do not travel
+        // through the SaveRequest pipeline the way the record's own fields do - the crafting
+        // handler calls the same two methods directly for the same reason.
+        private void PersistBreakdownConditions(string cobjKey, List<COBJConditionRecord> conditions)
+        {
+            ItemService.SaveCOBJConditions(cobjKey, conditions);
+            _cacheManager?.UpdateRecipeConditions(cobjKey, conditions);
+        }
+
+        // Only ever reachable for a recipe the tool itself created (Original = 0): the command is
+        // disabled otherwise. Removing a MOD's recipe needs an ESP override carrying the Deleted
+        // record flag, which is its own open item in docs/TODO.md.
+        private void DeleteBreakdownRecipe(ItemNodeVM item, BreakdownRecipeVM row)
+        {
+            if (row == null || !row.IsUserCreated) return;
+
+            ItemService.DeleteCOBJ(row.Key);
+            _cacheManager?.RemoveRecipe(row.Key);
+            RecipeCacheByCreatedItem.Remove(row.Key);
+
+            foreach (var list in RecipeCacheByCreatedItem.Values)
+                list.RemoveAll(r => string.Equals(r.Key, row.Key, StringComparison.OrdinalIgnoreCase));
+
+            item.BreakdownRecipes.Remove(row);
+            item.RaiseBreakdownChanged();
+        }
+
+        // Adds an empty breakdown recipe at the given bench and persists it at once.
+        //
+        // Written immediately rather than left in the ViewModel on purpose: a recipe that only
+        // exists in a VM until some field happens to be saved is the phantom-recipe trap the
+        // crafting side already has. An output-less row is harmless in the meantime - the ESP
+        // builder skips it and names it in the patch report.
+        internal void AddBreakdownRecipe(ItemNodeVM item, string workbenchKey)
+        {
+            if (item == null || string.IsNullOrWhiteSpace(workbenchKey)) return;
+
+            var record = ItemService.CreateNewBreakdownRecordForItem(item, workbenchKey);
+            if (record == null) return;
+
+            ItemService.SaveCOBJ(record);
+            RegisterNewRecipe(record);
+
+            var row = NewBreakdownRow(record, item);
+            item.BreakdownRecipes.Insert(0, row);
+            item.RaiseBreakdownChanged();
+        }
+
         private void LoadSelectedItemDetails(ItemNodeVM item)
         {
             item.IsLoading = true;
@@ -1746,15 +2049,35 @@ namespace SkyrimCraftingTool.ViewModel
             RegisterItemKeywordEvents(item);
             item.RefreshKeywords();
 
+            LoadBreakdownRecipes(item);
+
             if (RecipeCacheByCreatedItem.TryGetValue(item.Key, out var recipes))
             {
-                var craftRec = recipes.FirstOrDefault(r =>
-                    r.WorkbenchKeywordKey != "Skyrim.esm|088108" &&
-                    r.WorkbenchKeywordKey != "Skyrim.esm|0ADB78");
+                // Recipes the user took out are gone from the editor's point of view: they only
+                // still exist so the patch can write a Deleted override for them.
+                // The All* lists keep the REMOVED recipes too - the "other recipes" window shows
+                // them struck through with a Restore button, so a removal stays undoable. Only the
+                // choice of what the editor shows skips them.
+                var removed = RemovalStore.RemovedKeys(RemovalScope.Recipe, item.Key);
+                item.RemovedRecipeKeys = removed;
 
-                var temperRec = recipes.FirstOrDefault(r =>
+                item.AllCraftingRecipes = recipes.Where(r =>
+                    r.WorkbenchKeywordKey != "Skyrim.esm|088108" &&
+                    r.WorkbenchKeywordKey != "Skyrim.esm|0ADB78").ToList();
+
+                item.AllTemperRecipes = recipes.Where(r =>
                     r.WorkbenchKeywordKey == "Skyrim.esm|088108" ||
-                    r.WorkbenchKeywordKey == "Skyrim.esm|0ADB78");
+                    r.WorkbenchKeywordKey == "Skyrim.esm|0ADB78").ToList();
+
+                // The stored decision when there is one, the first otherwise - which is exactly what
+                // FirstOrDefault did before, so an item nobody ever decided about behaves unchanged.
+                var craftRec = MainRecipeStore.Choose(
+                    item.AllCraftingRecipes.Where(r => !removed.Contains(r.Key)), r => r.Key,
+                    MainRecipeStore.MainFor(item.Key, RecipeKind.Crafting));
+
+                var temperRec = MainRecipeStore.Choose(
+                    item.AllTemperRecipes.Where(r => !removed.Contains(r.Key)), r => r.Key,
+                    MainRecipeStore.MainFor(item.Key, RecipeKind.Temper));
 
                 if (craftRec != null)
                 {

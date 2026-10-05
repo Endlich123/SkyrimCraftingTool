@@ -21,7 +21,8 @@ namespace SkyrimCraftingTool.ViewModel
         Keywords = 2,
         CraftRecipe = 4,
         TemperRecipe = 8,
-        Container = 16
+        Container = 16,
+        BreakdownRecipe = 32
     }
 
     // One Armor-Slot or Weapon-Type leaf node in the Presets tree. Doubles as its own detail view,
@@ -106,6 +107,10 @@ namespace SkyrimCraftingTool.ViewModel
 
             _craftRecipe = new PresetRecipeVM(_config.CraftRecipe, true, _allWorkbenches, _allMaterials, _allPerks, _allQuests, _onChanged, _references);
             _temperRecipe = new PresetRecipeVM(_config.TemperRecipe, false, _allWorkbenches, _allMaterials, _allPerks, _allQuests, _onChanged, _references);
+            // The bench list is the two breakdown ones, not every Crafting* keyword: the section on a
+            // real item offers exactly those two, and a preset that could name the forge would
+            // create a recipe the Breakdown section then refuses to show.
+            _breakdownRecipe = new PresetRecipeVM(_config.BreakdownRecipe, true, BreakdownRecipeVM.Benches.ToList(), _allMaterials, _allPerks, _allQuests, _onChanged, _references, maxIngredients: 1);
 
             _allKeywordVMs = new ObservableCollection<KeywordSelectionVM>(
                 _allKeywords.Select(k => new KeywordSelectionVM(k.Key, k.Name, false, OnKeywordToggled)));
@@ -182,6 +187,7 @@ namespace SkyrimCraftingTool.ViewModel
         {
             OnPropertyChanged(nameof(CraftRecipe));
             OnPropertyChanged(nameof(TemperRecipe));
+            OnPropertyChanged(nameof(BreakdownRecipe));
             OnPropertyChanged(nameof(AllKeywords));
             OnPropertyChanged(nameof(FilteredKeywordsView));
             OnPropertyChanged(nameof(SelectedKeywordsView));
@@ -282,9 +288,11 @@ namespace SkyrimCraftingTool.ViewModel
         // --------------------
         private PresetRecipeVM _craftRecipe;
         private PresetRecipeVM _temperRecipe;
+        private PresetRecipeVM _breakdownRecipe;
 
         public PresetRecipeVM CraftRecipe { get { EnsureLoaded(); return _craftRecipe; } }
         public PresetRecipeVM TemperRecipe { get { EnsureLoaded(); return _temperRecipe; } }
+        public PresetRecipeVM BreakdownRecipe { get { EnsureLoaded(); return _breakdownRecipe; } }
 
         // --------------------
         // Keywords
@@ -582,6 +590,9 @@ namespace SkyrimCraftingTool.ViewModel
 
             if (fields.HasFlag(PresetBulkFields.TemperRecipe))
                 CopyRecipeInto(template.TemperRecipe, _config.TemperRecipe);
+
+            if (fields.HasFlag(PresetBulkFields.BreakdownRecipe))
+                CopyRecipeInto(template.BreakdownRecipe, _config.BreakdownRecipe);
 
             // Container is a plain string field (the same "{ContainerKey: {LVLiKey,Level; ...}}"
             // format items use), so it copies wholesale like Keywords rather than field by field.

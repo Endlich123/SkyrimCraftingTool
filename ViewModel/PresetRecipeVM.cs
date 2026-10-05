@@ -26,6 +26,12 @@ namespace SkyrimCraftingTool.ViewModel
         public bool IsLoading { get; private set; }
         public bool HasWorkbench { get; }
 
+        // A breakdown block produces ONE kind of object, so its material list is capped at a single
+        // entry. Everything else leaves this at int.MaxValue and behaves exactly as before.
+        private readonly int _maxIngredients;
+
+        public bool CanAddIngredient => Ingredients.Count < _maxIngredients;
+
         public ObservableCollection<PresetIngredientEntryVM> Ingredients { get; } = new();
         public ObservableCollection<BaseConditionViewModel> Conditions { get; } = new();
 
@@ -43,7 +49,8 @@ namespace SkyrimCraftingTool.ViewModel
         public PresetRecipeVM(RecipeConfig config, bool hasWorkbench,
             List<FormIDRecord> allWorkbenches, List<FormIDRecord> allMaterials,
             List<FormIDRecord> allPerks, List<FormIDRecord> allQuests, Action onChanged,
-            IReferenceResolver? references = null)
+            IReferenceResolver? references = null,
+            int maxIngredients = int.MaxValue)
         {
             _config = config;
             HasWorkbench = hasWorkbench;
@@ -53,6 +60,7 @@ namespace SkyrimCraftingTool.ViewModel
             _allQuests = allQuests ?? new List<FormIDRecord>();
             _onChanged = onChanged;
             _references = references;
+            _maxIngredients = maxIngredients;
 
             AddIngredientCommand = new RelayCommand(AddIngredient);
             RemoveIngredientCommand = new RelayCommand<PresetIngredientEntryVM>(RemoveIngredient);
@@ -157,9 +165,14 @@ namespace SkyrimCraftingTool.ViewModel
 
         private void AddIngredient()
         {
+            // The breakdown block caps this at one: a COBJ creates one KIND of object, so a second
+            // output row would promise something the record cannot hold.
+            if (!CanAddIngredient) return;
+
             var entry = new PresetIngredientEntryVM(SyncIngredientsAndNotify, () => IsLoading, () => Ingredients, _references);
             entry.InitializeMaterials(_allMaterials);
             Ingredients.Add(entry);
+            OnPropertyChanged(nameof(CanAddIngredient));
             SyncIngredientsAndNotify();
         }
 
@@ -167,6 +180,7 @@ namespace SkyrimCraftingTool.ViewModel
         {
             if (entry == null) return;
             Ingredients.Remove(entry);
+            OnPropertyChanged(nameof(CanAddIngredient));
             foreach (var e in Ingredients) e.RefreshMaterialFilter(); // freed material reappears
             SyncIngredientsAndNotify();
         }

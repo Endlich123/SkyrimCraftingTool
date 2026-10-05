@@ -48,6 +48,7 @@ namespace SkyrimCraftingTool.ViewModel
         public ICommand ApplyKeywordsCommand { get; }
         public ICommand ApplyCraftingCommand { get; }
         public ICommand ApplyTemperCommand { get; }
+        public ICommand ApplyBreakdownCommand { get; }
         public ICommand ApplyContainerCommand { get; }
 
         public PresetMultiSelectVM(PresetsConfigVM owner)
@@ -63,6 +64,9 @@ namespace SkyrimCraftingTool.ViewModel
 
             CraftRecipe = new PresetRecipeVM(_template.CraftRecipe, true, allWorkbenches, allMaterials, allPerks, allQuests, () => { }, main?.References);
             TemperRecipe = new PresetRecipeVM(_template.TemperRecipe, false, allWorkbenches, allMaterials, allPerks, allQuests, () => { }, main?.References);
+            // Only the two breakdown benches, and one output material - same shape as the
+            // single-slot editor in PresetSlotNodeVM.
+            BreakdownRecipe = new PresetRecipeVM(_template.BreakdownRecipe, true, BreakdownRecipeVM.Benches.ToList(), allMaterials, allPerks, allQuests, () => { }, main?.References, maxIngredients: 1);
 
             _allKeywordVMs = new ObservableCollection<KeywordSelectionVM>(
                 allKeywords.Select(k => new KeywordSelectionVM(k.Key, k.Name, false, OnKeywordToggled)));
@@ -80,6 +84,7 @@ namespace SkyrimCraftingTool.ViewModel
             ApplyKeywordsCommand = new RelayCommand(() => Apply(PresetBulkFields.Keywords, "Keywords"));
             ApplyCraftingCommand = new RelayCommand(() => Apply(PresetBulkFields.CraftRecipe, "Crafting recipe"));
             ApplyTemperCommand = new RelayCommand(() => Apply(PresetBulkFields.TemperRecipe, "Temper recipe"));
+            ApplyBreakdownCommand = new RelayCommand(() => Apply(PresetBulkFields.BreakdownRecipe, "Breakdown recipe"));
             ApplyContainerCommand = new RelayCommand(() => Apply(PresetBulkFields.Container, "Container"));
 
             // Container template. Mirrors the single-slot editor (PresetSlotNodeVM): a catalog to
@@ -317,6 +322,7 @@ namespace SkyrimCraftingTool.ViewModel
         // --------------------
         public PresetRecipeVM CraftRecipe { get; }
         public PresetRecipeVM TemperRecipe { get; }
+        public PresetRecipeVM BreakdownRecipe { get; }
 
         // --------------------
         // Apply
