@@ -177,7 +177,12 @@
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>
-        <Button Command="{Binding AddIngredientCommand}" ToolTip="Add Material" Style="{StaticResource AddButtonStyle}" HorizontalAlignment="Left"/>
+        <!-- IsEnabled, not CanExecute: RelayCommand here never raises CanExecuteChanged, so a
+             command-driven state would freeze at whatever it was when the block was first drawn.
+             Only the breakdown block ever caps this (at one output); everywhere else
+             CanAddIngredient is always true. -->
+        <Button Command="{Binding AddIngredientCommand}" IsEnabled="{Binding CanAddIngredient}"
+                ToolTip="Add Material" Style="{StaticResource AddButtonStyle}" HorizontalAlignment="Left"/>
 
     </StackPanel>
 </DataTemplate>

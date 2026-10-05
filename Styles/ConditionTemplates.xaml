@@ -17,6 +17,77 @@
          deliberately expose the same property names (FilteredCraftingPerks, FilteredQuests) so one
          template fits all three. -->
 
+    <!-- THE WHOLE CONDITION ROW, keyed, as opposed to the per-type Target cells below.
+         Type | Target | Value | Run On | Remove, plus the read-only overlay.
+
+         The same row is written out inline four more times (twice in MainContentView, twice in
+         MultiSelectDetailView) and in two preset variants. This keyed copy exists so the Breakdown
+         section did not become a seventh: it binds its Remove to `RemoveConditionCommand` on the
+         ItemsControl's DataContext, a name BreakdownRecipeVM exposes and ItemNodeVM already has as
+         an alias, so the inline copies could migrate onto it later without changing their owners.
+         Not done in the same breath on purpose - those sections work, and this one had no visual
+         test to catch a regression. -->
+    <DataTemplate x:Key="ConditionRowTemplate">
+        <Grid Margin="0,5">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="200"/>   <!-- Type -->
+                <ColumnDefinition Width="*"/>     <!-- Target -->
+                <ColumnDefinition Width="*"/>     <!-- Value -->
+                <ColumnDefinition Width="200"/>   <!-- Run On -->
+                <ColumnDefinition Width="Auto"/>  <!-- Remove -->
+            </Grid.ColumnDefinitions>
+
+            <DockPanel Grid.Column="0" VerticalAlignment="Center">
+                <TextBlock Text="Type:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center"/>
+                <ComboBox ItemsSource="{Binding ConditionTypes}"
+                          SelectedItem="{Binding Type, Mode=TwoWay}"
+                          Style="{StaticResource ItemComboBoxStyle}"/>
+            </DockPanel>
+
+            <DockPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="Target:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center"/>
+                <!-- Picks one of the implicit per-type templates below. -->
+                <ContentControl Content="{Binding}"/>
+            </DockPanel>
+
+            <DockPanel Grid.Column="2" VerticalAlignment="Center">
+                <TextBlock Text="Value:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center"/>
+                <TextBox Text="{Binding ComparisonValue}" Style="{StaticResource ItemTextBoxStyle}"/>
+            </DockPanel>
+
+            <DockPanel Grid.Column="3" VerticalAlignment="Center">
+                <TextBlock Text="Run On:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center"/>
+                <ComboBox ItemsSource="{Binding RunOnOptions}"
+                          SelectedItem="{Binding RunOn}"
+                          Style="{StaticResource ItemComboBoxStyle}"/>
+            </DockPanel>
+
+            <Button Grid.Column="4"
+                    Command="{Binding DataContext.RemoveConditionCommand,
+                              RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                    CommandParameter="{Binding}"
+                    ToolTip="Remove Condition"
+                    Style="{StaticResource RemoveButtonStyle}"/>
+
+            <!-- Read-only overlay for a preserved but non-editable condition type. Content is set
+                 by a DataTrigger and left null otherwise - NOT a Visibility toggle on a filled
+                 element: null content means the template is never instantiated for an ordinary
+                 condition, so its bindings cannot be evaluated against a view model that has none
+                 of them. That was 12 binding errors per editable row. -->
+            <ContentControl Grid.Column="0" Grid.ColumnSpan="5" Panel.ZIndex="10">
+                <ContentControl.Style>
+                    <Style TargetType="ContentControl">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Type}" Value="ReadOnly">
+                                <Setter Property="Content" Value="{Binding}"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ContentControl.Style>
+            </ContentControl>
+        </Grid>
+    </DataTemplate>
+
     <!-- HasPerk -->
     <DataTemplate DataType="{x:Type local:PerkConditionViewModel}">
         <ComboBox ItemsSource="{Binding DataContext.FilteredCraftingPerks,

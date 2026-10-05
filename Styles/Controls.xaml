@@ -688,6 +688,14 @@
         <Setter Property="BorderThickness" Value="0"/>
     </Style>
 
+    <!-- The "+" buttons. No HorizontalAlignment on purpose: the fixed Width under the default
+         Stretch centres them, which is how every one of them sits in the item detail view.
+
+         IT NEEDS ITS OWN TEMPLATE. Without one WPF falls back to the stock Button chrome, and the
+         Background/BorderThickness above only reach it in the normal state - disabled (and hovered)
+         it painted the system's light-grey square, glaringly bright in the dark theme. That went
+         unnoticed as long as no "+" was ever disabled; the Breakdown section's add button is the
+         first one that is. -->
     <Style x:Key="AddButtonStyle" TargetType="Button">
         <Setter Property="Content" Value="+"/>
         <Setter Property="Width" Value="25"/>
@@ -699,6 +707,42 @@
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Foreground" Value="{DynamicResource ColorSuccess}"/>
         <Setter Property="BorderThickness" Value="0"/>
+
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="border"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center">
+                            <!-- Same trap as ActionButtonStyle: a string Content becomes a TextBlock,
+                                 which the implicit TextBlock style would then repaint in the normal
+                                 text colour, losing both the green and the disabled grey. Following
+                                 the button's own Foreground keeps the triggers below in charge. -->
+                            <ContentPresenter.Resources>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground"
+                                            Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                                </Style>
+                            </ContentPresenter.Resources>
+                        </ContentPresenter>
+                    </Border>
+
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="border" Property="Background"
+                                    Value="{DynamicResource ColorBackgroundControl}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground" Value="{DynamicResource ColorTextTertiary}"/>
+                            <Setter TargetName="border" Property="Background" Value="Transparent"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- Base template shared by ActionButtonStyle/ActionButtonWarmStyle — only the 3 accent
