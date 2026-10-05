@@ -623,6 +623,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 report.CobjDeepCopiedCount += res.DeepCopiedCount;
                 report.CobjFromScratchCount += res.FromScratchCount;
                 report.CobjConditionRewriteSkippedCount += res.ConditionRewriteSkippedCount;
+                report.CobjDeletedCount += res.DeletedCount;
                 report.StaleConditionDataCount += res.StaleConditionDataCount;
                 report.EnchantmentEspOverrideCount += res.EnchantmentOverrideCount;
                 report.NewEnchantmentCount += res.NewEnchantmentCount;

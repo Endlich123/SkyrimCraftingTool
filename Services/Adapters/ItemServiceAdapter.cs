@@ -27,6 +27,7 @@ namespace SkyrimCraftingTool.Services.Adapters
         public System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<string>> GetLeveledNpcs() => _handler.LoadLeveledNpcs();
 
         public COBJRecord CreateNewCOBJRecordForItem(ItemNodeVM item, bool isTemper) => _handler.CreateNewCOBJRecordForItem(item, isTemper);
+        public COBJRecord CreateNewBreakdownRecordForItem(ItemNodeVM item, string workbenchKeywordKey) => _handler.CreateNewBreakdownRecordForItem(item, workbenchKeywordKey);
         public System.Collections.Generic.IList<object> SearchByType(string type) => _handler.SearchByType(type);
 
         public void SaveCOBJ(COBJRecord rec) => _handler.SaveCOBJ(rec);

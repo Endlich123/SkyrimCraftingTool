@@ -21,6 +21,11 @@ namespace SkyrimCraftingTool.Services
     {
         Container,
         LeveledList,
+
+        // "Take this recipe out of the game." Only ever a MOD's recipe: one the tool created is
+        // deleted outright, row and all, because no plugin would bring it back. A row here becomes
+        // an ESP override carrying the Deleted record flag.
+        Recipe,
     }
 
     // The user's "take this out" decisions, kept strictly apart from anything the scan writes.
@@ -41,13 +46,19 @@ namespace SkyrimCraftingTool.Services
         private static string Resolve(string dbPath)
             => string.IsNullOrWhiteSpace(dbPath) ? ItemDbPath : dbPath;
 
-        internal static string TableOf(RemovalScope scope) => scope == RemovalScope.Container
-            ? "ContainerRemovedEntry"
-            : "LeveledListRemovedEntry";
+        internal static string TableOf(RemovalScope scope) => scope switch
+        {
+            RemovalScope.Container => "ContainerRemovedEntry",
+            RemovalScope.LeveledList => "LeveledListRemovedEntry",
+            _ => "RecipeRemovedEntry",
+        };
 
-        internal static string OwnerColumnOf(RemovalScope scope) => scope == RemovalScope.Container
-            ? "ContainerKey"
-            : "ListKey";
+        internal static string OwnerColumnOf(RemovalScope scope) => scope switch
+        {
+            RemovalScope.Container => "ContainerKey",
+            RemovalScope.LeveledList => "ListKey",
+            _ => "ItemKey",
+        };
 
         private static bool TableExists(SqliteConnection c, RemovalScope scope)
         {

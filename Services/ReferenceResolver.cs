@@ -6,13 +6,20 @@ namespace SkyrimCraftingTool.Services
 {
     public sealed class ReferenceResolver : IReferenceResolver
     {
-        // The two vanilla Temper workbench keywords. They're always present in Skyrim.esm but get
-        // filtered out of MainContentVM.AllAvailableWorkbenches on purpose, so register them here so
-        // a Temper recipe's workbench never looks like a dead reference.
+        // Vanilla workbench keywords that are always present in Skyrim.esm but get filtered out of
+        // MainContentVM.AllAvailableWorkbenches on purpose, so register them here so their recipes'
+        // workbench never looks like a dead reference.
+        //
+        // The two Temper ones have been here from the start. CraftingSmelter joined them when the
+        // Breakdown section took it over: crafting an armour in a furnace is not a thing, so it has
+        // no business in the general workbench picker - but a smelter recipe still has to resolve.
+        // CraftingTanningRack is deliberately NOT in this list: it stays in the general picker,
+        // because unlike the furnace it really is a crafting bench.
         private static readonly (string Key, string Name)[] VanillaTemperWorkbenches =
         {
             ("Skyrim.esm|0ADB78", "CraftingSmithingArmorTable"),
             ("Skyrim.esm|088108", "CraftingSmithingSharpeningWheel"),
+            ("Skyrim.esm|0A5CCE", "CraftingSmelter"),
         };
 
         // Case-insensitive, to match the databases: Skyrim ignores case in plugin filenames, so the

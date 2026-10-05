@@ -34,6 +34,7 @@ namespace SkyrimCraftingTool.Services
             ApplyKeywords(item, matches, touched);
             ApplyRecipe(item, matches, isTemper: false, touched);
             ApplyRecipe(item, matches, isTemper: true, touched);
+            ApplyBreakdown(item, matches, touched);
             ApplyContainer(item, matches, touched);
             ApplyEnchantment(item, matches, touched);
 
@@ -281,6 +282,86 @@ namespace SkyrimCraftingTool.Services
         // Conditions of a type no matching slot touches are left completely alone. Multiple matching
         // slots can still each contribute their own distinct condition of the same type (keeps the
         // "slots addieren" rule) - only an exact (Type, Target, RunOn) duplicate is skipped.
+        // The breakdown block: one output material with its amount, the bench, and conditions.
+        //
+        // Shaped like ApplyRecipe but NOT folded into it. A breakdown recipe is a different record
+        // shape - the item is on the ingredient side and what the preset sets is what comes OUT - so
+        // the ingredient merge below would be writing the wrong half of it. Keeping them apart also
+        // left ApplyRecipe's isTemper branching untouched.
+        //
+        // It edits the item's breakdown recipe, creating one if there is none, exactly like the
+        // crafting block does. It never adds a SECOND recipe to an item that already has one: that
+        // is the author's rule for presets ("like crafting/temper"), and on a CCOR load order the
+        // common case is an item that already has a mod breakdown - adding to it every time would
+        // double the recipe on every apply.
+        private static void ApplyBreakdown(ItemNodeVM item, List<PresetSlotConfig> matches, List<string> touched)
+        {
+            bool wanted = matches.Any(m =>
+                m.BreakdownRecipe.WorkbenchKey.Enabled
+                || m.BreakdownRecipe.Ingredients.Enabled
+                || m.BreakdownRecipe.Conditions.Enabled);
+            if (!wanted) return;
+
+            // Workbench can't be summed - first enabled, non-empty value wins, in ascending
+            // Armor-Slot-bit order (GetMatchingArmorConfigs already sorted `matches`). Without one,
+            // a recipe that has to be created lands at the smelter, which is what the section's own
+            // add button does.
+            var bench = matches
+                .Select(m => m.BreakdownRecipe.WorkbenchKey)
+                .FirstOrDefault(w => w.Enabled && !string.IsNullOrEmpty(w.Value))?.Value;
+
+            var row = item.BreakdownRecipe;
+            if (row == null)
+            {
+                row = item.CreateBreakdownRecipe(bench ?? ViewModel.BreakdownRecipeVM.SmelterKey);
+                if (row == null) return;
+                touched.Add(nameof(ItemNodeVM.BreakdownRecipes));
+            }
+            else if (bench != null && row.SelectedBench?.Key != bench)
+            {
+                row.SelectedBench = ViewModel.BreakdownRecipeVM.Benches
+                    .FirstOrDefault(b => string.Equals(b.Key, bench, StringComparison.OrdinalIgnoreCase));
+                touched.Add(nameof(ItemNodeVM.BreakdownRecipes));
+            }
+
+            // The output: capped at one entry in the editor, so the first enabled, non-empty one
+            // wins rather than anything being merged.
+            var output = matches
+                .Select(m => m.BreakdownRecipe.Ingredients)
+                .Where(i => i.Enabled)
+                .SelectMany(i => i.Value ?? new List<IngredientEntry>())
+                .FirstOrDefault(e => !string.IsNullOrEmpty(e.Key));
+
+            if (output != null)
+            {
+                var entry = row.OutputRow.FirstOrDefault();
+                if (entry != null)
+                {
+                    // Resolve the material and select it, do NOT just set the Key.
+                    //
+                    // The ComboBox binds SelectedMaterial; Key alone leaves it with nothing
+                    // selected, and the box stayed EMPTY until a restart re-ran the load path that
+                    // resolves key -> material. MergeIngredients does the same two-step for the
+                    // crafting block, for the same reason.
+                    var material = item.Main?.AllAvailableMaterials?
+                        .FirstOrDefault(m => string.Equals(m.Key, output.Key, StringComparison.OrdinalIgnoreCase));
+
+                    // The public setter, not SetSelectedMaterialSilent: the silent one is right for
+                    // the crafting block, whose save handler re-reads the whole ingredient list
+                    // afterwards, but a breakdown row only reaches its record through this
+                    // notification. Silent here would leave the box filled and the record empty.
+                    if (material != null) entry.SelectedMaterial = material;
+                    else entry.Key = output.Key;   // dead reference - show the raw key, not a blank box
+
+                    entry.Count = output.Count < 1 ? 1 : output.Count;
+                    touched.Add(nameof(ItemNodeVM.BreakdownRecipes));
+                }
+            }
+
+            if (MergeConditions(item, row.Conditions, matches, c => c.BreakdownRecipe))
+                touched.Add(nameof(ItemNodeVM.BreakdownRecipes));
+        }
+
         private static bool MergeConditions(ItemNodeVM item, ObservableCollection<BaseConditionViewModel> target,
             List<PresetSlotConfig> matches, Func<PresetSlotConfig, RecipeConfig> select)
         {

@@ -30,6 +30,11 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // conditions the scan cannot represent and rewriting would have deleted them.
         public int ConditionRewriteSkippedCount { get; set; }
 
+        // Recipes the user took out of the game: an override carrying the Deleted record flag.
+        // Reported separately because it is the one COBJ operation that REMOVES content another mod
+        // put there - the same reason RemovalStore reports its decisions on their own.
+        public int DeletedCount { get; set; }
+
         // Recipes whose stored conditions are missing entries the real record has - the hallmark of
         // an item.db written before the scan understood those condition types. Needs a rescan.
         public int StaleConditionDataCount { get; set; }
@@ -447,10 +452,60 @@ namespace SkyrimCraftingTool.Services.PatchGen
             result.EnchantmentOverrideCount++;
         }
 
+        // A recipe the user took out of the game: an override of the winning record carrying the
+        // Deleted record flag, and nothing else.
+        //
+        // COBJ is the one record type where this is safe and simple: NOTHING references a
+        // ConstructibleObject by FormID - the crafting menu just enumerates them - so there is no
+        // dangling reference to leave behind. The "deleted records crash the game" rule people
+        // remember is about REFR, which is why xEdit's fix for those is called "Undelete and Disable
+        // REFERENCES".
+        //
+        // Verified against Mutagen before this was built (2026-10-05): a deep copy with
+        // IsDeleted = true writes, reads back as deleted, and keeps a correct master list.
+        //
+        // Deep-copying rather than building an empty stub keeps the record's own FormKey and masters
+        // honest; the game ignores the payload of a deleted record either way.
+        private static void BuildDeleted(
+            SkyrimMod mod, CobjPatchEntry e, CobjEspResult result, WinningRecordResolver? resolver)
+        {
+            var formKey = KeyFactory.ParseFormKey(e.ToolKey);
+
+            ConstructibleObject cobj;
+            if (resolver != null && resolver.TryGetCobj(formKey, out var winner))
+            {
+                cobj = winner.DeepCopy();
+            }
+            else
+            {
+                // Not in the load order: the recipe's own plugin is gone or disabled, so there is
+                // nothing left to delete. Writing an override anyway would resurrect the FormID as
+                // an injected record.
+                result.Warnings.Add(
+                    $"{e.ToolKey}: marked for removal but not found in the load order — nothing to delete, skipped.");
+                result.SkippedCount++;
+                return;
+            }
+
+            cobj.IsDeleted = true;
+            mod.ConstructibleObjects.Add(cobj);
+
+            result.OverrideCount++;
+            result.DeletedCount++;
+        }
+
         private static void BuildOne(
             SkyrimMod mod, ModKey modKey, CobjPatchEntry e, PatchFormIdMapStore map,
             string espFileName, ref uint maxNewId, CobjEspResult result, WinningRecordResolver? resolver)
         {
+            // A removal is handled first and on its own: it carries no fields at all, and the
+            // created-item guard below would throw it away before it ever got here.
+            if (e.IsDeleted)
+            {
+                BuildDeleted(mod, e, result, resolver);
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(e.CreatedItemKey))
             {
                 result.Warnings.Add($"{e.ToolKey}: recipe has no created item — skipped.");
@@ -467,7 +522,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 maxNewId = Math.Max(maxNewId, id);
                 cobj = new ConstructibleObject(new FormKey(modKey, id), SkyrimRelease.SkyrimSE);
                 cobj.EditorID = $"SCT_{id:X6}";
-                cobj.CreatedObjectCount = 1;
             }
             else
             {
@@ -490,12 +544,29 @@ namespace SkyrimCraftingTool.Services.PatchGen
                             "EditorID, unsupported condition types) fall back to defaults.");
 
                     cobj = new ConstructibleObject(formKey, SkyrimRelease.SkyrimSE);
-                    cobj.CreatedObjectCount = 1;
                     result.FromScratchCount++;
                 }
             }
 
             cobj.CreatedObject.SetTo(KeyFactory.ParseFormKey(e.CreatedItemKey));
+
+            // The created-object count (NAM1), and WHEN it may be written.
+            //
+            // It used to be a literal 1 in both branches above - invisible while the tool only made
+            // forge and tempering recipes, which produce one item, but it is the central value of a
+            // breakdown recipe ("gives 2 steel ingots") and was already quietly wrong for anything
+            // producing a stack, arrows being the obvious case.
+            //
+            // A DEEP COPY is the case to be careful with. It already carries the winning record's
+            // real count, and item.db only learns that number on the next scan - so writing the
+            // stored value unconditionally would stamp a 1 over the truth for every row that
+            // predates the column. Same rule as the conditions right below: only an edit the user
+            // actually made is allowed to overwrite what the copy brought along.
+            //
+            // A new record and a from-scratch rebuild have nothing to preserve, so they take the
+            // stored value (which defaults to 1, exactly the old behaviour).
+            if (e.IsNew || winner == null || e.CreatedObjectCountEdited)
+                cobj.CreatedObjectCount = (ushort)Math.Clamp(e.CreatedObjectCount, 1, ushort.MaxValue);
 
             if (!string.IsNullOrWhiteSpace(e.WorkbenchKey))
                 cobj.WorkbenchKeyword.SetTo(KeyFactory.ParseFormKey(e.WorkbenchKey));

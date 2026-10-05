@@ -33,6 +33,10 @@ namespace SkyrimCraftingTool.Services
 
         // COBJ helpers (create/save recipes)
         COBJRecord CreateNewCOBJRecordForItem(ItemNodeVM item, bool isTemper);
+
+        // The item lands on the INGREDIENT side and the output is picked afterwards - see
+        // ItemDBHandler for why this is its own method rather than a third kind on the one above.
+        COBJRecord CreateNewBreakdownRecordForItem(ItemNodeVM item, string workbenchKeywordKey);
         void SaveCOBJ(COBJRecord rec);
 
         // COBJ Conditions

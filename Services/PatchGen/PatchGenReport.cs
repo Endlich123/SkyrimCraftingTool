@@ -61,6 +61,11 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // the scan cannot represent - writing them would have deleted those.
         public int CobjConditionRewriteSkippedCount { get; set; }
 
+        // Recipes taken out of the game via a Deleted-record override. Reported on its own because
+        // it is the one COBJ operation that REMOVES content another mod put there - the same reason
+        // RemovalStore reports its container and leveled-list decisions separately.
+        public int CobjDeletedCount { get; set; }
+
         // Of those, the ones caused by an item.db written before the condition-scan fix. A rescan
         // clears them; nothing else will.
         public int StaleConditionDataCount { get; set; }
@@ -162,6 +167,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     parts.Add($"{CobjFromScratchCount} COBJ override(s) rebuilt from scratch");
                 if (CobjConditionRewriteSkippedCount > 0)
                     parts.Add($"{CobjConditionRewriteSkippedCount} condition edit(s) withheld");
+                if (CobjDeletedCount > 0)
+                    parts.Add($"{CobjDeletedCount} recipe(s) removed from the game");
                 if (EnchantmentAssignmentChangesUnpatched > 0)
                     parts.Add($"{EnchantmentAssignmentChangesUnpatched} FLST assignment change(s) NOT patched");
                 if (Warnings.Count > 0)
