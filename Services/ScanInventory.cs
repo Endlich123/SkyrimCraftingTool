@@ -52,10 +52,30 @@ namespace SkyrimCraftingTool.Services
             new(StringComparer.Ordinal);
     }
 
+    // The mesh index's own shape of answer. Deliberately NOT a ScanCategory: every other line in the
+    // report says how MANY of something there is, and the only question worth asking about a mesh
+    // path is whether it leads anywhere. "4.460 meshes" is nearly content-free; "32 of 4.460 lead
+    // nowhere" is the line that finds a broken mod.
+    //
+    // Read back out of the Mesh table rather than handed over by the scan: the numbers are already
+    // stored, so this also answers on a tool start where no scan has run.
+    public sealed record MeshIndexSummary(int Loose, int Archive, int Unresolved)
+    {
+        public int Total => Loose + Archive + Unresolved;
+        public bool IsEmpty => Total == 0;
+
+        // Unresolved is never zero in practice (32 of 4.460 on a real 208-mod setup: Creation Club
+        // meshes a mod names but does not ship, and plain typos in a record). So it is reported as a
+        // number and a share, not as a warning - a warning that fires on every scan is noise.
+        public double UnresolvedShare => Total == 0 ? 0 : 100.0 * Unresolved / Total;
+    }
+
     public sealed class ScanInventory
     {
         public IReadOnlyList<ScanCategory> Records { get; init; } = Array.Empty<ScanCategory>();
         public IReadOnlyList<ScanCategory> References { get; init; } = Array.Empty<ScanCategory>();
+
+        public MeshIndexSummary? MeshIndex { get; init; }
 
         public int RecordTotal => Records.Where(c => c.IsKnown).Sum(c => c.Count);
         public int ReferenceTotal => References.Where(c => c.IsKnown).Sum(c => c.Count);
@@ -77,6 +97,7 @@ namespace SkyrimCraftingTool.Services
         private static readonly (string Table, string Label, string KeyColumn, bool HasActive)[] ItemTables =
         {
             ("Armor",         "Armor",         "Key",          true),
+            ("ArmorAddon",    "Armor addons",  "Key",          true),
             ("Weapons",       "Weapons",       "Key",          true),
             ("COBJ",          "Recipes",       "Key",          true),
             ("Enchantments",  "Enchantments",  "Key",          true),
@@ -102,6 +123,7 @@ namespace SkyrimCraftingTool.Services
         private static readonly Dictionary<string, string[]> ValueColumns = new(StringComparer.Ordinal)
         {
             ["Armor"] = ItemDBHandler.ArmorColumnNames,
+            ["Armor addons"] = ItemDBHandler.ArmorAddonColumnNames,
             ["Weapons"] = ItemDBHandler.WeaponColumnNames,
             ["Recipes"] = ItemDBHandler.CobjColumnNames,
             ["Enchantments"] = ItemDBHandler.EnchantmentColumnNames,
@@ -115,13 +137,56 @@ namespace SkyrimCraftingTool.Services
             if (string.IsNullOrWhiteSpace(input))
                 return new ScanInventory();
 
+            var itemDb = Path.Combine(input, "Item", "item.db");
+
             return new ScanInventory
             {
-                Records = CountAll(Path.Combine(input, "Item", "item.db"), ItemTables, before),
+                Records = CountAll(itemDb, ItemTables, before),
                 // formid.db is dropped and rebuilt on every scan, so every row in it is new by
                 // construction and "changed" has nothing to mean there.
                 References = CountAll(Path.Combine(input, "FormID", "formid.db"), FormIdTables),
+                MeshIndex = ReadMeshIndex(itemDb),
             };
+        }
+
+        // One GROUP BY over the Mesh table. Null for a database written before the mesh index existed
+        // - the report then shows no mesh block at all, which is correct: there is nothing to say,
+        // and a row of zeroes would read as "every mesh is missing".
+        private static MeshIndexSummary? ReadMeshIndex(string dbPath)
+        {
+            if (!File.Exists(dbPath)) return null;
+
+            try
+            {
+                using var connection = new SqliteConnection($"Data Source={dbPath}");
+                connection.Open();
+
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "SELECT SourceKind, COUNT(*) FROM Mesh GROUP BY SourceKind;";
+
+                int loose = 0, archive = 0, unresolved = 0;
+                using var r = cmd.ExecuteReader();
+                while (r.Read())
+                {
+                    int count = r.GetInt32(1);
+                    switch ((MeshSourceKind)r.GetInt32(0))
+                    {
+                        case MeshSourceKind.Loose: loose = count; break;
+                        case MeshSourceKind.Archive: archive = count; break;
+                        default: unresolved = count; break;
+                    }
+                }
+
+                var summary = new MeshIndexSummary(loose, archive, unresolved);
+                return summary.IsEmpty ? null : summary;
+            }
+            catch (Exception ex)
+            {
+                // A DB without the table yet. Not worth an error entry - the block simply does not
+                // appear.
+                AppLogger.LogWarning($"Scan inventory: mesh index could not be read ({ex.Message})");
+                return null;
+            }
         }
 
         // Taken before the scan runs. Only the item tables: see the note on References above.
