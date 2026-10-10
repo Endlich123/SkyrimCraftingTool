@@ -67,6 +67,9 @@ namespace SkyrimCraftingTool.Model
             using var insertArmor = PrepareUpsert(connection, "Armor", ArmorColumnNames, ArmorParamNames);
             using var insertWeapon = PrepareUpsert(connection, "Weapons", WeaponColumnNames, WeaponParamNames);
             using var insertWorldItem = PrepareUpsert(connection, "WorldItem", WorldItemColumnNames, WorldItemParamNames);
+            using var insertArmorAddon = PrepareUpsert(connection, "ArmorAddon", ArmorAddonColumnNames, ArmorAddonParamNames);
+            using var insertArmorArmature = PrepareInsert(connection, "ArmorArmature", ArmorArmatureColumnNames, ArmorArmatureParamNames);
+            using var insertMeshRef = PrepareInsert(connection, "MeshRef", MeshRefColumnNames, MeshRefParamNames);
             using var insertCOBJ = PrepareUpsert(connection, "COBJ", CobjColumnNames, CobjParamNames);
             using var insertCOBJCondition = PrepareInsert(connection, "COBJ_Conditions", CobjConditionColumnNames, CobjConditionParamNames);
             using var insertEnch = PrepareUpsert(connection, "Enchantments", EnchantmentColumnNames, EnchantmentParamNames);
@@ -110,6 +113,9 @@ namespace SkyrimCraftingTool.Model
             using var insertArmorBatch = PrepareUpsertBatch(connection, "Armor", ArmorColumnNames, ArmorParamNames, BatchSize);
             using var insertWeaponBatch = PrepareUpsertBatch(connection, "Weapons", WeaponColumnNames, WeaponParamNames, BatchSize);
             using var insertWorldItemBatch = PrepareUpsertBatch(connection, "WorldItem", WorldItemColumnNames, WorldItemParamNames, BatchSize);
+            using var insertArmorAddonBatch = PrepareUpsertBatch(connection, "ArmorAddon", ArmorAddonColumnNames, ArmorAddonParamNames, BatchSize);
+            using var insertArmorArmatureBatch = PrepareInsertBatch(connection, "ArmorArmature", ArmorArmatureColumnNames, ArmorArmatureParamNames, BatchSize);
+            using var insertMeshRefBatch = PrepareInsertBatch(connection, "MeshRef", MeshRefColumnNames, MeshRefParamNames, BatchSize);
             using var insertCOBJBatch = PrepareUpsertBatch(connection, "COBJ", CobjColumnNames, CobjParamNames, BatchSize);
             using var insertCOBJConditionBatch = PrepareInsertBatch(connection, "COBJ_Conditions", CobjConditionColumnNames, CobjConditionParamNames, BatchSize);
             using var insertEnchBatch = PrepareUpsertBatch(connection, "Enchantments", EnchantmentColumnNames, EnchantmentParamNames, BatchSize);
@@ -148,6 +154,9 @@ namespace SkyrimCraftingTool.Model
             insertArmor.Transaction = transaction;
             insertWeapon.Transaction = transaction;
             insertWorldItem.Transaction = transaction;
+            insertArmorAddon.Transaction = transaction;
+            insertArmorArmature.Transaction = transaction;
+            insertMeshRef.Transaction = transaction;
             insertCOBJ.Transaction = transaction;
             insertCOBJCondition.Transaction = transaction;
             insertEnch.Transaction = transaction;
@@ -184,6 +193,9 @@ namespace SkyrimCraftingTool.Model
             insertArmorBatch.Transaction = transaction;
             insertWeaponBatch.Transaction = transaction;
             insertWorldItemBatch.Transaction = transaction;
+            insertArmorAddonBatch.Transaction = transaction;
+            insertArmorArmatureBatch.Transaction = transaction;
+            insertMeshRefBatch.Transaction = transaction;
             insertCOBJBatch.Transaction = transaction;
             insertCOBJConditionBatch.Transaction = transaction;
             insertEnchBatch.Transaction = transaction;
@@ -279,6 +291,7 @@ namespace SkyrimCraftingTool.Model
             var allWorldItems = new List<object[]>();
             var allMagicEffects = new List<object[]>();
             var allGlobals = new List<object[]>();
+            var allArmorAddons = new List<object[]>();
 
             // OrdinalIgnoreCase, not the default: a key is "Plugin|FormID", and the plugin name can
             // reach us in two casings (a mod's master list may lowercase a name the file itself
@@ -287,6 +300,11 @@ namespace SkyrimCraftingTool.Model
             // plugins' child rows through, and the child tables' composite keys are NOCASE too. That
             // is the "UNIQUE constraint failed: WornRestrictionKeywords.ListKey, ..." a 1300-mod load
             // order hit on the first scan. latestNpcByKey below always did this; the rest do now.
+            // Same winner rule, same casing rule, for the two mesh child sets. An override replaces a
+            // record's armature list and its model paths wholesale, so only the last plugin that
+            // defines the parent may contribute rows - see the block comment above.
+            var latestArmatureByKey = new Dictionary<string, ParsedArmature>(StringComparer.OrdinalIgnoreCase);
+            var latestMeshOwnerByKey = new Dictionary<string, ParsedMeshOwner>(StringComparer.OrdinalIgnoreCase);
             var latestCobjByKey = new Dictionary<string, ParsedCobj>(StringComparer.OrdinalIgnoreCase);
             var latestEnchantmentByKey = new Dictionary<string, ParsedEnchantment>(StringComparer.OrdinalIgnoreCase);
             var latestContainerByKey = new Dictionary<string, ParsedContainer>(StringComparer.OrdinalIgnoreCase);
@@ -301,6 +319,13 @@ namespace SkyrimCraftingTool.Model
                 allWorldItems.AddRange(parsed.WorldItemRows);
                 allMagicEffects.AddRange(parsed.MagicEffectRows);
                 allGlobals.AddRange(parsed.GlobalRows);
+                allArmorAddons.AddRange(parsed.ArmorAddonRows);
+
+                foreach (var armature in parsed.Armatures)
+                    latestArmatureByKey[armature.ArmorKey] = armature;
+
+                foreach (var owner in parsed.MeshOwners)
+                    latestMeshOwnerByKey[owner.RecordKey] = owner;
 
                 foreach (var cobj in parsed.Cobjs)
                     latestCobjByKey[(string)cobj.Values[0]] = cobj;
@@ -679,8 +704,23 @@ namespace SkyrimCraftingTool.Model
             DeleteChildRowsForKeys(connection, transaction, "NpcPerks", "NpcKey", npcPerkRewriteKeys);
             DeleteChildRowsForKeys(connection, transaction, "NpcItems", "NpcKey", npcItemRewriteKeys);
 
+            // Mesh child sets. Same rewrite discipline as every other child table: cleared for every
+            // parent this scan saw, then refilled, so a record that stopped naming a mesh stops
+            // having a row for it. The Mesh table itself is NOT cleared - see its schema comment.
+            DeleteChildRowsForKeys(connection, transaction, "ArmorArmature", "ArmorKey", latestArmatureByKey.Keys.ToList());
+            DeleteChildRowsForKeys(connection, transaction, "MeshRef", "RecordKey", latestMeshOwnerByKey.Keys.ToList());
+
 
             ExecuteRowsBatched(insertArmor, insertArmorBatch, ArmorParamNames, allArmor, BatchSize);
+            ExecuteRowsBatched(insertArmorAddon, insertArmorAddonBatch, ArmorAddonParamNames, allArmorAddons, BatchSize);
+            ExecuteRowsBatched(insertArmorArmature, insertArmorArmatureBatch, ArmorArmatureParamNames,
+                latestArmatureByKey.Values.SelectMany(a => a.LinkRows).ToList(), BatchSize);
+
+            // Paths -> Mesh rows -> MeshRef rows. Has to run inside the transaction and after the
+            // DELETE above, and it is the one block here that reads the database back (it needs the
+            // MeshIds it just minted), which is why it is a method rather than another one-liner.
+            var meshStats = WriteMeshIndex(connection, transaction, latestMeshOwnerByKey.Values,
+                                           insertMeshRef, insertMeshRefBatch);
             ExecuteRowsBatched(insertWeapon, insertWeaponBatch, WeaponParamNames, allWeapon, BatchSize);
             ExecuteRowsBatched(insertWorldItem, insertWorldItemBatch, WorldItemParamNames, allWorldItems, BatchSize);
             ExecuteRowsBatched(insertCOBJ, insertCOBJBatch, CobjParamNames, allCobj, BatchSize);
@@ -727,6 +767,7 @@ namespace SkyrimCraftingTool.Model
             MarkInactiveExcept(connection, transaction, "Armor", "Key", allArmor.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "Weapons", "Key", allWeapon.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "WorldItem", "Key", allWorldItems.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "ArmorAddon", "Key", allArmorAddons.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "COBJ", "Key", latestCobjByKey.Keys, extraWhere: "Original = 1");
             // Original = 1 only: a user-created enchantment exists in no plugin, so a scan must
             // never retire it. Same guard as COBJ above.
@@ -752,6 +793,7 @@ namespace SkyrimCraftingTool.Model
 
             writeSw.Stop();
             Debug.WriteLine($"[ItemDB] Write phase: {writeSw.ElapsedMilliseconds} ms");
+            Debug.WriteLine($"[ItemDB] Mesh index: {meshStats}");
 
             var commitSw = Stopwatch.StartNew();
             transaction.Commit();
@@ -821,6 +863,122 @@ namespace SkyrimCraftingTool.Model
             }
 
             return tempTableName;
+        }
+
+        // What the mesh half of a scan found. Kept as a value so the scan can log it and a test can
+        // assert on it without reading the database back.
+        internal sealed record MeshIndexStats(
+            int DistinctPaths, int Loose, int Archive, int Unresolved, int Refs, long IndexMs)
+        {
+            public override string ToString() =>
+                $"{DistinctPaths:N0} distinct paths from {Refs:N0} refs - " +
+                $"loose {Loose:N0}, archive {Archive:N0}, UNRESOLVED {Unresolved:N0} " +
+                $"(index built in {IndexMs} ms)";
+        }
+
+        // Turns the parsed (record, slot, path) triples into Mesh + MeshRef rows.
+        //
+        // THE DEDUPE IS THE POINT. Measured over 124 plugins: 25.055 references name 4.460 distinct
+        // paths, so the Mesh table is 5,6x smaller than the reference list - and stage 2 will parse
+        // each NIF once instead of once per armor that wears it.
+        //
+        // Order matters and is not interchangeable:
+        //   1. collect the distinct paths, so each is resolved and written exactly once
+        //   2. UPSERT them, which mints a MeshId for a new path and REFRESHES source for a known one
+        //   3. read the ids back, because a path already present kept the id it had - that stability
+        //      is the whole reason stage 2 can cache geometry against a MeshId
+        //   4. write the references
+        //
+        // A failure here must not cost the scan. The mesh index is an extra; armor, weapons, recipes
+        // and NPCs are the tool's job, and an unreadable BSA or a vanished mod folder is not a reason
+        // to lose them. So the locator is built defensively and this returns zeroed stats rather than
+        // throwing.
+        private static MeshIndexStats WriteMeshIndex(
+            SqliteConnection connection, SqliteTransaction transaction,
+            IEnumerable<ParsedMeshOwner> owners,
+            SqliteCommand insertMeshRef, SqliteCommand insertMeshRefBatch)
+        {
+            var ownerList = owners.ToList();
+            int refCount = ownerList.Sum(o => o.Refs.Count);
+
+            var distinctPaths = ownerList
+                .SelectMany(o => o.Refs.Select(r => r.PathNorm))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (distinctPaths.Count == 0)
+                return new MeshIndexStats(0, 0, 0, 0, refCount, 0);
+
+            var indexSw = Stopwatch.StartNew();
+            Services.MeshLocator locator;
+            try
+            {
+                locator = Services.MeshLocator.Build();
+            }
+            catch (Exception ex)
+            {
+                // Every path then resolves to Unresolved, which the report shows as such. That is a
+                // better outcome than no mesh rows at all: the record -> path half is still correct
+                // and useful, only the "where does it live" half is missing.
+                AppLogger.LogError("Mesh index: locator could not be built", ex);
+                locator = Services.MeshLocator.Empty;
+            }
+            indexSw.Stop();
+
+            int loose = 0, archive = 0, unresolved = 0;
+
+            // ON CONFLICT(PathNorm), not the usual PrepareUpsert: that helper takes columnNames[0] as
+            // the conflict target, and here that is MeshId - the surrogate key, which never conflicts.
+            // PathNorm is the real identity of a mesh row.
+            using (var upsertMesh = connection.CreateCommand())
+            {
+                upsertMesh.Transaction = transaction;
+                upsertMesh.CommandText =
+                    "INSERT INTO Mesh (PathNorm, SourceKind, SourceRef) VALUES (@path, @kind, @ref) " +
+                    "ON CONFLICT(PathNorm) DO UPDATE SET SourceKind = excluded.SourceKind, SourceRef = excluded.SourceRef;";
+                var pPath = upsertMesh.Parameters.Add(new SqliteParameter("@path", DBNull.Value));
+                var pKind = upsertMesh.Parameters.Add(new SqliteParameter("@kind", DBNull.Value));
+                var pRef = upsertMesh.Parameters.Add(new SqliteParameter("@ref", DBNull.Value));
+
+                foreach (var path in distinctPaths)
+                {
+                    var source = locator.Resolve(path);
+                    switch (source.Kind)
+                    {
+                        case Services.MeshSourceKind.Loose: loose++; break;
+                        case Services.MeshSourceKind.Archive: archive++; break;
+                        default: unresolved++; break;
+                    }
+
+                    pPath.Value = path;
+                    pKind.Value = (int)source.Kind;
+                    pRef.Value = source.Reference;
+                    upsertMesh.ExecuteNonQuery();
+                }
+            }
+
+            // Read back rather than relying on last_insert_rowid(): a path that was already in the
+            // table kept its original id, and that is exactly the case the conflict clause handles.
+            var idByPath = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+            using (var read = connection.CreateCommand())
+            {
+                read.Transaction = transaction;
+                read.CommandText = "SELECT MeshId, PathNorm FROM Mesh;";
+                using var reader = read.ExecuteReader();
+                while (reader.Read())
+                    idByPath[reader.GetString(1)] = reader.GetInt64(0);
+            }
+
+            var refRows = new List<object[]>(refCount);
+            foreach (var owner in ownerList)
+                foreach (var (slot, pathNorm) in owner.Refs)
+                    if (idByPath.TryGetValue(pathNorm, out var meshId))
+                        refRows.Add(new object[] { owner.RecordKey, slot, meshId });
+
+            ExecuteRowsBatched(insertMeshRef, insertMeshRefBatch, MeshRefParamNames, refRows, BatchSize);
+
+            return new MeshIndexStats(distinctPaths.Count, loose, archive, unresolved,
+                                      refRows.Count, indexSw.ElapsedMilliseconds);
         }
 
         private static void DeleteChildRowsForKeys(SqliteConnection connection, SqliteTransaction transaction, string table, string parentKeyColumn, IReadOnlyList<string> keys)
@@ -912,6 +1070,33 @@ namespace SkyrimCraftingTool.Model
             public List<object[]> LeveledSpellCatalogueRows = new();
             public List<object[]> PerkCatalogueRows = new();
 
+            // Mesh index (render stage 1). ARMA is scanned as a record in its own right because it,
+            // not ARMO, is what carries a model path.
+            public List<object[]> ArmorAddonRows = new();
+            public List<ParsedArmature> Armatures = new();
+            public List<ParsedMeshOwner> MeshOwners = new();
+
+        }
+
+        // An armor's Armature list. A parent/child carrier like ParsedContainer, for the same reason:
+        // an override replaces the whole list, so only the winning plugin's version may contribute
+        // links - otherwise an armor that LOST an addon keeps it forever.
+        private sealed class ParsedArmature
+        {
+            public string ArmorKey = "";
+            public List<object[]> LinkRows = new();   // { ArmorKey, Ordinal, AddonKey }
+        }
+
+        // Every model path one record names, by slot. Carries the PATH, not a MeshId: ids are handed
+        // out in the write phase, after every plugin's paths have been deduplicated against each
+        // other - there is nothing to number while a single plugin is being parsed.
+        //
+        // Also a parent/child carrier, and the "lost" case is real: an override that drops a female
+        // world model must not leave the earlier plugin's row behind.
+        private sealed class ParsedMeshOwner
+        {
+            public string RecordKey = "";
+            public List<(string Slot, string PathNorm)> Refs = new();
         }
 
         // E3: every FLST in the plugin (not just enchant-referenced ones) and its members. Feeds the
@@ -975,6 +1160,9 @@ namespace SkyrimCraftingTool.Model
             { "@key", "@editorID", "@name", "@weight", "@val", "@dmg", "@speed", "@reach", "@stagger", "@keywords", "@objectEffect", "@enchantAmount" };
         private static readonly string[] WorldItemParamNames =
             { "@key", "@editorID", "@name", "@kind" };
+        private static readonly string[] ArmorAddonParamNames = { "@key", "@editorID" };
+        private static readonly string[] ArmorArmatureParamNames = { "@armorKey", "@ordinal", "@addonKey" };
+        private static readonly string[] MeshRefParamNames = { "@recordKey", "@slot", "@meshId" };
         private static readonly string[] CobjParamNames =
             { "@key", "@name", "@createdItem", "@createdCount", "@workbench", "@ingredients" };
         private static readonly string[] CobjConditionParamNames =
@@ -1061,6 +1249,9 @@ namespace SkyrimCraftingTool.Model
             { "Key", "EditorID", "Name", "Weight", "Value", "Damage", "Speed", "Reach", "Stagger", "Keywords", "ObjectEffectKey", "EnchantAmount" };
         internal static readonly string[] WorldItemColumnNames =
             { "Key", "EditorID", "Name", "Kind" };
+        internal static readonly string[] ArmorAddonColumnNames = { "Key", "EditorID" };
+        private static readonly string[] ArmorArmatureColumnNames = { "ArmorKey", "Ordinal", "AddonKey" };
+        private static readonly string[] MeshRefColumnNames = { "RecordKey", "Slot", "MeshId" };
         internal static readonly string[] CobjColumnNames =
             { "Key", "Name", "CreatedItem", "CreatedObjectCount", "WorkbenchKeyword", "Ingredients" };
         private static readonly string[] CobjConditionColumnNames =
@@ -1200,6 +1391,15 @@ namespace SkyrimCraftingTool.Model
         private static string LinkKey(FormKey formKey) =>
             formKey.IsNull ? "" : KeyFactory.BuildMasterKey(formKey);
 
+        // One model path, normalised, or nothing. An absent slot is silent on purpose: most records
+        // fill some of their slots and not others, so "no path here" is data, not a problem, and a
+        // warning per empty slot would bury the 32 paths that genuinely resolve to nothing.
+        private static void AddMeshRef(ParsedMeshOwner owner, string slot, string? givenPath)
+        {
+            var norm = Services.MeshPath.Normalize(givenPath);
+            if (norm != null) owner.Refs.Add((slot, norm));
+        }
+
         // Pure parsing — no DB access — so this is safe to call concurrently from Parallel.ForEach.
         // Mirrors the original single-threaded loop body exactly, just capturing values into rows
         // instead of writing straight to a shared SqliteCommand's parameters.
@@ -1208,6 +1408,39 @@ namespace SkyrimCraftingTool.Model
             var result = new ParsedPluginData { PluginName = pluginName };
             var mod = SkyrimMod.CreateFromBinaryOverlay(
                 fullPath, SkyrimRelease.SkyrimSE, Services.PluginReadParams.ForScan());
+
+            // ARMOR ADDONS (ARMA) — the record that actually holds a model path.
+            //
+            // Scanned as its own table rather than folded into Armor, because the relation is
+            // many-to-many in BOTH directions: one armor names several addons (702 vanilla armors
+            // do), and one addon is named by several armors. A path column on Armor could represent
+            // neither.
+            //
+            // The four slots are the two Mutagen gendered pairs. A record may fill any subset -
+            // measured on vanilla, all 766 addons carry a world model but only 185 carry a
+            // first-person one, so an absent slot is the normal case and simply writes no row.
+            foreach (var addon in mod.ArmorAddons.Records)
+            {
+                string addonKey = KeyFactory.BuildMasterKey(addon.FormKey);
+
+                result.ArmorAddonRows.Add(new object[]
+                {
+                    addonKey,
+                    addon.EditorID ?? "",
+                });
+
+                // Added even when it ends up EMPTY. That is not a waste: the write phase reduces these
+                // to "last plugin per record", and an override that REMOVED a model has to be able to
+                // win with nothing - skipping an empty one would leave the earlier plugin's row in
+                // place forever, which is the stale-child bug the COBJ/Container blocks below already
+                // document.
+                var owner = new ParsedMeshOwner { RecordKey = addonKey };
+                AddMeshRef(owner, "WorldMale", addon.WorldModel?.Male?.File.GivenPath);
+                AddMeshRef(owner, "WorldFemale", addon.WorldModel?.Female?.File.GivenPath);
+                AddMeshRef(owner, "FirstMale", addon.FirstPersonModel?.Male?.File.GivenPath);
+                AddMeshRef(owner, "FirstFemale", addon.FirstPersonModel?.Female?.File.GivenPath);
+                result.MeshOwners.Add(owner);
+            }
 
             // ARMOR
             foreach (var armor in mod.Armors.Records)
@@ -1258,6 +1491,26 @@ namespace SkyrimCraftingTool.Model
                     // enchantment link. Absent on every unenchanted record, which reads as 0.
                     (int)(armor.EnchantmentAmount ?? 0)
                 });
+
+                // The armature links, in order. Ordinal is the list position and nothing else - it
+                // carries no meaning beyond keeping two links to the same addon apart. Added even
+                // when empty, for the same reason as the mesh owners (see the ARMA block above).
+                var armature = new ParsedArmature { ArmorKey = key };
+                for (int i = 0; i < (armor.Armature?.Count ?? 0); i++)
+                {
+                    var linked = LinkKey(armor.Armature![i].FormKey);
+                    if (linked.Length == 0) continue;
+                    armature.LinkRows.Add(new object[] { key, i, linked });
+                }
+                result.Armatures.Add(armature);
+
+                // ARMO's own MOD2 — the ground model, what the item looks like lying in a chest. Not
+                // the worn mesh and not a substitute for one: 2.612 of 2.762 vanilla armors have it,
+                // and it is the only mesh an armor carries directly.
+                var groundOwner = new ParsedMeshOwner { RecordKey = key };
+                AddMeshRef(groundOwner, "GroundMale", armor.WorldModel?.Male?.Model?.File.GivenPath);
+                AddMeshRef(groundOwner, "GroundFemale", armor.WorldModel?.Female?.Model?.File.GivenPath);
+                result.MeshOwners.Add(groundOwner);
             }
 
             // WEAPONS
@@ -1289,6 +1542,13 @@ namespace SkyrimCraftingTool.Model
                     // See the armor block above.
                     (int)(weap.EnchantmentAmount ?? 0)
                 });
+
+                // The easy case: WEAP carries its own MODL, no addon hop. 2.466 of 2.484 vanilla
+                // weapons have one. Scope is the crossbow sight, a second mesh on the same record.
+                var weapOwner = new ParsedMeshOwner { RecordKey = key };
+                AddMeshRef(weapOwner, "Model", weap.Model?.File.GivenPath);
+                AddMeshRef(weapOwner, "Scope", weap.ScopeModel?.File.GivenPath);
+                result.MeshOwners.Add(weapOwner);
             }
 
             // PLACEABLE RECORDS: books, scrolls, misc, soul gems, ammo, food, ingredients, keys.

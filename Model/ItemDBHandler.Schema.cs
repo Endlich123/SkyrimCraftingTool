@@ -141,6 +141,20 @@ namespace SkyrimCraftingTool.Model
             // must not offer to remove something it did not add.
             AddColumnIfMissing(connection, "NpcGroupPredicate", "Origin", "TEXT NOT NULL DEFAULT ''");
 
+            // Added after MeshGeom shipped. A database whose cache predates it reads every shape as "not
+            // moved by a parent", which is the right default: those rows were written by a parser that
+            // did not compose the node tree, so none of them WAS moved by one.
+            AddColumnIfMissing(connection, "MeshGeom", "MovedByParent", "INTEGER NOT NULL DEFAULT 0");
+            AddColumnIfMissing(connection, "MeshGeom", "DiffuseTexture", "TEXT");
+            AddColumnIfMissing(connection, "MeshGeom", "NormalTexture", "TEXT");
+            AddColumnIfMissing(connection, "MeshGeom", "EnvironmentMask", "TEXT");
+
+            // The tangent frame, for per-pixel normal mapping. NULL on a row written before it existed.
+            AddColumnIfMissing(connection, "MeshGeom", "Tangents", "BLOB");
+            AddColumnIfMissing(connection, "MeshGeom", "Bitangents", "BLOB");
+
+            DiscardGeometryFromOlderParser(connection);
+
             RepairBlankWornRestrictionEdits(connection);
 
             // After the repairs above: those run plain UPDATE/DELETE on the existing tables, and
@@ -1573,9 +1587,233 @@ namespace SkyrimCraftingTool.Model
                     TargetType TEXT,
                     Active INTEGER NOT NULL DEFAULT 1
                 );
+
+                -- ===================================================================
+                -- Mesh index (render stage 1) — docs/Render-Plan.md
+                -- ===================================================================
+                --
+                -- WHAT THIS IS AND IS NOT: an index of which model file each record names, and where
+                -- that file actually lies. It holds no geometry. Parsing a NIF is stage 2, and the
+                -- split is deliberate - the index is verifiable on its own (""4.460 paths, 32 resolve
+                -- to nothing""), months before anything can draw a triangle.
+                --
+                -- ARMO HAS NO MODEL PATH. That is the whole reason two tables stand between an armor
+                -- and its mesh: ARMO points at a list of ARMA (its Armature), and only ARMA carries
+                -- WorldModel/FirstPersonModel. Measured on vanilla: 2.762 ARMO hold 4.298 armature
+                -- links into 766 ARMA, and 702 of those armors name more than one. Weapons are the
+                -- easy case - WEAP carries its own MODL - and they go through the same MeshRef table
+                -- rather than a second one, because ""which file does this record name"" is one
+                -- question whoever asks it.
+                CREATE TABLE IF NOT EXISTS ArmorAddon (
+                    Key TEXT PRIMARY KEY COLLATE NOCASE,
+                    EditorID TEXT,
+                    Active INTEGER NOT NULL DEFAULT 1
+                );
+
+                -- ARMO -> ARMA, positionally keyed. Ordinal rather than (ArmorKey, AddonKey): the
+                -- list is ordered and an armor may legitimately name the same addon twice, so a
+                -- composite key on the pair would drop the second one with a UNIQUE failure.
+                CREATE TABLE IF NOT EXISTS ArmorArmature (
+                    ArmorKey TEXT NOT NULL COLLATE NOCASE,
+                    Ordinal INTEGER NOT NULL,
+                    AddonKey TEXT NOT NULL COLLATE NOCASE,
+                    PRIMARY KEY (ArmorKey, Ordinal)
+                );
+
+                -- Reached from the addon side too: ""which armors use this mesh"" is how a geometry
+                -- cache decides what is worth keeping.
+                CREATE INDEX IF NOT EXISTS idx_ArmorArmature_AddonKey ON ArmorArmature(AddonKey);
+
+                -- One row per DISTINCT model path. This dedupe is the point of the table, not a
+                -- nicety: measured over 124 plugins, 25.055 record->path references collapse onto
+                -- 4.460 distinct paths, so parsing per reference would do the same work 5,6 times.
+                --
+                -- PathNorm is lowercase, backslashes, 'meshes\' prefixed exactly once - see
+                -- Services/MeshPath, which is the ONLY place that spelling is produced. COLLATE
+                -- NOCASE on top of the lowercasing is not redundant: it is what keeps a row written
+                -- by an older build from becoming a second row now.
+                --
+                -- ROWS ARE NEVER DELETED, and there is no Active column. MeshId is a stable handle
+                -- that stage 2's geometry cache will hang off, so a path dropping out of the load
+                -- order must not renumber anything - and the cached geometry for a mesh is still
+                -- correct when the mod comes back. SourceKind/SourceRef are the part a rescan
+                -- refreshes; they are what goes stale, not the identity.
+                CREATE TABLE IF NOT EXISTS Mesh (
+                    MeshId INTEGER PRIMARY KEY,
+                    PathNorm TEXT NOT NULL UNIQUE COLLATE NOCASE,
+
+                    -- Services.MeshSourceKind: 0 unresolved, 1 loose file, 2 archive.
+                    SourceKind INTEGER NOT NULL DEFAULT 0,
+
+                    -- The mod folder name for a loose file, the .bsa file name for an archive.
+                    SourceRef TEXT,
+
+                    -- Stage 2's own bookkeeping, written by nothing yet: 0 unparsed, 1 parsed, 2
+                    -- parse failed. Here now so the index does not need a migration the day the
+                    -- parser lands.
+                    GeomState INTEGER NOT NULL DEFAULT 0
+                );
+
+                -- Record -> mesh, one row per model SLOT. The slot is what separates the four paths
+                -- an ARMA can carry (male/female x world/first-person) and the two a weapon can
+                -- (MODL, scope), so the same record can name several meshes without the rows
+                -- colliding.
+                CREATE TABLE IF NOT EXISTS MeshRef (
+                    RecordKey TEXT NOT NULL COLLATE NOCASE,
+                    Slot TEXT NOT NULL,
+                    MeshId INTEGER NOT NULL,
+                    PRIMARY KEY (RecordKey, Slot)
+                );
+
+                -- ""Who references this mesh"" - needed to report a dead path against the records that
+                -- name it, rather than as a bare file name nobody recognises.
+                CREATE INDEX IF NOT EXISTS idx_MeshRef_MeshId ON MeshRef(MeshId);
+
+                -- Parsed geometry, one row per SHAPE. A NIF is not one mesh: measured over the load
+                -- order, 4.427 files hold 11.393 shapes, so a per-file row would have to concatenate
+                -- them and lose the names.
+                --
+                -- WHY THIS IS FILLED LAZILY AND NOT BY THE SCAN: the whole load order comes to roughly
+                -- 17,7 million vertices and 27 million triangles - about 890 MB of BLOB if every mesh
+                -- were cached. Parsing on first view instead costs 0,83 ms per mesh and stores only
+                -- what someone actually looked at, while keeping the same ""only once"" property,
+                -- because Mesh.MeshId is stable across scans.
+                --
+                -- The arrays are raw little-endian float32/int32, written and read by
+                -- Services/MeshGeometryStore and by nothing else. Normals and UVs are nullable
+                -- because a real mesh may carry neither: 720 shapes have no normals and 200 no UVs.
+                CREATE TABLE IF NOT EXISTS MeshGeom (
+                    MeshId    INTEGER NOT NULL,
+                    ShapeIdx  INTEGER NOT NULL,
+                    Name      TEXT,
+                    VertCount INTEGER NOT NULL,
+                    TriCount  INTEGER NOT NULL,
+
+                    -- 3 float32 per vertex.
+                    Positions BLOB NOT NULL,
+
+                    -- 3 float32 per vertex, or NULL.
+                    Normals   BLOB,
+
+                    -- 2 float32 per vertex, or NULL.
+                    Uvs       BLOB,
+
+                    -- 3 int32 per triangle. int32 rather than the uint16 a NIF stores, because a
+                    -- consolidated skin partition can exceed 65.535 vertices in one shape.
+                    Indices   BLOB NOT NULL,
+
+                    -- Was this shape placed by a PARENT node rather than by its own transform?
+                    --
+                    -- Stored rather than recomputed because it is a diagnostic, and a diagnostic that
+                    -- only survives until the first cache hit is worse than none: the preview would warn
+                    -- once and then go quiet forever about the same mesh. Measured: 390 of 11.393 shapes
+                    -- are in this state, 66 of them moved by more than a unit and one by 90,8.
+                    MovedByParent INTEGER NOT NULL DEFAULT 0,
+
+                    -- The normal map, kept for its ALPHA channel - that is where Skyrim stores the
+                    -- specular mask. Present for 97,3 % of shapes, against 57,0 % for a separate _m.dds.
+                    NormalTexture TEXT,
+
+                    -- Slot 5, the _m.dds. A second answer to ""where should this shine"": the normal
+                    -- map's alpha is the direct specular mask, this one says where the material
+                    -- reflects its surroundings. Neither alone covers both metal and latex.
+                    EnvironmentMask TEXT,
+
+                    -- The diffuse texture this shape names, normalised. Stored rather than re-derived
+                    -- because it comes out of the same parse and nothing else knows it: a shape has no
+                    -- other route back to its NIF once the geometry is cached.
+                    DiffuseTexture TEXT,
+
+                    -- The tangent frame, 3 float32 per vertex each, or NULL when the shape carries
+                    -- none - which 27 % of them do not, their vertex descriptor having the TANGENTS
+                    -- bit clear. Needed to apply a normal map: it is the frame the map's directions
+                    -- are expressed in.
+                    Tangents   BLOB,
+                    Bitangents BLOB,
+
+                    PRIMARY KEY (MeshId, ShapeIdx)
+                );
+
+                -- Which build of the NIF reader produced the rows in MeshGeom. One row, one number.
+                --
+                -- MeshGeom is a cache of a PARSE, so a fix to the parser makes its contents wrong rather
+                -- than merely old, and nothing in the data says so: the SSE normals were decoded as
+                -- signed bytes for two stages and came out about 0,97 long, which reads as rounding
+                -- noise. Without this counter the fix would only reach a user who happens to rescan.
+                CREATE TABLE IF NOT EXISTS MeshParser (
+                    OnlyRow INTEGER PRIMARY KEY CHECK (OnlyRow = 0),
+                    Version INTEGER NOT NULL
+                );
             ";
             cmd.ExecuteNonQuery();
 
+        }
+
+        // Bump this whenever a change to NifReader alters the numbers it produces for a mesh it already
+        // read. Cached geometry from an older build is then thrown away and re-parsed on next use.
+        //
+        // 2: SSE normals and the tangent frame are decoded as UNSIGNED bytes spanning -1..1. Version 1
+        //    read them as signed over 127, which flipped the sign of every component above 127 while
+        //    leaving the vector about the right length - wrong shading on every SSE mesh in the load
+        //    order, and invisible to a length check.
+        private const int MeshParserVersion = 2;
+
+        // Throws away geometry a previous build of the parser wrote. Costs one parse per mesh the user
+        // actually opens afterwards (0,83 ms), and nothing for the meshes they never look at.
+        private static void DiscardGeometryFromOlderParser(SqliteConnection connection)
+        {
+            // This runs in the migration pass, which is handed databases in every state the tool has
+            // ever written - including ones that predate MeshGeom entirely. The sibling calls here are
+            // all AddColumnIfMissing, which shrugs at a missing table; this has to do the same rather
+            // than throw and take the whole startup with it.
+            using (var ensure = connection.CreateCommand())
+            {
+                ensure.CommandText =
+                    "CREATE TABLE IF NOT EXISTS MeshParser (" +
+                    "  OnlyRow INTEGER PRIMARY KEY CHECK (OnlyRow = 0)," +
+                    "  Version INTEGER NOT NULL);";
+                ensure.ExecuteNonQuery();
+            }
+
+            using (var exists = connection.CreateCommand())
+            {
+                exists.CommandText = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'MeshGeom';";
+                if (exists.ExecuteScalar() is null) return;
+            }
+
+            int stored;
+            using (var read = connection.CreateCommand())
+            {
+                read.CommandText = "SELECT Version FROM MeshParser WHERE OnlyRow = 0;";
+                var value = read.ExecuteScalar();
+
+                // No row at all means either a brand-new database - where MeshGeom is empty and there is
+                // nothing to discard - or one written before this counter existed, which is version 1.
+                if (value is null or DBNull)
+                {
+                    using var count = connection.CreateCommand();
+                    count.CommandText = "SELECT EXISTS(SELECT 1 FROM MeshGeom);";
+                    stored = Convert.ToInt32(count.ExecuteScalar()) == 0 ? MeshParserVersion : 1;
+                }
+                else
+                {
+                    stored = Convert.ToInt32(value);
+                }
+            }
+
+            if (stored < MeshParserVersion)
+            {
+                using var clear = connection.CreateCommand();
+                clear.CommandText = "DELETE FROM MeshGeom; UPDATE Mesh SET GeomState = 0;";
+                clear.ExecuteNonQuery();
+            }
+
+            using var write = connection.CreateCommand();
+            write.CommandText =
+                "INSERT INTO MeshParser (OnlyRow, Version) VALUES (0, @v) " +
+                "ON CONFLICT(OnlyRow) DO UPDATE SET Version = excluded.Version;";
+            write.Parameters.AddWithValue("@v", MeshParserVersion);
+            write.ExecuteNonQuery();
         }
 
         // Single-row UPSERT for the 6 "parent" tables — same semantics as PrepareUpsertBatch, used
