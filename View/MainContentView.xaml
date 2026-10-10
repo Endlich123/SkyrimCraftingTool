@@ -231,6 +231,11 @@
                                             Command="{Binding ApplyPresetCommand}"
                                             Style="{StaticResource StandardButtonStyle}"/>
 
+                                            <Button Content="Preview"
+                                                Command="{Binding PreviewMeshCommand}"
+                                                Style="{StaticResource StandardButtonStyle}"
+                                                ToolTip="Show this item's model. Shape only — no textures."/>
+
                                             <Button Content="Export"
                                                 Command="{Binding ExportItemCommand}"
                                                 Style="{StaticResource ActionButtonStyle}"/>
