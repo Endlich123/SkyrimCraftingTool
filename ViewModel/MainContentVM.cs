@@ -1027,10 +1027,38 @@ namespace SkyrimCraftingTool.ViewModel
             sb.AppendLine($"{Leader("Total", 0)} {r.After.Total:n0}");
             sb.AppendLine();
 
+            AppendMeshIndex(sb, r.After.MeshIndex);
+
             // Without this the two blocks invite a comparison they do not support: only the first
             // one remembers anything between scans.
             sb.AppendLine("Records keep entries that left your load order (your edits to them survive);");
             sb.AppendLine("references are rebuilt from scratch on every scan.");
+        }
+
+        // The mesh index, deliberately NOT another count block. It is kept out of the Total above for
+        // the same reason: a mesh is not a record, and adding 4.460 files to a record total would
+        // make the one number people quote at each other wrong.
+        //
+        // The line that matters is the last one. Everything else in this report says what exists; this
+        // says whether it can be FOUND, which is the only question a renderer will care about and the
+        // only one that catches a mod shipping records for meshes it forgot to pack.
+        private static void AppendMeshIndex(System.Text.StringBuilder sb, Services.MeshIndexSummary? mesh)
+        {
+            if (mesh is null || mesh.IsEmpty) return;
+
+            sb.AppendLine("Model files named by those records");
+            sb.AppendLine($"{Leader("loose files", 2)} {mesh.Loose:n0}");
+            sb.AppendLine($"{Leader("in archives", 2)} {mesh.Archive:n0}");
+            sb.AppendLine($"{Leader("distinct meshes", 2)} {mesh.Total:n0}");
+
+            if (mesh.Unresolved > 0)
+            {
+                sb.AppendLine($"{Leader("NOT FOUND", 2)} {mesh.Unresolved:n0}  ({mesh.UnresolvedShare:F1} %)");
+                sb.AppendLine("   A record names a mesh no mod and no archive carries. Usually a mod that");
+                sb.AppendLine("   ships records without its meshes, or a typo in the record itself.");
+            }
+
+            sb.AppendLine();
         }
 
         private static void AppendGroup(

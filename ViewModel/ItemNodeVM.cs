@@ -347,6 +347,36 @@ namespace SkyrimCraftingTool.ViewModel
             Main.RegisterNewRecipe(rec);
         }
 
+        // Show what this item actually looks like.
+        //
+        // The mesh is found through the index rather than stored on the item, because an armor does not
+        // name one: it names addons, and several of them is normal (the four race variants of a steel
+        // helmet are four meshes, all equally correct). MeshLookup picks the first that resolves to a
+        // file - see its comment for why that is the honest answer rather than a guess.
+        //
+        // No mesh is not an error worth a dialog: a load order scanned before the index existed has
+        // none, and an item may name a mesh no mod ships (32 of 4.460 measured paths do). It says so and
+        // stops.
+        public ICommand PreviewMeshCommand => new RelayCommand(() =>
+        {
+            var dbPath = System.IO.Path.Combine(GlobalState.Tool.InputFolder, "Item", "item.db");
+            var variants = Services.MeshLookup.AllForRecord(dbPath, Key, IsArmor);
+            var hit = variants.FirstOrDefault();
+
+            if (hit == null)
+            {
+                System.Windows.MessageBox.Show(
+                    "No mesh is recorded for this item.\n\n" +
+                    "Either the load order has not been scanned since the mesh index was added, or the " +
+                    "record names a model file no active mod carries.",
+                    "Mesh preview", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            var label = Name?.Length > 0 ? Name : EditorID;
+            View.MeshPreviewWindow.Show(System.Windows.Application.Current?.MainWindow, variants, label);
+        });
+
         // Export/Import for just this item: its own Armor/Weapon field edits plus its Crafting/Temper
         // recipe (if present), bundled into one file under Output/Exports/<Plugin>/<Item>.json — see
         // ExportFileStore for the path convention. No file dialogs; Import reads back the exact file
