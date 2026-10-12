@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:SkyrimCraftingTool.ViewModel"
              xmlns:views="clr-namespace:SkyrimCraftingTool.View"
+             xmlns:model="clr-namespace:SkyrimCraftingTool.Model"
              Background="{DynamicResource ColorBackgroundBase}">
 
     <UserControl.Resources>
@@ -135,6 +136,15 @@
                                FontSize="10"
                                VerticalAlignment="Center"
                                Margin="5,0,0,0"/>
+
+                    <!-- The user's own list (docs/LeveledList-Create-Plan.md, L-P2): the one kind of
+                         row here no plugin defines, and the one that can be renamed and deleted. -->
+                    <TextBlock Text="yours"
+                               Visibility="{Binding IsOwn, Converter={StaticResource BoolToVis}}"
+                               Foreground="{DynamicResource ColorAccentLight}"
+                               FontSize="10" FontWeight="Bold"
+                               VerticalAlignment="Center"
+                               Margin="6,0,0,0"/>
                 </StackPanel>
             </Border>
             <DataTemplate.Triggers>
@@ -181,6 +191,17 @@
 
                 <!-- LEFT: the tree of owners -->
                 <DockPanel Grid.Column="0">
+                    <!-- Leveled lists only - see OwnerContentsVM.CanCreateList. Above the search,
+                         because it is the one action in this pane that is not about a row. -->
+                    <Button DockPanel.Dock="Top"
+                            Content="+ New leveled list"
+                            Command="{Binding CreateListCommand}"
+                            Visibility="{Binding CanCreateList, Converter={StaticResource BoolToVis}}"
+                            Style="{StaticResource ActionButtonGreenStyle}"
+                            HorizontalAlignment="Left"
+                            Margin="0,0,0,8"
+                            ToolTip="Creates an empty leveled list of your own. The generated ESP brings it into the game. Hang it into a container, and items go into it from an item's Container tab under that container."/>
+
                     <TextBox DockPanel.Dock="Top"
                              Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}"
                              Style="{StaticResource ItemTextBoxStyle}"
@@ -205,7 +226,7 @@
                 </DockPanel>
 
                 <!-- RIGHT: what is inside the selected one -->
-                <DockPanel Grid.Column="2">
+                <DockPanel Grid.Column="2" x:Name="ContentsPane">
 
                     <TextBlock DockPanel.Dock="Top"
                                Text="{Binding ContentsHeader}"
@@ -232,62 +253,254 @@
                                    Margin="8,0,0,0"/>
                     </StackPanel>
 
-                    <!-- The standing reminder, and it appears only once there is something to remind
-                         about. Everything else this tool writes only ever adds; these rules delete
-                         entries other mods put there. -->
-                    <Border DockPanel.Dock="Top"
-                            Visibility="{Binding HasRemovals, Converter={StaticResource BoolToVis}}"
-                            Background="{DynamicResource ColorBackgroundControl}"
-                            BorderBrush="#D8B84A" BorderThickness="1"
-                            Padding="8,5" Margin="0,0,0,8">
+                    <!-- THE BLOCKS ABOVE THE CONTENTS, scrolling together and capped at 60 % of the pane.
+                         A DockPanel hands a top-docked block whatever it asks for and cuts off what does
+                         not fit - with the own list's panel on top, a smaller window made the odds below
+                         unreachable (user, 2026-10-12). The contents list keeps at least the rest, and
+                         with it its virtualisation, which a ScrollViewer around the whole pane would cost. -->
+                    <ScrollViewer DockPanel.Dock="Top"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  MaxHeight="{Binding ActualHeight, ElementName=ContentsPane, Converter={StaticResource ScaleConverter}, ConverterParameter=0.6}">
                         <StackPanel>
-                            <TextBlock Text="{Binding RemovalCountText}"
-                                       Foreground="#D8B84A" TextWrapping="Wrap"/>
-                            <TextBlock Text="Removing takes the object out for EVERY mod that feeds this, not just for your own additions. Everything else the patch writes only adds."
-                                       Foreground="{DynamicResource ColorTextTertiary}"
-                                       FontSize="10" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                            <!-- ONE OF THE USER'S OWN LISTS (docs/LeveledList-Create-Plan.md, L-P2 / L-P6): its
+                                 name, deleting it, and where it hangs. NOT what is in it - that arrives from an
+                                 item's Container tab like it does for every list, and the rows below show it.
+
+                                 Visibility on the Border against the pane - the same reason the list-properties
+                                 expander below spells out. -->
+                            <Border
+                                    Visibility="{Binding HasOwnListEditor, Converter={StaticResource BoolToVis}}"
+                                    Background="{DynamicResource ColorBackgroundControl}"
+                                    BorderBrush="{DynamicResource ColorAccentLight}" BorderThickness="1"
+                                    Padding="8,6" Margin="0,0,0,8">
+                                <!-- A ContentPresenter, not a DataContext on the panel: with the DataContext
+                                     switched on an element, the bindings inside first resolve against the
+                                     inherited pane (OwnerContentsVM) while the template is built, and every
+                                     one of them logs a binding failure. With no editor there is no content,
+                                     and the template is never built at all. -->
+                                <ContentPresenter Content="{Binding OwnListEditor}">
+                                    <ContentPresenter.ContentTemplate>
+                                        <DataTemplate>
+                                            <StackPanel>
+                                                <DockPanel Margin="0,0,0,6">
+                                                    <Button DockPanel.Dock="Right"
+                                                            Content="Delete list"
+                                                            Command="{Binding DeleteCommand}"
+                                                            Style="{StaticResource StandardButtonStyle}"
+                                                            ToolTip="Deletes this list for good. Items placed into it lose that placement."/>
+                                                    <TextBlock Text="Your leveled list"
+                                                               FontWeight="Bold"
+                                                               Foreground="{DynamicResource ColorAccentLight}"
+                                                               VerticalAlignment="Center"/>
+                                                </DockPanel>
+
+                                                <Grid Margin="0,0,0,8">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="Editor ID:" Style="{StaticResource ItemLabelStyle}"/>
+                                                    <TextBox Grid.Column="1"
+                                                             Text="{Binding EditorId, UpdateSourceTrigger=LostFocus}"
+                                                             Style="{StaticResource ItemTextBoxStyle}"
+                                                             ToolTip="What the tree, xEdit and every rule comment call this list. Saved when you leave the box."/>
+                                                </Grid>
+
+                                                <TextBlock Text="Where this list goes" FontWeight="Bold"
+                                                           Foreground="{DynamicResource ColorTextPrimary}"/>
+                                                <TextBlock Text="{Binding TargetsNote}"
+                                                           Foreground="{DynamicResource ColorTextTertiary}"
+                                                           FontSize="10" TextWrapping="Wrap" Margin="0,2,0,6"/>
+
+                                                <!-- MARGINS SET HERE, on every element of both rows. The shared text box and
+                                                     combo box styles bring a 5 px bottom margin, a button does not -
+                                                     so in one row the boxes rode high and the button low. -->
+                                                <ItemsControl ItemsSource="{Binding Targets}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Grid Margin="0,0,0,4">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                </Grid.ColumnDefinitions>
+
+                                                                <TextBlock Text="{Binding Name}" ToolTip="{Binding TargetKey}"
+                                                                           Foreground="{DynamicResource ColorTextPrimary}"
+                                                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                                <TextBlock Grid.Column="1" Text="{Binding KindText}"
+                                                                           Foreground="{DynamicResource ColorTextTertiary}"
+                                                                           FontSize="10" VerticalAlignment="Center" Margin="6,0,8,0"/>
+
+                                                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"
+                                                                            Visibility="{Binding IsList, Converter={StaticResource BoolToVis}}">
+                                                                    <TextBlock Text="from level" VerticalAlignment="Center"
+                                                                               Foreground="{DynamicResource ColorTextSecondary}" Margin="0,0,4,0"/>
+                                                                    <TextBox Text="{Binding Level, UpdateSourceTrigger=LostFocus}"
+                                                                             Width="44" Margin="0" VerticalAlignment="Center"
+                                                                             model:NumericTextBoxBehavior.Mode="Integer"
+                                                                             model:NumericTextBoxBehavior.Min="1"
+                                                                             Style="{StaticResource ItemTextBoxStyle}"/>
+                                                                </StackPanel>
+
+                                                                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
+                                                                    <TextBlock Text="x" VerticalAlignment="Center"
+                                                                               Foreground="{DynamicResource ColorTextSecondary}" Margin="0,0,4,0"/>
+                                                                    <TextBox Text="{Binding Count, UpdateSourceTrigger=LostFocus}"
+                                                                             Width="36" Margin="0" VerticalAlignment="Center"
+                                                                             model:NumericTextBoxBehavior.Mode="Integer"
+                                                                             model:NumericTextBoxBehavior.Min="1"
+                                                                             Style="{StaticResource ItemTextBoxStyle}"/>
+                                                                </StackPanel>
+
+                                                                <Button Grid.Column="4" Content="Remove"
+                                                                        Command="{Binding RemoveCommand}"
+                                                                        Style="{StaticResource StandardButtonStyle}"
+                                                                        VerticalAlignment="Center"
+                                                                        Margin="8,0,0,0"/>
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+
+                                                <!-- The add box. Into a list is first and checked: it is the quiet way, and
+                                                     the one vanilla uses everywhere. -->
+                                                <StackPanel Orientation="Horizontal" Margin="0,6,0,4">
+                                                    <RadioButton Content="into a leveled list"
+                                                                 IsChecked="{Binding AddIntoList, Mode=TwoWay}"
+                                                                 Foreground="{DynamicResource ColorTextPrimary}"
+                                                                 Margin="0,0,12,0"/>
+                                                    <RadioButton Content="into a container"
+                                                                 IsChecked="{Binding AddIntoContainer, Mode=TwoWay}"
+                                                                 Foreground="{DynamicResource ColorTextPrimary}"/>
+                                                </StackPanel>
+
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <!-- ONE BOX, typed into to filter - the enchantment picker's shape.
+                                                         IsTextSearchEnabled off, because the Text here is the SEARCH
+                                                         string and WPF's own type-ahead would fight it. -->
+                                                    <ComboBox ItemsSource="{Binding Candidates}"
+                                                              SelectedItem="{Binding SelectedCandidate, Mode=TwoWay}"
+                                                              Text="{Binding CandidateSearch, UpdateSourceTrigger=PropertyChanged}"
+                                                              IsEditable="True"
+                                                              IsTextSearchEnabled="False"
+                                                              IsSynchronizedWithCurrentItem="False"
+                                                              StaysOpenOnEdit="True"
+                                                              TextSearch.TextPath="Name"
+                                                              DisplayMemberPath="Name"
+                                                              Style="{StaticResource ItemComboBoxStyle}"
+                                                              Margin="0" VerticalAlignment="Center"
+                                                              ToolTip="Type to filter by name or FormID, then pick."/>
+
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0"
+                                                                Visibility="{Binding AddIntoList, Converter={StaticResource BoolToVis}}">
+                                                        <TextBlock Text="from level" VerticalAlignment="Center"
+                                                                   Foreground="{DynamicResource ColorTextSecondary}" Margin="0,0,4,0"/>
+                                                        <TextBox Text="{Binding NewLevel, UpdateSourceTrigger=LostFocus}"
+                                                                 Width="44" Margin="0" VerticalAlignment="Center"
+                                                                 model:NumericTextBoxBehavior.Mode="Integer"
+                                                                 model:NumericTextBoxBehavior.Min="1"
+                                                                 Style="{StaticResource ItemTextBoxStyle}"/>
+                                                    </StackPanel>
+
+                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
+                                                        <TextBlock Text="x" VerticalAlignment="Center"
+                                                                   Foreground="{DynamicResource ColorTextSecondary}" Margin="0,0,4,0"/>
+                                                        <TextBox Text="{Binding NewCount, UpdateSourceTrigger=LostFocus}"
+                                                                 Width="36" Margin="0" VerticalAlignment="Center"
+                                                                 model:NumericTextBoxBehavior.Mode="Integer"
+                                                                 model:NumericTextBoxBehavior.Min="1"
+                                                                 Style="{StaticResource ItemTextBoxStyle}"/>
+                                                    </StackPanel>
+
+                                                    <Button Grid.Column="3" Content="Add"
+                                                            Command="{Binding AddTargetCommand}"
+                                                            IsEnabled="{Binding CanAdd}"
+                                                            Style="{StaticResource StandardButtonStyle}"
+                                                            VerticalAlignment="Center"
+                                                            Margin="8,0,0,0"/>
+                                                </Grid>
+
+                                                <TextBlock Text="{Binding AddNote}"
+                                                           Foreground="{DynamicResource ColorTextTertiary}"
+                                                           FontSize="10" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                                <TextBlock Text="{Binding Status}"
+                                                           Foreground="{DynamicResource ColorWarning}"
+                                                           FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ContentPresenter.ContentTemplate>
+                                </ContentPresenter>
+                            </Border>
+
+                            <!-- The standing reminder, and it appears only once there is something to remind
+                                 about. Everything else this tool writes only ever adds; these rules delete
+                                 entries other mods put there. -->
+                            <Border
+                                    Visibility="{Binding HasRemovals, Converter={StaticResource BoolToVis}}"
+                                    Background="{DynamicResource ColorBackgroundControl}"
+                                    BorderBrush="#D8B84A" BorderThickness="1"
+                                    Padding="8,5" Margin="0,0,0,8">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding RemovalCountText}"
+                                               Foreground="#D8B84A" TextWrapping="Wrap"/>
+                                    <TextBlock Text="Removing takes the object out for EVERY mod that feeds this, not just for your own additions. Everything else the patch writes only adds."
+                                               Foreground="{DynamicResource ColorTextTertiary}"
+                                               FontSize="10" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- WHAT THIS LIST DOES, for the lists that have properties at all. The very
+                                 panel the leveled-list window shows - chance of nothing, how the list
+                                 calculates, and what the odds come to for one object in it. It existed; it
+                                 was simply unreachable for anyone reading a list from here rather than from
+                                 an item. See Styles/LeveledListPropertiesPanel.xaml. -->
+                            <!-- THE VISIBILITY SITS ON THE BORDER, NOT ON THE PRESENTER. A ContentPresenter
+                                 makes its Content its own DataContext - that is how it binds the template -
+                                 so a Visibility bound on it asks the CONTENT for HasListEditor, not the
+                                 pane. With no list there is no content, the binding resolves against null,
+                                 and WPF falls back to the default: Visible. Which is how a container ended
+                                 up showing an empty "This list" and "Chance calculator".
+
+                                 The two neighbouring presenters get away with Content="{Binding}" - their
+                                 content IS the view model, so the question happens to reach the right
+                                 object. This one does not, and relying on that coincidence is the bug. -->
+                            <!-- COLLAPSED BY DEFAULT. Open, this is as tall as the list underneath it, on a
+                                 tab whose whole job is that list - the contents had a row and a half. The
+                                 header carries the three facts worth knowing without opening it, so leaving
+                                 it closed costs nothing. -->
+                            <Expander
+                                      IsExpanded="{Binding IsListEditorExpanded, Mode=TwoWay}"
+                                      Visibility="{Binding HasListEditor, Converter={StaticResource BoolToVis}}"
+                                      Foreground="{DynamicResource ColorTextPrimary}"
+                                      Margin="0,0,0,6">
+                                <Expander.Header>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="This list and its odds"/>
+                                        <TextBlock Text="{Binding ListEditorHeader}"
+                                                   Foreground="{DynamicResource ColorTextTertiary}"
+                                                   FontSize="11"
+                                                   VerticalAlignment="Center"
+                                                   Margin="8,0,0,0"/>
+                                    </StackPanel>
+                                </Expander.Header>
+
+                                <ContentPresenter Content="{Binding ListEditor}"
+                                                  ContentTemplate="{StaticResource LeveledListPropertiesPanel}"
+                                                  Margin="0,6,0,0"/>
+                            </Expander>
                         </StackPanel>
-                    </Border>
-
-                    <!-- WHAT THIS LIST DOES, for the lists that have properties at all. The very
-                         panel the leveled-list window shows - chance of nothing, how the list
-                         calculates, and what the odds come to for one object in it. It existed; it
-                         was simply unreachable for anyone reading a list from here rather than from
-                         an item. See Styles/LeveledListPropertiesPanel.xaml. -->
-                    <!-- THE VISIBILITY SITS ON THE BORDER, NOT ON THE PRESENTER. A ContentPresenter
-                         makes its Content its own DataContext - that is how it binds the template -
-                         so a Visibility bound on it asks the CONTENT for HasListEditor, not the
-                         pane. With no list there is no content, the binding resolves against null,
-                         and WPF falls back to the default: Visible. Which is how a container ended
-                         up showing an empty "This list" and "Chance calculator".
-
-                         The two neighbouring presenters get away with Content="{Binding}" - their
-                         content IS the view model, so the question happens to reach the right
-                         object. This one does not, and relying on that coincidence is the bug. -->
-                    <!-- COLLAPSED BY DEFAULT. Open, this is as tall as the list underneath it, on a
-                         tab whose whole job is that list - the contents had a row and a half. The
-                         header carries the three facts worth knowing without opening it, so leaving
-                         it closed costs nothing. -->
-                    <Expander DockPanel.Dock="Top"
-                              IsExpanded="{Binding IsListEditorExpanded, Mode=TwoWay}"
-                              Visibility="{Binding HasListEditor, Converter={StaticResource BoolToVis}}"
-                              Foreground="{DynamicResource ColorTextPrimary}"
-                              Margin="0,0,0,6">
-                        <Expander.Header>
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="This list and its odds"/>
-                                <TextBlock Text="{Binding ListEditorHeader}"
-                                           Foreground="{DynamicResource ColorTextTertiary}"
-                                           FontSize="11"
-                                           VerticalAlignment="Center"
-                                           Margin="8,0,0,0"/>
-                            </StackPanel>
-                        </Expander.Header>
-
-                        <ContentPresenter Content="{Binding ListEditor}"
-                                          ContentTemplate="{StaticResource LeveledListPropertiesPanel}"
-                                          Margin="0,6,0,0"/>
-                    </Expander>
+                    </ScrollViewer>
 
                     <!-- SectionNote explains the two halves of the list below, which is the one
                          thing a merged view has to say out loud. -->
@@ -385,7 +598,8 @@
         </DataTemplate>
     </UserControl.Resources>
 
-    <Grid Margin="15">
+    <!-- Margin 10: the left edge every tab and the nav bar share. -->
+    <Grid Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>

@@ -60,7 +60,7 @@
                  the action buttons slide down to float between the two rows. They belong beside the
                  FIRST row of tabs, whatever the row does below. -->
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
-                        VerticalAlignment="Top" Margin="0,10,12,0">
+                        VerticalAlignment="Top" Margin="0,10,10,0">
                 <!-- The two patch toggles that used to sit here moved into the Settings view:
                      "One ESP per plugin" as-is, and "Write patch next to app" replaced by a free
                      output-folder picker, which covers that case and every other one. -->
@@ -107,9 +107,12 @@
                    a top margin on every button is a gap BETWEEN rows as well as above the first one,
                    so 10 above plus 6 below put the rows 16px apart while the buttons beside each
                    other sat 7px apart.
-                 The panel now carries the 12/10 offset into the header, and each button carries 7 to
-                 its right and 7 below: one gap, both directions. -->
-            <WrapPanel Orientation="Horizontal" Margin="12,10,0,0">
+                 The panel now carries the 10/10 offset into the header, and each button carries 7 to
+                 its right and 7 below: one gap, both directions.
+
+                 10 on the left because every tab's content starts at 10 - the one left edge the whole
+                 window shares (2026-10-12; it was 12 here, 10 in most tabs, 12, 15 and 20 in others). -->
+            <WrapPanel Orientation="Horizontal" Margin="10,10,0,0">
                 <Button Content="Items"
                         Command="{Binding OpenMainContentCommand}"
                         Style="{StaticResource NavTabButtonStyle}"
@@ -186,7 +189,7 @@
                 Background="{DynamicResource ColorBackgroundControl}"
                 BorderBrush="{DynamicResource ColorBorder}"
                 BorderThickness="0,1,0,0"
-                Padding="8,3"
+                Padding="10,3"
                 Visibility="{Binding Issues.HasIssues, Converter={StaticResource BoolToVis}}">
             <DockPanel>
                 <Button DockPanel.Dock="Right"

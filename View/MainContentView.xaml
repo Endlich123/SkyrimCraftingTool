@@ -9,9 +9,10 @@
     <DockPanel LastChildFill="True">
 
         <!-- Top toolbar: global actions -->
+        <!-- Left edge at 10, the same as the tree and filters below (the Grid's margin). -->
         <StackPanel Orientation="Horizontal"
                     DockPanel.Dock="Top"
-                    Margin="6,6,6,4">
+                    Margin="10,6,10,4">
             <Button Content="Scan/Rescan"
                     Command="{Binding ScanModsCommand}"
                     Style="{StaticResource ActionButtonGreenStyle}"/>
@@ -30,7 +31,7 @@
             <Button Content="{Binding OrphanedEditCount, StringFormat=⚠ Orphaned edits ({0})}"
                     Command="{Binding ManageOrphanedEditsCommand}"
                     Style="{StaticResource ActionButtonWarmStyle}"
-                    Margin="14,0,0,5"
+                    Margin="8,0,6,5"
                     Visibility="{Binding HasOrphanedEdits, Converter={StaticResource BoolToVis}}"
                     ToolTip="Items you edited whose plugin left the load order. Review and delete the stale edits."/>
         </StackPanel>
@@ -1575,15 +1576,6 @@
                                             <GroupBox.Header>
                                                 <DockPanel LastChildFill="False">
                                                     <TextBlock Text="Used up by" Style="{StaticResource TitelStyle}"/>
-                                                    <!-- Reset sits on the recipe, not on the item: the section edits one
-                                                         record, and "Reset ALL" on the item reverts every breakdown
-                                                         recipe including the ones not on screen. -->
-                                                    <Button DockPanel.Dock="Right"
-                                                            Content="Reset Changes"
-                                                            Command="{Binding BreakdownRecipe.ResetCommand}"
-                                                            IsEnabled="{Binding HasBreakdownChanges}"
-                                                            ToolTip="Revert this breakdown recipe to its scanned state (a recipe created here is removed)"
-                                                            Style="{StaticResource ActionButtonStyle}"/>
                                                     <Button Margin="10,0,0,0" Style="{StaticResource InfoButtonStyle}">
                                                         <Button.ToolTip>
                                                             <ToolTip Style="{StaticResource InfoTooltipStyle}">
@@ -1602,6 +1594,21 @@
                                                             </ToolTip>
                                                         </Button.ToolTip>
                                                     </Button>
+
+                                                    <!-- Reset sits on the recipe, not on the item: the section edits one
+                                                         record, and "Reset ALL" on the item reverts every breakdown
+                                                         recipe including the ones not on screen.
+
+                                                         Same place and look as the crafting and temper sections' Reset: after the
+                                                         title and its info button. It used to be a blue action button docked to
+                                                         the far right - the one Reset in the item view that looked like another
+                                                         kind of action. -->
+                                                    <Button Content="Reset Changes"
+                                                            Margin="15,0,0,0"
+                                                            Style="{StaticResource StandardButtonStyle}"
+                                                            Command="{Binding BreakdownRecipe.ResetCommand}"
+                                                            IsEnabled="{Binding HasBreakdownChanges}"
+                                                            ToolTip="Revert this breakdown recipe to its scanned state (a recipe created here is removed)"/>
                                                 </DockPanel>
                                             </GroupBox.Header>
 

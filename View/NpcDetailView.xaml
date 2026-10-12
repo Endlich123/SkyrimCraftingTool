@@ -1,7 +1,8 @@
 <UserControl x:Class="SkyrimCraftingTool.View.NpcDetailView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="clr-namespace:SkyrimCraftingTool.ViewModel">
+             xmlns:vm="clr-namespace:SkyrimCraftingTool.ViewModel"
+             xmlns:model="clr-namespace:SkyrimCraftingTool.Model">
 
     <!-- The NPC editor, on its own so two tabs can show it (docs/NPC-Plan.md §12).
          Its DataContext is an NpcMenuVM - the whole pane hangs off SelectedNpc and the pickers and
@@ -356,7 +357,10 @@
                                                      MinWidth="44"
                                                      TextAlignment="Right"
                                                      BorderBrush="{Binding IsChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
-                                                     Style="{StaticResource ItemTextBoxStyle}"/>
+                                                     model:NumericTextBoxBehavior.Mode="Integer"
+                                                     model:NumericTextBoxBehavior.Max="100"
+                                                     Style="{StaticResource ItemTextBoxStyle}"
+                                                     ToolTip="0 - 100. A skill does nothing above 100: the game's own ceiling, and what every perk and damage formula reads it against."/>
                                             <TextBlock Grid.Column="2"
                                                        Text="{Binding OffsetDisplay}"
                                                        Foreground="{DynamicResource ColorTextTertiary}"

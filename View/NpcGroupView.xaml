@@ -1,7 +1,8 @@
 ﻿<UserControl x:Class="SkyrimCraftingTool.View.NpcGroupView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="clr-namespace:SkyrimCraftingTool.ViewModel">
+             xmlns:local="clr-namespace:SkyrimCraftingTool.ViewModel"
+             xmlns:model="clr-namespace:SkyrimCraftingTool.Model">
 
     <!-- DataContext is NpcGroupVM (see the DataTemplate in MainWindow.xaml).
          The layout follows the sketch in docs/NPC-Gruppen-Plan.md section 6: groups with their member
@@ -10,7 +11,8 @@
          visible instead of guessed at), the always-present preview (what the rule cannot carry is
          written down before anything is patched), and "(without a group)" being a row with a number
          like any other. -->
-    <Grid Margin="12">
+    <!-- Margin 10: the left edge every tab and the nav bar share. -->
+    <Grid Margin="10">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="280" MinWidth="200"/>
             <ColumnDefinition Width="4"/>
@@ -40,8 +42,7 @@
                         ToolTip="Adds the groups the EditorID scheme and the biggest classes suggest. Groups that are already here are left untouched."/>
                 <Button Content="New"
                         Command="{Binding NewGroupCommand}"
-                        Style="{StaticResource StandardButtonStyle}"
-                        Margin="6,0,0,0"/>
+                        Style="{StaticResource StandardButtonStyle}"/>
             </StackPanel>
 
             <TextBlock DockPanel.Dock="Bottom"
@@ -710,10 +711,19 @@
 
                                         <!-- Column 2 stays empty so the value boxes line up with the
                                              attribute rows above, which have a kind selector there. -->
+                                        <!-- 0 - 100, and AllowEmpty because an empty box is the only
+                                             way to take the value back out of the group - clamping it
+                                             to 0 would set the skill to zero instead of clearing it.
+                                             Integer, unlike the attribute rows above: those offer a
+                                             multiplier ("x1.25"), a skill row is one plain number. -->
                                         <TextBox Grid.Column="3"
                                                  Text="{Binding Low, UpdateSourceTrigger=LostFocus}"
+                                                 model:NumericTextBoxBehavior.Mode="Integer"
+                                                 model:NumericTextBoxBehavior.Max="100"
+                                                 model:NumericTextBoxBehavior.AllowEmpty="True"
                                                  Style="{StaticResource ItemTextBoxStyle}"
-                                                 Margin="6,0,0,0"/>
+                                                 Margin="6,0,0,0"
+                                                 ToolTip="0 - 100, or empty to remove the skill from the group. A skill does nothing above 100."/>
                                     </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>

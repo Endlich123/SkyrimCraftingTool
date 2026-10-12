@@ -7,7 +7,8 @@
          Sections are grouped by what they affect, not by when they were added.
          See docs/TODO.md, Prio 1 and 2, for how this page came about. -->
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel Margin="20" MaxWidth="900" HorizontalAlignment="Left">
+        <!-- Margin 10: the left edge every tab and the nav bar share. -->
+        <StackPanel Margin="10" MaxWidth="900" HorizontalAlignment="Left">
 
             <TextBlock Text="Settings"
                        Style="{StaticResource TitelStyle}"
@@ -47,13 +48,13 @@
                                 Content="Browse…"
                                 Command="{Binding BrowseOutputPathCommand}"
                                 Style="{StaticResource StandardButtonStyle}"
-                                Margin="8,0,0,0"/>
+                                Margin="8,0,0,5"/>
 
                         <Button Grid.Column="2"
                                 Content="Use default"
                                 Command="{Binding ResetOutputPathCommand}"
                                 Style="{StaticResource StandardButtonStyle}"
-                                Margin="8,0,0,0"/>
+                                Margin="8,0,0,5"/>
                     </Grid>
 
                     <TextBlock Text="{Binding OutputPathStatus}"
