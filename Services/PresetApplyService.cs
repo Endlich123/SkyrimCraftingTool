@@ -37,6 +37,7 @@ namespace SkyrimCraftingTool.Services
             ApplyBreakdown(item, matches, touched);
             ApplyContainer(item, matches, touched);
             ApplyEnchantment(item, matches, touched);
+            ApplyEnchantmentAmount(item, matches, touched);
 
             return touched;
         }
@@ -449,6 +450,28 @@ namespace SkyrimCraftingTool.Services
 
             item.ObjectEffectKey = key;
             touched.Add(nameof(ItemNodeVM.ObjectEffectKey));
+        }
+
+        // The charge pool (EAMT) that goes with the enchantment above. Picked independently of it:
+        // a slot may raise the charge of items that keep their own effect, or assign an effect and
+        // leave the charge alone, so this looks at its own switch rather than the enchantment's.
+        //
+        // NOT summed across the matching slots the way Weight/Value/ArmorRating are: an item has one
+        // charge pool, so two matching slots would otherwise hand a cuirass twice the charge the
+        // preset actually names. First enabled slot wins - the enchantment and workbench tie-break.
+        //
+        // 0 is honoured as written: on an unenchanted item that is the correct value, and it is how
+        // a preset takes a charge back off.
+        private static void ApplyEnchantmentAmount(ItemNodeVM item, List<PresetSlotConfig> matches, List<string> touched)
+        {
+            var cfg = matches.FirstOrDefault(m => m.EnchantmentAmount != null && m.EnchantmentAmount.Enabled);
+            if (cfg == null) return;
+
+            int amount = cfg.EnchantmentAmount.Value;
+            if (item.EnchantAmount == amount) return;
+
+            item.EnchantAmount = amount;
+            touched.Add(nameof(ItemNodeVM.EnchantAmount));
         }
     }
 }

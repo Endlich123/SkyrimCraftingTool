@@ -17,6 +17,14 @@ namespace SkyrimCraftingTool.Services
         // duplicated as a literal) so every call site that needs to add it to a plugin list agrees.
         public const string UserPluginName = "SkyrimCraftingTool.esp";
 
+        // True for a key that names one of the user's OWN records - one the tool made, that exists in
+        // no plugin until the generated ESP brings it into the game. Such a key is never the FormID
+        // the record ends up with, so anything that writes it into a patch has to translate it first
+        // (see PatchGeneratorService.ResolveUserListKeys / ResolveUserEnchantmentKeys).
+        public static bool IsUserKey(string? key)
+            => !string.IsNullOrWhiteSpace(key)
+               && key.StartsWith(UserPluginName + "|", StringComparison.OrdinalIgnoreCase);
+
         // True for an empty key OR a null-FormKey key ("Null|000000" — what
         // $"{fk.ModKey.FileName}|{fk.IDString()}" produces for FormKey.Null). Used to reject
         // "no link" values before they drive a WHERE <sharedColumn> = @key mass-UPDATE.

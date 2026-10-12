@@ -194,6 +194,17 @@ namespace SkyrimCraftingTool.Services
             "illusion", "restoration", "enchanting",
         };
 
+        // THE CEILING (user, 2026-10-12). 100 is where the game stops reading a skill: the damage,
+        // armour and spell-cost formulas all top out there, and so does every perk requirement.
+        //
+        // What it does is cap the two editors' input boxes - the NPC's Skills block and the group
+        // editor's skill rows. The record field itself holds more, and a mod shipping a boss at 150
+        // keeps it: nothing here rewrites a scanned value or a stored edit.
+        //
+        // Lives beside the skill names because both editors need it, and two literal 100s is how
+        // they end up disagreeing.
+        public const int MaxValue = 100;
+
         // What a reader expects to see, against the token the patch string uses: "marksman" is
         // Archery in the game, and "speechcraft" is Speech.
         private static readonly Dictionary<string, string> Labels = new(StringComparer.OrdinalIgnoreCase)

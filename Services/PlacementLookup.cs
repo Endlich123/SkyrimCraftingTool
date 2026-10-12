@@ -47,7 +47,10 @@ namespace SkyrimCraftingTool.Services
         bool Ambiguous = false, string AddedBy = "", string DroppedBy = "");
 
     // A row in the Container/LeveledList tab's tree.
-    public sealed record OwnerSummary(string Key, string Name, int EntryCount);
+    //
+    // IsOwn marks a leveled list the user created in the tool (LeveledList.Original = 0). Defaulted,
+    // because containers and every caller written before own lists existed have no such thing.
+    public sealed record OwnerSummary(string Key, string Name, int EntryCount, bool IsOwn = false);
 
     // One OBJECT inside a container or a list, with every occurrence of it folded together.
     //
@@ -596,16 +599,64 @@ namespace SkyrimCraftingTool.Services
                   ORDER BY 2",
                 "AllContainers");
 
-        // The tree of leveled lists, same rule.
+        // The tree of leveled lists, same rule - with two exceptions, both about the user's OWN lists
+        // (docs/LeveledList-Create-Plan.md, L-P1):
+        //
+        //   An own list (Original = 0) shows up EMPTY. A freshly created one has no entries yet, and
+        //   an inner join made the "Create" button look like it did nothing. Scanned lists keep the
+        //   old rule - a list nothing feeds is not worth a row - which is why this is a HAVING and
+        //   not just a LEFT JOIN.
+        //
+        //   A scanned copy of the tool's own OUTPUT is left out. The generated ESP is active in any
+        //   load order that uses the patch, so the scan reads it back in, and every own list would
+        //   then stand in the tree twice - once as the user's, once as the empty record the ESP
+        //   wrote for it.
+        //
+        // A database without the Original column (one the startup schema pass has not reached, or a
+        // hand-built test fixture) has no own lists by definition, and gets the query without them -
+        // naming a missing column would not narrow the result, it would empty it.
         public static IReadOnlyList<OwnerSummary> AllLeveledLists(string? dbPath = null)
-            => ReadOwners(dbPath,
-                @"SELECT l.Key, COALESCE(NULLIF(l.EditorID, ''), l.Key), COUNT(e.Reference)
-                  FROM LeveledList l
-                  JOIN LeveledListEntry e ON e.ListKey = l.Key
-                  WHERE l.Active = 1
-                  GROUP BY l.Key
-                  ORDER BY 2",
-                "AllLeveledLists");
+            => ReadOwners(dbPath, HasOwnListColumn(dbPath) ? LeveledListsSql : LeveledListsWithoutOwnSql, "AllLeveledLists");
+
+        private const string ToolOutputKeyFilter =
+            "(l.Key LIKE 'SkyrimCraftingTool.esp|%' OR l.Key LIKE 'SkyrimCraftingTool - %.esp|%')";
+
+        private const string LeveledListsSql =
+            @"SELECT l.Key, COALESCE(NULLIF(l.EditorID, ''), l.Key), COUNT(e.Reference),
+                     CASE WHEN l.Original = 0 THEN 1 ELSE 0 END
+              FROM LeveledList l
+              LEFT JOIN LeveledListEntry e ON e.ListKey = l.Key
+              WHERE l.Active = 1
+                AND NOT (l.Original = 1 AND " + ToolOutputKeyFilter + @")
+              GROUP BY l.Key
+              HAVING COUNT(e.Reference) > 0 OR MAX(l.Original) = 0
+              ORDER BY 2";
+
+        private const string LeveledListsWithoutOwnSql =
+            @"SELECT l.Key, COALESCE(NULLIF(l.EditorID, ''), l.Key), COUNT(e.Reference)
+              FROM LeveledList l
+              JOIN LeveledListEntry e ON e.ListKey = l.Key
+              WHERE l.Active = 1
+                AND NOT " + ToolOutputKeyFilter + @"
+              GROUP BY l.Key
+              ORDER BY 2";
+
+        private static bool HasOwnListColumn(string? dbPath)
+        {
+            try
+            {
+                using var c = TryOpen(dbPath);
+                if (c == null) return false;
+
+                using var cmd = c.CreateCommand();
+                cmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('LeveledList') WHERE name = 'Original'";
+                return Convert.ToInt64(cmd.ExecuteScalar()) > 0;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
 
         private static IReadOnlyList<OwnerSummary> ReadOwners(string? dbPath, string sql, string what)
         {
@@ -618,8 +669,15 @@ namespace SkyrimCraftingTool.Services
                 using var cmd = c.CreateCommand();
                 cmd.CommandText = sql;
                 using var r = cmd.ExecuteReader();
+
+                // The fourth column is the leveled-list query's own-list flag; the container query
+                // has none, and a container is never the user's.
+                bool hasOwnFlag = r.FieldCount > 3;
+
                 while (r.Read())
-                    result.Add(new OwnerSummary(r.GetString(0), r.GetString(1), r.GetInt32(2)));
+                    result.Add(new OwnerSummary(
+                        r.GetString(0), r.GetString(1), r.GetInt32(2),
+                        IsOwn: hasOwnFlag && r.GetInt32(3) == 1));
             }
             catch (Exception ex)
             {
