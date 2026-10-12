@@ -132,7 +132,16 @@ namespace SkyrimCraftingTool.Services.PatchGen
             foreach (var container in parsed)
             {
                 bool anyLevel = false;
-                var containerName = containerNames != null && containerNames.TryGetValue(container.ContainerKey, out var cn) ? cn : "";
+
+                // The tool creates no containers, so a container key under its own plugin can only be a
+                // leftover: the "Your leveled lists" pseudo-container that was offered for a while and
+                // taken back out (docs/LeveledList-Create-Plan.md, L-P5). Its lists are still real and
+                // still placed; the container is never named, and never becomes a filterByContainers
+                // target - there is no such container to put anything into.
+                bool notAContainer = KeyFactory.IsUserKey(container.ContainerKey);
+                var containerKey = notAContainer ? "" : container.ContainerKey;
+                var containerName = !notAContainer && containerNames != null
+                                    && containerNames.TryGetValue(container.ContainerKey, out var cn) ? cn : "";
 
                 foreach (var (lvliKey, placement) in container.Placements)
                 {
@@ -145,13 +154,13 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
                     var name = lvliNames != null && lvliNames.TryGetValue(lvliKey, out var n) ? n : "";
                     lists.Add(new LeveledListPlacement(itemKey, itemEditorId, lvliKey, name, level,
-                        placement.Count, container.ContainerKey, containerName));
+                        placement.Count, containerKey, containerName));
                     anyLevel = true;
                 }
 
                 // No slider on this container was raised: the item belongs in the container itself.
-                if (!anyLevel && !string.IsNullOrWhiteSpace(container.ContainerKey))
-                    containers.Add(new ContainerPlacement(itemKey, itemEditorId, container.ContainerKey, containerName));
+                if (!anyLevel && !string.IsNullOrWhiteSpace(containerKey))
+                    containers.Add(new ContainerPlacement(itemKey, itemEditorId, containerKey, containerName));
             }
         }
 
@@ -465,6 +474,88 @@ namespace SkyrimCraftingTool.Services.PatchGen
                             items.Select(k => $"{PatchFormat.RefKey8(k)}~{EntryCount}"))
                     },
                     ReferencedKeywordKeys = items.Prepend(container.Key).ToList(),
+                });
+            }
+
+            return rules;
+        }
+
+        // One of the user's own leveled lists going into another list or into a container
+        // (docs/LeveledList-Create-Plan.md, L-P6) - with every key already translated to what the
+        // generated ESP really calls it. Translating is the generator's job; this only shapes rules.
+        //
+        // FilePlugin is the generated ESP: the rule names a record only that ESP defines, so it must
+        // only be read while that ESP is loaded - the same "filed under what it references" rule the
+        // restore and removal rules follow.
+        public sealed record OwnListPlacement(
+            string ListKey,
+            string ListName,
+            string TargetKey,
+            string TargetName,
+            UserListTargetKind Kind,
+            int Level,
+            int Count,
+            string FilePlugin);
+
+        // One rule per (target, file), every own list that goes into it on that one line - the same
+        // shape BuildRules gives items. addOnce for the same reason as there: the patch is regenerated
+        // from scratch and SkyPatcher INIs stack, so a plain add would grow the list on every start.
+        //
+        // A list into a list:   filterByLLs=<target>:addOnceToLLs=<list>~<level>~<count>
+        // A list into a chest:  filterByContainers=<target>:addOnceToContainers=<list>~<count>
+        //
+        // The second one is the reason SkyPatcher 7.1.3 matters: before it, leveled lists in
+        // containers were behind iAllowLeveledListsAddedToContainers (off by default) and carried a
+        // CTD warning. The generator says so in the report whenever such a rule is written.
+        public static IReadOnlyList<SkyPatcherRule> BuildOwnListRules(IEnumerable<OwnListPlacement> placements)
+        {
+            var rules = new List<SkyPatcherRule>();
+
+            foreach (var group in (placements ?? Enumerable.Empty<OwnListPlacement>())
+                         .Where(p => !string.IsNullOrWhiteSpace(p.ListKey) && !string.IsNullOrWhiteSpace(p.TargetKey))
+                         .GroupBy(p => (p.Kind, Target: p.TargetKey.ToUpperInvariant(), File: p.FilePlugin.ToUpperInvariant()))
+                         .OrderBy(g => g.Key.Kind)
+                         .ThenBy(g => g.Key.Target, StringComparer.OrdinalIgnoreCase)
+                         .ThenBy(g => g.Key.File, StringComparer.OrdinalIgnoreCase))
+            {
+                var first = group.First();
+                bool intoList = first.Kind == UserListTargetKind.LeveledList;
+
+                // One entry per own list, even if two target rows somehow named the same pair:
+                // addOnce would drop the second at runtime anyway.
+                var entries = group
+                    .GroupBy(p => p.ListKey, StringComparer.OrdinalIgnoreCase)
+                    .Select(g => g.First())
+                    .OrderBy(p => p.ListKey, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                var ops = intoList
+                    ? "addOnceToLLs=" + string.Join(",", entries.Select(p =>
+                          $"{PatchFormat.RefKey8(p.ListKey)}~{PatchFormat.Int(Math.Max(1, p.Level))}~{PatchFormat.Int(Math.Max(1, p.Count))}"))
+                    : "addOnceToContainers=" + string.Join(",", entries.Select(p =>
+                          $"{PatchFormat.RefKey8(p.ListKey)}~{PatchFormat.Int(Math.Max(1, p.Count))}"));
+
+                var (plugin, formId) = KeyFactory.SplitMasterKey(first.TargetKey);
+                var what = intoList ? "leveled list" : "container";
+                var target = string.IsNullOrWhiteSpace(first.TargetName)
+                    ? $"{what} {first.TargetKey}"
+                    : $"{what} {first.TargetName} ({first.TargetKey})";
+                var names = string.Join(", ", entries.Select(p => string.IsNullOrWhiteSpace(p.ListName) ? p.ListKey : p.ListName));
+
+                rules.Add(new SkyPatcherRule
+                {
+                    FilterDirective = intoList ? "filterByLLs" : "filterByContainers",
+                    TargetPlugin = plugin,
+                    TargetFormId = formId,
+                    FilePlugin = first.FilePlugin,
+                    Comment = $"{target}: your own leveled list(s) {names}",
+                    Operations = new[] { ops },
+
+                    // Only a CONTAINER target is offered to the dead-reference check. The resolver
+                    // knows containers; it does not know leveled lists at all, so a list target
+                    // would be reported as missing on every single rule - and the own lists are
+                    // translated keys the scan has never seen either.
+                    ReferencedKeywordKeys = intoList ? Array.Empty<string>() : new[] { first.TargetKey },
                 });
             }
 

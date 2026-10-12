@@ -26,6 +26,10 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // Enchantments the user created in the tool and that this ESP brings into existence.
         public int NewEnchantmentCount { get; set; }
 
+        // Leveled lists the user created in the tool - empty records, filled at runtime by SkyPatcher
+        // (docs/LeveledList-Create-Plan.md, L-P3).
+        public int NewLeveledListCount { get; set; }
+
         // Recipes whose edited condition set was NOT written, because the real record carries
         // conditions the scan cannot represent and rewriting would have deleted them.
         public int ConditionRewriteSkippedCount { get; set; }
@@ -121,7 +125,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
             WinningRecordResolver? resolver = null,
             IReadOnlyList<EnchantmentEspEntry>? enchantmentOverrides = null,
             IReadOnlyList<NewEnchantmentEspEntry>? newEnchantments = null,
-            IReadOnlyList<NpcEspEntry>? npcOverrides = null)
+            IReadOnlyList<NpcEspEntry>? npcOverrides = null,
+            IReadOnlyList<NewLeveledListEspEntry>? newLeveledLists = null)
         {
             var result = new CobjEspResult();
             var modKey = ModKey.FromFileName(espFileName);
@@ -167,6 +172,20 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 catch (Exception ex)
                 {
                     result.Warnings.Add($"{e.EditorId}: new enchantment skipped — {ex.Message}");
+                    result.SkippedCount++;
+                }
+            }
+
+            foreach (var e in (newLeveledLists ?? Array.Empty<NewLeveledListEspEntry>())
+                     .OrderBy(x => x.ToolKey, StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    BuildNewLeveledList(mod, modKey, e, map, espFileName, ref maxNewId, result);
+                }
+                catch (Exception ex)
+                {
+                    result.Warnings.Add($"{e.EditorId}: new leveled list skipped — {ex.Message}");
                     result.SkippedCount++;
                 }
             }
@@ -415,6 +434,39 @@ namespace SkyrimCraftingTool.Services.PatchGen
             mod.ObjectEffects.Add(ench);
             result.NewCount++;
             result.NewEnchantmentCount++;
+        }
+
+        // A leveled list the user created in the tool (docs/LeveledList-Create-Plan.md, L-P3).
+        public sealed record NewLeveledListEspEntry(string ToolKey, string EditorId);
+
+        // AN EMPTY RECORD, AND THAT IS ALL OF IT. SkyPatcher's leveled-list patcher can do everything
+        // to a list except create one, so the ESP's one job is the record's existence: no entries, a
+        // chance of none of 0, no flags. What goes into it arrives at runtime like it arrives in any
+        // other list - addOnceToLLs from an item's placement, and chanceNone / calc flags from the
+        // property rules. One way in for every list, scanned or own.
+        //
+        // Unlike an effectless enchantment, an empty list is NOT held back: it is the normal state of
+        // a list straight after it was created, and it does nothing in the game - nothing to hand out,
+        // nothing to get wrong.
+        //
+        // Same FormID map as the recipes and enchantments, so the list keeps its ID across every
+        // regeneration - a save that holds an item from it, or a mod that was pointed at it, would
+        // otherwise lose it on the next patch run.
+        private static void BuildNewLeveledList(
+            SkyrimMod mod, ModKey modKey, NewLeveledListEspEntry e, PatchFormIdMapStore map,
+            string espFileName, ref uint maxNewId, CobjEspResult result)
+        {
+            var id = map.Allocate(e.ToolKey, espFileName);
+            maxNewId = Math.Max(maxNewId, id);
+
+            var list = new LeveledItem(new FormKey(modKey, id), SkyrimRelease.SkyrimSE)
+            {
+                EditorID = string.IsNullOrWhiteSpace(e.EditorId) ? $"SCT_LList_{id:X6}" : e.EditorId,
+            };
+
+            mod.LeveledItems.Add(list);
+            result.NewCount++;
+            result.NewLeveledListCount++;
         }
 
         // Deep-copies the winning ObjectEffect and changes exactly one field.

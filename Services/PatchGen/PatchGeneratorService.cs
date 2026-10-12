@@ -20,6 +20,10 @@ namespace SkyrimCraftingTool.Services.PatchGen
         private readonly PatchFormIdMapStore _formIdMap;
         private readonly IReferenceResolver? _references;
 
+        // For the stores that take a database path rather than a connection string. Null means their
+        // own default, which is the same item.db the readers above open without a connection string.
+        private readonly string? _dbPath;
+
         // NPC records that need an ESP override (N-P6): combat style, crime faction, removed perks.
         // Filled in GenerateSkyPatcher, where the edited NPCs are already read.
         private readonly List<NpcEspEntry> _npcEspOverrides = new();
@@ -39,6 +43,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
             _formListReader = formListReader ?? new FormListPatchReader(connString);
             _formIdMap = formIdMap ?? new PatchFormIdMapStore(connString);
             _references = references;
+            _dbPath = connString == null ? null : DbPathFrom(connString);
         }
 
         // SkyPatcher's category folders for the two Container-tab rule kinds. Named constants rather
@@ -84,6 +89,12 @@ namespace SkyrimCraftingTool.Services.PatchGen
             // hands out its own, from the persistent map. The rule has to name that one, so the
             // allocation happens before any rule is built.
             var userEnchantments = ResolveUserEnchantmentKeys(options, report);
+
+            // The same for the user's own leveled lists (docs/LeveledList-Create-Plan.md, L-P4): every
+            // rule that names one - an item placed into it, its properties, where it hangs - has to
+            // name the FormID the ESP gives it, not "SkyrimCraftingTool.esp|800001".
+            var ownLists = UserLeveledListStore.ReadAll(_dbPath);
+            var ownListKeys = new OwnListKeys(ResolveUserListKeys(options, ownLists), options, report);
 
             var armorByPlugin = new Dictionary<string, List<SkyPatcherRule>>(StringComparer.OrdinalIgnoreCase);
             foreach (var pair in _itemReader.ReadEditedArmor())
@@ -267,6 +278,25 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
             // Container tab -> leveled lists. Grouped by the LIST's plugin, like formList above:
             // the rule targets the list, not the item that goes into it.
+            //
+            // A placement into one of the user's OWN lists names it by its tool key; translated here,
+            // and withheld with a warning when the list will not exist in the patch (L-P4).
+            var ownListNames = ownLists.ToDictionary(l => l.Key, l => l.EditorId, StringComparer.OrdinalIgnoreCase);
+            placements = placements
+                .Select(p =>
+                {
+                    if (!KeyFactory.IsUserKey(p.LvliKey)) return p;
+
+                    var real = ownListKeys.Translate(p.LvliKey, $"{p.ItemKey} is placed into it");
+                    if (real == null) return null;
+
+                    var name = ownListNames.TryGetValue(p.LvliKey, out var n) ? n : p.LvliName;
+                    return p with { LvliKey = real, LvliName = name };
+                })
+                .Where(p => p != null)
+                .Select(p => p!)
+                .ToList();
+
             var lvliByPlugin = new Dictionary<string, List<SkyPatcherRule>>(StringComparer.OrdinalIgnoreCase);
             var lvliRules = LeveledListRuleBuilder.BuildRules(placements, out var levelConflicts);
             foreach (var rule in lvliRules)
@@ -277,7 +307,18 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
             // Entries the user put back after an override dropped them. Additive like the placements
             // above, so this can only ever add to a list, never take from it.
-            foreach (var rule in LeveledListRuleBuilder.BuildRestoreRules(LeveledListRestoreStore.ReadAll(), lvliNames))
+            //
+            // An own list has no scanned entries, so it cannot have lost any - a row naming one could
+            // only be left over from a hand-edited database. Translated like everything else rather
+            // than trusted to be impossible.
+            var restored = LeveledListRestoreStore.ReadAll()
+                .Select(e => !KeyFactory.IsUserKey(e.ListKey) ? e
+                    : ownListKeys.Translate(e.ListKey, $"{e.Reference} is restored into it") is { } real ? e with { ListKey = real } : null)
+                .Where(e => e != null)
+                .Select(e => e!)
+                .ToList();
+
+            foreach (var rule in LeveledListRuleBuilder.BuildRestoreRules(restored, lvliNames))
             {
                 if (Accept(rule, null, report))
                     report.LeveledListRuleCount += Add(lvliByPlugin, rule);
@@ -286,14 +327,34 @@ namespace SkyrimCraftingTool.Services.PatchGen
             // The list's own properties, if the user changed any. Filed under the LIST's plugin
             // rather than an item's, because these rules edit the list itself and reference nothing
             // foreign - see LeveledListRuleBuilder.BuildPropertyRules.
-            foreach (var edit in LeveledListEditStore.ReadAll())
+            //
+            // An own list goes through here too: its chance of none and calc flags are set the same
+            // way as any other list's, by rule, on top of the empty record the ESP writes. Its file is
+            // then the generated ESP's, which is right - without that ESP there is no list to edit.
+            foreach (var stored in LeveledListEditStore.ReadAll())
             {
-                var rule = LeveledListRuleBuilder.BuildPropertyRules(new[] { edit }, lvliNames).FirstOrDefault();
+                var edit = stored;
+                string? ownName = null;
+
+                if (KeyFactory.IsUserKey(stored.ListKey))
+                {
+                    var real = ownListKeys.Translate(stored.ListKey, "its properties were changed");
+                    if (real == null) continue;
+
+                    ownName = ownListNames.TryGetValue(stored.ListKey, out var on) ? on : null;
+                    edit = stored with { ListKey = real };
+                }
+
+                var names = ownName == null
+                    ? lvliNames
+                    : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [edit.ListKey] = ownName };
+
+                var rule = LeveledListRuleBuilder.BuildPropertyRules(new[] { edit }, names).FirstOrDefault();
                 if (rule == null || !Accept(rule, null, report)) continue;
 
                 report.LeveledListPropertyRuleCount += Add(lvliByPlugin, rule);
 
-                var name = lvliNames != null && lvliNames.TryGetValue(edit.ListKey, out var n) && !string.IsNullOrWhiteSpace(n)
+                var name = names != null && names.TryGetValue(edit.ListKey, out var n) && !string.IsNullOrWhiteSpace(n)
                     ? $"{n} ({edit.ListKey})"
                     : edit.ListKey;
 
@@ -323,8 +384,16 @@ namespace SkyrimCraftingTool.Services.PatchGen
             // there, which is what makes the patch stop being safe-by-construction. They are counted
             // apart and listed one by one in the report - not as a warning, because the user asked
             // for them, but on the record, the same way a list-property edit is.
-            foreach (var rule in LeveledListRuleBuilder.BuildRemovalRules(
-                         RemovalStore.ReadAll(RemovalScope.LeveledList), RemovalScope.LeveledList, lvliNames))
+            // Removals from an own list are translated like everything else - though with no scanned
+            // entries there is nothing in one that the load order put there to take out.
+            var listRemovals = RemovalStore.ReadAll(RemovalScope.LeveledList)
+                .Select(e => !KeyFactory.IsUserKey(e.OwnerKey) ? e
+                    : ownListKeys.Translate(e.OwnerKey, $"{e.Reference} is removed from it") is { } real ? e with { OwnerKey = real } : null)
+                .Where(e => e != null)
+                .Select(e => e!)
+                .ToList();
+
+            foreach (var rule in LeveledListRuleBuilder.BuildRemovalRules(listRemovals, RemovalScope.LeveledList, lvliNames))
             {
                 if (!Accept(rule, null, report)) continue;
 
@@ -340,6 +409,73 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 report.RemovalRuleCount += Add(contByPlugin, rule);
                 report.Removals.Add(rule.Comment);
             }
+
+            // WHERE THE USER'S OWN LISTS HANG (L-P6): into another leveled list, or into a container.
+            // Without one of these an own list exists in the ESP and hands out nothing - nothing in
+            // the game ever rolls a list nobody references.
+            var ownPlacements = new List<LeveledListRuleBuilder.OwnListPlacement>();
+            var listEditorIds = _itemReader.ReadLeveledListEditorIds();
+            string ownEsp = options.EspNameFor(KeyFactory.UserPluginName);
+
+            foreach (var target in UserLeveledListStore.ReadAllTargets(_dbPath))
+            {
+                var list = ownListKeys.Translate(target.ListKey, $"it hangs in {target.TargetKey}");
+                if (list == null) continue;
+
+                // The target can be an own list too - tiers of one's own, nested.
+                var targetKey = target.TargetKey;
+                if (KeyFactory.IsUserKey(targetKey))
+                {
+                    var realTarget = ownListKeys.Translate(targetKey, $"{target.ListKey} hangs in it");
+                    if (realTarget == null) continue;
+                    targetKey = realTarget;
+                }
+
+                var targetName = target.Kind == UserListTargetKind.Container
+                    ? (containerNames.TryGetValue(target.TargetKey, out var cn) ? cn : "")
+                    : (ownListNames.TryGetValue(target.TargetKey, out var on) ? on
+                       : listEditorIds.TryGetValue(target.TargetKey, out var ln) ? ln : "");
+
+                ownPlacements.Add(new LeveledListRuleBuilder.OwnListPlacement(
+                    list,
+                    ownListNames.TryGetValue(target.ListKey, out var name) ? name : "",
+                    targetKey,
+                    targetName,
+                    target.Kind,
+                    target.Level,
+                    target.Count,
+                    ownEsp));
+            }
+
+            bool anyIntoContainer = false;
+            foreach (var rule in LeveledListRuleBuilder.BuildOwnListRules(ownPlacements))
+            {
+                if (!Accept(rule, null, report)) continue;
+
+                if (rule.FilterDirective == "filterByContainers")
+                {
+                    report.ContainerRuleCount += Add(contByPlugin, rule);
+                    anyIntoContainer = true;
+                }
+                else
+                {
+                    report.LeveledListRuleCount += Add(lvliByPlugin, rule);
+                }
+            }
+
+            // A list in a chest is the one thing here that depends on the SkyPatcher version, and an
+            // older one fails without a word: before 7.1.3, iAllowLeveledListsAddedToContainers was off
+            // by default and the rule simply does nothing.
+            if (anyIntoContainer)
+                report.Warnings.Add(
+                    "Your own leveled lists are put into containers. That needs SkyPatcher 7.1.3 or newer - " +
+                    "older versions ignore it unless iAllowLeveledListsAddedToContainers is switched on.");
+
+            // 255 ENTRIES. SkyPatcher refuses to add past that since 7.1.3 and writes a line into its
+            // own log instead - which nobody reads before playing. Counted here against everything the
+            // patch adds to each list: an upper bound, because addOnce skips what is already in there.
+            foreach (var warning in OverfullLists(lvliByPlugin.Values.SelectMany(r => r), _itemReader.ReadLeveledListEntryCounts(), listEditorIds, ownListNames, ownListKeys))
+                report.Warnings.Add(warning);
 
             if (options.DryRun) return;
 
@@ -480,6 +616,118 @@ namespace SkyrimCraftingTool.Services.PatchGen
             return map;
         }
 
+        // toolKey -> the key the user's own leveled list really has in the generated ESP
+        // (docs/LeveledList-Create-Plan.md, L-P4). The enchantment version above, for lists - with
+        // one difference: an empty list is still written (an effectless enchantment is not), so every
+        // own list gets an entry.
+        //
+        // The same two traps as there. The file name is not always SkyrimCraftingTool.esp - with the
+        // per-plugin split it is "SkyrimCraftingTool - SkyrimCraftingTool.esp" (EspNameFor). And a dry
+        // run only peeks: a list that was never generated has no ID yet, and no ID is guessed for it.
+        private Dictionary<string, string> ResolveUserListKeys(
+            PatchGenOptions options, IReadOnlyList<UserLeveledList> ownLists)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (!options.GenerateCobj) return map;
+
+            string esp = options.EspNameFor(KeyFactory.UserPluginName);
+
+            foreach (var list in ownLists)
+            {
+                uint? id = options.DryRun ? _formIdMap.Peek(list.Key) : _formIdMap.Allocate(list.Key, esp);
+                if (id == null) continue;
+
+                map[list.Key] = $"{esp}|{id.Value:X6}";
+            }
+
+            return map;
+        }
+
+        // Translates an own list's tool key, or says out loud why it cannot - once per list, however
+        // many rules wanted it. A rule aimed at a record nobody writes would do nothing in the game,
+        // and nothing would say so.
+        private sealed class OwnListKeys
+        {
+            private readonly IReadOnlyDictionary<string, string> _map;
+            private readonly PatchGenOptions _options;
+            private readonly PatchGenReport _report;
+            private readonly HashSet<string> _warned = new(StringComparer.OrdinalIgnoreCase);
+
+            public OwnListKeys(IReadOnlyDictionary<string, string> map, PatchGenOptions options, PatchGenReport report)
+            {
+                _map = map;
+                _options = options;
+                _report = report;
+            }
+
+            public string? Translate(string toolKey, string why)
+            {
+                if (_map.TryGetValue(toolKey, out var real)) return real;
+
+                if (_warned.Add(toolKey))
+                {
+                    var reason = !_options.GenerateCobj
+                        ? "ESP generation is off, and only the ESP can create it"
+                        : _options.DryRun
+                            ? "it has never been generated, so it has no FormID yet - the real run hands one out"
+                            : "it no longer exists in the tool";
+
+                    _report.Warnings.Add(
+                        $"{toolKey} ({why}): your own leveled list is not in this patch - {reason}. " +
+                        "Rules naming it were left out.");
+                }
+
+                return null;
+            }
+
+            // Back from the ESP key to the name the user gave the list, for a warning worth reading.
+            public string? ToolKeyFor(string realKey)
+                => _map.FirstOrDefault(kv => string.Equals(kv.Value, realKey, StringComparison.OrdinalIgnoreCase)).Key;
+        }
+
+        // Every list the patch adds to, with how many entries it would end up with - for the ones over
+        // SkyPatcher's limit. Scanned entries plus every addOnceToLLs entry aimed at it.
+        private static IEnumerable<string> OverfullLists(
+            IEnumerable<SkyPatcherRule> rules,
+            IReadOnlyDictionary<string, int> scannedCounts,
+            IReadOnlyDictionary<string, string> editorIds,
+            IReadOnlyDictionary<string, string> ownListNames,
+            OwnListKeys ownListKeys)
+        {
+            const string AddOp = "addOnceToLLs=";
+
+            var added = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var rule in rules)
+            {
+                if (rule.FilterDirective != "filterByLLs") continue;
+
+                var key = $"{rule.TargetPlugin}|{rule.TargetFormId}";
+                foreach (var op in rule.Operations.Where(o => o.StartsWith(AddOp, StringComparison.Ordinal)))
+                {
+                    int entries = op.Substring(AddOp.Length).Split(',', StringSplitOptions.RemoveEmptyEntries).Length;
+                    added[key] = (added.TryGetValue(key, out var a) ? a : 0) + entries;
+                }
+            }
+
+            foreach (var (key, count) in added.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                int scanned = scannedCounts.TryGetValue(key, out var s) ? s : 0;
+                int total = scanned + count;
+                if (total <= UserLeveledListStore.MaxEntries) continue;
+
+                var toolKey = ownListKeys.ToolKeyFor(key);
+                var name = toolKey != null && ownListNames.TryGetValue(toolKey, out var own) ? own
+                         : editorIds.TryGetValue(key, out var id) ? id : "";
+                var label = string.IsNullOrWhiteSpace(name) ? key : $"{name} ({key})";
+
+                yield return
+                    $"leveled list {label} would hold up to {total} entries ({scanned} already, {count} from this patch). " +
+                    $"A leveled list holds at most {UserLeveledListStore.MaxEntries}: SkyPatcher adds up to that and " +
+                    "drops the rest, noting it only in its own log.";
+            }
+        }
+
         // Rewrites an item's enchantment key when it points at one of the user's own enchantments.
         // Everything else passes through untouched.
         private static string MapEnchantmentKey(
@@ -517,9 +765,14 @@ namespace SkyrimCraftingTool.Services.PatchGen
             var enchOverrides = _enchantmentEspOverrides;
             var newEnchantments = _enchReader.ReadNewEnchantments();
 
-            // Recipes, overridden enchantments and the user's own enchantments share the ESP, so any
-            // one of them on its own is reason enough to build it.
-            if (entries.Count == 0 && enchOverrides.Count == 0 && newEnchantments.Count == 0) return;
+            // The user's own leveled lists: empty records, one per list (L-P3).
+            var newLists = UserLeveledListStore.ReadAll(_dbPath)
+                .Select(l => new CobjEspBuilder.NewLeveledListEspEntry(l.Key, l.EditorId))
+                .ToList();
+
+            // Recipes, overridden enchantments, the user's own enchantments and lists share the ESP, so
+            // any one of them on its own is reason enough to build it.
+            if (entries.Count == 0 && enchOverrides.Count == 0 && newEnchantments.Count == 0 && newLists.Count == 0) return;
 
             // A user-created enchantment's worn-restriction list goes straight into the ESP without
             // passing through Accept(), the same blind spot the override path guards above. A list
@@ -539,6 +792,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 report.CobjOverrideCount = entries.Count(e => !e.IsNew);
                 report.EnchantmentEspOverrideCount = enchOverrides.Count;
                 report.NewEnchantmentCount = newEnchantments.Count;
+                report.NewLeveledListCount = newLists.Count;
                 return;
             }
 
@@ -598,9 +852,16 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 .GroupBy(_ => options.EspNameFor(KeyFactory.UserPluginName), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
 
+            // Same for the user's own leveled lists - and it has to be the SAME name ResolveUserListKeys
+            // handed the rules, or the rules would point into a file the list is not in.
+            var newListsByEsp = newLists
+                .GroupBy(_ => options.EspNameFor(KeyFactory.UserPluginName), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
             var espNames = cobjByEsp.Keys
                 .Concat(enchByEsp.Keys)
                 .Concat(newEnchByEsp.Keys)
+                .Concat(newListsByEsp.Keys)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(n => n, StringComparer.OrdinalIgnoreCase);
 
@@ -614,11 +875,17 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 var newEnchForEsp = newEnchByEsp.TryGetValue(espName, out var ne)
                     ? ne : new List<CobjEspBuilder.NewEnchantmentEspEntry>();
 
+                var newListsForEsp = newListsByEsp.TryGetValue(espName, out var nl)
+                    ? nl : new List<CobjEspBuilder.NewLeveledListEspEntry>();
+
                 var res = builder.Build(
                     cobjForEsp, _formIdMap, loadOrder, options.OutputRoot, espName, options.EslWhenPossible,
-                    resolver, enchForEsp, newEnchForEsp);
+                    resolver, enchForEsp, newEnchForEsp, newLeveledLists: newListsForEsp);
 
-                report.CobjNewCount += res.NewCount;
+                // The lists are new records in the builder's count too, but "COBJ: 3 new" for three
+                // leveled lists would be wrong on its face - they get a line of their own.
+                report.CobjNewCount += res.NewCount - res.NewLeveledListCount;
+                report.NewLeveledListCount += res.NewLeveledListCount;
                 report.CobjOverrideCount += res.OverrideCount;
                 report.CobjDeepCopiedCount += res.DeepCopiedCount;
                 report.CobjFromScratchCount += res.FromScratchCount;

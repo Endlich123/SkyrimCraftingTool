@@ -82,6 +82,10 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // what brings them into the game, so they are new records, not overrides.
         public int NewEnchantmentCount { get; set; }
 
+        // Leveled lists the user created in the tool - empty records in the generated ESP, filled at
+        // runtime by SkyPatcher (docs/LeveledList-Create-Plan.md, L-P3).
+        public int NewLeveledListCount { get; set; }
+
         // Same edit as above, but with ESP generation switched off there is no route for it at all.
         // Counted separately so it can be reported as genuinely unpatched rather than silently lost.
         public int EnchantmentAssignmentChangesUnpatched { get; set; }
@@ -111,7 +115,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
         public bool AnythingGenerated =>
             SkyPatcherRuleCount > 0 || CobjRecordCount > 0 || EnchantmentEspOverrideCount > 0
             || NpcEspOverrideCount > 0
-            || NewEnchantmentCount > 0;
+            || NewEnchantmentCount > 0
+            || NewLeveledListCount > 0;
 
         // Deliberately separate from Warnings: an ESP override is not a problem, but it IS a
         // consequence the user should take in knowingly - the record is copied wholesale, so
@@ -161,6 +166,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     parts.Add($"{EnchantmentEspOverrideCount} enchantment ESP override(s)");
                 if (NewEnchantmentCount > 0)
                     parts.Add($"{NewEnchantmentCount} new enchantment(s)");
+                if (NewLeveledListCount > 0)
+                    parts.Add($"{NewLeveledListCount} new leveled list(s)");
                 if (NpcEspOverrideCount > 0)
                     parts.Add($"{NpcEspOverrideCount} NPC ESP override(s)");
                 if (CobjFromScratchCount > 0)

@@ -252,6 +252,62 @@ namespace SkyrimCraftingTool.Services.PatchGen
             return names;
         }
 
+        // ListKey -> how many entries the scanned list holds. For the 255-entry check on every list the
+        // patch adds to (docs/LeveledList-Create-Plan.md, L-P6): SkyPatcher refuses past that since
+        // 7.1.3 and says so only in its own log. Fails soft like the name readers - a missing count
+        // means the check stays quiet, never that the export stops.
+        public IReadOnlyDictionary<string, int> ReadLeveledListEntryCounts()
+        {
+            var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            try
+            {
+                using var conn = new SqliteConnection(_connString);
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT ListKey, COUNT(*) FROM LeveledListEntry GROUP BY ListKey";
+
+                using var r = cmd.ExecuteReader();
+                while (r.Read())
+                    counts[Str(r, 0)] = r.GetInt32(1);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError("PatchDataReader.ReadLeveledListEntryCounts failed - the 255-entry check stays quiet", ex);
+            }
+
+            return counts;
+        }
+
+        // ListKey -> EditorID, for every list the scan knows plus the user's own. The comment above a
+        // rule that targets a list hanging in no container would otherwise only carry its key -
+        // ReadLeveledListNames reads ContainerLVLI, and 86 % of all lists hang in no container.
+        public IReadOnlyDictionary<string, string> ReadLeveledListEditorIds()
+        {
+            var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            try
+            {
+                using var conn = new SqliteConnection(_connString);
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT Key, EditorID FROM LeveledList WHERE Active = 1";
+
+                using var r = cmd.ExecuteReader();
+                while (r.Read())
+                {
+                    var key = Str(r, 0);
+                    if (key.Length > 0) names[key] = Str(r, 1);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError("PatchDataReader.ReadLeveledListEditorIds failed - rules keep their key-only comments", ex);
+            }
+
+            return names;
+        }
+
         // ContainerKey -> display name, for the "; ... via <container>" half of a rule's comment.
         // Cosmetic like ReadLeveledListNames, and fails the same way rather than taking the export
         // down with it.
