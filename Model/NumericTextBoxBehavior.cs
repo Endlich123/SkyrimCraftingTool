@@ -58,6 +58,21 @@ namespace SkyrimCraftingTool.Model
         public static void SetMax(DependencyObject element, double value) => element.SetValue(MaxProperty, value);
         public static double GetMax(DependencyObject element) => (double)element.GetValue(MaxProperty);
 
+        // AN EMPTY BOX MEANS SOMETHING on some fields, and clamping it to Min erases that meaning.
+        // The NPC group editor is the case: "an empty box removes the value from the group" is the
+        // only way to clear one, and a 0 arriving there instead would set the skill to zero.
+        //
+        // Off by default, so every field that has used this behaviour until now keeps the safety net
+        // it was given: for Cost or Weight an empty box is nothing but a half-finished edit, and
+        // leaving it empty would hand the binding a value it rejects and a red border nobody asked
+        // for.
+        public static readonly DependencyProperty AllowEmptyProperty =
+            DependencyProperty.RegisterAttached(
+                "AllowEmpty", typeof(bool), typeof(NumericTextBoxBehavior), new PropertyMetadata(false));
+
+        public static void SetAllowEmpty(DependencyObject element, bool value) => element.SetValue(AllowEmptyProperty, value);
+        public static bool GetAllowEmpty(DependencyObject element) => (bool)element.GetValue(AllowEmptyProperty);
+
         // No leading '-': every field this is used on (Cost, Weight, ArmorRating, Damage, Speed,
         // Reach, Stagger, RequiredLevel, Stage, ComparisonValue) is a non-negative game stat.
         private static readonly Regex IntegerRegex = new(@"^\d*$", RegexOptions.Compiled);
@@ -105,7 +120,8 @@ namespace SkyrimCraftingTool.Model
             var mode = GetMode(textBox);
             if (mode == NumericMode.None) return;
 
-            var normalized = NormalizeAndClamp(textBox.Text, mode, GetMin(textBox), GetMax(textBox));
+            var normalized = NormalizeAndClamp(
+                textBox.Text, mode, GetMin(textBox), GetMax(textBox), GetAllowEmpty(textBox));
             if (textBox.Text == normalized) return;
 
             textBox.Text = normalized;
@@ -116,8 +132,17 @@ namespace SkyrimCraftingTool.Model
 
         // Parses text as a number (empty / garbage / NaN / Infinity -> Min), clamps into [Min, Max]
         // (Max is additionally capped at int.MaxValue for Integer mode), and renders it back.
-        public static string NormalizeAndClamp(string? text, NumericMode mode, double min, double max)
+        //
+        // `allowEmpty` leaves a blank box blank instead of filling it with Min - see the attached
+        // property above. Garbage is still cleared to empty rather than to Min: on a field where
+        // empty is a meaning of its own, that is the one answer that cannot be mistaken for a value
+        // the user chose.
+        public static string NormalizeAndClamp(
+            string? text, NumericMode mode, double min, double max, bool allowEmpty = false)
         {
+            if (allowEmpty && string.IsNullOrWhiteSpace(text))
+                return "";
+
             if (mode == NumericMode.Integer && max > int.MaxValue)
                 max = int.MaxValue;
             if (max < min)
@@ -125,7 +150,10 @@ namespace SkyrimCraftingTool.Model
 
             if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
                 || double.IsNaN(value) || double.IsInfinity(value))
+            {
+                if (allowEmpty) return "";
                 value = min;
+            }
 
             value = Math.Clamp(value, min, max);
 

@@ -76,6 +76,10 @@ namespace SkyrimCraftingTool.Model
             // in load order; see the lost-entry block in ItemDBHandler.Scan.cs.
             AddColumnIfMissing(connection, "LeveledListLostEntry", "AddedBy", "TEXT");
             AddColumnIfMissing(connection, "LeveledListLostEntry", "DroppedBy", "TEXT");
+            // Original = 0: a leveled list the user created in the tool (docs/LeveledList-Create-Plan.md,
+            // L-P1). Same flag and the same consequence as on COBJ and Enchantments - the scan must
+            // never mark such a row inactive, because no plugin will ever produce it again.
+            AddColumnIfMissing(connection, "LeveledList", "Original", "INTEGER NOT NULL DEFAULT 1");
             AddColumnIfMissing(connection, "Container", "Active", "INTEGER NOT NULL DEFAULT 1");
             AddColumnIfMissing(connection, "MagicEffects", "Active", "INTEGER NOT NULL DEFAULT 1");
 
@@ -856,7 +860,9 @@ namespace SkyrimCraftingTool.Model
                     ChanceNone INTEGER NOT NULL DEFAULT 0,
                     Flags TEXT,
                     GlobalKey TEXT COLLATE NOCASE,
-                    Active INTEGER NOT NULL DEFAULT 1
+                    Active INTEGER NOT NULL DEFAULT 1,
+                    -- 0 = created in the tool, keyed under SkyrimCraftingTool.esp; see EnsureSchema.
+                    Original INTEGER NOT NULL DEFAULT 1
                 );
 
                 -- One row per entry, in list order.
@@ -1043,6 +1049,30 @@ namespace SkyrimCraftingTool.Model
                     ChanceNone INTEGER,
                     CalcFlagMode TEXT,
                     LastChanged TEXT
+                );
+
+                -- Where one of the user's OWN leveled lists goes (docs/LeveledList-Create-Plan.md,
+                -- L-P6): into another leveled list, or into a container.
+                --
+                -- A decision, not scanned data - same split as LeveledListEdit above, and for the
+                -- same reason: it has to outlive any number of rescans. The list itself is a row in
+                -- LeveledList with Original = 0; this table only says where it hangs.
+                --
+                -- TargetKind is 'LeveledList' or 'Container', and decides which SkyPatcher patcher
+                -- the rule goes to: addOnceToLLs under filterByLLs, or addOnceToContainers under
+                -- filterByContainers. Level only means anything for a list - a container hands out
+                -- what it holds, at no level.
+                --
+                -- Keyed (ListKey, TargetKey): one list hangs in one target once. addOnce would
+                -- refuse a second copy at runtime anyway, so a second row could only ever be a
+                -- second, different level that never reaches the game.
+                CREATE TABLE IF NOT EXISTS UserLeveledListTarget (
+                    ListKey TEXT NOT NULL COLLATE NOCASE,
+                    TargetKey TEXT NOT NULL COLLATE NOCASE,
+                    TargetKind TEXT NOT NULL,
+                    Level INTEGER NOT NULL DEFAULT 1,
+                    Count INTEGER NOT NULL DEFAULT 1,
+                    PRIMARY KEY (ListKey, TargetKey)
                 );
 
                 -- Global variables (GLOB), for one purpose: a leveled list can take its chance-none

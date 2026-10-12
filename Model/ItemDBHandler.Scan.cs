@@ -788,7 +788,10 @@ namespace SkyrimCraftingTool.Model
             MarkInactiveExcept(connection, transaction, "LeveledSpells", "Key", allLeveledSpellCatalogue.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "NpcPerkCatalogue", "Key", allPerkCatalogue.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "Globals", "Key", allGlobals.Select(r => (string)r[0]));
-            MarkInactiveExcept(connection, transaction, "LeveledList", "Key", latestLeveledListByKey.Keys);
+            // Original = 1 only, like COBJ and Enchantments above: a list the user created exists in
+            // no plugin, so no scan will ever "see" it, and without this guard every rescan would
+            // switch it off (docs/LeveledList-Create-Plan.md, L-P1).
+            MarkInactiveExcept(connection, transaction, "LeveledList", "Key", latestLeveledListByKey.Keys, extraWhere: "Original = 1");
             MarkInactiveExcept(connection, transaction, "LeveledNpc", "Key", latestLeveledNpcByKey.Keys);
 
             writeSw.Stop();

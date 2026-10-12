@@ -66,6 +66,18 @@ namespace SkyrimCraftingTool.Model
         // items rarely means giving them all the same enchantment, but a preset for legendary
         // end-game items is exactly the case where that sameness is the point.
         public FieldValue<string> Enchantment { get; set; } = new() { Value = "" };
+
+        // HOW MUCH charge (EAMT) those items get - the item's own field, not the enchantment's,
+        // and the other half of the same thing: an item that carries an enchantment with no
+        // charge has no maximum and cannot be recharged (see ItemNodeVM.EnchantAmount).
+        //
+        // Its own FieldValue rather than a number hung off Enchantment: a preset for end-game
+        // gear may well want to raise the charge pool of items that keep whatever enchantment
+        // they already have, and the reverse - assign an effect, leave the charge alone.
+        //
+        // Additive like the field above it: a preset written before this existed deserializes
+        // with Enabled == false, so Apply ignores it. No migration, no SchemaVersion bump.
+        public FieldValue<int> EnchantmentAmount { get; set; } = new();
     }
 
     // Wraps a preset field together with its "Include"-checkbox state. Apply only touches
