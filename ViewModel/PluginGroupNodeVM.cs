@@ -55,10 +55,13 @@ namespace SkyrimCraftingTool.ViewModel
         // order is exactly the row someone is looking for. Without a list it stays alphabetical,
         // which is what the tests and any caller that has no scanner get.
         //
-        // `expanded` is for the filtered tree: a search that leaves the matches inside collapsed
-        // plugin rows looks like a search that found nothing.
+        // ALWAYS COLLAPSED. There used to be an `expanded` flag here, set by the filtered tree so a
+        // search would not leave its matches hidden inside closed plugin rows. The user's own
+        // reading of it (2026-10-12) is the one that counts: on a real load order that opens every
+        // plugin at the first keystroke, and the item tree - the one they read first - never did.
+        // Whoever wants a node open sets IsExpanded on it; see PluginTree.Filter.
         public static List<PluginGroupNodeVM> Group<T>(
-            IEnumerable<T> rows, Func<T, string> keyOf, bool expanded = false,
+            IEnumerable<T> rows, Func<T, string> keyOf,
             IReadOnlyList<string>? loadOrder = null)
         {
             var position = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -69,7 +72,7 @@ namespace SkyrimCraftingTool.ViewModel
                 .GroupBy(r => PluginOf(keyOf(r)), StringComparer.OrdinalIgnoreCase)
                 .OrderBy(g => position.TryGetValue(g.Key, out var i) ? i : int.MaxValue)
                 .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
-                .Select(g => new PluginGroupNodeVM(g.Key, g.Cast<object>()) { IsExpanded = expanded })
+                .Select(g => new PluginGroupNodeVM(g.Key, g.Cast<object>()))
                 .ToList();
         }
 

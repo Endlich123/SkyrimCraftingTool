@@ -596,6 +596,71 @@ namespace SkyrimCraftingTool.ViewModel
             ManageOrphanedEditsCommand = new RelayCommand(ManageOrphanedEdits);
 
             RefreshAvailablePresets();
+
+            Services.UserLeveledListStore.Changed += OnOwnListsChanged;
+        }
+
+        // A list hung into a container (or taken out, renamed, deleted) in the Leveled lists tab has to
+        // reach the item picker without a rescan (docs/LeveledList-Create-Plan.md, L-P5). The container
+        // definitions are refilled in place; the ROWS showing them were built from the old entries, so
+        // those are replaced.
+        private void OnOwnListsChanged()
+        {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher != null && !dispatcher.CheckAccess())
+            {
+                dispatcher.Invoke(OnOwnListsChanged);
+                return;
+            }
+
+            // No catalogue yet means nothing shows it - the first snapshot merges from the database.
+            if (AllContainers.Count == 0) return;
+
+            try
+            {
+                // The containers an own list was hung into: picking that chest has to offer the list
+                // among the chest's own lists.
+                var affected = Services.UserLeveledListStore.MergeOwnListsIntoContainers(AllContainers);
+                if (affected.Count == 0) return;
+
+                ReplaceRows(AllContainerVMs, LimitedContainerVMs, affected);
+
+                // The open item, if it already uses one of those: its rows were built from the old
+                // entries too. Re-read from its own string, which is what the item editor does on selection.
+                if (_subscribedItemForContainerSelection is { } item
+                    && item.ContainerSelection.SelectedContainers.Any(c => affected.Contains(c.ContainerKey)))
+                {
+                    item.ContainerSelection.LoadFromString(item.ContainerString ?? "");
+                }
+
+                UpdateAllContainerSelectionFlags(_subscribedItemForContainerSelection);
+                OnPropertyChanged(nameof(FilteredContainers));
+            }
+            catch (Exception ex)
+            {
+                // A stale picker row is a nuisance; taking the editor down over it would be worse.
+                AppLogger.LogError("MainContentVM.OnOwnListsChanged", ex);
+            }
+        }
+
+        // A row copies its definition's lists when it is built, so a changed definition needs a new row.
+        // The standard view holds the SAME instances as the full one (and the selection marks are set
+        // through the full one), so it gets the same new row, not one of its own.
+        private static void ReplaceRows(ObservableCollection<ContainerEntryVM> all,
+                                        ObservableCollection<ContainerEntryVM> limited,
+                                        IReadOnlySet<string> containerKeys)
+        {
+            for (int i = 0; i < all.Count; i++)
+            {
+                var old = all[i];
+                if (!containerKeys.Contains(old.ContainerKey)) continue;
+
+                var fresh = new ContainerEntryVM(old.Definition);
+                all[i] = fresh;
+
+                int j = limited.IndexOf(old);
+                if (j >= 0) limited[j] = fresh;
+            }
         }
 
         // --- Initial load ---
@@ -1582,6 +1647,10 @@ namespace SkyrimCraftingTool.ViewModel
             AllContainers = snapshot.Containers?.OrderBy(c => c.Name).ToList()
                 ?? new List<ContainerRecord>();
 
+            // Own lists hung into a real container sit among that container's lists - see
+            // UserLeveledListStore.MergeOwnListsIntoContainers. Before the rows below are built from it.
+            Services.UserLeveledListStore.MergeOwnListsIntoContainers(AllContainers);
+
             // The enchantment picker's catalogue, listed as "EditorID | Name".
             //
             // NOT the name alone, and the numbers are the reason: 473 of the 632 enchantments in the
@@ -1644,10 +1713,10 @@ namespace SkyrimCraftingTool.ViewModel
                 AllContainerVMs.Add(vm);
             }
 
-            // Limited list (z. B. Top 20 alphabetisch)
+            // The standard view - see ContainerEntryVM.IsShown for the rule.
             LimitedContainerVMs.Clear();
             foreach (var vm in AllContainerVMs
-                .Where(vm => vm.Name.Contains("Merchant", StringComparison.OrdinalIgnoreCase)))
+                .Where(vm => ContainerEntryVM.IsShown(vm, expert: false)))
                 {
                     LimitedContainerVMs.Add(vm);
                 }

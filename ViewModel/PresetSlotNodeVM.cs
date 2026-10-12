@@ -428,6 +428,26 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
+        // The charge pool (EAMT) that goes with it. Its own include switch, because the two halves
+        // are useful apart: raising the charge of items that keep their own enchantment is a normal
+        // thing to want from a preset, and so is assigning an effect without touching the charge.
+        //
+        // No first-pick auto-tick like SelectedEnchantment has: 0 is a legitimate value here (it is
+        // what every unenchanted item carries), so there is no "went from nothing to something"
+        // transition to hang that rule on. The switch is the only thing that says "the preset has an
+        // opinion about the charge".
+        public bool EnchantmentAmountEnabled
+        {
+            get => _config.EnchantmentAmount.Enabled;
+            set { if (_config.EnchantmentAmount.Enabled == value) return; _config.EnchantmentAmount.Enabled = value; OnPropertyChanged(); NotifyChanged(); }
+        }
+
+        public int EnchantmentAmount
+        {
+            get => _config.EnchantmentAmount.Value;
+            set { if (_config.EnchantmentAmount.Value == value) return; _config.EnchantmentAmount.Value = value; OnPropertyChanged(); NotifyChanged(); }
+        }
+
         // --------------------
         // Container
         // --------------------
@@ -467,7 +487,7 @@ namespace SkyrimCraftingTool.ViewModel
             get
             {
                 EnsureLoaded();
-                return (ShowExpertContainers ? CatalogContainers : CatalogContainers.Where(c => c.Name.Contains("Merchant", StringComparison.OrdinalIgnoreCase)))
+                return CatalogContainers.Where(c => ContainerEntryVM.IsShown(c, ShowExpertContainers))
                     .Where(c => string.IsNullOrWhiteSpace(ContainerSearchText) || c.Name.Contains(ContainerSearchText, StringComparison.OrdinalIgnoreCase));
             }
         }

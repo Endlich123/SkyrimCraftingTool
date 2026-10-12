@@ -55,6 +55,15 @@ namespace SkyrimCraftingTool.ViewModel
         public string ContainerKey => Definition.ContainerKey;
         public string Name => Definition.Name;
 
+        // Which rows a container list shows - the ONE rule for every place that lists containers, so
+        // the item editor, the bulk editor, the presets and the placement tabs cannot disagree. It
+        // used to be four copies of the same Contains("Merchant").
+        //
+        //   Standard view: merchants only, to keep a list of hundreds short.
+        //   Expert view:   everything.
+        public static bool IsShown(ContainerEntryVM row, bool expert)
+            => expert || row.Name.Contains("Merchant", StringComparison.OrdinalIgnoreCase);
+
         public ContainerRecord Definition { get; }
 
         public ObservableCollection<LVLiEntryVM> LVLiEntries { get; } = new();

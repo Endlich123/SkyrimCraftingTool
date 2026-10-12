@@ -81,6 +81,16 @@ namespace SkyrimCraftingTool.ViewModel
 
             Tabs = new List<object> { Containers, LeveledLists };
             Tabs.AddRange(Placements);
+
+            // The placement sub-tabs build their container rows once, from the catalogue - and an own
+            // list hung into a container next door in the Leveled lists sub-tab changes that container's
+            // rows (UserLeveledListStore.MergeOwnListsIntoContainers), which would not show there until
+            // a rescan. Dropped rather than rebuilt: the placement tabs are not in front while lists
+            // are being made, and EnsureLoaded re-reads them the moment one is.
+            UserLeveledListStore.Changed += () =>
+            {
+                foreach (var p in Placements) p.Invalidate();
+            };
         }
 
         private static string Plural(string kind) => kind switch

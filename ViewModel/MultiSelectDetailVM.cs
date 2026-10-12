@@ -404,8 +404,8 @@ namespace SkyrimCraftingTool.ViewModel
                 return row.Name.Contains(ContainerSearchText, StringComparison.OrdinalIgnoreCase);
 
             // Same as in the single-item editor (LimitedContainerVMs): only vendors by default, to
-            // keep the list small. "Expert" shows the full mod-list catalog.
-            return ShowExpertContainers || row.Name.Contains("Merchant", StringComparison.OrdinalIgnoreCase);
+            // keep the list small. "Expert" shows the full mod-list catalog. The rule is ContainerEntryVM's.
+            return ContainerEntryVM.IsShown(row, ShowExpertContainers);
         }
 
         // Template row for the free-form Crafting/Temper Ingredients editors: no parent ItemNodeVM

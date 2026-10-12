@@ -25,6 +25,13 @@ namespace SkyrimCraftingTool.ViewModel
 
         public ICommand DeleteCommand { get; }
 
+        // Renames right away, with whatever is in the box. The box itself commits on LostFocus, and on a
+        // pane whose only other control is "delete Preset" that meant clicking somewhere in the tree before
+        // the new name existed - a user asked for a button (2026-10-12). The text comes in as the
+        // parameter rather than through the binding, so the button does not depend on taking the focus
+        // first. The LostFocus commit that may follow carries the same name and is a no-op.
+        public ICommand SaveNameCommand { get; }
+
         public PresetNodeVM(PresetFile file, PresetBranchNodeVM armorBranch, PresetBranchNodeVM weaponBranch,
             Action<PresetNodeVM, string> onRename, Action<PresetNodeVM> onDelete)
         {
@@ -36,6 +43,7 @@ namespace SkyrimCraftingTool.ViewModel
             _onDelete = onDelete;
 
             DeleteCommand = new RelayCommand(() => _onDelete(this));
+            SaveNameCommand = new RelayCommand<string>(name => _onRename(this, name ?? File.PresetName));
         }
 
         // Called by PresetsConfigVM after a rename attempt, whether it succeeded (refresh the

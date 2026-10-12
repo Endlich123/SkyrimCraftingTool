@@ -242,6 +242,7 @@ namespace SkyrimCraftingTool.ViewModel
             SelectedOwner = PickedOwners.Count == 1 ? PickedOwners[0] : null;
 
             LoadContents();
+            RefreshOwnListEditor();
 
             OnPropertyChanged(nameof(PickedOwners));
             OnPropertyChanged(nameof(IsMultiOwner));
@@ -253,6 +254,73 @@ namespace SkyrimCraftingTool.ViewModel
         }
 
         public bool IsMultiOwner => PickedOwners.Count > 1;
+
+        // --- The user's own lists (docs/LeveledList-Create-Plan.md, L-P2) ---
+        //
+        // Only in the Leveled lists sub-tab. A container cannot be made here - the generated ESP
+        // writes lists, and only an empty one: what goes into it is a SkyPatcher rule like
+        // everything else.
+        public bool CanCreateList => !IsContainer;
+
+        public ICommand CreateListCommand => new RelayCommand(CreateList);
+
+        private void CreateList()
+        {
+            if (IsContainer) return;
+
+            UserLeveledList created;
+            try
+            {
+                created = UserLeveledListStore.Create(dbPath: _dbPath);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError("Creating a leveled list failed", ex);
+                System.Windows.MessageBox.Show(
+                    $"The leveled list could not be created:{Environment.NewLine}{ex.Message}",
+                    "New leveled list", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                return;
+            }
+
+            // A search that hides the new row would make the button look like it did nothing.
+            Search = "";
+            Reload();
+            PickOnly(Owners.FirstOrDefault(o => string.Equals(o.Key, created.Key, StringComparison.OrdinalIgnoreCase)));
+
+            IssueHub.Current.Report(new AppIssue(
+                AppIssueSeverity.Info,
+                $"{created.EditorId} created. The generated ESP brings it into the game as an empty list - " +
+                "hang it into a container below, then fill it from an item's Container tab under that container.",
+                Category: "leveledlist"));
+        }
+
+        // The panel for the picked list, if it is one of the user's own - one pick only, because
+        // renaming or placing several lists at once is not a question anyone asked.
+        private OwnListEditorVM? _ownListEditor;
+
+        public OwnListEditorVM? OwnListEditor => _ownListEditor;
+
+        public bool HasOwnListEditor => _ownListEditor != null;
+
+        private void RefreshOwnListEditor()
+        {
+            var owner = PickedOwners.Count == 1 ? PickedOwners[0] : null;
+
+            if (owner == null || !owner.IsOwn)
+            {
+                _ownListEditor = null;
+            }
+            else if (_ownListEditor == null
+                     || !string.Equals(_ownListEditor.ListKey, owner.Key, StringComparison.OrdinalIgnoreCase))
+            {
+                // Reload, not a narrower refresh: a rename changes the tree row, a delete removes it,
+                // and both are rare enough that re-reading the tab is the honest answer.
+                _ownListEditor = new OwnListEditorVM(owner, _dbPath, Reload);
+            }
+
+            OnPropertyChanged(nameof(OwnListEditor));
+            OnPropertyChanged(nameof(HasOwnListEditor));
+        }
 
         // --- One list, two sections ---
         //
@@ -854,11 +922,16 @@ namespace SkyrimCraftingTool.ViewModel
             Key = summary.Key;
             Name = summary.Name;
             EntryCount = summary.EntryCount;
+            IsOwn = summary.IsOwn;
         }
 
         public string Key { get; }
         public string Name { get; }
         public int EntryCount { get; }
+
+        // A leveled list the user created in the tool - marked in the tree, because it is the one kind
+        // of row here that no plugin defines (docs/LeveledList-Create-Plan.md, L-P2).
+        public bool IsOwn { get; }
 
         public string CountText => EntryCount == 1 ? "1 entry" : $"{EntryCount} entries";
 

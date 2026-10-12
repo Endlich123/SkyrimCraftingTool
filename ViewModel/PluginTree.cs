@@ -72,8 +72,21 @@ namespace SkyrimCraftingTool.ViewModel
         // over a few thousand rows, and the rest of this tool already pays for a debouncer wherever
         // that is not true. If this turns out to stutter on a big load order it becomes a
         // BackgroundFilterRunner like the enchantment tree.
+        //
+        // TYPING DOES NOT OPEN THE PLUGINS (user, 2026-10-12). It used to: the filtered nodes were
+        // built expanded, on the reasoning that matches inside collapsed rows look like no matches
+        // at all. On a real load order that turns one keystroke into a few thousand visible rows and
+        // the plugin a search is supposed to narrow down to disappears in them - and the item tree,
+        // which the user reads first, never did this. The count beside each plugin name already says
+        // where the matches are; opening the one that matters is a click.
+        //
+        // Each plugin therefore keeps the state the user left it in. Expanding one WHILE a filter is
+        // active is remembered too, by folding it back into _all before the rebuild - without that,
+        // the next keystroke would snap it shut again.
         public void Filter(string search)
         {
+            RememberExpansion();
+
             _search = search ?? "";
 
             if (string.IsNullOrWhiteSpace(_search))
@@ -82,10 +95,31 @@ namespace SkyrimCraftingTool.ViewModel
                 return;
             }
 
-            // Expanded, because matches sitting inside collapsed plugin rows look like no matches
-            // at all.
             _filtered = PluginGroupNodeVM.Group(
-                _rows.Where(r => _matches(r, _search)), _keyOf, expanded: true, loadOrder: _order);
+                _rows.Where(r => _matches(r, _search)), _keyOf, loadOrder: _order);
+
+            var expanded = _all.Where(n => n.IsExpanded)
+                               .Select(n => n.PluginName)
+                               .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var node in _filtered)
+                node.IsExpanded = expanded.Contains(node.PluginName);
+        }
+
+        // The filtered nodes are new objects on every keystroke, so what the user opened in them
+        // only survives by being written back to the full tree - the one collection that outlives a
+        // filter pass. A plugin in _filtered that _all no longer has (a reload between keystrokes)
+        // is simply dropped; there is nothing left to remember it on.
+        private void RememberExpansion()
+        {
+            if (_filtered == null) return;
+
+            foreach (var node in _filtered)
+            {
+                var full = _all.FirstOrDefault(
+                    n => string.Equals(n.PluginName, node.PluginName, StringComparison.OrdinalIgnoreCase));
+                if (full != null) full.IsExpanded = node.IsExpanded;
+            }
         }
     }
 }

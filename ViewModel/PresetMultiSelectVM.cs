@@ -132,7 +132,7 @@ namespace SkyrimCraftingTool.ViewModel
         // Standard view limits to merchant containers, Expert shows everything - same rule and same
         // wording as the single-slot editor.
         public IEnumerable<ContainerEntryVM> FilteredContainers =>
-            (ShowExpertContainers ? CatalogContainers : CatalogContainers.Where(c => c.Name.Contains("Merchant", StringComparison.OrdinalIgnoreCase)))
+            CatalogContainers.Where(c => ContainerEntryVM.IsShown(c, ShowExpertContainers))
                 .Where(c => string.IsNullOrWhiteSpace(ContainerSearchText) || c.Name.Contains(ContainerSearchText, StringComparison.OrdinalIgnoreCase));
 
         public ICommand ToggleExpertContainersCommand => new RelayCommand(() => ShowExpertContainers = !ShowExpertContainers);
