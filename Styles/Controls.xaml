@@ -749,7 +749,11 @@
          resource keys differ between them (set via the resource names baked into each style below). -->
     <Style x:Key="ActionButtonStyle" TargetType="Button">
         <Setter Property="Padding" Value="10,4"/>
-        <Setter Property="Margin" Value="6,0,0,5"/>
+        <!-- The gap goes RIGHT, after the button - the rule StandardButtonStyle and the WrapPanels
+             here already follow. It used to be on the left (6,0,0,5), which indented the first
+             button of every row by 6 px against everything below it; the rows that noticed fixed it
+             one by one with a Margin="0,..." of their own (user, 2026-10-12). -->
+        <Setter Property="Margin" Value="0,0,6,5"/>
         <Setter Property="Foreground" Value="{DynamicResource ColorTextOnAccent}"/>
         <Setter Property="Background" Value="{DynamicResource ColorAccent}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource ColorBorder}"/>

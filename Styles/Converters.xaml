@@ -19,5 +19,6 @@
     <model:BoolToBrushConverter x:Key="BoolToBrushConverter"/>
     <model:BoolToChangedBorderConverter x:Key="BoolToChangedBorderConverter"/>
     <model:BoolToDeadRefBorderConverter x:Key="BoolToDeadRefBorderConverter"/>
+    <model:ScaleConverter x:Key="ScaleConverter"/>
 
 </ResourceDictionary>
