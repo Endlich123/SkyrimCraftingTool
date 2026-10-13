@@ -81,8 +81,36 @@
                            Style="{StaticResource ItemLabelStyle}"
                            Margin="0,0,0,6"/>
 
-                <ScrollViewer Height="180" VerticalScrollBarVisibility="Auto">
-                    <ItemsControl ItemsSource="{Binding FilteredContainers}">
+                <!-- VIRTUALIZED (docs/Performance-Plan.md, P-P4a). This used to be an ItemsControl inside a
+                     ScrollViewer, which builds EVERY row - and in the placement sub-tabs the expert view
+                     (all containers, up to ~3.600) is on from the start: 1.3-3.0 s per sub-tab, for a list
+                     180 px high that shows six or seven rows. Now the ScrollViewer is the list's own (in
+                     its template), so the VirtualizingStackPanel knows the visible height and builds only
+                     the rows on screen, recycling them while scrolling.
+                     ScrollUnit Pixel keeps the smooth scrolling of before (item scrolling would jump row by
+                     row). The fixed height is what makes this work; the list never had a scroll region of
+                     the page around it to compete with. -->
+                <ItemsControl ItemsSource="{Binding FilteredContainers}"
+                              Height="180"
+                              VirtualizingPanel.IsVirtualizing="True"
+                              VirtualizingPanel.VirtualizationMode="Recycling"
+                              VirtualizingPanel.ScrollUnit="Pixel"
+                              ScrollViewer.CanContentScroll="True">
+                        <ItemsControl.Template>
+                            <ControlTemplate TargetType="ItemsControl">
+                                <ScrollViewer CanContentScroll="True"
+                                              VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled"
+                                              Focusable="False">
+                                    <ItemsPresenter/>
+                                </ScrollViewer>
+                            </ControlTemplate>
+                        </ItemsControl.Template>
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <VirtualizingStackPanel/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border Padding="6"
@@ -130,7 +158,6 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                </ScrollViewer>
             </StackPanel>
 
             <!-- SPLITTER -->

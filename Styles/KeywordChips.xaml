@@ -1,0 +1,84 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:model="clr-namespace:SkyrimCraftingTool.Model">
+
+    <!-- KEYWORD CHIPS, LEAN AND SHARED (docs/Performance-Plan.md, P-P4).
+
+         "All keywords" builds one chip per keyword - about 4.300 on a large load order - and switching
+         it on took 2.9 s. The chips themselves were the cost: every one carried its own copy of what
+         is the same for all of them. With the lean version below it was 1.09 s, same look (measured
+         2026-10-13 in the item editor). Now one definition for every big chip list - item editor,
+         preset editor, preset multi-select, enchantments - instead of four copies that drift.
+
+         What makes them lean:
+           - Text colour and font size are set ONCE on the list and inherited. The chip text has an
+             explicit, empty style (KeywordChipTextStyle): without it the app-wide implicit TextBlock
+             style would apply, and it SETS a Foreground, which beats an inherited value.
+             Explicit also means no implicit-style lookup per chip at all.
+           - The click is one handler on the list (model:KeywordChipBehavior) instead of a
+             MouseBinding with a command binding on every chip.
+           - The chip style is a shared resource instead of an inline style per template.
+         The tooltip stays a binding per chip: its opening event does not reach the list.
+
+         The small "selected keywords" lists keep their own templates - a handful of chips, nothing to
+         gain. -->
+
+    <Style x:Key="KeywordChipTextStyle" TargetType="TextBlock"/>
+
+    <!-- Its own instance rather than Converters.xaml's: this dictionary then stands on its own and
+         does not depend on being merged after that one (its test loads it without an Application,
+         where a key from a sibling dictionary is not found). -->
+    <model:BoolToBrushConverter x:Key="KeywordChipSelectedBrush"/>
+
+    <Style x:Key="KeywordChipStyle" TargetType="Border">
+        <Setter Property="CornerRadius" Value="4"/>
+        <Setter Property="Padding" Value="5"/>
+        <Setter Property="Margin" Value="3"/>
+        <Setter Property="ToolTip" Value="{Binding Key}"/>
+        <Setter Property="Background" Value="{Binding IsSelected, Converter={StaticResource KeywordChipSelectedBrush}}"/>
+    </Style>
+
+    <!-- With the read-only mark: weapon-type keywords cannot be changed and show in the danger colour.
+         (ToggleSelectedCommand refuses them either way; this is what says so.) -->
+    <Style x:Key="AllKeywordChipStyle" TargetType="Border" BasedOn="{StaticResource KeywordChipStyle}">
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsReadOnly}" Value="True">
+                <Setter Property="Background" Value="{DynamicResource ColorSurfaceDanger}"/>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <DataTemplate x:Key="AllKeywordChipTemplate">
+        <Border Style="{StaticResource AllKeywordChipStyle}">
+            <TextBlock Style="{StaticResource KeywordChipTextStyle}"
+                       Text="{Binding Name}"
+                       HorizontalAlignment="Center"
+                       TextTrimming="CharacterEllipsis"/>
+        </Border>
+    </DataTemplate>
+
+    <!-- Without the read-only mark - the enchantment keyword list never had it. -->
+    <DataTemplate x:Key="KeywordChipTemplate">
+        <Border Style="{StaticResource KeywordChipStyle}">
+            <TextBlock Style="{StaticResource KeywordChipTextStyle}"
+                       Text="{Binding Name}"
+                       HorizontalAlignment="Center"
+                       TextTrimming="CharacterEllipsis"/>
+        </Border>
+    </DataTemplate>
+
+    <ItemsPanelTemplate x:Key="KeywordChipPanel">
+        <WrapPanel Orientation="Horizontal"/>
+    </ItemsPanelTemplate>
+
+    <!-- The list. Sets what the chips inherit (text colour) and hosts the click. A list that needs a
+         font size or another text colour sets FontSize / Foreground on itself; a list without the
+         read-only mark swaps the ItemTemplate. -->
+    <Style x:Key="KeywordChipListStyle" TargetType="ItemsControl">
+        <Setter Property="ItemsPanel" Value="{StaticResource KeywordChipPanel}"/>
+        <Setter Property="ItemTemplate" Value="{StaticResource AllKeywordChipTemplate}"/>
+        <Setter Property="Foreground" Value="{DynamicResource ColorChipText}"/>
+        <Setter Property="model:KeywordChipBehavior.IsChipHost" Value="True"/>
+    </Style>
+
+</ResourceDictionary>
