@@ -13,8 +13,8 @@
          InformationalVersion, which is what the bug report prints as "Tool version" (see
          DiagnosticsReport). Kept spelled exactly like the uploaded file name so a report and a
          download name can be compared without translating between them. -->
-    <Version>0.9.7</Version>
-    <InformationalVersion>0.9.7</InformationalVersion>
+    <Version>0.9.7.5</Version>
+    <InformationalVersion>0.9.7.5</InformationalVersion>
 
     <!-- Ship only English resources. The 13 satellite folders are localized error strings from .NET
          and third-party libraries; the tool's own UI is English either way. -->
@@ -26,6 +26,20 @@
          out of its way to collect (see Services/DiagnosticsReport.cs). Embedded keeps the folder
          clean AND keeps the line numbers. -->
     <DebugType>embedded</DebugType>
+
+    <!-- Server GC, with DATAS (docs/Performance-Plan.md, Messung 9). The scan reads 1.800 plugins on
+         20 threads at once; with the default workstation GC every one of ~320 small collections
+         stopped all of them, 2-3.5 s of pure pause. Server GC gives each core its own heap and
+         collects far less often: reading the plugins went 4.6 s -> 2.6 s, the tree rebuild
+         3.2 s -> 2.1 s.
+         Server GC alone would size itself by the core count and hold on to more memory on every
+         many-core machine, wanted or not. GarbageCollectionAdaptationMode=1 (DATAS, .NET 8) starts
+         it with few heaps and adds more only under load, so the pauses get short without the memory
+         growing with the core count. Concurrent (background) GC stays on, as by default.
+         perf.log names the GC mode actually in effect in each session header, so a measurement can
+         always be told apart by it. -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <GarbageCollectionAdaptationMode>1</GarbageCollectionAdaptationMode>
   </PropertyGroup>
 
   <ItemGroup>
