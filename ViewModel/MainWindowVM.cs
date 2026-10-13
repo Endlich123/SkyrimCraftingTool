@@ -149,6 +149,12 @@ namespace SkyrimCraftingTool.ViewModel
             // hold predicates, not records, and nothing in them is written by a scan.
             NpcGroupsVM = new NpcGroupVM(itemService, new Services.NpcGroupStore(npcDbPath));
 
+            // One read of the NPC records for both tabs (docs/Performance-Plan.md, P-P2a) - see
+            // SharedNpcData for why sharing the records keeps the groups right.
+            var sharedNpcs = new Services.SharedNpcData(itemService);
+            NpcVM.Shared = sharedNpcs;
+            NpcGroupsVM.Shared = sharedNpcs;
+
             // Following the template link moves to the Templates tab. Without this the editor
             // changed while the NPC tree kept showing the record that was open before, which looks
             // exactly like a button that does nothing.
@@ -177,10 +183,21 @@ namespace SkyrimCraftingTool.ViewModel
             // EnchantmentMenuVM builds its tree from _itemDB at construction time, before any scan
             // has run (the DB is empty/missing then) — refresh it once real data exists, on both the
             // initial auto-load and every subsequent rescan.
-            ContentVM.DataLoaded += () => EnchantVM.RefreshData(ContentVM.ActivePlugins);
-            ContentVM.DataLoaded += () => PresetsVM.RefreshReferenceData();
+            // Both run after every load and every scan; timed for Logs\perf.log (P-P0).
+            ContentVM.DataLoaded += () =>
+            {
+                using (PerfLog.Measure("After load: enchantment tab data"))
+                    EnchantVM.RefreshData(ContentVM.ActivePlugins);
+            };
+            ContentVM.DataLoaded += () =>
+            {
+                using (PerfLog.Measure("After load: preset reference data"))
+                    PresetsVM.RefreshReferenceData();
+            };
             // A scan rewrites the NPC tables, so whatever the tab is holding is stale. Dropped
             // rather than re-read: the user is usually not on that tab when a scan finishes.
+            // The shared NPC records first: the scan rewrote the tables they came from.
+            ContentVM.DataLoaded += () => sharedNpcs.Clear();
             ContentVM.DataLoaded += () => NpcVM.Invalidate();
             // The group tables survive a scan - a predicate is not scanned data - but the MEMBERS a
             // predicate reaches change with it, which is the whole point of the rescan diff
@@ -201,41 +218,29 @@ namespace SkyrimCraftingTool.ViewModel
             ClearIssuesCommand = new RelayCommand(() => Issues.Clear());
 
             // Commands
+            //
+            // Every tab switch goes through SwitchTo, which times it for Logs\perf.log
+            // (docs/Performance-Plan.md, P-P0) - from the click until the view is rendered, and the
+            // data load on its own.
             OpenMainContentCommand = new RelayCommand(() =>
-            {
                 // Picks up any presets created/edited while the user was on the Presets tab.
-                ContentVM.RefreshAvailablePresets();
-                CurrentView = ContentVM;
-            });
-            OpenEnchantmentMenuCommand = new RelayCommand(() => CurrentView = EnchantVM);
+                SwitchTo("Items", ContentVM, ContentVM.RefreshAvailablePresets));
+            OpenEnchantmentMenuCommand = new RelayCommand(() => SwitchTo("Enchantments", EnchantVM));
             OpenNpcMenuCommand = new RelayCommand(() =>
-            {
                 // First visit reads the NPC tables; later visits are free.
-                NpcVM.EnsureLoaded();
-                CurrentView = NpcVM;
-            });
+                SwitchTo("NPCs", NpcVM, NpcVM.EnsureLoaded, () => NpcVM.NeedsLoad));
             OpenTemplatesCommand = new RelayCommand(() =>
-            {
                 // Same load as the NPC tab, because it IS the NPC tab data.
-                NpcVM.EnsureLoaded();
-                CurrentView = TemplateVM;
-            });
+                SwitchTo("Templates", TemplateVM, NpcVM.EnsureLoaded, () => NpcVM.NeedsLoad));
             OpenNpcGroupsCommand = new RelayCommand(() =>
-            {
                 // Reads the NPC tables on the first visit, like the NPC tab.
-                NpcGroupsVM.EnsureLoaded();
-                CurrentView = NpcGroupsVM;
-            });
-            OpenPresetsConfigCommand = new RelayCommand(() => CurrentView = PresetsVM);
+                SwitchTo("NPC groups", NpcGroupsVM, NpcGroupsVM.EnsureLoaded, () => NpcGroupsVM.NeedsLoad));
+            OpenPresetsConfigCommand = new RelayCommand(() => SwitchTo("Presets", PresetsVM));
             // Loaded on arrival, not at startup: a real load order has thousands of containers and
             // nobody pays for them until they open the tab.
-            OpenWorldCommand = new RelayCommand(() =>
-            {
-                WorldVM.EnsureLoaded();
-                CurrentView = WorldVM;
-            });
+            OpenWorldCommand = new RelayCommand(() => SwitchTo("Container/LeveledList", WorldVM, WorldVM.EnsureLoaded, () => WorldVM.NeedsLoad));
 
-            OpenSettingsCommand = new RelayCommand(() => CurrentView = SettingsVM);
+            OpenSettingsCommand = new RelayCommand(() => SwitchTo("Settings", SettingsVM));
 
             OpenLogViewerCommand = new RelayCommand(() =>
             {
@@ -248,10 +253,47 @@ namespace SkyrimCraftingTool.ViewModel
 
             // Startansicht
             CurrentView = ContentVM;
+            _visitedViews.Add(ContentVM);
         }
 
         // Called from MainWindow.Closing so a still-debounced autosave (350ms window) is written
         // out before the process exits, rather than silently lost.
+        // Tabs shown at least once. The first visit and a return are different questions for the
+        // timings - a first visit loads data, a return only rebuilds the view (P-P3 is about that).
+        private readonly HashSet<object> _visitedViews = new();
+
+        // One way into every tab, so each switch is timed the same way: from the click until the
+        // view is rendered, and the data load as a step of its own.
+        //
+        // needsLoad: whether `load` would actually read anything this time. When it would, the switch
+        // runs behind the loading overlay (P-P1) - the old tab stays with "Loading NPCs…" over it
+        // until the new one is filled and drawn. A tab already loaded switches at once, no overlay.
+        private void SwitchTo(string name, object view, Action? load = null, Func<bool>? needsLoad = null)
+        {
+            var visit = _visitedViews.Add(view) ? "first visit" : "return";
+
+            void LoadAndShow()
+            {
+                // Started inside the work, not before BusyService.Run: Run waits for the overlay
+                // window with this thread idle for a moment, and that idle moment ended the clock
+                // before the load had even begun (2026-10-13). Leaves out those few ms of waiting.
+                PerfLog.UntilRendered($"tab {name} ({visit})");
+
+                if (load != null)
+                {
+                    using (PerfLog.Measure($"tab {name}: load data"))
+                        load();
+                }
+
+                CurrentView = view;
+            }
+
+            if (load != null && needsLoad?.Invoke() == true)
+                BusyService.Run($"Loading {name}…", LoadAndShow);
+            else
+                LoadAndShow();
+        }
+
         public async Task FlushAllPendingSavesAsync()
         {
             await ContentVM.FlushPendingSavesAsync();

@@ -523,9 +523,26 @@ namespace SkyrimCraftingTool.ViewModel
             {
                 if (SetProperty(ref _showAllKeywords, value))
                 {
-                    OnPropertyChanged(nameof(KeywordColumns));
-                    OnPropertyChanged(nameof(KeywordFontSize));
-                    RefreshKeywords();
+                    void Apply()
+                    {
+                        // Reported as ~3 s on a large modlist - timed from here until the chips are
+                        // on screen (Logs\perf.log, docs/Performance-Plan.md P-P0 / P-P4). Started
+                        // INSIDE the work: started before BusyService.Run, the clock stopped while
+                        // Run waited for the overlay window - the thread was idle for that moment -
+                        // and the line vanished from perf.log (2026-10-13).
+                        PerfLog.UntilRendered($"Items: all keywords {(value ? "on" : "off")}");
+
+                        OnPropertyChanged(nameof(KeywordColumns));
+                        OnPropertyChanged(nameof(KeywordFontSize));
+                        RefreshKeywords();
+                    }
+
+                    // Switching ON builds thousands of keyword chips - behind the loading overlay
+                    // (P-P1). Switching off shrinks the panel and is quick.
+                    if (value)
+                        BusyService.Run("Loading all keywords…", Apply);
+                    else
+                        Apply();
                 }
             }
         }

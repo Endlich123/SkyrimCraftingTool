@@ -90,6 +90,9 @@ namespace SkyrimCraftingTool.ViewModel
 
         public ObservableCollection<IPlaceable> Rows { get; } = new();
 
+        // Whether EnsureLoaded would read anything - so the loading overlay (P-P1) only shows when it does.
+        public bool NeedsLoad => !_loaded;
+
         public void EnsureLoaded()
         {
             if (_loaded) return;
@@ -110,13 +113,23 @@ namespace SkyrimCraftingTool.ViewModel
         {
             _pick.Clear();
 
+            // Timed for Logs\perf.log (docs/Performance-Plan.md, P-P0): reading the records, and the
+            // container rows the placement panel offers.
+            var step = PerfLog.Measure($"{Title} tab: read the records");
+            var source = _source();
+            step.Detail = $"{source.Count} records";
+            step.Dispose();
+
             Rows.Clear();
-            foreach (var row in _source())
+            foreach (var row in source)
                 Rows.Add(row);
 
+            step = PerfLog.Measure($"{Title} tab: build container rows");
             AllContainerVMs.Clear();
             foreach (var c in _containers())
                 AllContainerVMs.Add(new ContainerEntryVM(c));
+            step.Detail = $"{AllContainerVMs.Count} containers";
+            step.Dispose();
 
             // The template holds ContainerEntryVMs built from the list above, so it cannot outlive a
             // reload of it.

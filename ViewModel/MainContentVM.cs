@@ -87,7 +87,11 @@ namespace SkyrimCraftingTool.ViewModel
 
                     if (value is ItemNodeVM item)
                     {
-                        EnsureItemHydrated(item);
+                        // From the click in the tree until the detail pane is rendered, and hydrating the
+                        // item (its recipes, keywords, containers) as a step of its own (Logs\perf.log, P-P0).
+                        PerfLog.UntilRendered("Items: select an item");
+                        using (PerfLog.Measure("Items: hydrate the selected item"))
+                            EnsureItemHydrated(item);
 
                         if (_subscribedItemForContainerSelection != null)
                             _subscribedItemForContainerSelection.ContainerSelection.SelectedContainers.CollectionChanged -= OnSelectedContainersChanged;
@@ -937,7 +941,7 @@ namespace SkyrimCraftingTool.ViewModel
                 activePlugins.Add(new PluginInfo { FileName = KeyFactory.UserPluginName });
                 ActivePlugins = activePlugins;
 
-                var sw = Stopwatch.StartNew();
+                var sw = PerfClock.StartNew();
                 await Task.Run(() =>
                 {
                     var snapshot = _cacheManager.BuildCachesFromDB(activePlugins);
@@ -945,10 +949,12 @@ namespace SkyrimCraftingTool.ViewModel
                     _keywordService.InitializeFrom(snapshot.Keywords);
                 });
                 Log($"BuildCachesFromDB DONE in {sw.ElapsedMilliseconds} ms");
+                PerfLog.Record("Startup: read the database into the caches", sw);
 
                 sw.Restart();
                 await BuildTreeFromCacheAsync(activePlugins);
                 Log($"BuildTreeFromCacheAsync DONE in {sw.ElapsedMilliseconds} ms");
+                PerfLog.Record("Startup: build the item tree", sw);
 
                 // Must happen before the ApplyFilter call below — ApplyFilter no-ops while
                 // _isInitializing is still true (guards against filtering mid-load).
@@ -1176,16 +1182,24 @@ namespace SkyrimCraftingTool.ViewModel
         {
             Log("ExecuteFullScanAsync START");
 
-            // Rescan-Guard: flush a just-made edit (still inside the autosave debounce) to disk
-            // before we read/rebuild from the DB.
-            await FlushPendingSavesAsync();
+            // The loading overlay for the whole scan (docs/Performance-Plan.md, P-P1). Not only a
+            // "something is happening": without it the window stayed fully usable for the 15+ s the
+            // scan rewrites the databases - an edit, a second scan or a patch run in that window
+            // would read or write half-rewritten tables. The work runs on a worker, so the bar moves
+            // and each step below names itself. Closed before the result dialog, and by the finally
+            // on every other way out.
+            var busy = BusyService.Show("Scanning: saving pending edits…");
 
             List<PluginInfo> activePlugins = null;
             ScanReport? report = null;
 
             try
             {
-                var sw = Stopwatch.StartNew();
+                // Rescan-Guard: flush a just-made edit (still inside the autosave debounce) to disk
+                // before we read/rebuild from the DB.
+                await FlushPendingSavesAsync();
+
+                var sw = PerfClock.StartNew();
                 await Task.Run(() =>
                 {
                     // Previous scan's active item set (in-memory, no DB access). editedRows are read
@@ -1208,23 +1222,28 @@ namespace SkyrimCraftingTool.ViewModel
                     }
                     catch (Exception invEx) { AppLogger.LogError("Scan inventory (before) failed", invEx); }
 
-                    var step = Stopwatch.StartNew();
+                    var step = PerfClock.StartNew();
 
+                    BusyService.SetMessage("Scanning: reading the plugin list…");
                     FileService.RefreshPluginDatabase();
                     activePlugins = FileService.GetActivePlugins();
                     ActivePlugins = activePlugins;
                     Log($"  [scan] RefreshPluginDatabase+GetActivePlugins ({activePlugins.Count} plugins): {step.ElapsedMilliseconds} ms");
+                    PerfLog.Record("Scan: read the plugin list", step, $"{activePlugins.Count} plugins");
 
                     // Load-order trace, disabled — re-enable if a similar investigation is needed again.
                     //Log("  [scan] Load order: " + string.Join(" > ", activePlugins.Select((p, idx) => $"{idx}:{p.FileName}")));
 
                     step.Restart();
+                    BusyService.SetMessage($"Scanning: building the FormID database ({activePlugins.Count:N0} plugins)…");
                     FormIdService.PutIntoDataBank(activePlugins);
                     Log($"  [scan] FormIdService.PutIntoDataBank: {step.ElapsedMilliseconds} ms");
+                    PerfLog.Record("Scan: FormID database", step);
 
                     step.Restart();
                     ItemService.PutIntoDataBank(activePlugins);
                     Log($"  [scan] ItemService.PutIntoDataBank: {step.ElapsedMilliseconds} ms");
+                    PerfLog.Record("Scan: item database", step);
 
                     // Added only after the DB writes above, same as LoadInitialDataAsync — this
                     // pseudo-plugin never corresponds to a real file, so it must never reach
@@ -1234,13 +1253,16 @@ namespace SkyrimCraftingTool.ViewModel
                     activePlugins.Add(new PluginInfo { FileName = KeyFactory.UserPluginName });
 
                     step.Restart();
+                    BusyService.SetMessage("Scanning: loading the results…");
                     var snapshot = _cacheManager.BuildCachesFromDB(activePlugins);
                     Log($"  [scan] BuildCachesFromDB: {step.ElapsedMilliseconds} ms");
+                    PerfLog.Record("Scan: read the database into the caches", step);
 
                     step.Restart();
                     ApplyCacheSnapshot(snapshot);
                     _keywordService.InitializeFrom(snapshot.Keywords);
                     Log($"  [scan] ApplyCacheSnapshot+InitializeFrom: {step.ElapsedMilliseconds} ms");
+                    PerfLog.Record("Scan: apply the caches to the view", step);
 
                     // The merge report is a nice-to-have - never let it abort the scan.
                     try
@@ -1265,13 +1287,20 @@ namespace SkyrimCraftingTool.ViewModel
                     }
                 });
                 Log($"Full scan + caches DONE in {sw.ElapsedMilliseconds} ms");
+                PerfLog.Record("Scan: total, scan and caches", sw);
 
                 sw.Restart();
+                BusyService.SetMessage("Scanning: rebuilding the item tree…");
                 await BuildTreeFromCacheAsync(activePlugins);
                 Log($"Tree rebuild DONE in {sw.ElapsedMilliseconds} ms");
+                PerfLog.Record("Scan: rebuild the item tree", sw);
 
                 RebuildMultiSelectVM();
                 DataLoaded?.Invoke();
+
+                // Done: away with the overlay BEFORE the result dialog, which would otherwise sit
+                // on a dimmed window waiting for an OK that the overlay itself suggests is not yet due.
+                busy.Dispose();
 
                 // After DataLoaded: MainWindowVM's handler clears category "scan" and posts the
                 // scan-complete note, so orphan warnings have to go in after it. Guarded - the scan
@@ -1326,10 +1355,15 @@ namespace SkyrimCraftingTool.ViewModel
             }
             catch (Exception ex)
             {
+                busy.Dispose();   // the error dialog on an undimmed window
                 AppLogger.LogError("ExecuteFullScanAsync failed", ex);
                 System.Windows.MessageBox.Show(
                     $"Scan failed:{Environment.NewLine}{ex.Message}{Environment.NewLine}{Environment.NewLine}Details were saved to Logs\\error.log.",
                     "Scan Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
+            finally
+            {
+                busy.Dispose();   // no-op when already closed above; covers every other way out
             }
         }
 
@@ -1585,6 +1619,10 @@ namespace SkyrimCraftingTool.ViewModel
         private void ApplyCacheSnapshot(CacheSnapshot snapshot)
         {
             if (snapshot == null) return;
+
+            // The other half of "read the database into the caches" in Logs\perf.log (P-P0): copying
+            // the snapshot into this view model's caches and catalogues.
+            using var timing = PerfLog.Measure("Caches: apply the snapshot to the item view");
 
             Log("ApplyCacheSnapshot START");
 

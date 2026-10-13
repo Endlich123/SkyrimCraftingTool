@@ -323,7 +323,25 @@ namespace SkyrimCraftingTool.ViewModel
         public bool ShowAllKeywords
         {
             get => _showAllKeywords;
-            set { if (SetProperty(ref _showAllKeywords, value)) _keywordViewSource?.View?.Refresh(); }
+            set
+            {
+                if (!SetProperty(ref _showAllKeywords, value)) return;
+
+                // Same measurement as the item editor's - the same panel, the same catalogue (P-P0),
+                // and started inside the work for the same reason (see ItemNodeVM.ShowAllKeywords).
+                void Apply()
+                {
+                    PerfLog.UntilRendered($"Presets: all keywords {(value ? "on" : "off")}");
+                    _keywordViewSource?.View?.Refresh();
+                }
+
+                // Switching ON builds thousands of keyword chips - behind the loading overlay (P-P1),
+                // as in the item editor.
+                if (value)
+                    BusyService.Run("Loading all keywords…", Apply);
+                else
+                    Apply();
+            }
         }
 
         private void OnKeywordToggled(KeywordSelectionVM kw)

@@ -80,6 +80,9 @@ namespace SkyrimCraftingTool.ViewModel
         // Loaded on first sight rather than at construction: the tab is built with the window and a
         // real load order has thousands of containers. Nothing here is worth reading before someone
         // actually opens it.
+        // Whether EnsureLoaded would read anything - so the loading overlay (P-P1) only shows when it does.
+        public bool NeedsLoad => !_loaded;
+
         public void EnsureLoaded()
         {
             if (_loaded) return;
@@ -125,14 +128,23 @@ namespace SkyrimCraftingTool.ViewModel
             _pick.Clear();
 
             Owners.Clear();
+
+            // Timed for Logs\perf.log (docs/Performance-Plan.md, P-P0): the query, and building the
+            // rows and the tree from it.
+            var step = PerfLog.Measure($"{Title} tab: read the {OwnerNoun}s");
             var rows = IsContainer
                 ? PlacementLookup.AllContainers(_dbPath)
                 : PlacementLookup.AllLeveledLists(_dbPath);
+            step.Detail = $"{rows.Count} {OwnerNoun}s";
+            step.Dispose();
 
+            step = PerfLog.Measure($"{Title} tab: build rows and tree");
+            step.Detail = $"{rows.Count} {OwnerNoun}s";
             foreach (var row in rows)
                 Owners.Add(new OwnerRowVM(row));
 
             RebuildTree();
+            step.Dispose();
 
             OnPropertyChanged(nameof(OwnerCountText));
             OnPropertyChanged(nameof(RemovalCountText));
@@ -239,6 +251,11 @@ namespace SkyrimCraftingTool.ViewModel
 
         private void OnPickChanged()
         {
+            // Picking an owner is the most frequent action in this tab - from the click until its
+            // contents are on screen (Logs\perf.log, docs/Performance-Plan.md P-P0).
+            if (PickedOwners.Count > 0)
+                PerfLog.UntilRendered($"{Title} tab: show contents of {PickedOwners.Count} {OwnerNoun}(s)");
+
             SelectedOwner = PickedOwners.Count == 1 ? PickedOwners[0] : null;
 
             LoadContents();

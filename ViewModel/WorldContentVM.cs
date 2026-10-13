@@ -131,9 +131,38 @@ namespace SkyrimCraftingTool.ViewModel
             get => _selectedTabIndex;
             set
             {
-                if (SetProperty(ref _selectedTabIndex, value)) EnsureLoaded();
+                if (!SetProperty(ref _selectedTabIndex, value)) return;
+
+                // Sub-tab switches are timed like the main ones (Logs\perf.log, P-P0).
+                var title = Tabs.ElementAtOrDefault(value) switch
+                {
+                    OwnerContentsVM o => o.Title,
+                    PlacementListVM p => p.Title,
+                    _ => $"#{value}",
+                };
+                // Clock started inside the work - see MainWindowVM.SwitchTo for why.
+                void Show()
+                {
+                    PerfLog.UntilRendered($"Container/LeveledList: sub-tab {title}");
+                    EnsureLoaded();
+                }
+
+                // With the loading overlay when the sub-tab is still empty (P-P1); a sub-tab read
+                // before shows at once.
+                if (NeedsLoad)
+                    BusyService.Run($"Loading {title}…", Show);
+                else
+                    Show();
             }
         }
+
+        // Whether the sub-tab in front would read anything on EnsureLoaded.
+        public bool NeedsLoad => Tabs.ElementAtOrDefault(SelectedTabIndex) switch
+        {
+            OwnerContentsVM owner => owner.NeedsLoad,
+            PlacementListVM placement => placement.NeedsLoad,
+            _ => false,
+        };
 
         // Only the sub-tab in front of the user is read. Both together are tens of thousands of rows
         // on a real load order, and nobody opens this tab to look at both at once.

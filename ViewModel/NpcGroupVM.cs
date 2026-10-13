@@ -75,12 +75,35 @@ namespace SkyrimCraftingTool.ViewModel
         // First visit reads the NPC tables; later visits are free. Same contract as the NPC tab, and
         // for the same reason: this is the biggest block in the database and a session may never open
         // the tab.
+        // Whether EnsureLoaded would read anything - so the loading overlay (P-P1) only shows when it does.
+        public bool NeedsLoad => !_loaded && _items != null;
+
+        // The records and catalogues the NPC tab reads too - one read for both (P-P2a). The records
+        // are the NPC tab's own, edits included; this tab only reads them. Set by MainWindowVM;
+        // without it (tests) the tab reads its own, as before.
+        public Services.SharedNpcData? Shared { get; set; }
+
         public void EnsureLoaded()
         {
             if (_loaded || _items == null) return;
             _loaded = true;
 
-            Load(_items.GetAllNpcs(), _items.GetNpcLabels(), _store?.LoadAll(), _items.GetLeveledNpcs());
+            // Timed in two steps for Logs\perf.log (docs/Performance-Plan.md, P-P0): reading the
+            // database, and resolving every group against every NPC - the second is the part this
+            // screen is known to spend its time on.
+            var step = PerfLog.Measure("NPC groups tab: read NPCs, names, groups, leveled NPCs");
+            bool shared = Shared?.HasNpcs == true;
+            var npcs = Shared?.Npcs() ?? _items.GetAllNpcs().ToList();
+            var labels = Shared?.Labels() ?? _items.GetNpcLabels();
+            var groups = _store?.LoadAll();
+            var leveled = _items.GetLeveledNpcs();
+            step.Detail = $"{npcs.Count} NPCs{(shared ? " (already read by the NPC tab)" : "")}, {groups?.Count() ?? 0} groups";
+            step.Dispose();
+
+            step = PerfLog.Measure("NPC groups tab: resolve groups and build rows");
+            step.Detail = $"{npcs.Count} NPCs, {groups?.Count() ?? 0} groups";
+            Load(npcs, labels, groups, leveled);
+            step.Dispose();
         }
 
         // A scan rewrites the NPC tables, so whatever is on screen is stale. Dropped rather than

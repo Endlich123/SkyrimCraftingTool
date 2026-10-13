@@ -595,12 +595,25 @@ namespace SkyrimCraftingTool.ViewModel
         // Reads the NPC tables the first time the tab is actually opened, and not before: they are
         // the biggest block in the database and a session may never look at them. A rescan calls
         // Invalidate() below, so the next visit re-reads.
+        // Whether EnsureLoaded would read anything - so the loading overlay (P-P1) only shows when it does.
+        public bool NeedsLoad => !_loaded && _items != null;
+
+        // The records and catalogues the NPC groups tab reads too - one read for both (P-P2a). Set by
+        // MainWindowVM; without it (tests) the tab reads its own, as before.
+        public Services.SharedNpcData? Shared { get; set; }
+
         public void EnsureLoaded()
         {
             if (_loaded || _items == null) return;
             _loaded = true;
 
-            var labels = _items.GetNpcLabels();
+            // Timed in steps for Logs\perf.log (docs/Performance-Plan.md, P-P0): reading the database
+            // and building view models are different problems with different fixes.
+            var step = PerfLog.Measure("NPC tab: read name catalogues");
+            var labels = Shared?.Labels() ?? _items.GetNpcLabels();
+            step.Dispose();
+
+            step = PerfLog.Measure("NPC tab: build picker catalogues");
 
             // The two catalogues the list pickers offer. Factions come from the NPC catalogue built
             // by the scan; keywords come from the same list the item editor uses, so both tabs
@@ -646,7 +659,18 @@ namespace SkyrimCraftingTool.ViewModel
                 .Concat(Catalogue(labels.LeveledItems))
                 .OrderBy(i => i.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
-            Load(_items.GetAllNpcs().Select(r => new NpcNodeVM(r, labels)));
+            step.Dispose();
+
+            step = PerfLog.Measure("NPC tab: read NPC records");
+            bool shared = Shared?.HasNpcs == true;
+            var records = Shared?.Npcs() ?? _items.GetAllNpcs().ToList();
+            step.Detail = $"{records.Count} NPCs{(shared ? ", already read by the groups tab" : "")}";
+            step.Dispose();
+
+            step = PerfLog.Measure("NPC tab: build NPC view models and tree");
+            step.Detail = $"{records.Count} NPCs";
+            Load(records.Select(r => new NpcNodeVM(r, labels)));
+            step.Dispose();
         }
 
         // Called after a scan. Does not re-read on the spot - the user may not be on this tab, and
