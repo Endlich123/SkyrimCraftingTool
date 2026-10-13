@@ -268,33 +268,8 @@
                                             <GroupBox.Header>
                                                 <TextBlock Text="Keywords" Style="{StaticResource TitelStyle}"/>
                                             </GroupBox.Header>
-                                            <ItemsControl ItemsSource="{Binding FilteredKeywordsView}">
-                                                <ItemsControl.ItemsPanel>
-                                                    <ItemsPanelTemplate>
-                                                        <WrapPanel Orientation="Horizontal"/>
-                                                    </ItemsPanelTemplate>
-                                                </ItemsControl.ItemsPanel>
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <Border CornerRadius="4" Padding="5" Margin="3" ToolTip="{Binding Key}">
-                                                            <Border.Style>
-                                                                <Style TargetType="Border">
-                                                                    <Setter Property="Background" Value="{Binding IsSelected, Converter={StaticResource BoolToBrushConverter}}"/>
-                                                                    <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding IsReadOnly}" Value="True">
-                                                                            <Setter Property="Background" Value="{DynamicResource ColorSurfaceDanger}"/>
-                                                                        </DataTrigger>
-                                                                    </Style.Triggers>
-                                                                </Style>
-                                                            </Border.Style>
-                                                            <Border.InputBindings>
-                                                                <MouseBinding MouseAction="LeftClick" Command="{Binding ToggleSelectedCommand}" />
-                                                            </Border.InputBindings>
-                                                            <TextBlock Text="{Binding Name}" Foreground="{DynamicResource ColorChipText}" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                                        </Border>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
+                                            <!-- Lean, shared keyword chips: Styles/KeywordChips.xaml (docs/Performance-Plan.md, P-P4). -->
+                                            <ItemsControl ItemsSource="{Binding FilteredKeywordsView}" Style="{StaticResource KeywordChipListStyle}"/>
                                         </GroupBox>
                                     </StackPanel>
                                 </Expander>

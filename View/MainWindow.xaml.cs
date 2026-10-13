@@ -22,6 +22,22 @@ namespace SkyrimCraftingTool.View
             DataContext = new MainWindowVM();
             SourceInitialized += MainWindow_SourceInitialized;
             Closing += MainWindow_Closing;
+            Loaded += (_, _) => StartLoadingOverlay();
+        }
+
+        // The loading overlay window on its own thread (BusyOverlayPresenter), built once, now, so that
+        // showing it later costs nothing. If it cannot be started, BusyService falls back to the
+        // overlay inside this window - a missing overlay must never stop the app.
+        private void StartLoadingOverlay()
+        {
+            try
+            {
+                BusyService.AttachPresenter(BusyOverlayPresenter.Start(this));
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError("Loading overlay window could not be started", ex);
+            }
         }
 
         private void MainWindow_SourceInitialized(object? sender, EventArgs e)

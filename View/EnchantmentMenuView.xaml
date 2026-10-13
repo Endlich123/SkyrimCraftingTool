@@ -1091,31 +1091,12 @@
                                   Style="{StaticResource DarkGroupBoxStyle}"
                                   Margin="0,0,0,15"
                                   Padding="10">
-                            <ItemsControl ItemsSource="{Binding DataContext.KeywordItems, RelativeSource={RelativeSource AncestorType=UserControl}}">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <WrapPanel Orientation="Horizontal"/>
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border CornerRadius="4"
-                                                Padding="5"
-                                                Margin="3"
-                                                ToolTip="{Binding Key}"
-                                                Background="{Binding IsSelected, Converter={StaticResource BoolToBrushConverter}}">
-                                            <Border.InputBindings>
-                                                <MouseBinding MouseAction="LeftClick"
-                                                              Command="{Binding ToggleSelectedCommand}"/>
-                                            </Border.InputBindings>
-                                            <TextBlock Text="{Binding Name}"
-                                                       Foreground="{DynamicResource ColorTextPrimary}"
-                                                       HorizontalAlignment="Center"
-                                                       TextTrimming="CharacterEllipsis"/>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                            <!-- Lean, shared keyword chips: Styles/KeywordChips.xaml (docs/Performance-Plan.md, P-P4). This list
+                                 keeps its own text colour and has no read-only mark, as before. -->
+                            <ItemsControl ItemsSource="{Binding DataContext.KeywordItems, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                          Style="{StaticResource KeywordChipListStyle}"
+                                          ItemTemplate="{StaticResource KeywordChipTemplate}"
+                                          Foreground="{DynamicResource ColorTextPrimary}"/>
                         </GroupBox>
 
                         </StackPanel>

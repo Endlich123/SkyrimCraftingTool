@@ -953,47 +953,12 @@
                                                     </StackPanel>
                                                 </GroupBox.Header>
 
-                                                <ItemsControl ItemsSource="{Binding FilteredKeywordsView}">
-                                                    <ItemsControl.ItemsPanel>
-                                                        <ItemsPanelTemplate>
-                                                            <WrapPanel Orientation="Horizontal"/>
-                                                        </ItemsPanelTemplate>
-                                                    </ItemsControl.ItemsPanel>
-
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate>
-                                                            <Border CornerRadius="4"
-                                                                Padding="5"
-                                                                Margin="3"
-                                                                ToolTip="{Binding Key}">
-
-                                                                <Border.Style>
-                                                                    <Style TargetType="Border">
-                                                                        <Setter Property="Background" Value="{Binding IsSelected, Converter={StaticResource BoolToBrushConverter}}"/>
-                                                                        <Style.Triggers>
-                                                                            <!-- Weapon-type keywords: visually highlight and make read-only -->
-                                                                            <DataTrigger Binding="{Binding IsReadOnly}" Value="True">
-                                                                                <Setter Property="Background" Value="{DynamicResource ColorSurfaceDanger}"/>
-                                                                            </DataTrigger>
-                                                                        </Style.Triggers>
-                                                                    </Style>
-                                                                </Border.Style>
-
-                                                                <Border.InputBindings>
-                                                                    <MouseBinding MouseAction="LeftClick"
-                                                                Command="{Binding ToggleSelectedCommand}" />
-                                                                </Border.InputBindings>
-
-                                                                <TextBlock Text="{Binding Name}"
-                                                            FontSize="{Binding DataContext.KeywordFontSize,
-                                                                               RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                            Foreground="{DynamicResource ColorChipText}"
-                                                            HorizontalAlignment="Center"
-                                                            TextTrimming="CharacterEllipsis"/>
-                                                            </Border>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
+                                                <!-- Lean, shared keyword chips: Styles/KeywordChips.xaml (docs/Performance-Plan.md, P-P4).
+                                                     2.9 s -> 1.09 s for "All keywords" with the look unchanged. The font size is this
+                                                     editor's own and inherited by the chips. -->
+                                                <ItemsControl ItemsSource="{Binding FilteredKeywordsView}"
+                                                              Style="{StaticResource KeywordChipListStyle}"
+                                                              FontSize="{Binding KeywordFontSize}"/>
                                             </GroupBox>
                                         </StackPanel>
                                     </Expander>

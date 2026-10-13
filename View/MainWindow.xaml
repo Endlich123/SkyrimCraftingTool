@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:SkyrimCraftingTool.ViewModel"
         xmlns:views="clr-namespace:SkyrimCraftingTool.View"
+        xmlns:services="clr-namespace:SkyrimCraftingTool.Services"
         Title="Skyrim Crafting Tool"
         MinWidth="900" MinHeight="700"
         TextElement.Foreground="{DynamicResource ColorTextPrimary}"
@@ -46,7 +47,8 @@
 
     </Window.Resources>
 
-
+    <!-- One cell: the shell below, the loading overlay on top of it. -->
+    <Grid>
     <DockPanel>
         <!-- Shell toolbar: nav tabs on the left, app-wide actions on the right.
              "Generate Patch" lives here rather than in the Items view because it covers everything -
@@ -239,4 +241,46 @@
 
         <ContentControl Content="{Binding CurrentView}" />
     </DockPanel>
+
+    <!-- LOADING OVERLAY (docs/Performance-Plan.md, P-P1), over the WHOLE window including the nav row:
+         while a tab loads, a click on another tab must not land. Driven by Services/BusyService.
+         A calm text and a wait cursor, no animation - the loading runs on the UI thread, so anything
+         that moves would stand still mid-move. The dimmed layer is the theme's own background at
+         partial opacity, so it works in both themes. -->
+    <!-- For tab loads and "All keywords" the visible overlay is a window on its own thread laid over
+         this one (View/BusyOverlayPresenter) - this thread is blocked then and could not draw it in
+         time. This grid still stands meanwhile, transparent but hit-testable, so no click reaches the
+         window below; its own dimmed panel (ShowsOwnPanel) is drawn for the scan and as a fallback. -->
+    <Grid Visibility="{Binding IsBusy, Source={x:Static services:BusyService.Instance}, Converter={StaticResource BoolToVis}}"
+          Background="Transparent"
+          Cursor="Wait">
+        <Rectangle Fill="{DynamicResource ColorBackgroundBase}" Opacity="0.6"
+                   Visibility="{Binding ShowsOwnPanel, Source={x:Static services:BusyService.Instance}, Converter={StaticResource BoolToVis}}"/>
+        <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                Visibility="{Binding ShowsOwnPanel, Source={x:Static services:BusyService.Instance}, Converter={StaticResource BoolToVis}}"
+                Background="{DynamicResource ColorBackgroundControl}"
+                BorderBrush="{DynamicResource ColorBorder}"
+                BorderThickness="1"
+                Padding="24,14">
+            <StackPanel MinWidth="280">
+                <TextBlock Text="{Binding Message, Source={x:Static services:BusyService.Instance}}"
+                           Foreground="{DynamicResource ColorTextPrimary}"
+                           FontSize="14"/>
+
+                <!-- Only for work off the UI thread (the scan): there the thread is free and the bar
+                     really moves. For a tab load it would freeze mid-move, so it is not shown. -->
+                <DockPanel Margin="0,10,0,0"
+                           Visibility="{Binding IsAnimated, Source={x:Static services:BusyService.Instance}, Converter={StaticResource BoolToVis}}">
+                    <TextBlock DockPanel.Dock="Right" Margin="10,0,0,0" MinWidth="36" TextAlignment="Right"
+                               Text="{Binding ElapsedText, Source={x:Static services:BusyService.Instance}}"
+                               Foreground="{DynamicResource ColorTextSecondary}"/>
+                    <ProgressBar IsIndeterminate="True" Height="6"
+                                 Foreground="{DynamicResource ColorAccent}"
+                                 Background="{DynamicResource ColorBackgroundBase}"
+                                 BorderThickness="0"/>
+                </DockPanel>
+            </StackPanel>
+        </Border>
+    </Grid>
+    </Grid>
 </Window>
