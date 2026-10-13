@@ -1062,6 +1062,72 @@ namespace SkyrimCraftingTool.Model
                 .Equals(plugin, StringComparison.OrdinalIgnoreCase));
         }
 
+        // Everything CacheManager.BuildCachesFromDB needs, in one pass over each cache.
+        public ItemsForCaches GetItemsForCaches(IEnumerable<string> pluginFileNames)
+        {
+            LoadCache();
+            return GroupForCaches(pluginFileNames, _armorCache, _weaponCache, _cobjCache, _cobjCondtionsCache);
+        }
+
+        // ONE PASS, NOT ONE SEARCH PER PLUGIN (docs/Performance-Plan.md, P-P7). The cache build used to
+        // call GetArmorByPlugin / GetWeaponsByPlugin / GetCOBJByPlugin for every active plugin, each of
+        // which walked the WHOLE list and cut a new string out of every key to compare it - on 1.800
+        // plugins about 94 million throwaway strings, which is where ~490 garbage collections at startup
+        // came from. On top, GetCOBJConditions walked all conditions once per recipe: 15.000 x 26.000.
+        // Together 3 s at startup and up to 6.5 s after a scan.
+        //
+        // Same result as before: a record belongs to the cache when the plugin part of its key is one of
+        // the active plugins (ignoring case, as before), and each recipe gets its conditions in the order
+        // they have in the cache. One difference, on purpose: the recipes of one created item now come
+        // in cache order. The old Parallel.ForEach appended them in whatever order its threads happened
+        // to finish, so with recipes from several plugins that order could change from run to run.
+        //
+        // Grouped here, at the moment of use, rather than kept as a standing index: the caches are
+        // edited afterwards (conditions saved, recipes deleted), and an index would have to follow
+        // every one of those writes.
+        //
+        // Static and free of the database, so a test can compare it against the old per-plugin search.
+        internal static ItemsForCaches GroupForCaches(
+            IEnumerable<string> pluginFileNames,
+            IReadOnlyList<ArmorRecord> armorCache,
+            IReadOnlyList<WeaponRecord> weaponCache,
+            IReadOnlyList<COBJRecord> cobjCache,
+            IReadOnlyList<COBJConditionRecord> conditionCache)
+        {
+            var active = new HashSet<string>(pluginFileNames, StringComparer.OrdinalIgnoreCase);
+            bool IsActive(string key)
+            {
+                int idx = key.IndexOf('|');
+                return active.Contains(idx > 0 ? key[..idx] : key);
+            }
+
+            var armor = new Dictionary<string, ArmorRecord>();
+            foreach (var a in armorCache)
+                if (IsActive(a.Key)) armor[a.Key] = a;
+
+            var weapons = new Dictionary<string, WeaponRecord>();
+            foreach (var w in weaponCache)
+                if (IsActive(w.Key)) weapons[w.Key] = w;
+
+            // Ordinal, exactly like the old c.COBJKey == cobjKey; a lookup keeps the cache order.
+            var conditionsByRecipe = conditionCache.ToLookup(c => c.COBJKey, StringComparer.Ordinal);
+
+            var recipes = new Dictionary<string, List<COBJRecord>>();
+            foreach (var recipe in cobjCache)
+            {
+                if (!IsActive(recipe.Key)) continue;
+
+                // A new list per recipe, as GetCOBJConditions handed out - the recipe owns it and edits it.
+                recipe.Conditions = conditionsByRecipe[recipe.Key].ToList();
+
+                if (!recipes.TryGetValue(recipe.CreatedItemKey, out var list))
+                    recipes[recipe.CreatedItemKey] = list = new List<COBJRecord>();
+                list.Add(recipe);
+            }
+
+            return new ItemsForCaches(armor, weapons, recipes);
+        }
+
         public List<EnchantmentRecord> GetAllEnchantments()
         {
             // 1. load basisdata

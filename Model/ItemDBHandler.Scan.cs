@@ -24,6 +24,11 @@ namespace SkyrimCraftingTool.Model
 
         public void PutIntoDataBank(List<PluginInfo> allgamePathfromDB)
         {
+            // One clock through the phases below, each written to Logs\perf.log at its boundary
+            // (docs/Performance-Plan.md, P-P0). "Scan: item database" in that log was a single 28 s
+            // block on a 1.800-plugin list; these lines say which part of it the time goes to.
+            var phase = PerfClock.StartNew();
+
             Directory.CreateDirectory(ItemFolder);
 
             using var connection = new SqliteConnection($"Data Source={ItemdbPath}");
@@ -106,49 +111,48 @@ namespace SkyrimCraftingTool.Model
 
             // Multi-row "batch" counterparts of the commands above. At the row counts a full scan
             // produces (100k+), one ExecuteNonQuery() per row was the dominant cost (~140k round
-            // trips). These insert BatchSize rows per statement instead; the tail that doesn't fill a
-            // full batch falls back to the single-row commands above. Row count (<=90) and per-row
-            // column count (<=10) keep every batch statement's parameter count well under SQLite's
-            // historical 999 host-parameter limit and its 500-row multi-VALUES limit.
-            using var insertArmorBatch = PrepareUpsertBatch(connection, "Armor", ArmorColumnNames, ArmorParamNames, BatchSize);
-            using var insertWeaponBatch = PrepareUpsertBatch(connection, "Weapons", WeaponColumnNames, WeaponParamNames, BatchSize);
-            using var insertWorldItemBatch = PrepareUpsertBatch(connection, "WorldItem", WorldItemColumnNames, WorldItemParamNames, BatchSize);
-            using var insertArmorAddonBatch = PrepareUpsertBatch(connection, "ArmorAddon", ArmorAddonColumnNames, ArmorAddonParamNames, BatchSize);
-            using var insertArmorArmatureBatch = PrepareInsertBatch(connection, "ArmorArmature", ArmorArmatureColumnNames, ArmorArmatureParamNames, BatchSize);
-            using var insertMeshRefBatch = PrepareInsertBatch(connection, "MeshRef", MeshRefColumnNames, MeshRefParamNames, BatchSize);
-            using var insertCOBJBatch = PrepareUpsertBatch(connection, "COBJ", CobjColumnNames, CobjParamNames, BatchSize);
-            using var insertCOBJConditionBatch = PrepareInsertBatch(connection, "COBJ_Conditions", CobjConditionColumnNames, CobjConditionParamNames, BatchSize);
-            using var insertEnchBatch = PrepareUpsertBatch(connection, "Enchantments", EnchantmentColumnNames, EnchantmentParamNames, BatchSize);
-            using var insertEnchEffBatch = PrepareInsertBatch(connection, "EnchantmentEffects", EnchantmentEffectColumnNames, EnchantmentEffectParamNames, BatchSize);
-            using var insertWRKBatch = PrepareInsertBatch(connection, "WornRestrictionKeywords", WornRestrictionKeywordColumnNames, WornRestrictionKeywordParamNames, BatchSize);
-            using var insertContainerBatch = PrepareUpsertBatch(connection, "Container", ContainerColumnNames, ContainerParamNames, BatchSize);
-            using var insertContainerLVLIBatch = PrepareInsertBatch(connection, "ContainerLVLI", ContainerLvliColumnNames, ContainerLvliParamNames, BatchSize);
-            using var insertContainerEntryBatch = PrepareInsertBatch(connection, "ContainerEntry", ContainerEntryColumnNames, ContainerEntryParamNames, BatchSize);
-            using var insertMagicEffectsBatch = PrepareUpsertBatch(connection, "MagicEffects", MagicEffectColumnNames, MagicEffectParamNames, BatchSize);
-            using var insertGlobalsBatch = PrepareUpsertBatch(connection, "Globals", GlobalColumnNames, GlobalParamNames, BatchSize);
-            using var insertLeveledListBatch = PrepareUpsertBatch(connection, "LeveledList", LeveledListColumnNames, LeveledListParamNames, BatchSize);
-            using var insertLeveledListEntryBatch = PrepareInsertBatch(connection, "LeveledListEntry", LeveledListEntryColumnNames, LeveledListEntryParamNames, BatchSize);
-            using var insertLeveledListLostBatch = PrepareInsertBatch(connection, "LeveledListLostEntry", LeveledListLostColumnNames, LeveledListLostParamNames, BatchSize);
-            using var insertLeveledNpcBatch = PrepareUpsertBatch(connection, "LeveledNpc", LeveledNpcColumnNames, LeveledNpcParamNames, BatchSize);
-            using var insertLeveledNpcEntryBatch = PrepareInsertBatch(connection, "LeveledNpcEntry", LeveledNpcEntryColumnNames, LeveledNpcEntryParamNames, BatchSize);
-            using var insertNpcBatch = PrepareUpsertBatch(connection, "Npc", NpcColumnNames, NpcParamNames, BatchSize);
-            using var insertNpcFactionBatch = PrepareInsertBatch(connection, "NpcFactions", NpcFactionColumnNames, NpcFactionParamNames, BatchSize);
-            using var insertNpcSkillBatch = PrepareInsertBatch(connection, "NpcSkills", NpcSkillColumnNames, NpcSkillParamNames, BatchSize);
-            using var insertNpcSpellBatch = PrepareInsertBatch(connection, "NpcSpells", NpcSpellColumnNames, NpcSpellParamNames, BatchSize);
-            using var insertNpcPerkBatch = PrepareInsertBatch(connection, "NpcPerks", NpcPerkColumnNames, NpcPerkParamNames, BatchSize);
-            using var insertNpcItemBatch = PrepareInsertBatch(connection, "NpcItems", NpcItemColumnNames, NpcItemParamNames, BatchSize);
-            using var insertSpellsBatch = PrepareUpsertBatch(connection, "Spells", NamedCatalogueColumnNames, NamedCatalogueParamNames, BatchSize);
-            using var insertShoutsBatch = PrepareUpsertBatch(connection, "Shouts", NamedCatalogueColumnNames, NamedCatalogueParamNames, BatchSize);
-            using var insertLeveledSpellsBatch = PrepareUpsertBatch(connection, "LeveledSpells", PlainCatalogueColumnNames, PlainCatalogueParamNames, BatchSize);
-            using var insertPerkCatalogueBatch = PrepareUpsertBatch(connection, "NpcPerkCatalogue", NamedCatalogueColumnNames, NamedCatalogueParamNames, BatchSize);
-            using var insertFactionsBatch = PrepareUpsertBatch(connection, "Factions", NamedCatalogueColumnNames, NamedCatalogueParamNames, BatchSize);
-            using var insertClassesBatch = PrepareUpsertBatch(connection, "Classes", ClassColumnNames, ClassParamNames, BatchSize);
-            using var insertClassSkillsBatch = PrepareInsertBatch(connection, "ClassSkillWeights", ClassSkillColumnNames, ClassSkillParamNames, BatchSize);
-            using var insertRacesBatch = PrepareUpsertBatch(connection, "Races", RaceColumnNames, RaceParamNames, BatchSize);
-            using var insertRaceBoostsBatch = PrepareInsertBatch(connection, "RaceSkillBoosts", RaceBoostColumnNames, RaceBoostParamNames, BatchSize);
-            using var insertOutfitsBatch = PrepareUpsertBatch(connection, "Outfits", PlainCatalogueColumnNames, PlainCatalogueParamNames, BatchSize);
-            using var insertVoiceTypesBatch = PrepareUpsertBatch(connection, "VoiceTypes", PlainCatalogueColumnNames, PlainCatalogueParamNames, BatchSize);
-            using var insertCombatStylesBatch = PrepareUpsertBatch(connection, "CombatStyles", PlainCatalogueColumnNames, PlainCatalogueParamNames, BatchSize);
+            // trips). These insert RowsPerBatch(...) rows per statement instead - sized per table to
+            // about 40 parameters, see RowsPerBatch - and the tail that doesn't fill a full batch falls
+            // back to the single-row commands above.
+            using var insertArmorBatch = PrepareUpsertBatch(connection, "Armor", ArmorColumnNames, ArmorParamNames, RowsPerBatch(ArmorParamNames));
+            using var insertWeaponBatch = PrepareUpsertBatch(connection, "Weapons", WeaponColumnNames, WeaponParamNames, RowsPerBatch(WeaponParamNames));
+            using var insertWorldItemBatch = PrepareUpsertBatch(connection, "WorldItem", WorldItemColumnNames, WorldItemParamNames, RowsPerBatch(WorldItemParamNames));
+            using var insertArmorAddonBatch = PrepareUpsertBatch(connection, "ArmorAddon", ArmorAddonColumnNames, ArmorAddonParamNames, RowsPerBatch(ArmorAddonParamNames));
+            using var insertArmorArmatureBatch = PrepareInsertBatch(connection, "ArmorArmature", ArmorArmatureColumnNames, ArmorArmatureParamNames, RowsPerBatch(ArmorArmatureParamNames));
+            using var insertMeshRefBatch = PrepareInsertBatch(connection, "MeshRef", MeshRefColumnNames, MeshRefParamNames, RowsPerBatch(MeshRefParamNames));
+            using var insertCOBJBatch = PrepareUpsertBatch(connection, "COBJ", CobjColumnNames, CobjParamNames, RowsPerBatch(CobjParamNames));
+            using var insertCOBJConditionBatch = PrepareInsertBatch(connection, "COBJ_Conditions", CobjConditionColumnNames, CobjConditionParamNames, RowsPerBatch(CobjConditionParamNames));
+            using var insertEnchBatch = PrepareUpsertBatch(connection, "Enchantments", EnchantmentColumnNames, EnchantmentParamNames, RowsPerBatch(EnchantmentParamNames));
+            using var insertEnchEffBatch = PrepareInsertBatch(connection, "EnchantmentEffects", EnchantmentEffectColumnNames, EnchantmentEffectParamNames, RowsPerBatch(EnchantmentEffectParamNames));
+            using var insertWRKBatch = PrepareInsertBatch(connection, "WornRestrictionKeywords", WornRestrictionKeywordColumnNames, WornRestrictionKeywordParamNames, RowsPerBatch(WornRestrictionKeywordParamNames));
+            using var insertContainerBatch = PrepareUpsertBatch(connection, "Container", ContainerColumnNames, ContainerParamNames, RowsPerBatch(ContainerParamNames));
+            using var insertContainerLVLIBatch = PrepareInsertBatch(connection, "ContainerLVLI", ContainerLvliColumnNames, ContainerLvliParamNames, RowsPerBatch(ContainerLvliParamNames));
+            using var insertContainerEntryBatch = PrepareInsertBatch(connection, "ContainerEntry", ContainerEntryColumnNames, ContainerEntryParamNames, RowsPerBatch(ContainerEntryParamNames));
+            using var insertMagicEffectsBatch = PrepareUpsertBatch(connection, "MagicEffects", MagicEffectColumnNames, MagicEffectParamNames, RowsPerBatch(MagicEffectParamNames));
+            using var insertGlobalsBatch = PrepareUpsertBatch(connection, "Globals", GlobalColumnNames, GlobalParamNames, RowsPerBatch(GlobalParamNames));
+            using var insertLeveledListBatch = PrepareUpsertBatch(connection, "LeveledList", LeveledListColumnNames, LeveledListParamNames, RowsPerBatch(LeveledListParamNames));
+            using var insertLeveledListEntryBatch = PrepareInsertBatch(connection, "LeveledListEntry", LeveledListEntryColumnNames, LeveledListEntryParamNames, RowsPerBatch(LeveledListEntryParamNames));
+            using var insertLeveledListLostBatch = PrepareInsertBatch(connection, "LeveledListLostEntry", LeveledListLostColumnNames, LeveledListLostParamNames, RowsPerBatch(LeveledListLostParamNames));
+            using var insertLeveledNpcBatch = PrepareUpsertBatch(connection, "LeveledNpc", LeveledNpcColumnNames, LeveledNpcParamNames, RowsPerBatch(LeveledNpcParamNames));
+            using var insertLeveledNpcEntryBatch = PrepareInsertBatch(connection, "LeveledNpcEntry", LeveledNpcEntryColumnNames, LeveledNpcEntryParamNames, RowsPerBatch(LeveledNpcEntryParamNames));
+            using var insertNpcBatch = PrepareUpsertBatch(connection, "Npc", NpcColumnNames, NpcParamNames, RowsPerBatch(NpcParamNames));
+            using var insertNpcFactionBatch = PrepareInsertBatch(connection, "NpcFactions", NpcFactionColumnNames, NpcFactionParamNames, RowsPerBatch(NpcFactionParamNames));
+            using var insertNpcSkillBatch = PrepareInsertBatch(connection, "NpcSkills", NpcSkillColumnNames, NpcSkillParamNames, RowsPerBatch(NpcSkillParamNames));
+            using var insertNpcSpellBatch = PrepareInsertBatch(connection, "NpcSpells", NpcSpellColumnNames, NpcSpellParamNames, RowsPerBatch(NpcSpellParamNames));
+            using var insertNpcPerkBatch = PrepareInsertBatch(connection, "NpcPerks", NpcPerkColumnNames, NpcPerkParamNames, RowsPerBatch(NpcPerkParamNames));
+            using var insertNpcItemBatch = PrepareInsertBatch(connection, "NpcItems", NpcItemColumnNames, NpcItemParamNames, RowsPerBatch(NpcItemParamNames));
+            using var insertSpellsBatch = PrepareUpsertBatch(connection, "Spells", NamedCatalogueColumnNames, NamedCatalogueParamNames, RowsPerBatch(NamedCatalogueParamNames));
+            using var insertShoutsBatch = PrepareUpsertBatch(connection, "Shouts", NamedCatalogueColumnNames, NamedCatalogueParamNames, RowsPerBatch(NamedCatalogueParamNames));
+            using var insertLeveledSpellsBatch = PrepareUpsertBatch(connection, "LeveledSpells", PlainCatalogueColumnNames, PlainCatalogueParamNames, RowsPerBatch(PlainCatalogueParamNames));
+            using var insertPerkCatalogueBatch = PrepareUpsertBatch(connection, "NpcPerkCatalogue", NamedCatalogueColumnNames, NamedCatalogueParamNames, RowsPerBatch(NamedCatalogueParamNames));
+            using var insertFactionsBatch = PrepareUpsertBatch(connection, "Factions", NamedCatalogueColumnNames, NamedCatalogueParamNames, RowsPerBatch(NamedCatalogueParamNames));
+            using var insertClassesBatch = PrepareUpsertBatch(connection, "Classes", ClassColumnNames, ClassParamNames, RowsPerBatch(ClassParamNames));
+            using var insertClassSkillsBatch = PrepareInsertBatch(connection, "ClassSkillWeights", ClassSkillColumnNames, ClassSkillParamNames, RowsPerBatch(ClassSkillParamNames));
+            using var insertRacesBatch = PrepareUpsertBatch(connection, "Races", RaceColumnNames, RaceParamNames, RowsPerBatch(RaceParamNames));
+            using var insertRaceBoostsBatch = PrepareInsertBatch(connection, "RaceSkillBoosts", RaceBoostColumnNames, RaceBoostParamNames, RowsPerBatch(RaceBoostParamNames));
+            using var insertOutfitsBatch = PrepareUpsertBatch(connection, "Outfits", PlainCatalogueColumnNames, PlainCatalogueParamNames, RowsPerBatch(PlainCatalogueParamNames));
+            using var insertVoiceTypesBatch = PrepareUpsertBatch(connection, "VoiceTypes", PlainCatalogueColumnNames, PlainCatalogueParamNames, RowsPerBatch(PlainCatalogueParamNames));
+            using var insertCombatStylesBatch = PrepareUpsertBatch(connection, "CombatStyles", PlainCatalogueColumnNames, PlainCatalogueParamNames, RowsPerBatch(PlainCatalogueParamNames));
 
             using var transaction = connection.BeginTransaction();
             insertArmor.Transaction = transaction;
@@ -244,7 +248,10 @@ namespace SkyrimCraftingTool.Model
                 .SelectMany(plugin => plugin.FullPaths.Select(fullPath => (plugin.FileName, fullPath)))
                 .ToList();
 
-            var parseSw = Stopwatch.StartNew();
+            PerfLog.Record("Scan, item DB: prepare (schema, statements, FormID cache)", phase);
+
+            BusyService.SetMessage($"Scanning: reading {pluginFiles.Count:N0} plugin files…");
+            var parseSw = PerfClock.StartNew();
             var parsedPlugins = new ParsedPluginData[pluginFiles.Count];
             Parallel.For(0, pluginFiles.Count, i =>
             {
@@ -268,6 +275,9 @@ namespace SkyrimCraftingTool.Model
             Debug.WriteLine($"[ItemDB] Parse phase: {parseSw.ElapsedMilliseconds} ms ({pluginFiles.Count} plugins, " +
                 $"Armor={armorCount} Weapon={weaponCount} COBJ={cobjCount} COBJCond={condCount} " +
                 $"Ench={enchCount} EnchEff={effCount} Container={containerCount} LVLI={lvliCount} MGEF={mgefCount})");
+            PerfLog.Record("Scan, item DB: read all plugin files (parallel)", parseSw,
+                $"{pluginFiles.Count} files, {armorCount} armor, {weaponCount} weapons, {cobjCount} recipes, {containerCount} containers");
+            phase.Restart();
 
             // --- Flatten: gather every row across all plugins per table before writing ---
             // parsedPlugins is index-ordered (see above), so this walks plugins in exactly
@@ -662,7 +672,11 @@ namespace SkyrimCraftingTool.Model
                 }
             }
 
+            PerfLog.Record("Scan, item DB: merge in memory (winners, lost entries)", phase);
+            phase.Restart();
+
             // --- Write phase: strictly sequential — do not parallelize SQLite writes ---
+            BusyService.SetMessage("Scanning: writing the item database…");
             var writeSw = Stopwatch.StartNew();
 
             // Child tables: delete existing rows for the parent keys we're about to rewrite, then
@@ -709,54 +723,61 @@ namespace SkyrimCraftingTool.Model
             // having a row for it. The Mesh table itself is NOT cleared - see its schema comment.
             DeleteChildRowsForKeys(connection, transaction, "ArmorArmature", "ArmorKey", latestArmatureByKey.Keys.ToList());
             DeleteChildRowsForKeys(connection, transaction, "MeshRef", "RecordKey", latestMeshOwnerByKey.Keys.ToList());
+            PerfLog.Record("Scan, item DB: delete the child rows about to be rewritten", phase);
+            phase.Restart();
 
 
-            ExecuteRowsBatched(insertArmor, insertArmorBatch, ArmorParamNames, allArmor, BatchSize);
-            ExecuteRowsBatched(insertArmorAddon, insertArmorAddonBatch, ArmorAddonParamNames, allArmorAddons, BatchSize);
+            ExecuteRowsBatched(insertArmor, insertArmorBatch, ArmorParamNames, allArmor, RowsPerBatch(ArmorParamNames));
+            ExecuteRowsBatched(insertArmorAddon, insertArmorAddonBatch, ArmorAddonParamNames, allArmorAddons, RowsPerBatch(ArmorAddonParamNames));
             ExecuteRowsBatched(insertArmorArmature, insertArmorArmatureBatch, ArmorArmatureParamNames,
-                latestArmatureByKey.Values.SelectMany(a => a.LinkRows).ToList(), BatchSize);
+                latestArmatureByKey.Values.SelectMany(a => a.LinkRows).ToList(), RowsPerBatch(ArmorArmatureParamNames));
 
             // Paths -> Mesh rows -> MeshRef rows. Has to run inside the transaction and after the
             // DELETE above, and it is the one block here that reads the database back (it needs the
             // MeshIds it just minted), which is why it is a method rather than another one-liner.
             var meshStats = WriteMeshIndex(connection, transaction, latestMeshOwnerByKey.Values,
                                            insertMeshRef, insertMeshRefBatch);
-            ExecuteRowsBatched(insertWeapon, insertWeaponBatch, WeaponParamNames, allWeapon, BatchSize);
-            ExecuteRowsBatched(insertWorldItem, insertWorldItemBatch, WorldItemParamNames, allWorldItems, BatchSize);
-            ExecuteRowsBatched(insertCOBJ, insertCOBJBatch, CobjParamNames, allCobj, BatchSize);
-            ExecuteRowsBatched(insertCOBJCondition, insertCOBJConditionBatch, CobjConditionParamNames, allCobjConditions, BatchSize);
-            ExecuteRowsBatched(insertWRK, insertWRKBatch, WornRestrictionKeywordParamNames, allWornRestrictionKeywords, BatchSize);
-            ExecuteRowsBatched(insertEnch, insertEnchBatch, EnchantmentParamNames, allEnchantments, BatchSize);
-            ExecuteRowsBatched(insertEnchEff, insertEnchEffBatch, EnchantmentEffectParamNames, allEnchantmentEffects, BatchSize);
-            ExecuteRowsBatched(insertContainer, insertContainerBatch, ContainerParamNames, allContainers, BatchSize);
-            ExecuteRowsBatched(insertContainerLVLI, insertContainerLVLIBatch, ContainerLvliParamNames, allContainerLvli, BatchSize);
-            ExecuteRowsBatched(insertContainerEntry, insertContainerEntryBatch, ContainerEntryParamNames, allContainerEntries, BatchSize);
-            ExecuteRowsBatched(insertMagicEffects, insertMagicEffectsBatch, MagicEffectParamNames, allMagicEffects, BatchSize);
-            ExecuteRowsBatched(insertGlobals, insertGlobalsBatch, GlobalParamNames, allGlobals, BatchSize);
-            ExecuteRowsBatched(insertLeveledList, insertLeveledListBatch, LeveledListParamNames, allLeveledLists, BatchSize);
-            ExecuteRowsBatched(insertLeveledListEntry, insertLeveledListEntryBatch, LeveledListEntryParamNames, allLeveledListEntries, BatchSize);
-            ExecuteRowsBatched(insertLeveledNpc, insertLeveledNpcBatch, LeveledNpcParamNames, allLeveledNpcs, BatchSize);
-            ExecuteRowsBatched(insertLeveledNpcEntry, insertLeveledNpcEntryBatch, LeveledNpcEntryParamNames, allLeveledNpcEntries, BatchSize);
+            BusyService.SetMessage("Scanning: writing the item database…");   // back from the mesh step
+            ExecuteRowsBatched(insertWeapon, insertWeaponBatch, WeaponParamNames, allWeapon, RowsPerBatch(WeaponParamNames));
+            ExecuteRowsBatched(insertWorldItem, insertWorldItemBatch, WorldItemParamNames, allWorldItems, RowsPerBatch(WorldItemParamNames));
+            ExecuteRowsBatched(insertCOBJ, insertCOBJBatch, CobjParamNames, allCobj, RowsPerBatch(CobjParamNames));
+            ExecuteRowsBatched(insertCOBJCondition, insertCOBJConditionBatch, CobjConditionParamNames, allCobjConditions, RowsPerBatch(CobjConditionParamNames));
+            ExecuteRowsBatched(insertWRK, insertWRKBatch, WornRestrictionKeywordParamNames, allWornRestrictionKeywords, RowsPerBatch(WornRestrictionKeywordParamNames));
+            ExecuteRowsBatched(insertEnch, insertEnchBatch, EnchantmentParamNames, allEnchantments, RowsPerBatch(EnchantmentParamNames));
+            ExecuteRowsBatched(insertEnchEff, insertEnchEffBatch, EnchantmentEffectParamNames, allEnchantmentEffects, RowsPerBatch(EnchantmentEffectParamNames));
+            ExecuteRowsBatched(insertContainer, insertContainerBatch, ContainerParamNames, allContainers, RowsPerBatch(ContainerParamNames));
+            ExecuteRowsBatched(insertContainerLVLI, insertContainerLVLIBatch, ContainerLvliParamNames, allContainerLvli, RowsPerBatch(ContainerLvliParamNames));
+            ExecuteRowsBatched(insertContainerEntry, insertContainerEntryBatch, ContainerEntryParamNames, allContainerEntries, RowsPerBatch(ContainerEntryParamNames));
+            ExecuteRowsBatched(insertMagicEffects, insertMagicEffectsBatch, MagicEffectParamNames, allMagicEffects, RowsPerBatch(MagicEffectParamNames));
+            ExecuteRowsBatched(insertGlobals, insertGlobalsBatch, GlobalParamNames, allGlobals, RowsPerBatch(GlobalParamNames));
+            ExecuteRowsBatched(insertLeveledList, insertLeveledListBatch, LeveledListParamNames, allLeveledLists, RowsPerBatch(LeveledListParamNames));
+            ExecuteRowsBatched(insertLeveledListEntry, insertLeveledListEntryBatch, LeveledListEntryParamNames, allLeveledListEntries, RowsPerBatch(LeveledListEntryParamNames));
+            ExecuteRowsBatched(insertLeveledNpc, insertLeveledNpcBatch, LeveledNpcParamNames, allLeveledNpcs, RowsPerBatch(LeveledNpcParamNames));
+            ExecuteRowsBatched(insertLeveledNpcEntry, insertLeveledNpcEntryBatch, LeveledNpcEntryParamNames, allLeveledNpcEntries, RowsPerBatch(LeveledNpcEntryParamNames));
             ExecuteRowsBatched(insertLeveledListLost, insertLeveledListLostBatch, LeveledListLostParamNames,
-                lostEntriesByList.Values.SelectMany(v => v.Values).ToList(), BatchSize);
-            ExecuteRowsBatched(insertNpc, insertNpcBatch, NpcParamNames, allNpcs, BatchSize);
-            ExecuteRowsBatched(insertNpcFaction, insertNpcFactionBatch, NpcFactionParamNames, allNpcFactions, BatchSize);
-            ExecuteRowsBatched(insertNpcSkill, insertNpcSkillBatch, NpcSkillParamNames, allNpcSkills, BatchSize);
-            ExecuteRowsBatched(insertNpcSpell, insertNpcSpellBatch, NpcSpellParamNames, allNpcSpells, BatchSize);
-            ExecuteRowsBatched(insertNpcPerk, insertNpcPerkBatch, NpcPerkParamNames, allNpcPerks, BatchSize);
-            ExecuteRowsBatched(insertNpcItem, insertNpcItemBatch, NpcItemParamNames, allNpcItems, BatchSize);
-            ExecuteRowsBatched(insertSpells, insertSpellsBatch, NamedCatalogueParamNames, allSpellCatalogue, BatchSize);
-            ExecuteRowsBatched(insertShouts, insertShoutsBatch, NamedCatalogueParamNames, allShoutCatalogue, BatchSize);
-            ExecuteRowsBatched(insertLeveledSpells, insertLeveledSpellsBatch, PlainCatalogueParamNames, allLeveledSpellCatalogue, BatchSize);
-            ExecuteRowsBatched(insertPerkCatalogue, insertPerkCatalogueBatch, NamedCatalogueParamNames, allPerkCatalogue, BatchSize);
-            ExecuteRowsBatched(insertFactions, insertFactionsBatch, NamedCatalogueParamNames, allFactions, BatchSize);
-            ExecuteRowsBatched(insertClasses, insertClassesBatch, ClassParamNames, allClasses, BatchSize);
-            ExecuteRowsBatched(insertClassSkills, insertClassSkillsBatch, ClassSkillParamNames, allClassSkillWeights, BatchSize);
-            ExecuteRowsBatched(insertRaces, insertRacesBatch, RaceParamNames, allRaces, BatchSize);
-            ExecuteRowsBatched(insertRaceBoosts, insertRaceBoostsBatch, RaceBoostParamNames, allRaceSkillBoosts, BatchSize);
-            ExecuteRowsBatched(insertOutfits, insertOutfitsBatch, PlainCatalogueParamNames, allOutfits, BatchSize);
-            ExecuteRowsBatched(insertVoiceTypes, insertVoiceTypesBatch, PlainCatalogueParamNames, allVoiceTypes, BatchSize);
-            ExecuteRowsBatched(insertCombatStyles, insertCombatStylesBatch, PlainCatalogueParamNames, allCombatStyles, BatchSize);
+                lostEntriesByList.Values.SelectMany(v => v.Values).ToList(), RowsPerBatch(LeveledListLostParamNames));
+            ExecuteRowsBatched(insertNpc, insertNpcBatch, NpcParamNames, allNpcs, RowsPerBatch(NpcParamNames));
+            ExecuteRowsBatched(insertNpcFaction, insertNpcFactionBatch, NpcFactionParamNames, allNpcFactions, RowsPerBatch(NpcFactionParamNames));
+            ExecuteRowsBatched(insertNpcSkill, insertNpcSkillBatch, NpcSkillParamNames, allNpcSkills, RowsPerBatch(NpcSkillParamNames));
+            ExecuteRowsBatched(insertNpcSpell, insertNpcSpellBatch, NpcSpellParamNames, allNpcSpells, RowsPerBatch(NpcSpellParamNames));
+            ExecuteRowsBatched(insertNpcPerk, insertNpcPerkBatch, NpcPerkParamNames, allNpcPerks, RowsPerBatch(NpcPerkParamNames));
+            ExecuteRowsBatched(insertNpcItem, insertNpcItemBatch, NpcItemParamNames, allNpcItems, RowsPerBatch(NpcItemParamNames));
+            ExecuteRowsBatched(insertSpells, insertSpellsBatch, NamedCatalogueParamNames, allSpellCatalogue, RowsPerBatch(NamedCatalogueParamNames));
+            ExecuteRowsBatched(insertShouts, insertShoutsBatch, NamedCatalogueParamNames, allShoutCatalogue, RowsPerBatch(NamedCatalogueParamNames));
+            ExecuteRowsBatched(insertLeveledSpells, insertLeveledSpellsBatch, PlainCatalogueParamNames, allLeveledSpellCatalogue, RowsPerBatch(PlainCatalogueParamNames));
+            ExecuteRowsBatched(insertPerkCatalogue, insertPerkCatalogueBatch, NamedCatalogueParamNames, allPerkCatalogue, RowsPerBatch(NamedCatalogueParamNames));
+            ExecuteRowsBatched(insertFactions, insertFactionsBatch, NamedCatalogueParamNames, allFactions, RowsPerBatch(NamedCatalogueParamNames));
+            ExecuteRowsBatched(insertClasses, insertClassesBatch, ClassParamNames, allClasses, RowsPerBatch(ClassParamNames));
+            ExecuteRowsBatched(insertClassSkills, insertClassSkillsBatch, ClassSkillParamNames, allClassSkillWeights, RowsPerBatch(ClassSkillParamNames));
+            ExecuteRowsBatched(insertRaces, insertRacesBatch, RaceParamNames, allRaces, RowsPerBatch(RaceParamNames));
+            ExecuteRowsBatched(insertRaceBoosts, insertRaceBoostsBatch, RaceBoostParamNames, allRaceSkillBoosts, RowsPerBatch(RaceBoostParamNames));
+            ExecuteRowsBatched(insertOutfits, insertOutfitsBatch, PlainCatalogueParamNames, allOutfits, RowsPerBatch(PlainCatalogueParamNames));
+            ExecuteRowsBatched(insertVoiceTypes, insertVoiceTypesBatch, PlainCatalogueParamNames, allVoiceTypes, RowsPerBatch(PlainCatalogueParamNames));
+            ExecuteRowsBatched(insertCombatStyles, insertCombatStylesBatch, PlainCatalogueParamNames, allCombatStyles, RowsPerBatch(PlainCatalogueParamNames));
+
+            PerfLog.Record("Scan, item DB: insert all rows (mesh index included)", phase);
+            PerfLog.Record("Scan, item DB: of which the mesh index", TimeSpan.FromMilliseconds(meshStats.IndexMs), meshStats.ToString());
+            phase.Restart();
 
             // Parent tables: anything not touched by this scan is no longer defined by any currently
             // active plugin — mark it inactive (hidden from Load*) instead of deleting, so its
@@ -794,14 +815,18 @@ namespace SkyrimCraftingTool.Model
             MarkInactiveExcept(connection, transaction, "LeveledList", "Key", latestLeveledListByKey.Keys, extraWhere: "Original = 1");
             MarkInactiveExcept(connection, transaction, "LeveledNpc", "Key", latestLeveledNpcByKey.Keys);
 
+            PerfLog.Record("Scan, item DB: mark records no plugin defines any more inactive", phase);
+
             writeSw.Stop();
             Debug.WriteLine($"[ItemDB] Write phase: {writeSw.ElapsedMilliseconds} ms");
             Debug.WriteLine($"[ItemDB] Mesh index: {meshStats}");
 
-            var commitSw = Stopwatch.StartNew();
+            BusyService.SetMessage("Scanning: saving the item database…");
+            var commitSw = PerfClock.StartNew();
             transaction.Commit();
             commitSw.Stop();
             Debug.WriteLine($"[ItemDB] Commit: {commitSw.ElapsedMilliseconds} ms");
+            PerfLog.Record("Scan, item DB: commit", commitSw);
 
             InvalidateCache();
         }
@@ -835,7 +860,7 @@ namespace SkyrimCraftingTool.Model
         }
 
         // Creates a fresh TEMP TABLE holding `keys` (one column, "Key") and returns its name. Batches
-        // the inserts (same reasoning as BatchSize elsewhere in this file — one row per statement was
+        // the inserts (same reasoning as RowsPerBatch elsewhere in this file — one row per statement was
         // the original scan's dominant cost) so this stays fast even for tens of thousands of keys.
         // Caller is responsible for dropping the returned table when done with it.
         private static string PopulateKeyTempTable(SqliteConnection connection, SqliteTransaction transaction, string tempTableName, IReadOnlyList<string> keys)
@@ -845,7 +870,7 @@ namespace SkyrimCraftingTool.Model
                 createCmd.Transaction = transaction;
                 // COLLATE NOCASE, because every Key column this table is compared against is NOCASE.
                 // Without it the comparison in MarkInactiveExcept runs BINARY (SQLite takes the left
-                // operand.s collation, which is this column.s) and a key that differs only in casing
+                // operand's collation, which is this column's) and a key that differs only in casing
                 // silently fails to match - which deactivates a record the scan had just written.
                 createCmd.CommandText = $"CREATE TEMP TABLE {tempTableName} (Key TEXT PRIMARY KEY COLLATE NOCASE);";
                 createCmd.ExecuteNonQuery();
@@ -912,6 +937,7 @@ namespace SkyrimCraftingTool.Model
             if (distinctPaths.Count == 0)
                 return new MeshIndexStats(0, 0, 0, 0, refCount, 0);
 
+            BusyService.SetMessage($"Scanning: indexing {distinctPaths.Count:N0} meshes…");
             var indexSw = Stopwatch.StartNew();
             Services.MeshLocator locator;
             try
@@ -978,7 +1004,7 @@ namespace SkyrimCraftingTool.Model
                     if (idByPath.TryGetValue(pathNorm, out var meshId))
                         refRows.Add(new object[] { owner.RecordKey, slot, meshId });
 
-            ExecuteRowsBatched(insertMeshRef, insertMeshRefBatch, MeshRefParamNames, refRows, BatchSize);
+            ExecuteRowsBatched(insertMeshRef, insertMeshRefBatch, MeshRefParamNames, refRows, RowsPerBatch(MeshRefParamNames));
 
             return new MeshIndexStats(distinctPaths.Count, loose, archive, unresolved,
                                       refRows.Count, indexSw.ElapsedMilliseconds);
@@ -1310,10 +1336,25 @@ namespace SkyrimCraftingTool.Model
             cmd.ExecuteNonQuery();
         }
 
-        // Rows per batch statement. Bounded so that even the widest table (Weapon, 10 columns) stays
-        // at 900 bound parameters — comfortably under SQLite's historical 999 host-parameter limit —
-        // and 90 rows is well under the ~500-row limit for a multi-row VALUES list.
-        private const int BatchSize = 90;
+        // Rows per batch statement, PER TABLE: as many rows as fit into about TargetParamsPerBatch
+        // bound parameters (docs/Performance-Plan.md, P-P6b).
+        //
+        // It used to be a flat 90 rows for every table, on the idea that fewer, bigger statements are
+        // always cheaper. Measured, that only holds up to a point: when Microsoft.Data.Sqlite executes a
+        // statement it binds every parameter by NAME, and that lookup inside SQLite walks the statement's
+        // parameter list - so each parameter costs more the more parameters the statement has. At 90
+        // rows the Npc table (36 columns) carried 3.240 parameters and cost 234 us per row; one row per
+        // statement, 36 parameters, cost 7.7 us. A narrow table (NpcSkills, 4 columns) was best at
+        // ~10 rows / 40 parameters, 1.4 us per row against 3.8 at 90 rows. The sweet spot sits at
+        // roughly 40 parameters whatever the width, so that is what this aims for.
+        //
+        // The ceiling stays MaxRowsPerBatch: a one-column table would otherwise get 40 rows, which is
+        // fine, but nothing should ever approach SQLite's ~500-row limit for a multi-row VALUES list.
+        internal const int TargetParamsPerBatch = 40;
+        internal const int MaxRowsPerBatch = 90;
+
+        internal static int RowsPerBatch(string[] paramNames)
+            => Math.Clamp(TargetParamsPerBatch / Math.Max(1, paramNames.Length), 1, MaxRowsPerBatch);
 
         // Plain multi-row INSERT (no OR REPLACE / no ON CONFLICT) for the 4 child tables
         // (COBJ_Conditions/EnchantmentEffects/WornRestrictionKeywords/ContainerLVLI). PutIntoDataBank
@@ -1321,7 +1362,7 @@ namespace SkyrimCraftingTool.Model
         // DeleteChildRowsForKeys), so a plain insert never conflicts — and if it somehow did, that
         // would mean a real bug, which a plain INSERT surfaces as an error instead of silently
         // replacing/duplicating rows the way "OR REPLACE" used to.
-        private static SqliteCommand PrepareInsertBatch(SqliteConnection connection, string table, string[] columnNames, string[] paramNames, int batchSize)
+        internal static SqliteCommand PrepareInsertBatch(SqliteConnection connection, string table, string[] columnNames, string[] paramNames, int batchSize)
         {
             var columns = string.Join(", ", columnNames);
 
@@ -1346,7 +1387,7 @@ namespace SkyrimCraftingTool.Model
         // flips Active back to 1, but never overwrites a user's manual edits. columnNames[0] is always
         // that table's natural key (Key, or ContainerKey for Container) and is used as the conflict
         // target. Verified against a real SQLite instance (3.49.1, same as this app) before wiring in.
-        private static SqliteCommand PrepareUpsertBatch(SqliteConnection connection, string table, string[] columnNames, string[] paramNames, int batchSize)
+        internal static SqliteCommand PrepareUpsertBatch(SqliteConnection connection, string table, string[] columnNames, string[] paramNames, int batchSize)
         {
             var columns = string.Join(", ", columnNames) + ", Active";
             var updateSet = string.Join(", ", columnNames.Skip(1).Select(c => $"{c} = excluded.{c}")) + ", Active = 1";
@@ -1367,25 +1408,81 @@ namespace SkyrimCraftingTool.Model
             return cmd;
         }
 
-        // Writes `rows` using `batchCmd` (BatchSize rows per ExecuteNonQuery) for as many full
+        // Writes `rows` using `batchCmd` (batchSize rows per ExecuteNonQuery) for as many full
         // batches as fit, then falls back to `singleCmd` (the plain one-row-per-call command) for
         // the remainder — avoids re-preparing a differently-sized batch statement for the tail.
-        private static void ExecuteRowsBatched(SqliteCommand singleCmd, SqliteCommand batchCmd, string[] paramNames, List<object[]> rows, int batchSize)
+        internal static void ExecuteRowsBatched(SqliteCommand singleCmd, SqliteCommand batchCmd, string[] paramNames, List<object[]> rows, int batchSize)
         {
+            // Per table, for Logs\perf.log (docs/Performance-Plan.md, P-P6): "insert all rows" was 15.6 s
+            // of a 22 s scan on a 1.800-plugin list, and every table goes through here. The name comes
+            // from the prepared statement, so no call site had to change.
+            using var timing = PerfLog.Measure($"Scan, item DB: insert {TableOf(singleCmd)}");
+            timing.Detail = $"{rows.Count:N0} rows";
+
+            // BY POSITION, NOT BY NAME (P-P6a). Parameters["name_row"] searches the whole parameter list
+            // in Microsoft.Data.Sqlite, and a batch holds rows x columns of them - so setting every value
+            // by name cost time growing with the SQUARE of the columns. Measured with the package this
+            // app uses: 27 us per row at 11 columns, 144 us at 36 (the Npc table), against well under
+            // a microsecond by position. On a 1.800-plugin list that was most of a 15 s write phase.
+            //
+            // The position is r * columns + c because PrepareInsertBatch / PrepareUpsertBatch add the
+            // parameters exactly in that order. Checked once per table rather than trusted: a value
+            // landing in the wrong column would be a silent data error, far worse than a slow scan. If
+            // the layout ever stops matching, this falls back to the old lookup and says so.
+            bool byPosition = ParameterLayoutMatches(batchCmd, paramNames, batchSize);
+            if (!byPosition)
+                AppLogger.LogWarning(
+                    $"Scan: the batch statement for {TableOf(singleCmd)} does not lay out its parameters " +
+                    "row by row, column by column - falling back to setting them by name (slower, same result).");
+
+            int columns = paramNames.Length;
             int i = 0;
             for (; i + batchSize <= rows.Count; i += batchSize)
             {
                 for (int r = 0; r < batchSize; r++)
                 {
                     var row = rows[i + r];
-                    for (int c = 0; c < paramNames.Length; c++)
-                        batchCmd.Parameters[$"{paramNames[c]}_{r}"].Value = row[c] ?? DBNull.Value;
+                    for (int c = 0; c < columns; c++)
+                    {
+                        var parameter = byPosition
+                            ? batchCmd.Parameters[r * columns + c]
+                            : batchCmd.Parameters[$"{paramNames[c]}_{r}"];
+                        parameter.Value = row[c] ?? DBNull.Value;
+                    }
                 }
                 batchCmd.ExecuteNonQuery();
             }
 
+            // The tail (fewer rows than one batch) still goes one row at a time through the single
+            // statement: at most batchSize - 1 rows per table, with a list no longer than the columns.
             for (; i < rows.Count; i++)
                 ApplyRowAndExecute(singleCmd, paramNames, rows[i]);
+        }
+
+        // Does parameter number r * columns + c carry the name "{column c}_{r}", for every r and c?
+        // The promise the by-position path above relies on, checked in full - a few thousand string
+        // comparisons per table, against the hundreds of thousands of rows it then speeds up.
+        internal static bool ParameterLayoutMatches(SqliteCommand batchCmd, string[] paramNames, int batchSize)
+        {
+            if (batchCmd.Parameters.Count != batchSize * paramNames.Length) return false;
+
+            for (int r = 0; r < batchSize; r++)
+                for (int c = 0; c < paramNames.Length; c++)
+                    if (!string.Equals(batchCmd.Parameters[r * paramNames.Length + c].ParameterName,
+                                       $"{paramNames[c]}_{r}", StringComparison.Ordinal))
+                        return false;
+
+            return true;
+        }
+
+        // "INSERT [OR REPLACE] INTO Npc (...)" -> "Npc". Only for the timing line above - an unexpected
+        // statement shape gives "?" rather than an exception in the middle of a scan.
+        internal static string TableOf(SqliteCommand cmd)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(
+                cmd.CommandText ?? "", @"INSERT\s+(?:OR\s+\w+\s+)?INTO\s+(\w+)",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            return m.Success ? m.Groups[1].Value : "?";
         }
 
         // An unset link is an empty string, never the text form of FormKey.Null. That distinction was
