@@ -19,6 +19,10 @@ namespace SkyrimCraftingTool.Services
         IEnumerable<WeaponRecord> GetWeaponsByPlugin(string pluginFileName);
         IEnumerable<COBJRecord> GetCOBJByPlugin(string pluginFileName);
 
+        // All of the above for every active plugin at once, recipes with their conditions - one pass
+        // instead of one search per plugin (P-P7). What the cache build uses.
+        ItemsForCaches GetItemsForCaches(IEnumerable<string> pluginFileNames);
+
         // Enchantments
         List<EnchantmentRecord> GetAllEnchantments();
 

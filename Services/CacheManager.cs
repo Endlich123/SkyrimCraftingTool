@@ -23,38 +23,26 @@ namespace SkyrimCraftingTool.Services
 
         public CacheSnapshot BuildCachesFromDB(List<PluginInfo> activePlugins)
         {
-            var armorLocal = new Dictionary<string, ArmorRecord>();
-            var weaponLocal = new Dictionary<string, WeaponRecord>();
-            var recipeLocal = new Dictionary<string, List<COBJRecord>>();
-
-            // Warm the shared ItemDBHandler cache once, up front, on this thread. Otherwise every
-            // worker below would hit the load lock at once and all but one would just block on it.
+            // Load the shared ItemDBHandler cache first, as a step of its own, so perf.log can tell
+            // reading the tables apart from gathering them. Timed in three steps for Logs\perf.log (docs/Performance-Plan.md, P-P0): this method is
+            // the bulk of "read the database into the caches", at startup and after every scan.
+            var step = PerfLog.Measure("Caches: load the item tables");
             _itemService.EnsureCacheLoaded();
+            step.Dispose();
 
-            Parallel.ForEach(activePlugins, plugin =>
-            {
-                foreach (var armor in _itemService.GetArmorByPlugin(plugin.FileName))
-                    lock (armorLocal) armorLocal[armor.Key] = armor;
-
-                foreach (var weapon in _itemService.GetWeaponsByPlugin(plugin.FileName))
-                    lock (weaponLocal) weaponLocal[weapon.Key] = weapon;
-
-                foreach (var recipe in _itemService.GetCOBJByPlugin(plugin.FileName))
-                {
-                    recipe.Conditions = _itemService.GetCOBJConditions(recipe.Key);
-                    lock (recipeLocal)
-                    {
-                        if (!recipeLocal.TryGetValue(recipe.CreatedItemKey, out var list))
-                            recipeLocal[recipe.CreatedItemKey] = list = new List<COBJRecord>();
-                        list.Add(recipe);
-                    }
-                }
-            });
+            step = PerfLog.Measure("Caches: gather armor, weapons and recipes per plugin");
+            step.Detail = $"{activePlugins.Count} plugins";
+            // One pass over each cache, not one search per plugin (P-P7) - see ItemDBHandler.GroupForCaches.
+            var items = _itemService.GetItemsForCaches(activePlugins.Select(p => p.FileName));
 
             var snapshot = new CacheSnapshot();
-            snapshot.Armor = armorLocal;
-            snapshot.Weapons = weaponLocal;
-            snapshot.RecipesByCreatedItem = recipeLocal;
+            snapshot.Armor = items.Armor;
+            snapshot.Weapons = items.Weapons;
+            step.Dispose();
+
+            snapshot.RecipesByCreatedItem = items.RecipesByCreatedItem;
+
+            step = PerfLog.Measure("Caches: keyword, material, perk, quest, container catalogues");
 
             snapshot.Keywords = _formIdService.SearchByType("Keyword");
             snapshot.Materials = _formIdService.SearchByType("Material");
@@ -68,6 +56,7 @@ namespace SkyrimCraftingTool.Services
                 .ToList();
             snapshot.Containers = _itemService.SearchByType("Container").Cast<ContainerRecord>().ToList();
             snapshot.MagicEffects = _itemService.SearchByType("MagicEffect").Cast<MagicEffectsRecords>().ToList();
+            step.Dispose();
 
             // store snapshot for runtime updates
             _snapshot = snapshot;

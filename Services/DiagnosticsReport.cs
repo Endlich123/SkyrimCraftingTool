@@ -32,6 +32,9 @@ namespace SkyrimCraftingTool.Services
             AppendSection(sb, "Databases", AppendDatabases);
             AppendSection(sb, "Last patch run", AppendLastPatchRun);
             AppendSection(sb, "Log", sb2 => sb2.AppendLine(AppLogger.ReadTail()));
+            // The slow steps on this machine (Logs\perf.log, docs/Performance-Plan.md P-P0) - a
+            // "it lags" report is only actionable with the numbers behind it.
+            AppendSection(sb, "Timings (perf.log)", sb2 => sb2.AppendLine(PerfLog.ReadTail()));
 
             return sb.ToString();
         }
