@@ -20,6 +20,7 @@ namespace SkyrimCraftingTool.Services.Adapters
         public IEnumerable<ArmorRecord> GetArmorByPlugin(string pluginFileName) => _handler.GetArmorByPlugin(pluginFileName);
         public IEnumerable<WeaponRecord> GetWeaponsByPlugin(string pluginFileName) => _handler.GetWeaponsByPlugin(pluginFileName);
         public IEnumerable<COBJRecord> GetCOBJByPlugin(string pluginFileName) => _handler.GetCOBJByPlugin(pluginFileName);
+        public ItemsForCaches GetItemsForCaches(IEnumerable<string> pluginFileNames) => _handler.GetItemsForCaches(pluginFileNames);
 
         public List<EnchantmentRecord> GetAllEnchantments() => _handler.GetAllEnchantments();
         public List<NpcRecord> GetAllNpcs() => _handler.LoadNpcs();
