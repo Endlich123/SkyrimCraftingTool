@@ -12,7 +12,7 @@ using System.Windows.Input;
 
 namespace SkyrimCraftingTool.ViewModel
 {
-    public class EnchantmentMenuVM : ViewModelBase
+    public class EnchantmentMenuVM : ViewModelBase, ITutorialHost
     {
         private readonly ItemDBHandler _handler;
         private readonly IKeywordService _keywordService;
@@ -651,6 +651,43 @@ namespace SkyrimCraftingTool.ViewModel
             // path[^1], not `target`: after a filter run the tree holds a COPY carrying the same
             // record, and the panel has to point at the node the tree is actually showing.
             SelectedNode = path[^1];
+        }
+
+        // --- Guided tour (Tutorials/enchantments.json) ---
+
+        public bool PrepareTutorialStep(string action) => action switch
+        {
+            "enchantments.selectExample" => SelectTutorialExample(),
+            _ => false,
+        };
+
+        // The tour wants an armor enchantment that HAS a worn-restriction list - that list is the
+        // part people ask about. One already open that fits is kept; otherwise a base enchantment
+        // (vanilla names them ...Base) with a list, otherwise any record with a list.
+        private bool SelectTutorialExample()
+        {
+            if (_selectedEnchantment != null && !KeyFactory.IsUnsetKey(_selectedEnchantment.WornRestrictionListKey))
+                return true;
+
+            var withList = new List<EnchantmentRecord>();
+            foreach (var root in TreeItems)
+                CollectWithList(root, withList);
+
+            var example = withList.FirstOrDefault(e => !e.IsDerived && (e.EditorID ?? "").EndsWith("Base", StringComparison.OrdinalIgnoreCase))
+                          ?? withList.FirstOrDefault(e => !e.IsDerived)
+                          ?? withList.FirstOrDefault();
+            if (example == null) return false;
+
+            NavigateToEnchantment(example.Key);
+            return _selectedEnchantment?.Key == example.Key;
+
+            static void CollectWithList(EnchantmentTreeNode node, List<EnchantmentRecord> into)
+            {
+                if (node is EnchantmentLeafNode { Enchantment: { } e } && !KeyFactory.IsUnsetKey(e.WornRestrictionListKey))
+                    into.Add(e);
+                foreach (var child in node.Children)
+                    CollectWithList(child, into);
+            }
         }
 
         private void ClearEnchantmentFiltersAndRebuild()

@@ -16,7 +16,7 @@ namespace SkyrimCraftingTool.ViewModel
     //
     // The two sub-tabs ask the same question of different things, so they are two instances of one
     // view model rather than two view models (see OwnerContentsVM).
-    public sealed class WorldContentVM : ViewModelBase
+    public sealed class WorldContentVM : ViewModelBase, ITutorialHost
     {
         // MainContentVM supplies the armor and weapon rows AND the container catalogue, because both
         // already live there and a second copy of either would be a second truth. The placement
@@ -174,6 +174,18 @@ namespace SkyrimCraftingTool.ViewModel
                 case OwnerContentsVM owner: owner.EnsureLoaded(); break;
                 case PlacementListVM placement: placement.EnsureLoaded(); break;
             }
+        }
+
+        // Guided tour (Tutorials/world.json): "world.tab:N" brings sub-tab N to the front, which also
+        // loads it - the steps point into its contents.
+        public bool PrepareTutorialStep(string action)
+        {
+            const string prefix = "world.tab:";
+            if (!action.StartsWith(prefix, StringComparison.Ordinal)) return false;
+            if (!int.TryParse(action.Substring(prefix.Length), out var index) || index < 0 || index >= Tabs.Count) return false;
+
+            SelectedTabIndex = index;
+            return true;
         }
 
         // A scan rewrites both sets of rows, so whatever is held here is stale. Dropped rather than

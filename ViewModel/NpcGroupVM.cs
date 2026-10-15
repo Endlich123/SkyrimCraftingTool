@@ -24,7 +24,7 @@ namespace SkyrimCraftingTool.ViewModel
     // numbers the game never reads.
     // The other half of this class is in NpcGroupVM.Membership.cs: the filter editor and the by-hand
     // member picking, which is what turns a new empty group into a group with NPCs in it.
-    public sealed partial class NpcGroupVM : ViewModelBase
+    public sealed partial class NpcGroupVM : ViewModelBase, ITutorialHost
     {
         private readonly IItemService? _items;
         private readonly NpcGroupStore? _store;
@@ -216,6 +216,21 @@ namespace SkyrimCraftingTool.ViewModel
         }
 
         public bool HasSelection => _selectedGroup?.Group != null;
+
+        // Guided tour (Tutorials/npcgroups.json). A real group, not "(without a group)" - that row has no
+        // definition to explain. One already open is kept; otherwise the first with members.
+        public bool PrepareTutorialStep(string action)
+        {
+            if (action != "npcgroups.selectExample") return false;
+            if (HasSelection) return true;
+
+            var example = Groups.FirstOrDefault(g => g.Group != null && g.MemberCount > 0)
+                          ?? Groups.FirstOrDefault(g => g.Group != null);
+            if (example == null) return false;
+
+            SelectedGroup = example;
+            return true;
+        }
         public bool IsUngroupedSelected => _selectedGroup != null && _selectedGroup.Group == null;
 
         public string GroupName

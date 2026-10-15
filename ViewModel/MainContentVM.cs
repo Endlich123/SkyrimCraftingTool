@@ -11,7 +11,7 @@ using SkyrimCraftingTool.Services;
 
 namespace SkyrimCraftingTool.ViewModel
 {
-    public class MainContentVM : ViewModelBase
+    public class MainContentVM : ViewModelBase, ITutorialHost
     {
         // --- Services ---
         private readonly IItemService _itemService;
@@ -154,6 +154,31 @@ namespace SkyrimCraftingTool.ViewModel
         // navigates via single-select semantics (plugin/category clicks, arrow keys) after having
         // multi-selected items - see the comment there for why this needs to run first.
         internal void ClearMultiSelection() => Pick.Clear();
+
+        // --- Guided tour (Tutorials/items.json) ---
+
+        public bool PrepareTutorialStep(string action) => action switch
+        {
+            "items.selectExample" => SelectTutorialExample(),
+            _ => false,
+        };
+
+        // The detail steps need an armor on screen. One the user already has open is kept - the tour
+        // then explains their own item; otherwise the Iron Cuirass, which every load order has, and
+        // failing that the first armor in the tree. Only what the tree currently shows counts: an item
+        // hidden by the search box would be selected with nothing in the tree to show for it.
+        private bool SelectTutorialExample()
+        {
+            if (SelectedNode is ItemNodeVM { IsArmor: true }) return true;
+
+            var items = GetFlatItemNodes();
+            var example = items.FirstOrDefault(i => i.IsArmor && string.Equals(i.EditorID, "ArmorIronCuirass", StringComparison.OrdinalIgnoreCase))
+                          ?? items.FirstOrDefault(i => i.IsArmor);
+            if (example == null) return false;
+
+            HandleItemNodeClick(example, ctrl: false, shift: false);
+            return SelectedNode == example;
+        }
 
         // What being picked MEANS for an item, which is this tab's half of the arrangement above.
         // Membership of SelectedItems is MultiSelectState's - adding to it here as well would put

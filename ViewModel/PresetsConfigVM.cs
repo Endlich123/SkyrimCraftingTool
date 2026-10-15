@@ -8,7 +8,7 @@ using System.Windows.Input;
 
 namespace SkyrimCraftingTool.ViewModel
 {
-    public class PresetsConfigVM : ViewModelBase
+    public class PresetsConfigVM : ViewModelBase, ITutorialHost
     {
         // Curated display order for the well-known vanilla WeapType keywords; anything else (modded
         // types) is appended alphabetically after. Nothing is filtered out or reclassified — every
@@ -75,6 +75,23 @@ namespace SkyrimCraftingTool.ViewModel
             _main = main;
             AddPresetCommand = new RelayCommand(AddPreset);
             LoadAllPresets();
+        }
+
+        // Guided tour (Tutorials/presets.json): the body slot of a preset, the slot that carries the most
+        // of an armor set. A slot already open is kept.
+        public bool PrepareTutorialStep(string action)
+        {
+            if (action != "presets.selectExample") return false;
+            if (_selectedNode is PresetSlotNodeVM) return true;
+
+            var preset = (_selectedNode as PresetNodeVM) ?? Presets.FirstOrDefault();
+            var slots = preset?.ArmorBranch.Children;
+            var example = slots?.FirstOrDefault(s => s.DisplayName.Contains("Body", StringComparison.OrdinalIgnoreCase))
+                          ?? slots?.FirstOrDefault();
+            if (example == null) return false;
+
+            HandleSlotNodeClick(example, ctrl: false, shift: false);
+            return _selectedNode == example;
         }
 
         public void HandleSlotNodeClick(PresetSlotNodeVM clicked, bool ctrl, bool shift)

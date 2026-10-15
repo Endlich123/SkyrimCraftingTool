@@ -23,7 +23,7 @@ namespace SkyrimCraftingTool.ViewModel
     //
     // This view model also backs the Templates tab: a template is an NPC record, so both tabs share
     // one instance and one editor rather than keeping two copies of the same records (§12).
-    public class NpcMenuVM : ViewModelBase
+    public class NpcMenuVM : ViewModelBase, ITutorialHost
     {
         private readonly Services.IItemService? _items;
         private readonly Services.NpcEditStore? _edits;
@@ -527,6 +527,25 @@ namespace SkyrimCraftingTool.ViewModel
 
         private static IEnumerable<NpcNodeVM> Leaves(NpcTreeNodeVM node) =>
             node.Npcs.Concat(node.Children.SelectMany(Leaves));
+
+        // Guided tour (Tutorials/npcs.json). The example is one that inherits from a template when there
+        // is one - that box is the first thing the tour has to explain, and an NPC without it would
+        // skip the step. An NPC already open is kept.
+        public bool PrepareTutorialStep(string action)
+        {
+            if (action != "npcs.selectExample") return false;
+            if (_selectedNpc != null) return true;
+
+            var all = FilteredTree.SelectMany(Leaves).ToList();
+            var example = all.FirstOrDefault(n => n.HasTemplate && n.EditorID.StartsWith("EncBandit", StringComparison.OrdinalIgnoreCase))
+                          ?? all.FirstOrDefault(n => n.HasTemplate)
+                          ?? all.FirstOrDefault();
+            if (example == null) return false;
+
+            ClearSelection();
+            SelectedNpc = example;
+            return true;
+        }
 
         public void ClearSelection()
         {
