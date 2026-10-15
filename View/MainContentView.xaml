@@ -12,7 +12,8 @@
         <!-- Left edge at 10, the same as the tree and filters below (the Grid's margin). -->
         <StackPanel Orientation="Horizontal"
                     DockPanel.Dock="Top"
-                    Margin="10,6,10,4">
+                    Margin="10,6,10,4"
+                    views:Tutorial.Id="items.toolbar">
             <Button Content="Scan/Rescan"
                     Command="{Binding ScanModsCommand}"
                     Style="{StaticResource ActionButtonGreenStyle}"/>
@@ -55,7 +56,7 @@
                 <!-- Tree filters -->
                 <!-- WrapPanel: the column is draggable down to 150, where a stack would simply cut
                      off the plugin count. Same row in EnchantmentMenuView wraps for the same reason. -->
-                <WrapPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,5">
+                <WrapPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,5" views:Tutorial.Id="items.filters">
                     <!-- Gaps as RIGHT margins on the preceding element, never as left margins on
                          the following one: in a WrapPanel a left margin survives the line break and
                          indents whatever moved down by exactly that much. -->
@@ -77,6 +78,7 @@
                 <TextBox Grid.Row="1"
                          Text="{Binding TreeSearchText, UpdateSourceTrigger=PropertyChanged}"
                          Tag="Search Plugin/Item..."
+                         views:Tutorial.Id="items.search"
                          Background="{DynamicResource ColorBackgroundControl}"
                          Foreground="{DynamicResource ColorTextPrimary}"
                          BorderBrush="{DynamicResource ColorBorder}"
@@ -97,6 +99,7 @@
                 <!-- TreeView -->
                 <TreeView Grid.Row="3"
                           x:Name="MainTreeView"
+                          views:Tutorial.Id="items.tree"
                           ItemsSource="{Binding FilteredTree}"
                           VirtualizingPanel.IsVirtualizing="True"
                           SelectedItemChanged="MainTreeView_SelectedItemChanged"
@@ -218,7 +221,7 @@
                                     </Grid.RowDefinitions>
 
                                     <!-- Preset-Zeile -->
-                                    <Border Grid.Row="0"
+                                    <Border Grid.Row="0" views:Tutorial.Id="items.presetRow"
                                         Background="{DynamicResource ColorBackgroundBase}"
                                         Padding="0"
                                         Margin="0,0,0,0">
@@ -247,7 +250,7 @@
                                     </Border>
 
                                     <!-- Item Details -->
-                                    <GroupBox Grid.Row="1" Margin="0,0,0,15" Padding="10" Style="{StaticResource DarkGroupBoxStyle}">
+                                    <GroupBox Grid.Row="1" Margin="0,0,0,15" Padding="10" Style="{StaticResource DarkGroupBoxStyle}" views:Tutorial.Id="items.details">
                                         <GroupBox.Header>
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="Item Details"
@@ -448,7 +451,7 @@
                                                  fourth grid column: every other row in this grid is
                                                  label / control / info, and a column added for one
                                                  button would indent all of them. -->
-                                            <DockPanel Grid.Row="5" Grid.Column="1" LastChildFill="True">
+                                            <DockPanel Grid.Row="5" Grid.Column="1" LastChildFill="True" views:Tutorial.Id="items.enchantment">
 
                                                 <!-- Sprungmarke zum Enchantment-Tab (Prio 9). Sagt als
                                                      Knopf, was bisher nur im Info-Tooltip stand: hier
@@ -550,7 +553,7 @@
                                     <!-- Header carries a dot when something inside changed: the
                                          section is collapsed by default, and the amber borders on
                                          the fields cannot be seen through a shut expander. -->
-                                    <Expander Grid.Row="2" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
+                                    <Expander Grid.Row="2" views:Tutorial.Id="items.expander.specific" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
                                         <Expander.Header>
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="Expand Armor / Weapon Specific Details"/>
@@ -634,6 +637,7 @@
 
                                                         <ComboBox Grid.Column="1"
                                                                   ItemsSource="{Binding ArmorTypeChoices}"
+                                                                  views:Tutorial.Id="items.armorType"
                                                                   SelectedItem="{Binding ArmorType, Mode=TwoWay}"
                                                                   IsSynchronizedWithCurrentItem="False"
                                                                   BorderBrush="{Binding IsArmorTypeChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
@@ -683,7 +687,7 @@
                                                                 ToolTip="A colored line here means the Body Slots differ from how they looked when this item was loaded."/>
                                                     </Grid>
 
-                                                    <ItemsControl ItemsSource="{Binding SlotOptions}">
+                                                    <ItemsControl ItemsSource="{Binding SlotOptions}" views:Tutorial.Id="items.bodySlots">
                                                         <ItemsControl.ItemsPanel>
                                                             <ItemsPanelTemplate>
                                                                 <WrapPanel Orientation="Horizontal"/>
@@ -816,7 +820,7 @@
 
                                     <!-- Keywords -->
                                     <!-- Top View -->
-                                    <Expander Grid.Row="3" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
+                                    <Expander Grid.Row="3" views:Tutorial.Id="items.expander.keywords" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
                                         <Expander.Header>
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="Keywords"/>
@@ -844,6 +848,7 @@
                                                 <CheckBox Grid.Column="2"
                                                   Style="{StaticResource ItemCheckBoxStyle}"
                                                   Content="All Keywords (Expert)"
+                                                  views:Tutorial.Id="items.keywords.expert"
                                                   IsChecked="{Binding ShowAllKeywords}"
                                                       Margin="0,0,0,5"/>
 
@@ -887,7 +892,7 @@
                                                     </StackPanel>
                                                 </GroupBox.Header>
 
-                                                <ItemsControl ItemsSource="{Binding SelectedKeywordsView}">
+                                                <ItemsControl ItemsSource="{Binding SelectedKeywordsView}" views:Tutorial.Id="items.keywords.selected">
                                                     <ItemsControl.ItemsPanel>
                                                         <ItemsPanelTemplate>
                                                             <WrapPanel Orientation="Horizontal"/>
@@ -957,6 +962,7 @@
                                                      2.9 s -> 1.09 s for "All keywords" with the look unchanged. The font size is this
                                                      editor's own and inherited by the chips. -->
                                                 <ItemsControl ItemsSource="{Binding FilteredKeywordsView}"
+                                                              views:Tutorial.Id="items.keywords.all"
                                                               Style="{StaticResource KeywordChipListStyle}"
                                                               FontSize="{Binding KeywordFontSize}"/>
                                             </GroupBox>
@@ -964,7 +970,7 @@
                                     </Expander>
 
                                     <!-- Crafting / Recipe -->
-                                    <Expander Grid.Row="4" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
+                                    <Expander Grid.Row="4" views:Tutorial.Id="items.expander.crafting" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
                                         <Expander.Header>
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="Crafting Recipe"/>
@@ -1081,6 +1087,7 @@
 
                                                     <ComboBox Grid.Row="1" Grid.Column="1"
                                                       ItemsSource="{Binding FilteredCraftingWorkbenches}"
+                                                      views:Tutorial.Id="items.crafting.workbench"
                                                       SelectedItem="{Binding SelectedWorkbench, Mode=TwoWay}"
                                                       Text="{Binding CraftingWorkbenchSearchText}"
                                                       IsEditable="True"
@@ -1207,6 +1214,7 @@
                                                         </ItemsControl>
 
                                                         <Button Command="{Binding AddCraftingConditionCommand}"
+                                                                views:Tutorial.Id="items.crafting.addCondition"
                                                                 Style="{StaticResource AddButtonStyle}"
                                                                 ToolTip="Add Condition" />
                                                     </StackPanel>
@@ -1264,7 +1272,7 @@
                                     </Expander>
 
                                     <!-- Temper Recipe -->
-                                    <Expander Grid.Row="5" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
+                                    <Expander Grid.Row="5" views:Tutorial.Id="items.expander.temper" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
                                         <Expander.Header>
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="Temper Recipe"/>
@@ -1519,7 +1527,7 @@
                                     </Expander>
                                     <!-- Breakdown: recipes that CONSUME this item.
                                          Read-only for now; editing and creating comes next. -->
-                                    <Expander Grid.Row="6" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
+                                    <Expander Grid.Row="6" views:Tutorial.Id="items.expander.breakdown" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
                                         <Expander.Header>
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="Breakdown"/>
@@ -1708,7 +1716,7 @@
                                     </Expander>
 
                                     <!-- Container Section -->
-                                    <Expander Grid.Row="7" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
+                                    <Expander Grid.Row="7" views:Tutorial.Id="items.expander.container" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
                                         <Expander.Header>
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="Container"/>
@@ -1770,7 +1778,8 @@
                                              that silently resolves to whatever view hosts it. Passed in once
                                              here instead; the item is reached through PlacementTarget. -->
                                         <ContentPresenter Content="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                          ContentTemplate="{StaticResource ContainerPlacementPanelTemplate}"/>
+                                                          ContentTemplate="{StaticResource ContainerPlacementPanelTemplate}"
+                                                          views:Tutorial.Id="items.container"/>
                                     </GroupBox>
                                     </Expander>
                                 </Grid>

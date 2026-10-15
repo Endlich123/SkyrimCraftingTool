@@ -2,7 +2,8 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:SkyrimCraftingTool.ViewModel"
-             xmlns:model="clr-namespace:SkyrimCraftingTool.Model">
+             xmlns:model="clr-namespace:SkyrimCraftingTool.Model"
+             xmlns:views="clr-namespace:SkyrimCraftingTool.View">
 
     <Grid Margin="10">
         <!-- Same three columns as MainContentView: a resizable tree with a floor under it, the
@@ -19,10 +20,11 @@
         </Grid.RowDefinitions>
 
         <!-- Top toolbar -->
-        <StackPanel Grid.Row="0" Grid.ColumnSpan="3" Orientation="Horizontal" Margin="0,0,0,8">
+        <StackPanel Grid.Row="0" Grid.ColumnSpan="3" Orientation="Horizontal" Margin="0,0,0,8" views:Tutorial.Id="ench.toolbar">
             <!-- Eigene Records: sie landen unter SkyrimCraftingTool.esp im Baum und kommen über die
                  erzeugte ESP ins Spiel. -->
             <Button Content="New enchantment"
+                    views:Tutorial.Id="ench.new"
                     Command="{Binding NewEnchantmentCommand}"
                     Style="{StaticResource ActionButtonGreenStyle}"
                     ToolTip="Creates an empty enchantment of your own. It appears under SkyrimCraftingTool.esp in the tree; give it at least one effect, then assign it to an item. The generated ESP is what brings it into the game."/>
@@ -56,7 +58,7 @@
                      view's ("Only base"), and the column is now draggable down to 150. A stack
                      clips whatever no longer fits - the plugin count was already cut off at the old
                      fixed width. Wrapping degrades instead. -->
-                <WrapPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,5">
+                <WrapPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,5" views:Tutorial.Id="ench.filters">
                     <!-- Gaps as RIGHT margins on the preceding element, never as left margins on
                          the following one: in a WrapPanel a left margin survives the line break and
                          indents whatever moved down by exactly that much. -->
@@ -103,6 +105,7 @@
                 <!-- TREEVIEW need extra FilteredView -->
                 <TreeView Grid.Row="3"
                   x:Name="EnchantmentTreeView"
+                  views:Tutorial.Id="ench.tree"
                   ItemsSource="{Binding EnchantementFilteredTree}"
                   VirtualizingPanel.IsVirtualizing="True"
                   SelectedItemChanged="TreeView_SelectedItemChanged"
@@ -318,7 +321,7 @@
                     <!-- BASE ENCHANTMENT (read-only tag — this ObjectEffect inherits from a base ENCH)
                          plus die Sprungmarke dorthin. Beides in einer Zeile, weil der Knopf ohne das
                          Etikett daneben nicht sagen würde, wohin er springt. -->
-                    <StackPanel Orientation="Horizontal" Margin="0,-6,0,10"
+                    <StackPanel Orientation="Horizontal" Margin="0,-6,0,10" views:Tutorial.Id="ench.lineage"
                                 Visibility="{Binding DataContext.ShowLineageRow, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}">
 
                         <TextBlock Text="{Binding DataContext.CurrentBaseEnchantmentLabel, RelativeSource={RelativeSource AncestorType=UserControl}}"
@@ -388,7 +391,7 @@
                     </StackPanel>
 
                     <!-- BASIC INFO -->
-                    <StackPanel Orientation="Vertical" Margin="0,0,0,20">
+                    <StackPanel Orientation="Vertical" Margin="0,0,0,20" views:Tutorial.Id="ench.basic">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
@@ -663,7 +666,7 @@
                                  wrong one half the time. ChangedMarker instead of BorderBrush
                                  because the check box template repaints its own border when ticked
                                  - see the trigger at the end of the CheckBox template. -->
-                            <WrapPanel Grid.Row="8" Grid.Column="1" Margin="5,0,0,5">
+                            <WrapPanel Grid.Row="8" Grid.Column="1" Margin="5,0,0,5" views:Tutorial.Id="ench.flags">
                                 <CheckBox Content="No auto-calc (costoverride)"
                                           IsChecked="{Binding NoAutoCalc}"
                                           model:ChangedMarker.IsChanged="{Binding DataContext.IsNoAutoCalcChanged, RelativeSource={RelativeSource AncestorType=UserControl}}"
@@ -775,7 +778,7 @@
                     <!-- Expanded by default, unlike every expander in MainContentView: the effect
                          list is the reason one opens an enchantment at all, so having to unfold it
                          each time would be a click for nothing. -->
-                    <Expander Style="{StaticResource DarkExpanderStyle}" IsExpanded="True" Margin="0,0,0,10">
+                    <Expander Style="{StaticResource DarkExpanderStyle}" IsExpanded="True" Margin="0,0,0,10" views:Tutorial.Id="ench.effects">
                         <Expander.Header>
                             <!-- A collapsed section must still admit that something inside it
                                  changed - the amber borders on the fields are invisible while it is
@@ -796,6 +799,7 @@
                             <!-- Nur sichtbar, wenn dieses Enchantment überhaupt Stufen-Varianten
                                  hat. Öffnet die Vorschau; geschrieben wird erst dort. -->
                             <Button Content="{Binding DataContext.ApplyToFamilyLabel, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    views:Tutorial.Id="ench.applyFamily"
                                     Command="{Binding DataContext.ApplyToFamilyCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                     Visibility="{Binding DataContext.HasFamilyChildren, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}"
                                     Style="{StaticResource StandardButtonStyle}"
@@ -822,7 +826,7 @@
                              pro Enchantment nur einmal vorkommen (PRIMARY KEY über Enchantment +
                              MagicEffect). Filtert beim Tippen wie die anderen Auswahlfelder, 3.875
                              Einträge scrollt niemand. -->
-                        <Grid Margin="0,0,0,8">
+                        <Grid Margin="0,0,0,8" views:Tutorial.Id="ench.addEffect">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
@@ -955,7 +959,7 @@
                     <!-- Hidden where the field means nothing - but never where it holds something.
                          See EnchantmentMenuVM.ShowWornRestrictions: an assigned list always wins
                          over the category, so a misclassified record can never hide real data. -->
-                    <Expander Style="{StaticResource DarkExpanderStyle}" IsExpanded="False"
+                    <Expander Style="{StaticResource DarkExpanderStyle}" IsExpanded="False" views:Tutorial.Id="ench.expander.worn"
                               Visibility="{Binding DataContext.ShowWornRestrictions, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}">
                         <Expander.Header>
                             <StackPanel Orientation="Horizontal">
@@ -1003,7 +1007,7 @@
                             </TextBlock.Style>
                         </TextBlock>
 
-                        <DockPanel Margin="0,0,0,8">
+                        <DockPanel Margin="0,0,0,8" views:Tutorial.Id="ench.worn.list">
                             <TextBlock Text="List:" Style="{StaticResource ItemLabelStyle}" DockPanel.Dock="Left" Margin="0,0,5,5"/>
                             <Button Content="Reset list"
                                     DockPanel.Dock="Right"
@@ -1055,7 +1059,7 @@
                                      Style="{StaticResource ItemTextSearchBoxStyle}"/>
                         </DockPanel>
 
-                        <GroupBox Header="Selected Keywords"
+                        <GroupBox Header="Selected Keywords" views:Tutorial.Id="ench.worn.selected"
                                   Style="{StaticResource DarkGroupBoxStyle}"
                                   BorderBrush="{Binding DataContext.IsWornRestrictionKeywordsChanged, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToChangedBorderConverter}}"
                                   BorderThickness="2"
@@ -1087,7 +1091,7 @@
                             </ItemsControl>
                         </GroupBox>
 
-                        <GroupBox Header="Keywords"
+                        <GroupBox Header="Keywords" views:Tutorial.Id="ench.worn.all"
                                   Style="{StaticResource DarkGroupBoxStyle}"
                                   Margin="0,0,0,15"
                                   Padding="10">

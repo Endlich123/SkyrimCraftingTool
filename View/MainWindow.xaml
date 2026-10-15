@@ -72,6 +72,14 @@
                      size that fits, while the nav tabs now size to their labels. ActionButtonStyle
                      only sets MinHeight and carries its own margin, which left it visibly smaller
                      and 5px too high. -->
+                <!-- The guided tour of whatever tab is open (View/TutorialOverlay). One tour per tab,
+                     so it sits here once rather than in every view. -->
+                <Button Content="Tutorial"
+                        Click="Tutorial_Click"
+                        Style="{StaticResource StandardButtonStyle}"
+                        Width="90" Height="30" Margin="0,0,8,0"
+                        ToolTip="A guided tour of the tab you are in: what each part does, step by step. Esc ends it."/>
+
                 <!-- Bug report: builds a local text report (versions, paths, DB state, log).
                      Nothing is sent anywhere - see LogViewerWindow. -->
                 <Button Content="Log / Bug report"
@@ -87,6 +95,7 @@
                         Width="120" Height="30" Margin="0,0,8,0"
                         ToolTip="Works out exactly what Generate Patch would produce - rule counts, recipes, warnings - and writes nothing."/>
                 <Button Content="Generate Patch"
+                        views:Tutorial.Id="shell.generate"
                         Command="{Binding ContentVM.GeneratePatchCommand}"
                         Style="{StaticResource ActionButtonStyle}"
                         Width="150" Height="30" Margin="0"
@@ -241,6 +250,10 @@
 
         <ContentControl Content="{Binding CurrentView}" />
     </DockPanel>
+
+    <!-- The guided tour, over the whole window like the loading overlay below - and under it, so a
+         load the tour sets off still shows. Collapsed until Tutorial_Click starts it. -->
+    <views:TutorialOverlay x:Name="TutorialLayer"/>
 
     <!-- LOADING OVERLAY (docs/Performance-Plan.md, P-P1), over the WHOLE window including the nav row:
          while a tab loads, a click on another tab must not land. Driven by Services/BusyService.

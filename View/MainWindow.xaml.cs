@@ -40,6 +40,36 @@ namespace SkyrimCraftingTool.View
             }
         }
 
+        private void Tutorial_Click(object sender, RoutedEventArgs e)
+        {
+            if (DataContext is not MainWindowVM vm) return;
+
+            var id = TutorialIdFor(vm.CurrentView);
+            var tour = id == null ? null : TutorialService.Load(id);
+            if (tour == null)
+            {
+                MessageBox.Show(this, "There is no tour for this tab yet.", "Tutorial",
+                                MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            TutorialLayer.Start(tour, vm.CurrentView);
+        }
+
+        // Tour id = the file name under Tutorials/. The Templates view has no tab of its own any more,
+        // so no tour either.
+        private static string? TutorialIdFor(object? view) => view switch
+        {
+            MainContentVM => "items",
+            EnchantmentMenuVM => "enchantments",
+            NpcMenuVM => "npcs",
+            NpcGroupVM => "npcgroups",
+            WorldContentVM => "world",
+            PresetsConfigVM => "presets",
+            SettingsVM => "settings",
+            _ => null,
+        };
+
         private void MainWindow_SourceInitialized(object? sender, EventArgs e)
         {
             ApplyCaptionColors();

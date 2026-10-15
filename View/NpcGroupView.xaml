@@ -2,7 +2,8 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:SkyrimCraftingTool.ViewModel"
-             xmlns:model="clr-namespace:SkyrimCraftingTool.Model">
+             xmlns:model="clr-namespace:SkyrimCraftingTool.Model"
+             xmlns:views="clr-namespace:SkyrimCraftingTool.View">
 
     <!-- DataContext is NpcGroupVM (see the DataTemplate in MainWindow.xaml).
          The layout follows the sketch in docs/NPC-Gruppen-Plan.md section 6: groups with their member
@@ -35,7 +36,7 @@
                        TextWrapping="Wrap"
                        Margin="0,0,0,8"/>
 
-            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8" views:Tutorial.Id="groups.fill">
                 <Button Content="Fill automatically"
                         Command="{Binding SeedCommand}"
                         Style="{StaticResource StandardButtonStyle}"
@@ -52,6 +53,7 @@
                        Margin="0,8,0,0"/>
 
             <ListBox ItemsSource="{Binding Groups}"
+                     views:Tutorial.Id="groups.list"
                      SelectedItem="{Binding SelectedGroup}"
                      Background="{DynamicResource ColorBackgroundPanel}"
                      BorderBrush="{DynamicResource ColorBorder}"
@@ -106,6 +108,7 @@
                          Margin="0,0,0,10"/>
 
                 <GroupBox Header="Definition"
+                          views:Tutorial.Id="groups.definition"
                           Style="{StaticResource DarkGroupBoxStyle}"
                           Padding="10"
                           Margin="0,0,0,10">
@@ -163,7 +166,7 @@
                                    Foreground="{DynamicResource ColorTextSecondary}"
                                    Margin="0,0,0,6"/>
 
-                        <ItemsControl ItemsSource="{Binding Clauses}">
+                        <ItemsControl ItemsSource="{Binding Clauses}" views:Tutorial.Id="groups.clauses">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="{x:Type local:NpcGroupClauseRowVM}">
                                   <StackPanel Margin="0,0,0,4">
@@ -253,7 +256,7 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
 
-                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0" views:Tutorial.Id="groups.addFilter">
                             <Button Content="Add filter"
                                     Command="{Binding AddClauseCommand}"
                                     Style="{StaticResource StandardButtonStyle}"/>
@@ -291,6 +294,7 @@
                                    Margin="0,8,0,6"/>
 
                         <TextBox Text="{Binding MemberSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                 views:Tutorial.Id="groups.byHand"
                                  Style="{StaticResource ItemTextBoxStyle}"
                                  ToolTip="Finds an NPC by name, EditorID or FormID."/>
 
@@ -424,6 +428,7 @@
                      write, one wins by file name with nothing on screen to say which. Only there when
                      there is something to say. -->
                 <GroupBox Header="Also in other groups"
+                          views:Tutorial.Id="groups.overlap"
                           Style="{StaticResource DarkGroupBoxStyle}"
                           Padding="10"
                           Margin="0,0,0,10"
@@ -557,6 +562,7 @@
                 <!-- The rescan diff (section 8). Only there when there is something to say: a group that
                      has not moved since it was confirmed says nothing at all. -->
                 <GroupBox Header="Since this group was last confirmed"
+                          views:Tutorial.Id="groups.drift"
                           Style="{StaticResource DarkGroupBoxStyle}"
                           Padding="10"
                           Margin="0,0,0,10"
@@ -586,6 +592,7 @@
                 </GroupBox>
 
                 <GroupBox Header="Values"
+                          views:Tutorial.Id="groups.values"
                           Style="{StaticResource DarkGroupBoxStyle}"
                           Padding="10"
                           Margin="0,0,0,10"
@@ -744,6 +751,7 @@
                      column in the values table above. An edit that changes nothing has to look different
                      from one that does. -->
                 <GroupBox Header="Perks this group adds"
+                          views:Tutorial.Id="groups.perks"
                           Style="{StaticResource DarkGroupBoxStyle}"
                           Padding="10"
                           Margin="0,0,0,10"
@@ -847,6 +855,7 @@
                 </GroupBox>
 
                 <GroupBox Header="Rule preview"
+                          views:Tutorial.Id="groups.preview"
                           Style="{StaticResource DarkGroupBoxStyle}"
                           Padding="10"
                           Margin="0,0,0,10"

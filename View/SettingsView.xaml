@@ -1,7 +1,8 @@
 <UserControl x:Class="SkyrimCraftingTool.View.SettingsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="clr-namespace:SkyrimCraftingTool.ViewModel">
+             xmlns:local="clr-namespace:SkyrimCraftingTool.ViewModel"
+             xmlns:views="clr-namespace:SkyrimCraftingTool.View">
 
     <!-- DataContext is SettingsVM (see the DataTemplate in MainWindow.xaml).
          Sections are grouped by what they affect, not by when they were added.
@@ -22,6 +23,7 @@
                        Margin="0,0,0,20"/>
 
             <GroupBox Header="Patch output"
+                      views:Tutorial.Id="settings.output"
                       Style="{StaticResource DarkGroupBoxStyle}"
                       Padding="10"
                       Margin="0,0,0,15">
@@ -74,6 +76,7 @@
             </GroupBox>
 
             <GroupBox Header="Patch layout"
+                      views:Tutorial.Id="settings.layout"
                       Style="{StaticResource DarkGroupBoxStyle}"
                       Padding="10"
                       Margin="0,0,0,15">
@@ -92,6 +95,7 @@
                  information is worthless where nobody finds it. It sat in the container section
                  first, which meant it only appeared once you were already inside a container. -->
             <GroupBox Header="Leveled lists"
+                      views:Tutorial.Id="settings.lists"
                       Style="{StaticResource DarkGroupBoxStyle}"
                       Padding="10"
                       Margin="0,0,0,15">
@@ -115,6 +119,7 @@
             <!-- The nav row is wide and most sessions use part of it. Hiding a tab is cosmetic: the
                  data behind it is untouched, and ticking it back brings it straight back. -->
             <GroupBox Header="Main tabs"
+                      views:Tutorial.Id="settings.tabs"
                       Style="{StaticResource DarkGroupBoxStyle}"
                       Padding="10"
                       Margin="0,0,0,15">
@@ -146,6 +151,7 @@
             </GroupBox>
 
             <GroupBox Header="Appearance"
+                      views:Tutorial.Id="settings.theme"
                       Style="{StaticResource DarkGroupBoxStyle}"
                       Padding="10"
                       Margin="0,0,0,15">

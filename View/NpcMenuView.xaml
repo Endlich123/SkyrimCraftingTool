@@ -56,7 +56,7 @@
 
         <!-- Top toolbar. Export/Import land here like on the other tabs, once there is anything to
              export. -->
-        <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,0,0,8">
+        <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,0,0,8" views:Tutorial.Id="npcs.counts">
             <TextBlock Text="{Binding NpcCount, StringFormat={}{0} NPCs}"
                        Foreground="{DynamicResource ColorTextSecondary}"
                        VerticalAlignment="Center"/>
@@ -88,7 +88,7 @@
                     <!-- Tree -->
                 </Grid.RowDefinitions>
 
-                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,5">
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,5" views:Tutorial.Id="npcs.filters">
                     <CheckBox Content="Only edited"
                               IsChecked="{Binding ShowOnlyEdited}"
                               Foreground="{DynamicResource ColorTextPrimary}"
@@ -102,6 +102,7 @@
                 <TextBox Grid.Row="1"
                          Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                          Tag="Search..."
+                         views:Tutorial.Id="npcs.search"
                          Background="{DynamicResource ColorBackgroundControl}"
                          Foreground="{DynamicResource ColorTextPrimary}"
                          BorderBrush="{DynamicResource ColorBorder}"
@@ -112,7 +113,7 @@
                 <!-- The faction lens - what is left of the separate Factions tab
                      (docs/NPC-Plan.md §12). "Show me who hangs together" is a filter on this tree,
                      not a second tree. -->
-                <StackPanel Grid.Row="2" Margin="0,0,0,5">
+                <StackPanel Grid.Row="2" Margin="0,0,0,5" views:Tutorial.Id="npcs.faction">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="Faction"
                                    Style="{StaticResource ItemLabelStyle}"
@@ -156,6 +157,7 @@
                 </UniformGrid>
 
                 <TreeView Grid.Row="4"
+                          views:Tutorial.Id="npcs.tree"
                           ItemsSource="{Binding FilteredTree}"
                           SelectedItemChanged="TreeView_SelectedItemChanged"
                           Background="{DynamicResource ColorBackgroundControl}"

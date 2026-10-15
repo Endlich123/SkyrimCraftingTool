@@ -195,6 +195,7 @@
                          because it is the one action in this pane that is not about a row. -->
                     <Button DockPanel.Dock="Top"
                             Content="+ New leveled list"
+                            views:Tutorial.Id="world.owner.newList"
                             Command="{Binding CreateListCommand}"
                             Visibility="{Binding CanCreateList, Converter={StaticResource BoolToVis}}"
                             Style="{StaticResource ActionButtonGreenStyle}"
@@ -204,6 +205,7 @@
 
                     <TextBox DockPanel.Dock="Top"
                              Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}"
+                             views:Tutorial.Id="world.owner.search"
                              Style="{StaticResource ItemTextBoxStyle}"
                              ToolTip="Filter by name or by FormID."/>
 
@@ -222,6 +224,7 @@
                          placeable record. Ctrl/Shift and the selection come with the style, through
                          MultiSelectTreeBehavior and IMultiSelectTree. -->
                     <TreeView ItemsSource="{Binding FilteredTree}"
+                              views:Tutorial.Id="world.owner.tree"
                               Style="{StaticResource PluginTreeStyle}"/>
                 </DockPanel>
 
@@ -481,6 +484,7 @@
                                  it closed costs nothing. -->
                             <Expander
                                       IsExpanded="{Binding IsListEditorExpanded, Mode=TwoWay}"
+                                      views:Tutorial.Id="world.owner.odds"
                                       Visibility="{Binding HasListEditor, Converter={StaticResource BoolToVis}}"
                                       Foreground="{DynamicResource ColorTextPrimary}"
                                       Margin="0,0,0,6">
@@ -513,7 +517,7 @@
                          removal of the user's own AND restores what an override dropped, because
                          from the list's point of view those are the same thing happening. The rows
                          decide which store is written - see OwnerContentsVM. -->
-                    <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                    <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0" views:Tutorial.Id="world.owner.buttons">
                         <Button DockPanel.Dock="Left"
                                 Content="Remove selected"
                                 Command="{Binding RemoveSelectedCommand}"
@@ -555,6 +559,7 @@
                          Rows, grouped on Section); the rows are picked by type through the two
                          implicit templates in this dictionary. -->
                     <ListBox ItemsSource="{Binding Rows}"
+                             views:Tutorial.Id="world.owner.rows"
                              Background="{DynamicResource ColorBackgroundControl}"
                              BorderBrush="{DynamicResource ColorBorder}"
                              BorderThickness="1"
@@ -620,6 +625,7 @@
              That is also why the placement sub-tabs can be generated: ten hand-written copies is how
              the eleventh gets forgotten. -->
         <TabControl Grid.Row="1"
+                    views:Tutorial.Id="world.tabs"
                     ItemsSource="{Binding Tabs}"
                     SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}"
                     Style="{StaticResource ThemedTabControlStyle}"
