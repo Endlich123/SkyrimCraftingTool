@@ -13,8 +13,8 @@
          InformationalVersion, which is what the bug report prints as "Tool version" (see
          DiagnosticsReport). Kept spelled exactly like the uploaded file name so a report and a
          download name can be compared without translating between them. -->
-    <Version>0.9.7.5</Version>
-    <InformationalVersion>0.9.7.5</InformationalVersion>
+    <Version>0.9.8</Version>
+    <InformationalVersion>0.9.8</InformationalVersion>
 
     <!-- Ship only English resources. The 13 satellite folders are localized error strings from .NET
          and third-party libraries; the tool's own UI is English either way. -->
@@ -56,6 +56,12 @@
 
   <ItemGroup>
     <Page Remove="App.xaml" />
+  </ItemGroup>
+
+  <!-- Guided tours (Services/TutorialService.cs). Embedded, not copied next to the exe: a loose file
+       is one more thing the release ZIP can be missing. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Tutorials\*.json" LogicalName="SkyrimCraftingTool.Tutorials.%(Filename).json" />
   </ItemGroup>
 
   <ItemGroup>
