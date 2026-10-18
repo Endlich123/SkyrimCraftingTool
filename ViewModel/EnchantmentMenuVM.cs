@@ -162,8 +162,9 @@ namespace SkyrimCraftingTool.ViewModel
             });
 
             EnchantementCollapseAllCommand = new RelayCommand(() => EnchantementExpandAll(false));
-            ExportEnchantmentsCommand = new RelayCommand(async () => await ExportEnchantmentsAsync());
-            ImportEnchantmentsCommand = new RelayCommand(async () => await ImportEnchantmentsAsync());
+            ImportExport = new TabImportExportVM(
+                TabExportModules.Enchantments, _importExportService, FlushPendingSavesAsync,
+                () => { RefreshData(_activePlugins); return System.Threading.Tasks.Task.CompletedTask; });
 
             // GlobalKeywords is shared app-wide, so subscribe to both the collection (rebuilt on
             // each scan via KeywordService.InitializeFrom) and each current item, keeping the two
@@ -1862,13 +1863,12 @@ namespace SkyrimCraftingTool.ViewModel
                     g => string.IsNullOrWhiteSpace(g.First().EditorID) ? g.First().Name : g.First().EditorID,
                     StringComparer.OrdinalIgnoreCase);
 
+            // The item tree's plugin order - see PluginTreeOrder.
+            var rank = PluginTreeOrder.Ranker(_activePlugins);
             var grouped = enchantments
-             .GroupBy(e => e.Plugin)
-             .OrderBy(g =>
-                 _activePlugins.FindIndex(p =>
-                     p.FileName.Equals(g.Key, StringComparison.OrdinalIgnoreCase)
-                 )
-             );
+             .GroupBy(e => e.Plugin, StringComparer.OrdinalIgnoreCase)
+             .OrderBy(g => rank(g.Key))
+             .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
 
 
             foreach (var pluginGroup in grouped)
@@ -1930,55 +1930,17 @@ namespace SkyrimCraftingTool.ViewModel
         }
 
         public RelayCommand EnchantementCollapseAllCommand { get; }
-        public RelayCommand ExportEnchantmentsCommand { get; }
-        public RelayCommand ImportEnchantmentsCommand { get; }
 
-        // Enchantment edits are independent of item edits, so the Enchantments tab gets its own
-        // Export / Import. Scoped to the two enchant-side units: "Enchantments" (a record's own
-        // fields/effects) and "WornRestrictionList" (E3 — an FLST's edited contents).
-        private static bool IsEnchantSideUnit(EditedItemDto i)
-            => i.Table == "Enchantments" || i.Table == "WornRestrictionList";
-
-        private async Task ExportEnchantmentsAsync()
-        {
-            await FlushPendingSavesAsync();
-
-            List<EditedItemDto> items;
-            try
-            {
-                items = _importExportService.GetEditedItems(ExportScope.All)
-                    .Where(IsEnchantSideUnit)
-                    .ToList();
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogError("ExportEnchantmentsAsync (GetEditedItems) failed", ex);
-                System.Windows.MessageBox.Show($"Export failed:{Environment.NewLine}{ex.Message}",
-                    "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
-                return;
-            }
-
-            if (items.Count == 0)
-            {
-                System.Windows.MessageBox.Show("No edited enchantments - nothing to export.",
-                    "Export", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
-                return;
-            }
-
-            var (count, root) = ImportExportFlow.ExportItems(items);
-            System.Windows.MessageBox.Show(
-                $"{count} enchantment(s) exported to{Environment.NewLine}{root}",
-                "Export Successful", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
-        }
+        // Export / Import of this tab (TabExportModules.Enchantments): a record's own fields and
+        // effects, and the edited contents of worn-restriction lists (E3). Independent of the item
+        // tab's export.
+        public TabImportExportVM ImportExport { get; }
 
         // --- The same three actions, scoped to one plugin (the plugin detail panel) ---
         //
         // Scope is the WHOLE plugin, independent of the tree filter, exactly like the item side's
         // PluginNodeVM: the tree node the panel hangs off may be a filtered COPY, so the work is
         // driven off the plugin NAME and the unfiltered TreeItems, never off the node's children.
-
-        private static bool BelongsTo(EditedItemDto i, string plugin)
-            => (i.Key ?? "").StartsWith(plugin + "|", StringComparison.OrdinalIgnoreCase);
 
         // Both halves get reset - Delete is a separate button - but they land somewhere different,
         // and the confirmation has to say which:
@@ -1995,74 +1957,9 @@ namespace SkyrimCraftingTool.ViewModel
                     all.Where(e => e.IsUserCreated).ToList());
         }
 
-        internal async Task ExportPluginEnchantmentsAsync(string plugin)
-        {
-            await FlushPendingSavesAsync();
+        internal Task ExportPluginEnchantmentsAsync(string plugin) => ImportExport.ExportPluginAsync(plugin);
 
-            List<EditedItemDto> items;
-            try
-            {
-                items = _importExportService.GetEditedItems(ExportScope.Plugin, plugin)
-                    .Where(IsEnchantSideUnit)
-                    .ToList();
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogError($"ExportPluginEnchantmentsAsync ({plugin}) failed", ex);
-                System.Windows.MessageBox.Show($"Export failed:{Environment.NewLine}{ex.Message}",
-                    "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
-                return;
-            }
-
-            if (items.Count == 0)
-            {
-                System.Windows.MessageBox.Show($"'{plugin}' has no edited enchantments to export.",
-                    "Export", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
-                return;
-            }
-
-            var (count, root) = ImportExportFlow.ExportItems(items);
-            System.Windows.MessageBox.Show(
-                $"{count} enchantment(s) from '{plugin}' exported to{Environment.NewLine}{root}",
-                "Export Successful", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
-        }
-
-        internal async Task ImportPluginEnchantmentsAsync(string plugin)
-        {
-            await FlushPendingSavesAsync();
-
-            var items = ImportExportFlow.ReadAllExportedItems(
-                i => IsEnchantSideUnit(i) && BelongsTo(i, plugin));
-
-            if (items.Count == 0)
-            {
-                System.Windows.MessageBox.Show(
-                    $"No exported enchantments for '{plugin}' found under{Environment.NewLine}{ExportFileStore.ExportsRoot}",
-                    "Import", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
-                return;
-            }
-
-            ImportResult? result;
-            try
-            {
-                result = ImportExportFlow.RunImport(_importExportService, items);
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogError($"ImportPluginEnchantmentsAsync ({plugin}) failed", ex);
-                System.Windows.MessageBox.Show($"Import failed:{Environment.NewLine}{ex.Message}",
-                    "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
-                return;
-            }
-
-            if (result == null) return; // user cancelled the conflict dialog
-
-            try { RefreshData(_activePlugins); }
-            catch (Exception ex) { AppLogger.LogError($"ImportPluginEnchantmentsAsync ({plugin}) RefreshData failed", ex); }
-
-            System.Windows.MessageBox.Show(ImportExportFlow.SummaryText(result), "Import Complete",
-                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
-        }
+        internal Task ImportPluginEnchantmentsAsync(string plugin) => ImportExport.ImportPluginAsync(plugin);
 
         // Reverts every edited enchantment of one plugin. Unlike ResetEnchantmentCommand this does
         // NOT restore the live objects field by field - it clears the shadow columns and then
@@ -2189,50 +2086,6 @@ namespace SkyrimCraftingTool.ViewModel
                 if (node is EnchantmentLeafNode leaf) into.Add(leaf.Enchantment);
                 foreach (var c in node.Children) Collect(c, into);
             }
-        }
-
-        private async Task ImportEnchantmentsAsync()
-        {
-            // Before anything else: a pending debounced save would otherwise land ~350ms after the
-            // import and overwrite the freshly imported values. Same as ExportEnchantmentsAsync.
-            await FlushPendingSavesAsync();
-
-            var items = ImportExportFlow.ReadAllExportedItems(IsEnchantSideUnit);
-            if (items.Count == 0)
-            {
-                System.Windows.MessageBox.Show(
-                    $"No enchantment export files found under{Environment.NewLine}{ExportFileStore.ExportsRoot}",
-                    "Import", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
-                return;
-            }
-
-            ImportResult? result;
-            try
-            {
-                result = ImportExportFlow.RunImport(_importExportService, items);
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogError("ImportEnchantmentsAsync (RunImport) failed", ex);
-                System.Windows.MessageBox.Show($"Import failed:{Environment.NewLine}{ex.Message}",
-                    "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
-                return;
-            }
-
-            if (result == null)
-                return; // user cancelled the conflict dialog
-
-            try
-            {
-                RefreshData(_activePlugins);
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogError("ImportEnchantmentsAsync (RefreshData) failed", ex);
-            }
-
-            System.Windows.MessageBox.Show(ImportExportFlow.SummaryText(result), "Import Complete",
-                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
         }
     }
 }

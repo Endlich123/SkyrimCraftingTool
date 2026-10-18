@@ -132,6 +132,18 @@ namespace SkyrimCraftingTool.ViewModel
 
         public System.Windows.Input.ICommand OpenCommand => new RelayCommand(() => OpenRequested?.Invoke(this));
 
+        // The container row this list row sits in. The way a window opened on a NESTED list finds
+        // where to keep the placement made there - see ContainerEntryVM.GetOrAddNested.
+        public ContainerEntryVM? OwnerContainer { get; set; }
+
+        // A list the container does not hold itself, but reaches through one of the lists it does.
+        // Only ever a row because the user placed something into it (or has its window open).
+        public bool IsNested { get; init; }
+
+        public string NestedTooltip => IsNested
+            ? "A list further down, reached through one of this container's own lists. The item goes into this narrower list directly."
+            : "";
+
         public LVLiEntryVM(ContainerLVLIRecord def)
         {
             Definition = def;

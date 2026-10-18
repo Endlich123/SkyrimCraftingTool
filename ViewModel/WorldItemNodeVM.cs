@@ -75,6 +75,19 @@ namespace SkyrimCraftingTool.ViewModel
             return Task.CompletedTask;
         }
 
+        public string PlacementTable => "WorldItem";
+
+        // Clears the shadow column (the record has no other edit, so IsEdited goes with it) and shows
+        // what the plugins say again.
+        public Task ResetPlacementAsync()
+        {
+            _itemService.ResetPlacement(PlacementTable, Key);
+            _record.ContainerString = _record.ScannedContainerString ?? "{}";
+            ContainerSelection.LoadFromString(_record.ContainerString);
+            OnPropertyChanged(nameof(HasPlacement));
+            return Task.CompletedTask;
+        }
+
         // Drives the marker in the list, so a record that has been placed is findable again without
         // clicking through everything.
         public bool HasPlacement =>

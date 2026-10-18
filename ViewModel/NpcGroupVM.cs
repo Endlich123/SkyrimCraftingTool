@@ -37,7 +37,7 @@ namespace SkyrimCraftingTool.ViewModel
 
         // Null for both is the test case: the view model is exercised without a database behind it,
         // the same way NpcNodeVM can be built from a record alone.
-        public NpcGroupVM(IItemService? items = null, NpcGroupStore? store = null)
+        public NpcGroupVM(IItemService? items = null, NpcGroupStore? store = null, IImportExportService? importExportService = null)
         {
             _items = items;
             _store = store;
@@ -47,6 +47,16 @@ namespace SkyrimCraftingTool.ViewModel
             DeleteGroupCommand = new RelayCommand(DeleteGroup, () => SelectedGroup?.Group != null);
             ToggleMembersCommand = new RelayCommand(() => ShowMembers = !ShowMembers);
             ConfirmCommand = new RelayCommand(Confirm, () => SelectedGroup?.Group != null);
+
+            // No flush: a group is saved when it changes (Persist), one edit one write. After an
+            // import the groups are read again and resolved against the NPCs.
+            ImportExport = new TabImportExportVM(TabExportModules.NpcGroups, importExportService,
+                refreshAfterImport: () =>
+                {
+                    Invalidate();
+                    EnsureLoaded();
+                    return System.Threading.Tasks.Task.CompletedTask;
+                });
         }
 
         public ObservableCollection<NpcGroupRowVM> Groups { get; } = new();
@@ -69,6 +79,9 @@ namespace SkyrimCraftingTool.ViewModel
         public ICommand DeleteGroupCommand { get; }
         public ICommand ToggleMembersCommand { get; }
         public ICommand ConfirmCommand { get; }
+
+        // Export / Import of this tab (TabExportModules.NpcGroups).
+        public TabImportExportVM ImportExport { get; }
 
         // ---- loading ---------------------------------------------------------------------------
 

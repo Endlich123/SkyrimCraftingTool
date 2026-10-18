@@ -49,6 +49,10 @@ namespace SkyrimCraftingTool.ViewModel
 
         public IEnumerable<PluginGroupNodeVM> Nodes => _filtered ?? _all;
 
+        // A second condition on top of the search - "only edited" on the Container/LeveledList tab.
+        // Null means none. Applied by the next Filter() call; the owner calls Filter after setting it.
+        public Func<T, bool>? RowFilter { get; set; }
+
         // The rows as they are drawn, for a Shift range - see MultiSelectState, which spans between
         // two of them and therefore needs the order on screen rather than the order they were read.
         public List<T> RowsInScreenOrder() => Nodes.SelectMany(n => n.Rows).OfType<T>().ToList();
@@ -89,14 +93,16 @@ namespace SkyrimCraftingTool.ViewModel
 
             _search = search ?? "";
 
-            if (string.IsNullOrWhiteSpace(_search))
+            bool searching = !string.IsNullOrWhiteSpace(_search);
+            if (!searching && RowFilter == null)
             {
                 _filtered = null;
                 return;
             }
 
             _filtered = PluginGroupNodeVM.Group(
-                _rows.Where(r => _matches(r, _search)), _keyOf, loadOrder: _order);
+                _rows.Where(r => (RowFilter == null || RowFilter(r)) && (!searching || _matches(r, _search))),
+                _keyOf, loadOrder: _order);
 
             var expanded = _all.Where(n => n.IsExpanded)
                                .Select(n => n.PluginName)

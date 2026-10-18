@@ -50,10 +50,11 @@ namespace SkyrimCraftingTool.ViewModel
         // the same plugins in two different orders on two screens makes the reader translate
         // between them.
         //
-        // `loadOrder` is the plugin file names as the game loads them. Anything not in it sorts
-        // after the rest, by name, rather than vanishing - a key whose plugin has left the load
-        // order is exactly the row someone is looking for. Without a list it stays alphabetical,
-        // which is what the tests and any caller that has no scanner get.
+        // `loadOrder` is the plugin file names as the game loads them, ranked by the rule every
+        // record tree shares (Services/PluginTreeOrder). A plugin not in it - a Creation Club master,
+        // above all - sits after the vanilla masters rather than vanishing: a key whose plugin is
+        // not in plugins.txt is exactly the row someone is looking for. Without a list it stays
+        // alphabetical, which is what the tests and any caller that has no scanner get.
         //
         // ALWAYS COLLAPSED. There used to be an `expanded` flag here, set by the filtered tree so a
         // search would not leave its matches hidden inside closed plugin rows. The user's own
@@ -64,13 +65,14 @@ namespace SkyrimCraftingTool.ViewModel
             IEnumerable<T> rows, Func<T, string> keyOf,
             IReadOnlyList<string>? loadOrder = null)
         {
-            var position = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < (loadOrder?.Count ?? 0); i++)
-                position.TryAdd(loadOrder![i], i);
+            // No list, no order: every plugin ranks the same and the name decides.
+            Func<string, int> rank = loadOrder == null || loadOrder.Count == 0
+                ? _ => 0
+                : Services.PluginTreeOrder.Ranker(loadOrder);
 
             return rows
                 .GroupBy(r => PluginOf(keyOf(r)), StringComparer.OrdinalIgnoreCase)
-                .OrderBy(g => position.TryGetValue(g.Key, out var i) ? i : int.MaxValue)
+                .OrderBy(g => rank(g.Key))
                 .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
                 .Select(g => new PluginGroupNodeVM(g.Key, g.Cast<object>()))
                 .ToList();

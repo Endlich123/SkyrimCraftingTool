@@ -13,7 +13,7 @@ namespace SkyrimCraftingTool.ViewModel
         public string PluginName { get; set; }
 
         // Set by TreeBuilderService at construction (and carried over by FilterReference) — needed to
-        // reach ImportExportService/RunImportAsync for the per-plugin Export/Import buttons.
+        // reach Main.ImportExport for the per-plugin Export/Import buttons.
         public MainContentVM Main { get; set; }
 
         private bool _isExpanded;
@@ -174,78 +174,17 @@ namespace SkyrimCraftingTool.ViewModel
             return filtered.Categories.Count > 0 ? filtered : null;
         }
 
-        // Export/Import for every edited item belonging to this plugin, under
-        // Output/Exports/<PluginName>/ — see ExportFileStore for the path convention. Export writes
-        // one file per item (same shape as MainContentVM.ExportAllCommand, just scoped to this
-        // plugin); Import reads back everything found under this plugin's own folder.
+        // Export/Import for every edited item (and recipe) of this plugin, under
+        // Output/Exports/Items/<PluginName>/ - see ExportFileStore for the layout. Scope is the
+        // WHOLE plugin by name, independent of the tree filter: this node may be a filtered copy.
         public ICommand ExportPluginCommand => new RelayCommand(async () =>
         {
-            if (Main?.ImportExportService == null) return;
-
-            // See MainContentVM.ExportAllAsync — a pending debounced save must land before we read
-            // the edited set, or it silently misses from the export.
-            await Main.FlushPendingSavesAsync();
-
-            List<EditedItemDto> items;
-            try
-            {
-                items = Main.ImportExportService.GetEditedItems(ExportScope.Plugin, PluginName);
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogError("PluginNodeVM.ExportPluginCommand failed", ex);
-                System.Windows.MessageBox.Show($"Export failed:{Environment.NewLine}{ex.Message}",
-                    "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
-                return;
-            }
-
-            if (items.Count == 0)
-            {
-                System.Windows.MessageBox.Show("This plugin has no edited items to export.",
-                    "Export", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
-                return;
-            }
-
-            foreach (var item in items)
-            {
-                var path = ExportFileStore.GetItemFilePath(item.Key, item.DisplayName);
-                ExportFileStore.WriteFile(path, new ExportFile { ExportedAt = ItemDBHandler.NowIso(), Items = new List<EditedItemDto> { item } });
-            }
-
-            System.Windows.MessageBox.Show(
-                $"{items.Count} item(s) exported to{Environment.NewLine}{System.IO.Path.Combine(ExportFileStore.ExportsRoot, PluginName)}",
-                "Export Successful", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            if (Main?.ImportExport != null) await Main.ImportExport.ExportPluginAsync(PluginName);
         });
 
         public ICommand ImportPluginCommand => new RelayCommand(async () =>
         {
-            if (Main == null) return;
-
-            var files = ExportFileStore.FindFilesForPlugin(PluginName);
-            if (files.Count == 0)
-            {
-                System.Windows.MessageBox.Show(
-                    $"No export files found under{Environment.NewLine}{System.IO.Path.Combine(ExportFileStore.ExportsRoot, PluginName)}",
-                    "Import", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
-                return;
-            }
-
-            var allItems = new List<EditedItemDto>();
-            foreach (var path in files)
-            {
-                try
-                {
-                    var file = ExportFileStore.ReadFile(path);
-                    if (file?.Items != null)
-                        allItems.AddRange(file.Items);
-                }
-                catch (Exception ex)
-                {
-                    AppLogger.LogError($"PluginNodeVM.ImportPluginCommand: failed reading {path}", ex);
-                }
-            }
-
-            await Main.RunImportAsync(allItems);
+            if (Main?.ImportExport != null) await Main.ImportExport.ImportPluginAsync(PluginName);
         });
     }
 }

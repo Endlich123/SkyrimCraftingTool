@@ -15,6 +15,7 @@ namespace SkyrimCraftingTool.ViewModel
         // Persistent ViewModels
         public MainContentVM ContentVM { get; }
         public EnchantmentMenuVM EnchantVM { get; }
+        public SpellMenuVM SpellVM { get; }
         public NpcMenuVM NpcVM { get; }
         public TemplateTabVM TemplateVM { get; }
 
@@ -38,6 +39,7 @@ namespace SkyrimCraftingTool.ViewModel
                 {
                     OnPropertyChanged(nameof(IsMainContentActive));
                     OnPropertyChanged(nameof(IsEnchantmentActive));
+                    OnPropertyChanged(nameof(IsSpellActive));
                     OnPropertyChanged(nameof(IsPresetsActive));
                     OnPropertyChanged(nameof(IsNpcActive));
                     OnPropertyChanged(nameof(IsTemplatesActive));
@@ -55,6 +57,7 @@ namespace SkyrimCraftingTool.ViewModel
         // all, so there is no setting that can leave someone with no way back to their items or to
         // this very preference.
         public bool ShowEnchantments => Services.NavTabService.IsVisible(Services.NavTab.Enchantments);
+        public bool ShowSpells => Services.NavTabService.IsVisible(Services.NavTab.Spells);
         public bool ShowNpcs => Services.NavTabService.IsVisible(Services.NavTab.Npcs);
         public bool ShowNpcGroups => Services.NavTabService.IsVisible(Services.NavTab.NpcGroups);
         public bool ShowWorld => Services.NavTabService.IsVisible(Services.NavTab.World);
@@ -63,6 +66,7 @@ namespace SkyrimCraftingTool.ViewModel
         private void OnNavTabsChanged()
         {
             OnPropertyChanged(nameof(ShowEnchantments));
+            OnPropertyChanged(nameof(ShowSpells));
             OnPropertyChanged(nameof(ShowNpcs));
             OnPropertyChanged(nameof(ShowNpcGroups));
             OnPropertyChanged(nameof(ShowWorld));
@@ -76,6 +80,7 @@ namespace SkyrimCraftingTool.ViewModel
         private bool IsCurrentViewHidden()
         {
             if (CurrentView == EnchantVM) return !ShowEnchantments;
+            if (CurrentView == SpellVM) return !ShowSpells;
             if (CurrentView == NpcVM) return !ShowNpcs;
             if (CurrentView == NpcGroupsVM) return !ShowNpcGroups;
             if (CurrentView == WorldVM) return !ShowWorld;
@@ -87,6 +92,7 @@ namespace SkyrimCraftingTool.ViewModel
         // Active status of the nav tabs, for the button highlight in MainWindow.xaml
         public bool IsMainContentActive => CurrentView == ContentVM;
         public bool IsEnchantmentActive => CurrentView == EnchantVM;
+        public bool IsSpellActive => CurrentView == SpellVM;
         public bool IsPresetsActive => CurrentView == PresetsVM;
         public bool IsNpcActive => CurrentView == NpcVM;
         public bool IsTemplatesActive => CurrentView == TemplateVM;
@@ -101,6 +107,7 @@ namespace SkyrimCraftingTool.ViewModel
         // Commands
         public ICommand OpenMainContentCommand { get; }
         public ICommand OpenEnchantmentMenuCommand { get; }
+        public ICommand OpenSpellMenuCommand { get; }
         public ICommand OpenNpcMenuCommand { get; }
         public ICommand OpenTemplatesCommand { get; }
         public ICommand OpenNpcGroupsCommand { get; }
@@ -128,6 +135,7 @@ namespace SkyrimCraftingTool.ViewModel
 
             ContentVM = new MainContentVM(itemService, fileService, formIdService, cacheManager, null, keywordService, importExportService);
             EnchantVM = new EnchantmentMenuVM(_itemDB, keywordService, new List<PluginInfo>(), enchantmentService, cacheManager, importExportService);
+            SpellVM = new SpellMenuVM(new Services.Adapters.SpellServiceAdapter(_itemDB), new List<PluginInfo>(), importExportService);
             // The edit store writes straight to item.db rather than through the item save pipeline -
             // see the note on NpcEditStore for why NPCs need no debouncer.
             var npcDbPath = System.IO.Path.Combine(
@@ -137,7 +145,10 @@ namespace SkyrimCraftingTool.ViewModel
                 itemService,
                 new Services.NpcEditStore(npcDbPath),
                 // The keyword catalogue the item tab already builds - one list, both tabs.
-                () => ContentVM?.AllAvailableKeywords ?? new List<Model.FormIDRecord>());
+                () => ContentVM?.AllAvailableKeywords ?? new List<Model.FormIDRecord>(),
+                // The item tree's plugin order (Services/PluginTreeOrder).
+                () => ContentVM?.ActivePlugins ?? new List<PluginInfo>(),
+                importExportService);
 
             // The Templates tab, over the SAME view model: a template is an NPC record, and 1.073 of
             // the 1.372 templates in the load order are NPCs this tab already holds. One instance
@@ -147,7 +158,7 @@ namespace SkyrimCraftingTool.ViewModel
 
             // Same database file as the NPC edit store, a different set of tables: the group tables
             // hold predicates, not records, and nothing in them is written by a scan.
-            NpcGroupsVM = new NpcGroupVM(itemService, new Services.NpcGroupStore(npcDbPath));
+            NpcGroupsVM = new NpcGroupVM(itemService, new Services.NpcGroupStore(npcDbPath), importExportService);
 
             // One read of the NPC records for both tabs (docs/Performance-Plan.md, P-P2a) - see
             // SharedNpcData for why sharing the records keeps the groups right.
@@ -171,10 +182,16 @@ namespace SkyrimCraftingTool.ViewModel
 
             // The same item.db the NPC stores use. Removals are decisions, so they live beside the
             // other decision tables rather than in the volatile formid.db.
-            WorldVM = new WorldContentVM(ContentVM, itemService, npcDbPath);
+            WorldVM = new WorldContentVM(ContentVM, itemService, npcDbPath, importExportService);
 
             PresetsVM = new PresetsConfigVM(ContentVM);
-            SettingsVM = new SettingsVM(ContentVM);
+            // "Export / import all" in Settings: the tabs' own exports, run from the tabs' own VMs.
+            var allImportExport = new AllTabsImportExportVM(importExportService, new[]
+            {
+                ContentVM.ImportExport, EnchantVM.ImportExport, SpellVM.ImportExport,
+                NpcVM.ImportExport, NpcGroupsVM.ImportExport, WorldVM.ImportExport,
+            });
+            SettingsVM = new SettingsVM(ContentVM, allImportExport);
 
             // The nav row follows the setting rather than reading it once: the checkboxes live on
             // the Settings tab, which is on screen while they are being ticked.
@@ -205,6 +222,13 @@ namespace SkyrimCraftingTool.ViewModel
             // again on the next visit.
             ContentVM.DataLoaded += () => NpcGroupsVM.Invalidate();
             ContentVM.DataLoaded += () => WorldVM.Invalidate();
+            // The Spells tab reads on its first visit. Re-read at once only if it is on screen -
+            // otherwise dropped, and the next visit reads the scan's result.
+            ContentVM.DataLoaded += () =>
+            {
+                if (CurrentView == SpellVM) SpellVM.RefreshData(ContentVM.ActivePlugins);
+                else SpellVM.Invalidate();
+            };
             ContentVM.DataLoaded += () =>
             {
                 IssueHub.Current.Clear("scan");
@@ -226,6 +250,8 @@ namespace SkyrimCraftingTool.ViewModel
                 // Picks up any presets created/edited while the user was on the Presets tab.
                 SwitchTo("Items", ContentVM, ContentVM.RefreshAvailablePresets));
             OpenEnchantmentMenuCommand = new RelayCommand(() => SwitchTo("Enchantments", EnchantVM));
+            OpenSpellMenuCommand = new RelayCommand(() =>
+                SwitchTo("Spells", SpellVM, () => SpellVM.EnsureLoaded(ContentVM.ActivePlugins), () => SpellVM.NeedsLoad));
             OpenNpcMenuCommand = new RelayCommand(() =>
                 // First visit reads the NPC tables; later visits are free.
                 SwitchTo("NPCs", NpcVM, NpcVM.EnsureLoaded, () => NpcVM.NeedsLoad));

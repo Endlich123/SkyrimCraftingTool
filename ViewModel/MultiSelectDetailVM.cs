@@ -320,8 +320,7 @@ namespace SkyrimCraftingTool.ViewModel
                 // The list link. These rows are built here rather than by a ContainerSelectionVM, so
                 // nothing installed the action and the link was inert - it looked exactly like the
                 // working one in the single-item editor and did nothing.
-                foreach (var lvli in row.LVLiEntries)
-                    lvli.OpenRequested = OpenLeveledList;
+                row.RowOpenRequested = OpenLeveledList;
 
                 ContainerTemplateRows.Add(row);
             }

@@ -280,6 +280,20 @@ namespace SkyrimCraftingTool.ViewModel
                 if (_record.UsesPcLevelMult == value) return;
                 _record.UsesPcLevelMult = value;
                 Persist(nameof(UsesPcLevelMult), value ? 1 : 0);
+
+                // Scaling with the player makes the fixed level meaningless here - the rule writes
+                // setPcLevelMult=true and nothing else, so a level typed before would sit in the
+                // record and never reach the game (found 2026-10-18: 1234 on a scaling NPC). Back to
+                // what the plugin says, edit and all; the field is disabled while the switch is on
+                // (NpcDetailView). Turning it off again enables it - that is when a level counts.
+                if (value && _record.Level != _record.Scanned.Level)
+                {
+                    _record.Level = _record.Scanned.Level;
+                    Persist(nameof(Level), null);
+                    OnPropertyChanged(nameof(Level));
+                    OnPropertyChanged(nameof(IsLevelChanged));
+                }
+
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(IsUsesPcLevelMultChanged));
                 OnPropertyChanged(nameof(LevelDisplay));
@@ -426,6 +440,15 @@ namespace SkyrimCraftingTool.ViewModel
             return true;
         }
 
+        // The five AI tokens (aggression, confidence, assistance, morality, mood) are drop-downs over
+        // fixed lists with NO empty entry - an empty value is never something the user picked. But
+        // WPF writes null into a ComboBox's SelectedItem binding when the detail view swaps its
+        // content (another NPC, a reset, a tab change), and SetLinkField turned that null into "" and
+        // saved it as an edit. Found 2026-10-17: right after a Reset, all five came back as "" on
+        // the NPC that had been open. Null or empty is therefore "no selection", never a value.
+        private bool SetAiToken(string current, string value, string column) =>
+            !string.IsNullOrEmpty(value) && SetLinkField(current, value, column);
+
         public string ClassKey
         {
             get => _record.ClassKey;
@@ -534,7 +557,7 @@ namespace SkyrimCraftingTool.ViewModel
             get => _record.Aggression;
             set
             {
-                if (!SetLinkField(_record.Aggression, value, nameof(Aggression))) return;
+                if (!SetAiToken(_record.Aggression, value, nameof(Aggression))) return;
                 _record.Aggression = value ?? "";
                 Raise(nameof(Aggression), nameof(IsAggressionChanged));
             }
@@ -545,7 +568,7 @@ namespace SkyrimCraftingTool.ViewModel
             get => _record.Confidence;
             set
             {
-                if (!SetLinkField(_record.Confidence, value, nameof(Confidence))) return;
+                if (!SetAiToken(_record.Confidence, value, nameof(Confidence))) return;
                 _record.Confidence = value ?? "";
                 Raise(nameof(Confidence), nameof(IsConfidenceChanged));
             }
@@ -556,7 +579,7 @@ namespace SkyrimCraftingTool.ViewModel
             get => _record.Assistance;
             set
             {
-                if (!SetLinkField(_record.Assistance, value, nameof(Assistance))) return;
+                if (!SetAiToken(_record.Assistance, value, nameof(Assistance))) return;
                 _record.Assistance = value ?? "";
                 Raise(nameof(Assistance), nameof(IsAssistanceChanged));
             }
@@ -567,7 +590,7 @@ namespace SkyrimCraftingTool.ViewModel
             get => _record.Morality;
             set
             {
-                if (!SetLinkField(_record.Morality, value, nameof(Morality))) return;
+                if (!SetAiToken(_record.Morality, value, nameof(Morality))) return;
                 _record.Morality = value ?? "";
                 Raise(nameof(Morality), nameof(IsMoralityChanged));
             }
@@ -578,7 +601,7 @@ namespace SkyrimCraftingTool.ViewModel
             get => _record.Mood;
             set
             {
-                if (!SetLinkField(_record.Mood, value, nameof(Mood))) return;
+                if (!SetAiToken(_record.Mood, value, nameof(Mood))) return;
                 _record.Mood = value ?? "";
                 Raise(nameof(Mood), nameof(IsMoodChanged));
             }

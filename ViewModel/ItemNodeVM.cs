@@ -377,76 +377,31 @@ namespace SkyrimCraftingTool.ViewModel
             View.MeshPreviewWindow.Show(System.Windows.Application.Current?.MainWindow, variants, label);
         });
 
-        // Export/Import for just this item: its own Armor/Weapon field edits plus its Crafting/Temper
-        // recipe (if present), bundled into one file under Output/Exports/<Plugin>/<Item>.json — see
-        // ExportFileStore for the path convention. No file dialogs; Import reads back the exact file
-        // Export wrote for this same item.
+        // Export/Import for just this item: its own Armor/Weapon field edits, EVERY recipe it has -
+        // crafting, temper and breakdown, main and other - and its two recipe decisions (which is
+        // main, which were taken out; both keyed by the item, so its own Key reaches them). Bundled
+        // into one file under Output/Exports/Items/<Plugin>/<Item>.json - see ExportFileStore. No
+        // file dialogs; Import reads back the exact file Export wrote for this same item.
+        //
+        // It used to take only the main crafting and temper recipe: a breakdown recipe, or a second
+        // crafting recipe, was silently left out of the item's own export.
         public ICommand ExportItemCommand => new RelayCommand(async () =>
         {
-            if (Main?.ImportExportService == null) return;
-
-            // Flush first: this is the likeliest place to hit the 350ms autosave window — the user
-            // edits a field on this very item and immediately hits Export on it.
-            await Main.FlushPendingSavesAsync();
+            if (Main?.ImportExport == null) return;
 
             var keys = new List<string> { Key };
             if (CraftingRecipe != null) keys.Add(CraftingRecipe.Key);
             if (TemperRecipe != null) keys.Add(TemperRecipe.Key);
+            keys.AddRange(AllCraftingRecipes.Concat(AllTemperRecipes).Concat(AllBreakdownRecipes)
+                .Where(r => r != null).Select(r => r.Key));
 
-            var items = new List<EditedItemDto>();
-            try
-            {
-                foreach (var key in keys)
-                    items.AddRange(Main.ImportExportService.GetEditedItems(ExportScope.Item, key));
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogError("ItemNodeVM.ExportItemCommand failed", ex);
-                System.Windows.MessageBox.Show($"Export failed:{Environment.NewLine}{ex.Message}",
-                    "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
-                return;
-            }
-
-            if (items.Count == 0)
-            {
-                System.Windows.MessageBox.Show("This item has no edited data to export.",
-                    "Export", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
-                return;
-            }
-
-            var path = ExportFileStore.GetItemFilePath(Key, Name);
-            ExportFileStore.WriteFile(path, new ExportFile { ExportedAt = ItemDBHandler.NowIso(), Items = items });
-
-            System.Windows.MessageBox.Show($"Exported to{Environment.NewLine}{path}",
-                "Export Successful", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            await Main.ImportExport.ExportBundleAsync(Key, Name,
+                keys.Where(k => !string.IsNullOrEmpty(k)).Distinct(StringComparer.OrdinalIgnoreCase));
         });
 
         public ICommand ImportItemCommand => new RelayCommand(async () =>
         {
-            if (Main == null) return;
-
-            var path = ExportFileStore.GetItemFilePath(Key, Name);
-            if (!System.IO.File.Exists(path))
-            {
-                System.Windows.MessageBox.Show($"No export file found for this item:{Environment.NewLine}{path}",
-                    "Import", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
-                return;
-            }
-
-            ExportFile file;
-            try
-            {
-                file = ExportFileStore.ReadFile(path);
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogError("ItemNodeVM.ImportItemCommand (read file) failed", ex);
-                System.Windows.MessageBox.Show($"File could not be read:{Environment.NewLine}{ex.Message}",
-                    "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
-                return;
-            }
-
-            await Main.RunImportAsync(file?.Items ?? new List<EditedItemDto>());
+            if (Main?.ImportExport != null) await Main.ImportExport.ImportBundleAsync(Key, Name);
         });
 
         private string _name;
@@ -1473,6 +1428,28 @@ namespace SkyrimCraftingTool.ViewModel
         }
 
         public string PlacementString => ContainerString;
+
+        public string PlacementTable => IsArmor ? "Armor" : "Weapons";
+
+        // The placement only - the Container/LeveledList tab's reset. MainContentVM does the database
+        // and cache side, then hands the scanned string back to ApplyResetPlacement.
+        public async Task ResetPlacementAsync()
+        {
+            if (Main != null) await Main.ResetItemPlacementAsync(this);
+        }
+
+        // Shows the scanned placement without saving it as a fresh edit (IsLoading), then re-asks
+        // whether anything else on the item is still the user's. Without the details loaded there is
+        // no snapshot to ask, and the badge keeps what the tree was built with until the next load.
+        internal void ApplyResetPlacement(string scannedContainerString)
+        {
+            IsLoading = true;
+            ContainerString = scannedContainerString ?? "{}";
+            ContainerSelection.LoadFromString(ContainerString);
+            IsLoading = false;
+
+            if (_hasOriginalSnapshot) RefreshEditedState();
+        }
 
         // The string is what is stored, so the string is what is written - the selection is reloaded
         // from it afterwards rather than being the source of it. See IPlaceable for why the round

@@ -21,7 +21,8 @@ namespace SkyrimCraftingTool.ViewModel
         // MainContentVM supplies the armor and weapon rows AND the container catalogue, because both
         // already live there and a second copy of either would be a second truth. The placement
         // sub-tabs show its ItemNodeVM instances, not new ones - see PlacementListVM.
-        public WorldContentVM(MainContentVM content, IItemService itemService, string dbPath = null)
+        public WorldContentVM(MainContentVM content, IItemService itemService, string dbPath = null,
+                              IImportExportService? importExportService = null)
         {
             // The contents panes can take a placement back out, and a placement lives in the ITEM
             // that made it. Where that item has a live view model, the undo has to go through it -
@@ -61,10 +62,30 @@ namespace SkyrimCraftingTool.ViewModel
 
             List<ContainerRecord> Catalogue() => content?.AllContainers ?? new List<ContainerRecord>();
 
+            // Export / Import of this tab (TE-6). The flush is the ITEM tab's: a placement on an
+            // armor or weapon goes through its debounced save. After an import everything that holds
+            // placements or lists is stale - the item tree (it shows placements), the list caches,
+            // the own lists the item picker merges into containers - and this tab's own rows.
+            ImportExport = new TabImportExportVM(TabExportModules.Containers, importExportService,
+                flushPendingSaves: () => content?.FlushPendingSavesAsync() ?? System.Threading.Tasks.Task.CompletedTask,
+                refreshAfterImport: async () =>
+                {
+                    LeveledListEditStore.InvalidateCache();
+                    UserLeveledListStore.NotifyChanged();
+                    if (content != null) await content.RefreshFromDatabaseAsync();
+                    Invalidate();
+                    EnsureLoaded();
+                });
+
+            // Which records carry a placement of the user's - "only edited" and the reset, one query
+            // over the three tables (ItemDBHandler.EditedPlacementKeys).
+            HashSet<string> EditedPlacements() =>
+                itemService?.EditedPlacementKeys() ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             Placements = new List<PlacementListVM>
             {
-                new("Armor", () => content.PlaceableItems(isArmor: true), Catalogue, LoadOrder),
-                new("Weapons", () => content.PlaceableItems(isArmor: false), Catalogue, LoadOrder),
+                new("Armor", () => content.PlaceableItems(isArmor: true), Catalogue, LoadOrder, EditedPlacements),
+                new("Weapons", () => content.PlaceableItems(isArmor: false), Catalogue, LoadOrder, EditedPlacements),
             };
 
             // One sub-tab per kind, from the same table. The order is the one someone reaches for:
@@ -76,7 +97,8 @@ namespace SkyrimCraftingTool.ViewModel
                     Plural(captured),
                     () => LoadWorldItems(itemService, content, captured),
                     Catalogue,
-                    LoadOrder));
+                    LoadOrder,
+                    EditedPlacements));
             }
 
             Tabs = new List<object> { Containers, LeveledLists };
@@ -116,6 +138,9 @@ namespace SkyrimCraftingTool.ViewModel
         }
 
         public OwnerContentsVM Containers { get; }
+
+        // Export / Import of this tab (TabExportModules.Containers).
+        public TabImportExportVM ImportExport { get; }
         public OwnerContentsVM LeveledLists { get; }
 
         public List<PlacementListVM> Placements { get; }

@@ -326,7 +326,7 @@ namespace SkyrimCraftingTool.ViewModel
             var set = new HashSet<string>(StringComparer.Ordinal);
             try
             {
-                var edited = _importExportService?.GetEditedItems(ExportScope.All) ?? new List<EditedItemDto>();
+                var edited = _importExportService?.GetEditedItems(TabExportModules.Items.Units, ExportScope.All) ?? new List<EditedItemDto>();
 
                 foreach (var e in edited)
                     if (e.Table is "Armor" or "Weapons")
@@ -550,8 +550,9 @@ namespace SkyrimCraftingTool.ViewModel
         public RelayCommand ScanModsCommand { get; }
         public RelayCommand<string> ToggleContainerForSelectedItemCommand { get; }
         public RelayCommand ClearContainerSelectionCommand { get; }
-        public RelayCommand ExportAllCommand { get; }
-        public RelayCommand ImportAllCommand { get; }
+        // Export / Import of this tab: items and their recipes, nothing else (TabExportModules.Items).
+        // Also what PluginNodeVM and ItemNodeVM call for the plugin- and item-level buttons.
+        public TabImportExportVM ImportExport { get; }
         public RelayCommand GeneratePatchCommand { get; }
         public RelayCommand PreviewPatchCommand { get; }
 
@@ -618,8 +619,8 @@ namespace SkyrimCraftingTool.ViewModel
                 ShowExpertContainers = !ShowExpertContainers;
             });
 
-            ExportAllCommand = new RelayCommand(async () => await ExportAllAsync());
-            ImportAllCommand = new RelayCommand(async () => await ImportAllAsync());
+            ImportExport = new TabImportExportVM(
+                TabExportModules.Items, _importExportService, FlushPendingSavesAsync, RefreshFromDatabaseAsync);
             GeneratePatchCommand = new RelayCommand(async () => await GeneratePatchAsync());
             PreviewPatchCommand = new RelayCommand(async () => await PreviewPatchAsync());
             ManageOrphanedEditsCommand = new RelayCommand(ManageOrphanedEdits);
@@ -720,45 +721,6 @@ namespace SkyrimCraftingTool.ViewModel
         // after the DB changed without a full plugin rescan (e.g. after applying an Import). Unlike
         // LoadInitialDataAsync, this has no one-shot guard — every call actually reloads.
         public Task RefreshFromDatabaseAsync() => Task.Run(ReloadFromDatabaseCoreAsync);
-
-        // --- Import/Export ---
-        //
-        // No file dialogs: everything lives under a fixed, predictable folder structure
-        // (Output/Exports/<Plugin>/<Item>.json, see ExportFileStore) so Export and Import always
-        // agree on where a given item's data is without the user having to pick a location.
-
-        private async Task ExportAllAsync()
-        {
-            // Same reason as GeneratePatchAsync/ExportEnchantmentsAsync: an edit made inside the
-            // 350ms debounce window isn't in the DB yet, so it would silently be missing from the
-            // export while the dialog still reports success.
-            await FlushPendingSavesAsync();
-
-            List<EditedItemDto> items;
-            try
-            {
-                items = _importExportService.GetEditedItems(ExportScope.All);
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogError("MainContentVM.ExportAll failed", ex);
-                System.Windows.MessageBox.Show($"Export failed:{Environment.NewLine}{ex.Message}",
-                    "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
-                return;
-            }
-
-            if (items.Count == 0)
-            {
-                System.Windows.MessageBox.Show("No edited items found - nothing to export.",
-                    "Export", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
-                return;
-            }
-
-            var (count, root) = ImportExportFlow.ExportItems(items);
-            System.Windows.MessageBox.Show(
-                $"{count} item(s) exported to{Environment.NewLine}{root}",
-                "Export Successful", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
-        }
 
         // Writes the full patch:
         //  - SkyPatcher INIs for every edited armor/weapon field
@@ -887,65 +849,6 @@ namespace SkyrimCraftingTool.ViewModel
         {
             try { return Path.GetRelativePath(root, path); }
             catch { return path; }
-        }
-
-        private async Task ImportAllAsync()
-        {
-            var allItems = ImportExportFlow.ReadAllExportedItems();
-            if (allItems.Count == 0)
-            {
-                System.Windows.MessageBox.Show(
-                    $"No export files found under{Environment.NewLine}{ExportFileStore.ExportsRoot}",
-                    "Import", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
-                return;
-            }
-
-            await RunImportAsync(allItems);
-        }
-
-        // Shared Preview -> conflict resolution -> Apply -> refresh -> summary flow, used by both
-        // ImportAllCommand and ItemNodeVM.ImportItemCommand (via Main.RunImportAsync). Core is
-        // Services.ImportExportFlow; the item-tree refresh afterwards is what stays here.
-        public async Task RunImportAsync(List<EditedItemDto> items)
-        {
-            if (items == null || items.Count == 0)
-            {
-                System.Windows.MessageBox.Show("No importable items found.", "Import",
-                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
-                return;
-            }
-
-            // Must run BEFORE the import: a still-pending debounced save would otherwise fire ~350ms
-            // later and write the pre-import UI value straight back over what was just imported.
-            await FlushPendingSavesAsync();
-
-            ImportResult? result;
-            try
-            {
-                result = ImportExportFlow.RunImport(_importExportService, items);
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogError("MainContentVM.RunImportAsync (ImportExportFlow) failed", ex);
-                System.Windows.MessageBox.Show($"Import failed:{Environment.NewLine}{ex.Message}",
-                    "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
-                return;
-            }
-
-            if (result == null)
-                return; // user cancelled the conflict dialog — conflicting items left untouched
-
-            try
-            {
-                await RefreshFromDatabaseAsync();
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogError("MainContentVM.RunImportAsync (refresh) failed", ex);
-            }
-
-            System.Windows.MessageBox.Show(ImportExportFlow.SummaryText(result), "Import Complete",
-                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
         }
 
         private async Task ReloadFromDatabaseCoreAsync()
@@ -1292,7 +1195,7 @@ namespace SkyrimCraftingTool.ViewModel
                     // The merge report is a nice-to-have - never let it abort the scan.
                     try
                     {
-                        var editedRows = _importExportService?.GetEditedItems(ExportScope.All) ?? new List<EditedItemDto>();
+                        var editedRows = _importExportService?.GetEditedItems(TabExportModules.Items.Units, ExportScope.All) ?? new List<EditedItemDto>();
                         var afterKeys = new HashSet<string>(ArmorCache.Keys.Concat(WeaponCache.Keys), StringComparer.Ordinal);
                         var inventoryAfter = Services.ScanInventoryReader.Read(valuesBefore);
                         report = BuildScanReport(beforeKeys, afterKeys, editedRows, inventoryBefore, inventoryAfter);
@@ -1760,6 +1663,7 @@ namespace SkyrimCraftingTool.ViewModel
             // Same reasoning for the "changed by you" marks: a rescan rebuilds the lists those edits
             // point at, and an edit whose list left the load order stops counting.
             Services.LeveledListEditStore.InvalidateCache();
+            Services.PlacementLookup.InvalidateListNames();
             RefreshChangedListCount();
 
             // The lost-entry count is scanned data, so a rescan is the one thing that can change it.
@@ -2397,6 +2301,26 @@ namespace SkyrimCraftingTool.ViewModel
                     0, 0, original.Damage, original.Speed, original.Reach, original.Stagger,
                     original.ContainerString, original.Keywords, "", original.ObjectEffectKey, original.EnchantAmount);
             }
+        }
+
+        // The placement alone, from the Container/LeveledList tab. A pending debounced save of this
+        // very field would otherwise land after the reset and put the placement straight back - so it
+        // is flushed first, like every other reset and import here.
+        internal async Task ResetItemPlacementAsync(ItemNodeVM item)
+        {
+            await FlushPendingSavesAsync();
+
+            ItemService.ResetPlacement(item.PlacementTable, item.Key);
+
+            var scanned = item.IsArmor
+                ? ItemService.GetOriginalArmor(item.Key)?.ContainerString
+                : ItemService.GetOriginalWeapon(item.Key)?.ContainerString;
+            scanned ??= "{}";
+
+            if (item.IsArmor) _cacheManager.UpdateArmorContainerString(item.Key, scanned);
+            else _cacheManager.UpdateWeaponContainerString(item.Key, scanned);
+
+            item.ApplyResetPlacement(scanned);
         }
 
         // Reverts the item's Crafting/Temper recipe Workbench + Ingredients + Conditions back to the

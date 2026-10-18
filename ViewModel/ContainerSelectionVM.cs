@@ -37,18 +37,53 @@ namespace SkyrimCraftingTool.ViewModel
         {
             if (e.OldItems != null)
                 foreach (ContainerEntryVM c in e.OldItems)
+                {
+                    c.LVLiEntries.CollectionChanged -= OnLVLiEntriesChanged;
                     foreach (var lvli in c.LVLiEntries)
                         lvli.PropertyChanged -= OnLVLiPropertyChanged;
+                }
 
             if (e.NewItems != null)
                 foreach (ContainerEntryVM c in e.NewItems)
+                {
+                    c.RowOpenRequested = OpenLeveledList;
+
+                    // Rows for nested lists join after the container did (ContainerEntryVM.
+                    // GetOrAddNested), and a row this never subscribed to is a level that is never
+                    // saved - the failure LevelChanged exists to prevent.
+                    c.LVLiEntries.CollectionChanged -= OnLVLiEntriesChanged;
+                    c.LVLiEntries.CollectionChanged += OnLVLiEntriesChanged;
+
                     foreach (var lvli in c.LVLiEntries)
-                    {
-                        lvli.PropertyChanged -= OnLVLiPropertyChanged;
-                        lvli.PropertyChanged += OnLVLiPropertyChanged;
-                        lvli.OpenRequested = OpenLeveledList;
-                        lvli.AlreadyContainsItem = _existingListKeys.Contains(lvli.Key);
-                    }
+                        Attach(lvli);
+                }
+        }
+
+        private void Attach(LVLiEntryVM lvli)
+        {
+            lvli.PropertyChanged -= OnLVLiPropertyChanged;
+            lvli.PropertyChanged += OnLVLiPropertyChanged;
+            lvli.AlreadyContainsItem = _existingListKeys.Contains(lvli.Key);
+        }
+
+        private void OnLVLiEntriesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            bool removedPlacement = false;
+
+            if (e.OldItems != null)
+                foreach (LVLiEntryVM lvli in e.OldItems)
+                {
+                    lvli.PropertyChanged -= OnLVLiPropertyChanged;
+                    if (lvli.Level > 0) removedPlacement = true;
+                }
+
+            if (e.NewItems != null)
+                foreach (LVLiEntryVM lvli in e.NewItems)
+                    Attach(lvli);
+
+            // A row taken out while it still carried a level changes the string just as a slider
+            // does. A fresh row arrives at level 0 and says nothing until its level is set.
+            if (removedPlacement) LevelChanged?.Invoke();
         }
 
         // The leveled lists that already hold the owner's item, from the scanned load order.

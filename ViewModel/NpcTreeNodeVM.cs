@@ -105,13 +105,22 @@ namespace SkyrimCraftingTool.ViewModel
         // Builds the whole tree from a flat NPC list. Grouping by the plugin the FormID names, not by
         // the plugin that last overrode the record: the key is what every rule and every other table
         // in this tool is addressed by, so the tree has to agree with it.
-        public static List<NpcTreeNodeVM> Build(IEnumerable<NpcNodeVM> npcs)
+        //
+        // Plugins in load order, like every other record tree (Services/PluginTreeOrder). Without a
+        // load order - tests, or before the first scan - alphabetical.
+        public static List<NpcTreeNodeVM> Build(IEnumerable<NpcNodeVM> npcs,
+                                                IReadOnlyList<Model.PluginInfo>? loadOrder = null)
         {
             var roots = new List<NpcTreeNodeVM>();
 
+            Func<string, int> rank = loadOrder == null || loadOrder.Count == 0
+                ? _ => 0
+                : Services.PluginTreeOrder.Ranker(loadOrder);
+
             foreach (var byPlugin in (npcs ?? Enumerable.Empty<NpcNodeVM>())
                         .GroupBy(n => n.PluginName, StringComparer.OrdinalIgnoreCase)
-                        .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+                        .OrderBy(g => rank(g.Key))
+                        .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
             {
                 var pluginNode = new NpcTreeNodeVM(byPlugin.Key, isPlugin: true);
 

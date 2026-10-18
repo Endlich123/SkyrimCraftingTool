@@ -143,6 +143,7 @@ namespace SkyrimCraftingTool.ViewModel
             foreach (var row in rows)
                 Owners.Add(new OwnerRowVM(row));
 
+            RefreshEdited();
             RebuildTree();
             step.Dispose();
 
@@ -187,6 +188,93 @@ namespace SkyrimCraftingTool.ViewModel
         {
             _tree.Rebuild(Owners);
             OnPropertyChanged(nameof(FilteredTree));
+        }
+
+        // --- Only edited, and the reset (user, 2026-10-17) ---
+        //
+        // "Edited" = this tab's own decisions about the owner: objects taken out, entries put back,
+        // a list's chance or flags (OwnerDecisionStore). Placements of items INTO it are not counted
+        // - they are the item's, with their own filter and reset on the placement sub-tabs.
+        private HashSet<string> _edited = new(StringComparer.OrdinalIgnoreCase);
+
+        // REFILTERS ONLY WHEN THE SET CHANGED. This runs on every pick (a chance edit tells nobody,
+        // so the markers are re-read there), and refiltering rebuilds the tree's nodes - in the middle
+        // of the click that is changing the pick. With "only edited" on, every click then behaved as
+        // if Ctrl were held (user, 2026-10-17). A pick does not change which owners are edited, so it
+        // no longer touches the tree.
+        private void RefreshEdited()
+        {
+            var previous = _edited;
+            _edited = OwnerDecisionStore.EditedOwners(_scope, _dbPath);
+            foreach (var owner in Owners) owner.IsEdited = _edited.Contains(owner.Key);
+
+            if (_onlyEdited && !previous.SetEquals(_edited))
+            {
+                _tree.Filter(_search);
+                OnPropertyChanged(nameof(FilteredTree));
+            }
+            OnPropertyChanged(nameof(EditedCountText));
+            OnPropertyChanged(nameof(CanResetOwners));
+        }
+
+        public string EditedCountText
+        {
+            get
+            {
+                int n = Owners.Count(o => o.IsEdited);
+                return n == 1 ? "1 edited" : $"{n} edited";
+            }
+        }
+
+        // An own list counts as the user's too - it is the one kind of row here no plugin defines,
+        // and "show me what is mine" should find it.
+        private bool _onlyEdited;
+        public bool OnlyEdited
+        {
+            get => _onlyEdited;
+            set
+            {
+                if (!SetProperty(ref _onlyEdited, value)) return;
+                if (value) RefreshEdited();
+                _tree.RowFilter = value ? o => o.IsEdited || o.IsOwn : null;
+                _tree.Filter(_search);
+                OnPropertyChanged(nameof(FilteredTree));
+            }
+        }
+
+        public bool CanResetOwners => PickedOwners.Any(o => o.IsEdited);
+
+        public ICommand ResetOwnersCommand => new RelayCommand(ResetOwners);
+
+        // Every decision about the picked owners, taken back. Always asks: on a list that can be a
+        // chance edit and a dozen removals at once, and nothing brings them back.
+        internal void ResetOwners() => ResetOwners(confirm: true);
+
+        internal void ResetOwners(bool confirm)
+        {
+            var targets = PickedOwners.Where(o => o.IsEdited).ToList();
+            if (targets.Count == 0) return;
+
+            if (confirm)
+            {
+                string what = targets.Count == 1 ? $"'{targets[0].Name}'" : $"{targets.Count} {OwnerNoun}s";
+                string detail = IsContainer
+                    ? "Every object you took out goes back in."
+                    : "Every object you took out goes back in, every entry you put back is dropped again, and the chance and flags return to what the plugins say.";
+                var answer = System.Windows.MessageBox.Show(
+                    $"Reset {what}?{Environment.NewLine}{Environment.NewLine}{detail}{Environment.NewLine}Items you placed into it are not touched - reset those on their placement tab.",
+                    $"Reset {OwnerNoun}", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question);
+                if (answer != System.Windows.MessageBoxResult.Yes) return;
+            }
+
+            // The pick goes first: the reset owners leave an "only edited" tree, and the tree must
+            // not be rebuilt under a pick that still holds them.
+            ClearMultiSelection();
+
+            foreach (var owner in targets)
+                OwnerDecisionStore.Reset(_scope, owner.Key, _dbPath);
+
+            AfterDecisionChanged();
         }
 
         // The single pick, for the header and for restoring the user's place after a reload. Set from
@@ -258,11 +346,16 @@ namespace SkyrimCraftingTool.ViewModel
 
             SelectedOwner = PickedOwners.Count == 1 ? PickedOwners[0] : null;
 
+            // A chance edit is saved by the list editor, which tells nobody - so the markers are read
+            // again on each pick. Three small queries.
+            RefreshEdited();
+
             LoadContents();
             RefreshOwnListEditor();
 
             OnPropertyChanged(nameof(PickedOwners));
             OnPropertyChanged(nameof(IsMultiOwner));
+            OnPropertyChanged(nameof(CanResetOwners));
             OnPropertyChanged(nameof(HasSelection));
             OnPropertyChanged(nameof(ContentsHeader));
             OnPropertyChanged(nameof(ContentsKey));
@@ -900,6 +993,7 @@ namespace SkyrimCraftingTool.ViewModel
         {
             LoadContents();
             SelectionChanged();
+            RefreshEdited();
 
             OnPropertyChanged(nameof(RemovalCountText));
             OnPropertyChanged(nameof(HasRemovals));
@@ -949,6 +1043,14 @@ namespace SkyrimCraftingTool.ViewModel
         // A leveled list the user created in the tool - marked in the tree, because it is the one kind
         // of row here that no plugin defines (docs/LeveledList-Create-Plan.md, L-P2).
         public bool IsOwn { get; }
+
+        // This tab decided something about it - see OwnerContentsVM.RefreshEdited.
+        private bool _isEdited;
+        public bool IsEdited
+        {
+            get => _isEdited;
+            set => SetProperty(ref _isEdited, value);
+        }
 
         public string CountText => EntryCount == 1 ? "1 entry" : $"{EntryCount} entries";
 

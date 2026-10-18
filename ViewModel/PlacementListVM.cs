@@ -29,11 +29,14 @@ namespace SkyrimCraftingTool.ViewModel
         private bool _loaded;
 
         public PlacementListVM(string title, Func<IReadOnlyList<IPlaceable>> source, Func<List<ContainerRecord>> containers,
-                               Func<IReadOnlyList<string>>? loadOrder = null)
+                               Func<IReadOnlyList<string>>? loadOrder = null, Func<HashSet<string>>? editedPlacementKeys = null)
         {
             Title = title;
             _source = source;
             _containers = containers;
+            _editedPlacementKeys = editedPlacementKeys ?? (() => new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+            ResetPlacementCommand = new RelayCommand(async () => await ResetPlacementAsync());
 
             _tree = new PluginTree<PlaceableRowVM>(
                 r => r.Key,
@@ -53,7 +56,7 @@ namespace SkyrimCraftingTool.ViewModel
                 // Not committed while a template is being built: every tick would otherwise be a
                 // write to all picked records, with no way to assemble a placement first and no way
                 // back out of a misclick. ApplyToPickedCommand is the one write.
-                if (!IsBulk) target.CommitPlacement();
+                if (!IsBulk) { target.CommitPlacement(); MarkEdited(target); }
 
                 var vm = AllContainerVMs.FirstOrDefault(c => c.ContainerKey == key);
                 if (vm != null)
@@ -67,7 +70,7 @@ namespace SkyrimCraftingTool.ViewModel
                 if (target == null) return;
 
                 target.ContainerSelection.Clear();
-                if (!IsBulk) target.CommitPlacement();
+                if (!IsBulk) { target.CommitPlacement(); MarkEdited(target); }
                 RefreshContainerFlags();
             });
 
@@ -103,6 +106,7 @@ namespace SkyrimCraftingTool.ViewModel
         public void Invalidate()
         {
             _loaded = false;
+            _existingPlacementCache.Clear();
             Rows.Clear();
             AllContainerVMs.Clear();
             RebuildTree();
@@ -123,6 +127,9 @@ namespace SkyrimCraftingTool.ViewModel
             Rows.Clear();
             foreach (var row in source)
                 Rows.Add(row);
+
+            // A reload follows a rescan, the one thing that changes where a record already sits.
+            _existingPlacementCache.Clear();
 
             step = PerfLog.Measure($"{Title} tab: build container rows");
             AllContainerVMs.Clear();
@@ -175,8 +182,103 @@ namespace SkyrimCraftingTool.ViewModel
             foreach (var row in Rows)
                 _rowVMs.Add(new PlaceableRowVM(row));
 
+            RefreshEdited();
+
             _tree.Rebuild(_rowVMs);
             OnPropertyChanged(nameof(FilteredTree));
+        }
+
+        // --- Only edited, and the reset (user, 2026-10-17) ---
+        //
+        // "Edited" is read from the DATABASE, not from the rows: an armor or weapon only knows its
+        // scanned placement once its details were opened in the item tab, so a flag on the view model
+        // would miss every item nobody clicked this session. One query over three tables.
+        private readonly Func<HashSet<string>> _editedPlacementKeys;
+        private HashSet<string> _edited = new(StringComparer.OrdinalIgnoreCase);
+
+        private void RefreshEdited()
+        {
+            _edited = _editedPlacementKeys() ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in _rowVMs) row.IsEdited = _edited.Contains(row.Key);
+            OnPropertyChanged(nameof(EditedCountText));
+            OnPropertyChanged(nameof(CanResetPlacement));
+        }
+
+        // A placement just made counts at once. The database would say so too, but for an armor or
+        // weapon only after the item tab's debounced save - the marker should not wait for that.
+        private void MarkEdited(IPlaceable placeable)
+        {
+            if (placeable == null || string.IsNullOrEmpty(placeable.Key)) return;
+            _edited.Add(placeable.Key);
+            foreach (var row in _rowVMs.Where(r => string.Equals(r.Key, placeable.Key, StringComparison.OrdinalIgnoreCase)))
+                row.IsEdited = true;
+            OnPropertyChanged(nameof(EditedCountText));
+        }
+
+        public string EditedCountText
+        {
+            get
+            {
+                int n = _rowVMs.Count(r => r.IsEdited);
+                return n == 1 ? "1 edited" : $"{n} edited";
+            }
+        }
+
+        private bool _onlyEdited;
+        public bool OnlyEdited
+        {
+            get => _onlyEdited;
+            set
+            {
+                if (!SetProperty(ref _onlyEdited, value)) return;
+                if (value) RefreshEdited();
+                _tree.RowFilter = value ? r => r.IsEdited : null;
+                _tree.Filter(_rowSearch);
+                OnPropertyChanged(nameof(FilteredTree));
+            }
+        }
+
+        // The record in hand, or every picked one. NOT narrowed to the edited set: an armor's
+        // placement is saved through the item tab's debounced pipeline, so a placement made a moment
+        // ago may not be in the database yet. The reset flushes that first (MainContentVM), and the
+        // database only touches a row whose placement IS the user's (ItemDBHandler.ResetPlacement).
+        private List<IPlaceable> ResetTargets() =>
+            (IsBulk ? PickedRows.Select(r => r.Row) : _selectedPlaceable == null ? Enumerable.Empty<IPlaceable>() : new[] { _selectedPlaceable })
+                .ToList();
+
+        public bool CanResetPlacement => IsBulk ? PickedRows.Count > 0 : _selectedPlaceable != null;
+
+        public RelayCommand ResetPlacementCommand { get; }
+
+        // Several records at once asks first: it throws away placements the user may have built one
+        // by one, and there is no undo behind it.
+        internal async Task ResetPlacementAsync(bool confirm = true)
+        {
+            var targets = ResetTargets();
+            if (targets.Count == 0) return;
+
+            if (confirm && targets.Count > 1)
+            {
+                var answer = System.Windows.MessageBox.Show(
+                    $"Take the placements of {targets.Count} records back to what the plugins say?",
+                    "Reset placements", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question);
+                if (answer != System.Windows.MessageBoxResult.Yes) return;
+            }
+
+            foreach (var target in targets)
+                await target.ResetPlacementAsync();
+
+            RefreshEdited();
+            RefreshContainerFlags();
+            if (_onlyEdited)
+            {
+                // The reset records leave the "only edited" tree; it must not be rebuilt under a
+                // pick that still holds them (the owners tab next door, 2026-10-17).
+                ClearMultiSelection();
+                _tree.Filter(_rowSearch);
+                OnPropertyChanged(nameof(FilteredTree));
+            }
+            BulkStatus = targets.Count == 1 ? "Placement reset." : $"Reset {targets.Count} placements.";
         }
 
         // --- Picking several records at once ---
@@ -235,6 +337,7 @@ namespace SkyrimCraftingTool.ViewModel
             OnPropertyChanged(nameof(TargetName));
             OnPropertyChanged(nameof(TargetKey));
             OnPropertyChanged(nameof(HasNoSelection));
+            OnPropertyChanged(nameof(CanResetPlacement));
             RefreshContainerFlags();
         }
 
@@ -305,6 +408,7 @@ namespace SkyrimCraftingTool.ViewModel
                 if (!touched) continue;
 
                 await row.CommitPlacementAsync();
+                MarkEdited(row);
                 changed++;
             }
 
@@ -331,6 +435,7 @@ namespace SkyrimCraftingTool.ViewModel
                 OnPropertyChanged(nameof(TargetName));
                 OnPropertyChanged(nameof(TargetKey));
                 OnPropertyChanged(nameof(HasNoSelection));
+                OnPropertyChanged(nameof(CanResetPlacement));
             }
         }
 
@@ -363,22 +468,85 @@ namespace SkyrimCraftingTool.ViewModel
         private BulkPlacementTemplateVM BulkTarget =>
             _bulkTarget ??= new BulkPlacementTemplateVM(_containers());
 
-        // Nothing to say here yet. The item editor computes it per item from the scanned placements;
-        // repeating that lookup is a separate job, and an empty line is honest where a wrong one
-        // would not be.
-        public string ExistingPlacementSummary => "";
+        // --- "Already in your load order" (read-only) ---
+        //
+        // The same answer the item editor gives (MainContentVM.UpdateAllContainerSelectionFlags), and
+        // the same strict split from the user's own placement: a badge says the GAME has it there, a
+        // tick says the PATCH will put it there. Worth more here than over there - this tab also
+        // places books, scrolls and the rest, which sit in leveled lists far more often than armor.
+        //
+        // Cached per record for the same reason as in MainContentVM (~3 ms a lookup, and every
+        // container toggle comes back through RefreshContainerFlags); dropped with every reload,
+        // which is what a rescan ends in.
+        private readonly Dictionary<string, IReadOnlyList<Placement>> _existingPlacementCache
+            = new(StringComparer.OrdinalIgnoreCase);
 
-        public bool HasChangedLists => false;
-        public string ChangedListsButtonText => "";
-        public ICommand ShowChangedListsCommand => null;
+        private string _existingPlacementSummary = "";
+        public string ExistingPlacementSummary
+        {
+            get => _existingPlacementSummary;
+            private set => SetProperty(ref _existingPlacementSummary, value);
+        }
+
+        // Nothing for a bulk pick: the template is not a record, and "already in the game" would have
+        // to mean one of the picked records - any answer would be about the wrong one.
+        private IReadOnlyList<Placement> ExistingPlacementsForTarget()
+        {
+            if (IsBulk || _selectedPlaceable == null || string.IsNullOrWhiteSpace(_selectedPlaceable.Key))
+                return Array.Empty<Placement>();
+
+            var key = _selectedPlaceable.Key;
+            if (_existingPlacementCache.TryGetValue(key, out var cached))
+                return cached;
+
+            var found = PlacementLookup.WhereIs(key);
+            _existingPlacementCache[key] = found;
+            return found;
+        }
+
+        // --- Lists whose own properties the user changed ---
+        //
+        // The way back to them, as in the item editor. The set is cached in LeveledListEditStore, so
+        // asking on every selection change costs nothing.
+        public int ChangedListCount => LeveledListEditStore.EditedKeys().Count;
+
+        public bool HasChangedLists => ChangedListCount > 0;
+
+        public string ChangedListsButtonText => ChangedListCount == 1
+            ? "1 changed list"
+            : $"{ChangedListCount} changed lists";
+
+        public ICommand ShowChangedListsCommand => new RelayCommand(() =>
+        {
+            View.ChangedListsWindow.Show(System.Windows.Application.Current?.MainWindow);
+            RefreshChangedListCount();
+        });
+
+        private void RefreshChangedListCount()
+        {
+            OnPropertyChanged(nameof(ChangedListCount));
+            OnPropertyChanged(nameof(HasChangedLists));
+            OnPropertyChanged(nameof(ChangedListsButtonText));
+        }
 
         public ObservableCollection<ContainerEntryVM> AllContainerVMs { get; } = new();
 
-        private bool _showExpertContainers = true;
+        // Starts in the standard view (merchants only), like the item tab. It used to start in expert
+        // view, and the list below did not read the switch at all - so the button changed its label
+        // and nothing else.
+        private bool _showExpertContainers;
         public bool ShowExpertContainers
         {
             get => _showExpertContainers;
-            set { if (SetProperty(ref _showExpertContainers, value)) OnPropertyChanged(nameof(FilteredContainers)); }
+            set
+            {
+                if (!SetProperty(ref _showExpertContainers, value)) return;
+
+                OnPropertyChanged(nameof(FilteredContainers));
+
+                // The summary counts the hits the current list cannot show.
+                RefreshContainerFlags();
+            }
         }
 
         private string _containerSearchText = "";
@@ -390,8 +558,9 @@ namespace SkyrimCraftingTool.ViewModel
 
         public IEnumerable<ContainerEntryVM> FilteredContainers =>
             AllContainerVMs.Where(c =>
-                string.IsNullOrWhiteSpace(ContainerSearchText)
-                || c.Name.Contains(ContainerSearchText, StringComparison.OrdinalIgnoreCase));
+                ContainerEntryVM.IsShown(c, ShowExpertContainers)
+                && (string.IsNullOrWhiteSpace(ContainerSearchText)
+                    || c.Name.Contains(ContainerSearchText, StringComparison.OrdinalIgnoreCase)));
 
         public RelayCommand<string> ToggleContainerForSelectedItemCommand { get; }
         public RelayCommand ClearContainerSelectionCommand { get; }
@@ -406,8 +575,35 @@ namespace SkyrimCraftingTool.ViewModel
                 .Select(sc => sc.ContainerKey)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase) ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+            var existing = ExistingPlacementsForTarget();
+            var heldCounts = PlacementLookup.HeldPerContainer(existing);
+
+            // The leveled-list half lands on the rows inside the selected containers - the only place
+            // a list has a row at all. Set on the selection, not per row, so a container ticked later
+            // gets its marks too.
+            if (!IsBulk)
+                _selectedPlaceable?.ContainerSelection.SetExistingListKeys(
+                    existing.Where(p => p.Kind == PlacementKind.LeveledList).Select(p => p.Key));
+
             foreach (var vm in AllContainerVMs)
+            {
                 vm.IsSelected = selected.Contains(vm.ContainerKey);
+                vm.SetExistingPlacement(heldCounts.TryGetValue(vm.ContainerKey, out var held) ? held : 0);
+            }
+
+            // Counted against the view, not the search: a hit the standard view hides gets the
+            // "switch to Expert view" hint, the same sentence the item tab says.
+            int visible = AllContainerVMs.Count(vm =>
+                ContainerEntryVM.IsShown(vm, ShowExpertContainers) && heldCounts.ContainsKey(vm.ContainerKey));
+
+            ExistingPlacementSummary = IsBulk || _selectedPlaceable == null
+                ? ""
+                : PlacementLookup.DescribeExisting(
+                    heldCounts.Count,
+                    existing.Count(p => p.Kind == PlacementKind.LeveledList),
+                    Math.Max(heldCounts.Count - visible, 0));
+
+            RefreshChangedListCount();
         }
     }
 
@@ -445,6 +641,14 @@ namespace SkyrimCraftingTool.ViewModel
         string PlacementString { get; }
 
         Task SetPlacementAsync(string containerString);
+
+        // Which table the placement is stored in ("Armor", "Weapons", "WorldItem") - what "only
+        // edited" and the reset on the Container/LeveledList tab need to reach the database row.
+        // "" for something that is not a record (the bulk template).
+        string PlacementTable { get; }
+
+        // Back to what the plugins say, for the placement only - the record's other edits stay.
+        Task ResetPlacementAsync();
     }
 
     // The placement being built for several records at once.
@@ -481,6 +685,10 @@ namespace SkyrimCraftingTool.ViewModel
             ContainerSelection.LoadFromString(containerString ?? "{}");
             return Task.CompletedTask;
         }
+
+        // A template is not a record: nothing stored, nothing to reset.
+        public string PlacementTable => "";
+        public Task ResetPlacementAsync() => Task.CompletedTask;
     }
 
     // One row of a placement tree.
@@ -502,6 +710,15 @@ namespace SkyrimCraftingTool.ViewModel
 
         public string Key => Row.Key;
         public string Display => Row.Display;
+
+        // The placement is the user's - drives the marker in the tree and "only edited". Set by
+        // PlacementListVM from the database, see RefreshEdited there.
+        private bool _isEdited;
+        public bool IsEdited
+        {
+            get => _isEdited;
+            set => SetProperty(ref _isEdited, value);
+        }
 
         private bool _isPicked;
         public bool IsPicked

@@ -52,16 +52,48 @@ namespace SkyrimCraftingTool.ViewModel
     //     "by the time it is in the dry-run it is too late".
     public sealed class LeveledListEditorVM : ViewModelBase
     {
-        // Null when the window was opened for a NESTED list. The entry being edited belongs to the
-        // list the user came from; a nested list has no placement of this item to edit, and offering
-        // one would let them set a level on a list they never selected. So that half is hidden
-        // rather than disabled - a disabled editor invites the question "why can't I use this".
+        // Null when nothing is being placed: a list opened on its own (the lost-entry report, the
+        // Container/LeveledList tab), or a nested list followed from such a window. That half is then
+        // hidden rather than disabled - a disabled editor invites the question "why can't I use this".
+        //
+        // A nested list followed from a window that DOES place has an entry of its own since
+        // 2026-10-15: a row in the same container, created for it - see ForNested.
         private readonly LVLiEntryVM? _entry;
 
         private readonly OddsModel _odds;
         private readonly string? _dbPath;
 
         public bool CanPlace => _entry != null;
+
+        // The placement half for a list one level further down, or null when this window places
+        // nothing. The new window places into the SAME container row the user came through: the
+        // container is the way the list is reached, and the rule is written per list either way.
+        //
+        // The row may be created here, at level 0, so the window has something to bind to. Whoever
+        // shows the window hands it back to ReleaseNested afterwards, which takes it out again if
+        // nothing was placed.
+        public LeveledListEditorVM? ForNested(string listKey, string listName)
+        {
+            var nested = _entry?.OwnerContainer?.GetOrAddNested(listKey, listName);
+            if (nested == null) return null;
+
+            return new LeveledListEditorVM(nested.Key, nested.LVLiName, Subjects, nested, _dbPath, _subjectLabel);
+        }
+
+        public void ReleaseNested()
+        {
+            if (_entry != null) _entry.OwnerContainer?.RemoveNestedIfUnused(_entry);
+        }
+
+        // Said in the placement box, because the difference matters for the chance: an item in the
+        // narrow list competes only with that list's entries, one in the broad list above it first
+        // has to survive the draw into the right branch.
+        public bool IsNestedPlacement => _entry?.IsNested ?? false;
+
+        public string NestedPlacementNote => IsNestedPlacement
+            ? $"Placed directly into this nested list, through the container \"{_entry!.OwnerContainer?.Name}\". " +
+              "It lands here instead of in the broader list above, and the chance below is counted from here."
+            : "";
 
         public string ListKey { get; }
         // Everything this placement is for. One item from the single-item editor, all of them from

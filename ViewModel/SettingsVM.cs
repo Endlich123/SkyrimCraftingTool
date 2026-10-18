@@ -48,9 +48,10 @@ namespace SkyrimCraftingTool.ViewModel
         // NavTabService for why they are not offered rather than forced on.
         public IReadOnlyList<NavTabToggleVM> NavTabs { get; }
 
-        public SettingsVM(MainContentVM content)
+        public SettingsVM(MainContentVM content, AllTabsImportExportVM importExport)
         {
             _content = content;
+            ImportExport = importExport;
 
             BrowseOutputPathCommand = new RelayCommand(BrowseOutputPath);
             ResetOutputPathCommand = new RelayCommand(() => PatchOutputPath = "");
@@ -85,6 +86,11 @@ namespace SkyrimCraftingTool.ViewModel
             : "No leveled list in your load order lost entries to an override.";
 
         public ICommand ShowLostListsCommand => _content.ShowLostListsCommand;
+
+        // --- Export / import of every tab at once ---
+
+        // The tabs' own Export / Import, all at once - see AllTabsImportExportVM.
+        public AllTabsImportExportVM ImportExport { get; }
 
         // --- Patch output ---
 

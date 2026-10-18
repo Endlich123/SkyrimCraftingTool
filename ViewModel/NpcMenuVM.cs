@@ -31,15 +31,33 @@ namespace SkyrimCraftingTool.ViewModel
         // A function rather than the list itself: the keyword catalogue is loaded by the item tab,
         // and on the first NPC visit it may or may not be ready yet.
         private readonly Func<List<FormIDRecord>>? _keywords;
+
+        // The item tab's plugin list, read on every build: a scan replaces it.
+        private readonly Func<IReadOnlyList<PluginInfo>>? _loadOrder;
         private List<NpcTreeNodeVM> _allRoots = new();
         private bool _loaded;
 
         public NpcMenuVM(Services.IItemService? items = null, Services.NpcEditStore? edits = null,
-                         Func<List<FormIDRecord>>? keywords = null)
+                         Func<List<FormIDRecord>>? keywords = null,
+                         Func<IReadOnlyList<PluginInfo>>? loadOrder = null,
+                         Services.IImportExportService? importExportService = null)
         {
             _items = items;
             _edits = edits;
             _keywords = keywords;
+            _loadOrder = loadOrder;
+
+            // No flush: NPC fields commit on focus loss, one edit one write (NpcEditStore). After an
+            // import the records are read again - from the database, not from the shared copy the
+            // groups tab holds, which predates the import.
+            ImportExport = new TabImportExportVM(Services.TabExportModules.Npcs, importExportService,
+                refreshAfterImport: () =>
+                {
+                    Shared?.Clear();
+                    Invalidate();
+                    EnsureLoaded();
+                    return System.Threading.Tasks.Task.CompletedTask;
+                });
 
             // Reset is per NPC and asks first: it drops every edit on that record at once, and there
             // is no undo behind it.
@@ -611,6 +629,9 @@ namespace SkyrimCraftingTool.ViewModel
         public ICommand CollapseAllCommand { get; }
         public ICommand ResetNpcCommand { get; }
 
+        // Export / Import of this tab (TabExportModules.Npcs).
+        public TabImportExportVM ImportExport { get; }
+
         // Reads the NPC tables the first time the tab is actually opened, and not before: they are
         // the biggest block in the database and a session may never look at them. A rescan calls
         // Invalidate() below, so the next visit re-reads.
@@ -726,7 +747,7 @@ namespace SkyrimCraftingTool.ViewModel
                 npc.ItemsChanged = (n, items) => _edits?.SaveItems(n.Key, items);
             }
 
-            _allRoots = NpcTreeNodeVM.Build(list);
+            _allRoots = NpcTreeNodeVM.Build(list, _loadOrder?.Invoke());
             BuildTemplateIndex(list);
 
             NpcCount = _allRoots.Sum(r => r.NpcCount);

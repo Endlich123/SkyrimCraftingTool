@@ -81,8 +81,76 @@ namespace SkyrimCraftingTool.ViewModel
 
             foreach (var lvli in def.LVLIEntries)
             {
-                LVLiEntries.Add(new LVLiEntryVM(lvli) { IsListEdited = edited.Contains(lvli.LVLiKey) });
+                LVLiEntries.Add(new LVLiEntryVM(lvli)
+                {
+                    IsListEdited = edited.Contains(lvli.LVLiKey),
+                    OwnerContainer = this,
+                });
             }
+        }
+
+        // What opens the detail window behind a row - installed by whoever owns this container row
+        // (ContainerSelectionVM, or the multi-select's template rows). Kept here rather than set row
+        // by row, because rows for nested lists arrive later, and one installed on the rows that
+        // happened to exist would leave those links dead.
+        private Action<LVLiEntryVM>? _rowOpenRequested;
+        public Action<LVLiEntryVM>? RowOpenRequested
+        {
+            get => _rowOpenRequested;
+            set
+            {
+                _rowOpenRequested = value;
+                foreach (var lvli in LVLiEntries)
+                    lvli.OpenRequested = value;
+            }
+        }
+
+        // --- Placements into NESTED lists ---
+        //
+        // The container is the WAY to a list, not its owner. Its own rows are the lists it holds
+        // directly; a list further down - LItemArmorBootsHeavyBlacksmith below LItemBlacksmithArmor75
+        // - is reached by opening one of those, and placing there puts the item into the narrower
+        // list instead of the broad one. Stored in the same ContainerString under this container
+        // ("{Container: {NestedList,Level}}"): the rule builder has always grouped by LIST and only
+        // uses the container for the comment, so the patch needs nothing new.
+        //
+        // A nested row exists only while it carries a placement, or while its window is open: an
+        // empty one is a row nobody chose.
+        public LVLiEntryVM? GetOrAddNested(string listKey, string listName)
+        {
+            if (string.IsNullOrWhiteSpace(listKey)) return null;
+
+            // Reached both directly and through another list: the direct row is the same placement.
+            var existing = LVLiEntries.FirstOrDefault(l =>
+                string.Equals(l.Key, listKey, StringComparison.OrdinalIgnoreCase));
+            if (existing != null) return existing;
+
+            return AddNestedRow(listKey, listName);
+        }
+
+        public void RemoveNestedIfUnused(LVLiEntryVM row)
+        {
+            if (row.IsNested && row.Level == 0)
+                LVLiEntries.Remove(row);
+        }
+
+        private LVLiEntryVM AddNestedRow(string listKey, string listName)
+        {
+            var row = new LVLiEntryVM(new ContainerLVLIRecord
+            {
+                ContainerKey = ContainerKey,
+                LVLiKey = listKey,
+                LVLiName = string.IsNullOrWhiteSpace(listName) ? listKey : listName,
+            })
+            {
+                IsNested = true,
+                IsListEdited = Services.LeveledListEditStore.EditedKeys().Contains(listKey),
+                OwnerContainer = this,
+                OpenRequested = _rowOpenRequested,
+            };
+
+            LVLiEntries.Add(row);
+            return row;
         }
 
         // Both halves of the read-only state in one call, so the badge and its tooltip can never
@@ -97,6 +165,31 @@ namespace SkyrimCraftingTool.ViewModel
 
         public void ApplyPlacements(Dictionary<string, Services.LvliPlacement> placements)
         {
+            // Case-insensitive whatever the caller built: the bulk editors hand over a plain
+            // ToDictionary, and Skyrim keys turn up in both casings (see key-case-variants).
+            placements = new Dictionary<string, Services.LvliPlacement>(
+                placements ?? new(), StringComparer.OrdinalIgnoreCase);
+
+            // A nested row the string no longer names is gone, not zeroed - see GetOrAddNested.
+            foreach (var stale in LVLiEntries.Where(l => l.IsNested && !placements.ContainsKey(l.Key)).ToList())
+                LVLiEntries.Remove(stale);
+
+            // A list this container does not hold directly is a nested placement. It needs a row of
+            // its own, or the next BuildString would quietly drop it. One that no longer resolves -
+            // left the load order, or an own list that was deleted - is dropped, as a vanished
+            // direct list always was.
+            foreach (var key in placements.Keys)
+            {
+                if (LVLiEntries.Any(l => string.Equals(l.Key, key, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                if (placements[key].Level <= 0) continue;
+
+                var name = Services.PlacementLookup.LeveledListName(key);
+                if (name == null) continue;
+
+                AddNestedRow(key, name);
+            }
+
             foreach (var lvli in LVLiEntries)
             {
                 if (placements.TryGetValue(lvli.Key, out var placement))
