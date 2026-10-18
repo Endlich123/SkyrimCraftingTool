@@ -18,11 +18,13 @@
                     Command="{Binding ScanModsCommand}"
                     Style="{StaticResource ActionButtonGreenStyle}"/>
             <Button Content="Export"
-                    Command="{Binding ExportAllCommand}"
-                    Style="{StaticResource ActionButtonStyle}"/>
+                    Command="{Binding ImportExport.ExportCommand}"
+                    Style="{StaticResource ActionButtonStyle}"
+                    ToolTip="Write every edited armor, weapon and recipe to Output\Exports\Items, one JSON file each. Enchantments have their own Export on the Enchantments tab."/>
             <Button Content="Import"
-                    Command="{Binding ImportAllCommand}"
-                    Style="{StaticResource ActionButtonWarmStyle}"/>
+                    Command="{Binding ImportExport.ImportCommand}"
+                    Style="{StaticResource ActionButtonWarmStyle}"
+                    ToolTip="Read the item export files from Output\Exports\Items and apply them (conflicts are resolved per record)."/>
 
             <!-- "Generate Patch" and its two options used to sit here. They are app-wide (armor,
                  weapons, recipes, enchantments, form lists), not item-view actions, so they now live

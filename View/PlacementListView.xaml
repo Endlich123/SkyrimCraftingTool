@@ -17,10 +17,14 @@
                  the Ctrl/Shift behaviour. -->
             <Border x:Name="PickHighlight" Background="Transparent" Padding="2"
                     ToolTip="{Binding Key}">
-                <TextBlock Text="{Binding Display}"
-                           IsHitTestVisible="False"
-                           Foreground="{DynamicResource ColorTreeLeaf}"
-                           TextTrimming="CharacterEllipsis"/>
+                <StackPanel Orientation="Horizontal" IsHitTestVisible="False">
+                    <TextBlock Text="{Binding Display}"
+                               Foreground="{DynamicResource ColorTreeLeaf}"
+                               TextTrimming="CharacterEllipsis"/>
+                    <!-- The placement is the user's (PlacementListVM.RefreshEdited). -->
+                    <TextBlock Style="{StaticResource ChangedDotStyle}"
+                               Visibility="{Binding IsEdited, Converter={StaticResource BoolToVis}}"/>
+                </StackPanel>
             </Border>
             <DataTemplate.Triggers>
                 <DataTrigger Binding="{Binding IsPicked}" Value="True">
@@ -48,6 +52,19 @@
                      Style="{StaticResource ItemTextSearchBoxStyle}"
                      Margin="0,0,0,6"
                      ToolTip="Filter by name or FormID."/>
+
+            <!-- Only the records whose placement is the user's - read from the database, so it
+                 also finds armor and weapons nobody opened this session. -->
+            <WrapPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+                <CheckBox Content="Only edited"
+                          IsChecked="{Binding OnlyEdited}"
+                          Foreground="{DynamicResource ColorTextPrimary}"
+                          VerticalAlignment="Center"
+                          Margin="0,0,6,0"/>
+                <TextBlock Text="{Binding EditedCountText, StringFormat=({0})}"
+                           Foreground="{DynamicResource ColorTextSecondary}"
+                           VerticalAlignment="Center"/>
+            </WrapPanel>
 
             <TextBlock DockPanel.Dock="Bottom"
                        Text="{Binding RowCountText}"
@@ -78,10 +95,17 @@
             <StackPanel DockPanel.Dock="Top"
                         Visibility="{Binding HasNamedTarget, Converter={StaticResource BoolToVis}}"
                         Margin="0,0,0,8">
-                <TextBlock Text="{Binding TargetName}"
-                           FontSize="16"
-                           Foreground="{DynamicResource ColorAccentLight}"
-                           TextTrimming="CharacterEllipsis"/>
+                <DockPanel>
+                    <Button DockPanel.Dock="Right"
+                            Content="Reset placement"
+                            Command="{Binding ResetPlacementCommand}"
+                            Style="{StaticResource StandardButtonStyle}"
+                            ToolTip="Takes this record's placement back to what the plugins say. Its other edits (an armor's rating, say) stay."/>
+                    <TextBlock Text="{Binding TargetName}"
+                               FontSize="16"
+                               Foreground="{DynamicResource ColorAccentLight}"
+                               TextTrimming="CharacterEllipsis"/>
+                </DockPanel>
                 <!-- Selectable: a key is read to be copied. See CopyableIdentifierStyle. -->
                 <TextBox Text="{Binding TargetKey, Mode=OneWay}"
                          Style="{StaticResource CopyableIdentifierStyle}"
@@ -113,6 +137,12 @@
                                 Command="{Binding ClearPickCommand}"
                                 Style="{StaticResource StandardButtonStyle}"
                                 ToolTip="Drops the selection. Nothing that was already applied is undone."/>
+
+                        <Button DockPanel.Dock="Right"
+                                Content="Reset picked"
+                                Command="{Binding ResetPlacementCommand}"
+                                Style="{StaticResource StandardButtonStyle}"
+                                ToolTip="Takes the placements of every picked record back to what the plugins say. Asks first."/>
 
                         <Button DockPanel.Dock="Right"
                                 Content="Apply to picked"

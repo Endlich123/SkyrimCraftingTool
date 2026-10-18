@@ -19,6 +19,10 @@
             <views:EnchantmentMenuView />
         </DataTemplate>
 
+        <DataTemplate DataType="{x:Type vm:SpellMenuVM}">
+            <views:SpellMenuView />
+        </DataTemplate>
+
         <DataTemplate DataType="{x:Type vm:NpcMenuVM}">
             <views:NpcMenuView />
         </DataTemplate>
@@ -134,6 +138,15 @@
                         Style="{StaticResource NavTabButtonStyle}"
                         Tag="{Binding IsEnchantmentActive}"
                         Visibility="{Binding ShowEnchantments, Converter={StaticResource BoolToVis}}"
+                        Margin="0,0,7,7"/>
+
+                <!-- docs/Spells-Plan.md. Its own tab beside Enchantments rather than a pane inside it:
+                     the two edit different records, and a spell is not worn by anything. -->
+                <Button Content="Spells"
+                        Command="{Binding OpenSpellMenuCommand}"
+                        Style="{StaticResource NavTabButtonStyle}"
+                        Tag="{Binding IsSpellActive}"
+                        Visibility="{Binding ShowSpells, Converter={StaticResource BoolToVis}}"
                         Margin="0,0,7,7"/>
 
                 <Button Content="NPCs"

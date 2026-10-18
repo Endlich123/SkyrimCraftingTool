@@ -62,6 +62,7 @@ namespace SkyrimCraftingTool.View
         {
             MainContentVM => "items",
             EnchantmentMenuVM => "enchantments",
+            SpellMenuVM => "spells",
             NpcMenuVM => "npcs",
             NpcGroupVM => "npcgroups",
             WorldContentVM => "world",

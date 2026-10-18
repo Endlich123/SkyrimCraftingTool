@@ -29,13 +29,13 @@
                     Style="{StaticResource ActionButtonGreenStyle}"
                     ToolTip="Creates an empty enchantment of your own. It appears under SkyrimCraftingTool.esp in the tree; give it at least one effect, then assign it to an item. The generated ESP is what brings it into the game."/>
             <Button Content="Export"
-                    Command="{Binding ExportEnchantmentsCommand}"
+                    Command="{Binding ImportExport.ExportCommand}"
                     Style="{StaticResource ActionButtonStyle}"
-                    ToolTip="Write every edited enchantment to Output\Exports as its own JSON file."/>
+                    ToolTip="Write every edited enchantment and worn-restriction list to Output\Exports\Enchantments, one JSON file each. Items have their own Export on the Items tab."/>
             <Button Content="Import"
-                    Command="{Binding ImportEnchantmentsCommand}"
+                    Command="{Binding ImportExport.ImportCommand}"
                     Style="{StaticResource ActionButtonWarmStyle}"
-                    ToolTip="Read enchantment export files from Output\Exports and apply them (conflicts are resolved per item)."/>
+                    ToolTip="Read the enchantment export files from Output\Exports\Enchantments and apply them (conflicts are resolved per enchantment)."/>
         </StackPanel>
 
         <!-- LEFT: TREEVIEW + SEARCH -->
@@ -257,7 +257,7 @@
                                     <Button Content="Export"
                                             Command="{Binding ExportPluginCommand}"
                                             Style="{StaticResource ActionButtonStyle}"
-                                            ToolTip="Writes every edited enchantment of THIS plugin to Output\Exports. Covers the whole plugin, regardless of any active tree filter."/>
+                                            ToolTip="Writes every edited enchantment of THIS plugin to Output\Exports\Enchantments. Covers the whole plugin, regardless of any active tree filter."/>
                                     <Button Content="Import"
                                             Command="{Binding ImportPluginCommand}"
                                             Style="{StaticResource ActionButtonWarmStyle}"

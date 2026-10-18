@@ -54,9 +54,18 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Top toolbar. Export/Import land here like on the other tabs, once there is anything to
-             export. -->
+        <!-- Top toolbar: Export/Import like on the other tabs (TE-4), then the counts. -->
         <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,0,0,8" views:Tutorial.Id="npcs.counts">
+            <Button Content="Export"
+                    Command="{Binding ImportExport.ExportCommand}"
+                    Style="{StaticResource ActionButtonStyle}"
+                    Margin="0,0,6,0"
+                    ToolTip="Write every edited NPC - fields, skills, factions, spells, perks and items - to Output\Exports\NPCs, one JSON file each. NPC groups have their own Export on the NPC groups tab."/>
+            <Button Content="Import"
+                    Command="{Binding ImportExport.ImportCommand}"
+                    Style="{StaticResource ActionButtonWarmStyle}"
+                    Margin="0,0,12,0"
+                    ToolTip="Read the NPC export files from Output\Exports\NPCs and apply them (conflicts are resolved per NPC)."/>
             <TextBlock Text="{Binding NpcCount, StringFormat={}{0} NPCs}"
                        Foreground="{DynamicResource ColorTextSecondary}"
                        VerticalAlignment="Center"/>

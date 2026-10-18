@@ -53,6 +53,13 @@
                            TextWrapping="Wrap" FontSize="11" Margin="0,0,0,4"
                            Visibility="{Binding HasPlacementScopeNote, Converter={StaticResource BoolToVis}}"/>
 
+                <!-- Only for a list further down than the container's own: where the placement is
+                     kept, and why it is not the same as placing into the list above. -->
+                <TextBlock Text="{Binding NestedPlacementNote}"
+                           Foreground="{DynamicResource ColorTextTertiary}"
+                           TextWrapping="Wrap" FontSize="11" Margin="0,0,0,4"
+                           Visibility="{Binding IsNestedPlacement, Converter={StaticResource BoolToVis}}"/>
+
                 <!-- Only meaningful for real items: a preset slot has no form key, so it can never
                      be "already in this list". -->
                 <TextBlock Text="{Binding AlreadyInListSummary}"

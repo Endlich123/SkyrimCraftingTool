@@ -3,7 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:SkyrimCraftingTool.ViewModel"
              xmlns:model="clr-namespace:SkyrimCraftingTool.Model"
-             xmlns:views="clr-namespace:SkyrimCraftingTool.View">
+             xmlns:views="clr-namespace:SkyrimCraftingTool.View"
+             xmlns:services="clr-namespace:SkyrimCraftingTool.Services">
 
     <Grid Margin="10">
         <Grid.ColumnDefinitions>
@@ -19,13 +20,16 @@
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <Button Grid.Row="0"
-                    Content="+ New Preset"
-                    views:Tutorial.Id="presets.new"
-                    Command="{Binding AddPresetCommand}"
-                    Style="{StaticResource ActionButtonGreenStyle}"
-                    HorizontalAlignment="Left"
-                    Margin="0,0,0,8"/>
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+                <Button Content="+ New Preset"
+                        views:Tutorial.Id="presets.new"
+                        Command="{Binding AddPresetCommand}"
+                        Style="{StaticResource ActionButtonGreenStyle}"
+                        Margin="0,0,8,0"/>
+                <!-- The preset JSON files themselves, to copy, share or back up. -->
+                <views:OpenFolderButton FolderPath="{x:Static services:PresetFileStore.PresetsRoot}"
+                                        Margin="0"/>
+            </StackPanel>
 
             <TreeView Grid.Row="1"
                       x:Name="PresetsTreeView"

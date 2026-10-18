@@ -44,6 +44,14 @@
                 <Button Content="New"
                         Command="{Binding NewGroupCommand}"
                         Style="{StaticResource StandardButtonStyle}"/>
+                <Button Content="Export"
+                        Command="{Binding ImportExport.ExportCommand}"
+                        Style="{StaticResource StandardButtonStyle}"
+                        ToolTip="Write every group - its filters, member corrections, values and lists, not its members - to Output\Exports\NpcGroups, one JSON file each."/>
+                <Button Content="Import"
+                        Command="{Binding ImportExport.ImportCommand}"
+                        Style="{StaticResource StandardButtonStyle}"
+                        ToolTip="Read the group export files from Output\Exports\NpcGroups. Automatic groups are matched by the rule that made them, your own by name; a group that differs from yours here is shown as a conflict for you to decide."/>
             </StackPanel>
 
             <TextBlock DockPanel.Dock="Bottom"

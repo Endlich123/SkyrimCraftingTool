@@ -65,10 +65,10 @@ namespace SkyrimCraftingTool.View
         // list, up to nine levels deep. Opening one in its own window keeps the chain explicit and
         // keeps the row count of any single window bounded.
         //
-        // The nested window has no placement to edit: the entry being edited belongs to the list the
-        // user came from, and pretending otherwise would let them set a level on a list they never
-        // selected. It opens read-only, with the same entry passed through only so the window has
-        // something to show for "your placement" - guarded below.
+        // A window that places offers placing in the nested one too, into a row of the same
+        // container (LeveledListEditorVM.ForNested) - the narrower list is often the one meant:
+        // boots belong in the boots list, not in the blacksmith's list of every armor type. A
+        // window that places nothing opens the nested list read-only, as before.
         private void Contents_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
             if (sender is not ListBox list || list.SelectedItem is not LeveledListEntryInfo entry) return;
@@ -84,9 +84,17 @@ namespace SkyrimCraftingTool.View
                     return;
                 }
 
-                var vm = new LeveledListEditorVM(entry.Reference, entry.Name);
+                var vm = _vm.ForNested(entry.Reference, entry.Name)
+                         ?? new LeveledListEditorVM(entry.Reference, entry.Name);
                 var window = new LeveledListWindow(vm) { Owner = this };
-                window.ShowDialog();
+                try
+                {
+                    window.ShowDialog();
+                }
+                finally
+                {
+                    vm.ReleaseNested();
+                }
             }
             catch (Exception ex)
             {

@@ -312,9 +312,14 @@
                                     </Grid.RowDefinitions>
 
                                     <TextBlock Text="Level" Style="{StaticResource ItemLabelStyle}"/>
+                                    <!-- Disabled while the NPC scales with the player: the patch then
+                                         writes no level at all (NpcNodeVM.UsesPcLevelMult resets it). -->
                                     <TextBox Grid.Column="1" Text="{Binding Level}"
+                                             IsEnabled="{Binding ShowsFixedLevel}"
                                              BorderBrush="{Binding IsLevelChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
-                                             Style="{StaticResource ItemTextBoxStyle}"/>
+                                             Style="{StaticResource ItemTextBoxStyle}"
+                                             ToolTip="The fixed level. Not used - and locked - while the NPC scales with the player."
+                                             ToolTipService.ShowOnDisabled="True"/>
 
                                     <TextBlock Grid.Row="1" Text="Calc min level" Style="{StaticResource ItemLabelStyle}"/>
                                     <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding CalcMinLevel}"

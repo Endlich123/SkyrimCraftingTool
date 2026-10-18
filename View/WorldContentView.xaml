@@ -145,6 +145,10 @@
                                FontSize="10" FontWeight="Bold"
                                VerticalAlignment="Center"
                                Margin="6,0,0,0"/>
+
+                    <!-- This tab decided something about it (OwnerContentsVM.RefreshEdited). -->
+                    <TextBlock Style="{StaticResource ChangedDotStyle}"
+                               Visibility="{Binding IsEdited, Converter={StaticResource BoolToVis}}"/>
                 </StackPanel>
             </Border>
             <DataTemplate.Triggers>
@@ -209,6 +213,21 @@
                              Style="{StaticResource ItemTextBoxStyle}"
                              ToolTip="Filter by name or by FormID."/>
 
+                    <!-- What this tab decided about: objects taken out, entries put back, a list's
+                         chance - and your own lists. Not items placed into it: those are on the
+                         placement tabs. -->
+                    <WrapPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,6,0,6">
+                        <CheckBox Content="Only edited"
+                                  IsChecked="{Binding OnlyEdited}"
+                                  Foreground="{DynamicResource ColorTextPrimary}"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,6,0"
+                                  ToolTip="Shows only what you changed here - objects taken out, entries put back, a list's chance or flags - and your own lists. Items you placed into a container are on the placement tabs."/>
+                        <TextBlock Text="{Binding EditedCountText, StringFormat=({0})}"
+                                   Foreground="{DynamicResource ColorTextSecondary}"
+                                   VerticalAlignment="Center"/>
+                    </WrapPanel>
+
                     <TextBlock DockPanel.Dock="Bottom"
                                Text="{Binding OwnerCountText}"
                                Foreground="{DynamicResource ColorTextTertiary}"
@@ -231,12 +250,18 @@
                 <!-- RIGHT: what is inside the selected one -->
                 <DockPanel Grid.Column="2" x:Name="ContentsPane">
 
-                    <TextBlock DockPanel.Dock="Top"
-                               Text="{Binding ContentsHeader}"
-                               FontSize="16"
-                               Foreground="{DynamicResource ColorAccentLight}"
-                               TextTrimming="CharacterEllipsis"
-                               Margin="0,0,0,2"/>
+                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,2">
+                        <Button DockPanel.Dock="Right"
+                                Content="Reset"
+                                Command="{Binding ResetOwnersCommand}"
+                                Visibility="{Binding CanResetOwners, Converter={StaticResource BoolToVis}}"
+                                Style="{StaticResource StandardButtonStyle}"
+                                ToolTip="Takes back everything you decided here about the picked container(s) or list(s): removed objects go back in, put-back entries are dropped again, a list's chance and flags return to the plugins. Asks first. Items placed into it are not touched."/>
+                        <TextBlock Text="{Binding ContentsHeader}"
+                                   FontSize="16"
+                                   Foreground="{DynamicResource ColorAccentLight}"
+                                   TextTrimming="CharacterEllipsis"/>
+                    </DockPanel>
 
                     <!-- The key, read once, about the thing on screen - rather than under every row
                          in the tree, which is where it used to be. Selectable, because a key is
@@ -611,9 +636,25 @@
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0">
-            <TextBlock Text="Container / Leveled lists"
-                       FontSize="20" FontWeight="Bold"
-                       Foreground="{DynamicResource ColorAccentLight}"/>
+            <DockPanel>
+                <!-- Export/Import of everything this tab decides (TE-6): placements of armor,
+                     weapons and world items, list chances, removed and restored entries, own lists. -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="Export"
+                            Command="{Binding ImportExport.ExportCommand}"
+                            Style="{StaticResource ActionButtonStyle}"
+                            Margin="0,0,6,0"
+                            ToolTip="Write every placement (armor, weapons, books and the other world items), every list chance edit, every removed or restored entry and your own leveled lists to Output\Exports\Containers, one JSON file each."/>
+                    <Button Content="Import"
+                            Command="{Binding ImportExport.ImportCommand}"
+                            Style="{StaticResource ActionButtonWarmStyle}"
+                            Margin="0"
+                            ToolTip="Read the export files from Output\Exports\Containers and apply them. Your own lists are matched by identity, and placements into them follow them, even when a list gets a new key here."/>
+                </StackPanel>
+                <TextBlock Text="Container / Leveled lists"
+                           FontSize="20" FontWeight="Bold"
+                           Foreground="{DynamicResource ColorAccentLight}"/>
+            </DockPanel>
             <TextBlock Text="Look inside a container or a leveled list and take objects back out of it. Putting items IN is still done from the item's own Container tab."
                        Foreground="{DynamicResource ColorTextTertiary}"
                        TextWrapping="Wrap" Margin="0,3,0,0"/>
