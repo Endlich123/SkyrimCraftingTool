@@ -1,6 +1,7 @@
 ﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:model="clr-namespace:SkyrimCraftingTool.Model">
+                    xmlns:model="clr-namespace:SkyrimCraftingTool.Model"
+                    xmlns:views="clr-namespace:SkyrimCraftingTool.View">
 
     <!-- Default text color for every TextBlock that does not set one itself.
          Without this they inherit UserControl's default, which is plain black - unreadable on the
@@ -674,6 +675,15 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+    </Style>
+
+    <!-- The "Open Folder" button type (View/OpenFolderButton): a standard button whose label and
+         tooltip say which folder it opens. Implicit, so a view only writes the FolderPath. The
+         Content setter is needed - StandardButtonStyle sets "?", and a style setter beats the
+         control's own default. -->
+    <Style TargetType="views:OpenFolderButton" BasedOn="{StaticResource StandardButtonStyle}">
+        <Setter Property="Content" Value="Open Folder"/>
+        <Setter Property="ToolTip" Value="{Binding FolderPath, RelativeSource={RelativeSource Self}}"/>
     </Style>
 
     <Style x:Key="RemoveButtonStyle" TargetType="Button">

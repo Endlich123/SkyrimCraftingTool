@@ -76,6 +76,22 @@
                            Foreground="{DynamicResource ColorWarning}"/>
             </Border>
 
+            <!-- Not one of this container's own lists: a list further down that the user placed into
+                 from the list window. Said on the row, or it would look like the container holds it. -->
+            <Border Margin="0,0,8,0"
+                    Padding="5,1"
+                    CornerRadius="3"
+                    VerticalAlignment="Center"
+                    Background="{DynamicResource ColorBackgroundBase}"
+                    BorderBrush="{DynamicResource ColorTextMuted}"
+                    BorderThickness="1"
+                    ToolTip="{Binding NestedTooltip}"
+                    Visibility="{Binding IsNested, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="nested"
+                           FontSize="10"
+                           Foreground="{DynamicResource ColorTextMuted}"/>
+            </Border>
+
             </StackPanel>
 
             <Button Grid.Column="2"
