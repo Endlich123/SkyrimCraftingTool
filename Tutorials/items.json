@@ -11,7 +11,7 @@
     {
       "target": "items.toolbar",
       "title": "Scan, Export, Import",
-      "text": "Scan/Rescan reads your load order into the tool. Run it once at the first start, and again whenever you install, remove or reorder mods.\n\nExport writes every edited item to Output/Exports (one file per item) and Import reads them back - for a backup, for another profile, or to share a setup.",
+      "text": "Scan/Rescan reads your load order into the tool. Run it once at the first start, and again whenever you install, remove or reorder mods.\n\nExport writes every edited item and recipe to Output/Exports/Items (one file per item) and Import reads them back - for a backup, for another profile, or to share a setup.",
       "more": "A rescan keeps your edits. If an edited item's plugin has left the load order, the edit is kept anyway and an 'Orphaned edits' button appears here, so you can review and delete it.\n\nNothing you do in this tool changes your plugins. The game only sees your edits once Generate Patch has written the patch."
     },
     {

@@ -26,6 +26,12 @@
       "more": "To bring lost entries back, open the list in the Container/LeveledList tab and use 'Put back selected' on the rows in its lower section."
     },
     {
+      "target": "settings.exportall",
+      "title": "Export / import all edits",
+      "text": "Presses Export or Import on every tab at once - for example after a fresh database or on another PC. The files are the same ones the tab buttons write. The import shows conflicts before it writes anything.",
+      "more": "Only your edits are exported, not the scanned data, so the import always checks them against your current load order. Import all reads every tab in one pass, so an item that uses one of your own enchantments finds it even if that enchantment got a new FormID. Presets are not included - they are files already."
+    },
+    {
       "target": "settings.tabs",
       "title": "Main tabs",
       "text": "Hide the tabs you never use, so the row at the top stays on one line. Hiding only removes the button - nothing is deleted and everything is still patched."

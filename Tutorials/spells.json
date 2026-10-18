@@ -1,0 +1,64 @@
+{
+  // Guided tour of the Spells tab. Targets: views:Tutorial.Id in View/SpellMenuView.xaml.
+  "id": "spells",
+  "title": "Spells tab",
+  "steps": [
+    {
+      "title": "The Spells tab",
+      "text": "Here spells are edited: their cost, cast type, flags and effects. Powers, shouts, abilities, diseases and poisons are spell records too, so they are here as well.\n\nAn edit here changes the spell for everyone who has it - the player and every NPC."
+    },
+    {
+      "target": "spells.toolbar",
+      "title": "New, Delete, Export, Import",
+      "text": "New spell creates an empty spell of your own. It appears under SkyrimCraftingTool.esp in the tree; give it at least one effect, or it is not written to the patch. Delete spell is only offered for spells you created.\n\nExport and Import work like in the other tabs: one file per edited spell under Output/Exports/Spells.",
+      "more": "Your own spells are matched by identity on import, so importing never overwrites a different spell of yours - even when its FormID had to change."
+    },
+    {
+      "target": "spells.tree",
+      "title": "The tree",
+      "text": "Plugins in load order, and below them the spells filed the way the game's magic menu files them: the five schools for plain spells, then Powers, Shouts, Abilities and the rest. A dot marks what you edited.",
+      "more": "A spell record has no school of its own. A plain spell is filed under the school of its COSTLIEST effect, which is also what the game does.\n\nA ⚠ marks a spell that lists the same magic effect more than once. Only one of those entries can be shown and patched - SkyPatcher cannot tell them apart either."
+    },
+    {
+      "target": "spells.filters",
+      "title": "Filters",
+      "text": "Only edited shows what you changed. The search box above matches the editor ID, the name and the Plugin|FormID key. Collapse folds the whole tree."
+    },
+    {
+      "target": "spells.basic",
+      "prepare": "spells.selectExample",
+      "prepareFailedText": "The rest of this tour walks through a spell, and none was found. Run Scan/Rescan in the Items tab, then start the tour again.",
+      "title": "One spell, opened",
+      "text": "The tour has opened a spell as an example.\n\nA field is editable where SkyPatcher can patch it: name, cast type, base cost, charge time, half-cost perk and flags. Spell type, target type and the description are read-only on a scanned spell - there is no patch operation for them.",
+      "more": "•  Every ? explains its row, including why it can or cannot be edited.\n•  On a spell you created, everything is editable: the generated ESP writes the whole record.\n•  Changed fields get a coloured border; Reset fields reverts them."
+    },
+    {
+      "target": "spells.halfcost",
+      "title": "Half-cost perk",
+      "text": "The perk that halves this spell's cost, like the school perks Novice to Master. Pick one from the list - only perks are offered. Type to filter.",
+      "more": "(none) cannot be patched onto a scanned spell that has a perk: SkyPatcher documents no way to remove it. Choosing it there changes nothing in the game."
+    },
+    {
+      "target": "spells.flags",
+      "title": "Flags",
+      "text": "The flags SkyPatcher can switch by name. The one to know is Manual cost calculation: without it the game ignores the base cost you typed and works the cost out from the effects. Tick it whenever you set Base cost by hand.",
+      "more": "Flag bits that have no name anywhere are listed below the switches. They are kept exactly as scanned, but cannot be switched - the patch sets flags by name."
+    },
+    {
+      "target": "spells.effects",
+      "title": "Effects",
+      "text": "What the spell actually does: each magic effect with its magnitude, duration and area. Change the numbers per row or remove an effect. Boxes the effect does not use are greyed out.",
+      "more": "•  Only values you change are written; the rest are left to the other mods.\n•  The magic effect itself - its school, name and what it does - is a shared record and is not edited here. Changing it would change every spell and enchantment that uses it.\n•  Reset effects undoes changed numbers and added or removed effects."
+    },
+    {
+      "target": "spells.addEffect",
+      "title": "Add an effect",
+      "text": "Type to find a magic effect, then Add effect. An effect can appear only once per spell, so the list offers only those the spell does not have yet. A new effect starts at 0 - set its magnitude, or it does nothing."
+    },
+    {
+      "title": "Generate Patch",
+      "text": "As everywhere, nothing here reaches the game until Generate Patch writes the patch. Edits to scanned spells go into SkyPatcher INI files; spells you created go into SkyrimCraftingTool.esp.",
+      "more": "A changed spell reaches whoever already knows it - the player and every NPC that has it."
+    }
+  ]
+}

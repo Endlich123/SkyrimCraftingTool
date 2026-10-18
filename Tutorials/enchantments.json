@@ -10,7 +10,7 @@
     {
       "target": "ench.toolbar",
       "title": "New, Export, Import",
-      "text": "New enchantment creates an empty enchantment of your own. It appears under SkyrimCraftingTool.esp in the tree; give it at least one effect, then assign it to an item in the Items tab.\n\nExport and Import work like in the Items tab: one file per edited enchantment under Output/Exports."
+      "text": "New enchantment creates an empty enchantment of your own. It appears under SkyrimCraftingTool.esp in the tree; give it at least one effect, then assign it to an item in the Items tab.\n\nExport and Import work like in the Items tab: one file per edited enchantment under Output/Exports/Enchantments. Each tab exports only its own records."
     },
     {
       "target": "ench.tree",
