@@ -371,8 +371,11 @@ namespace SkyrimCraftingTool.Services
         }
 
         // ---- writing the children --------------------------------------------------------------
+        //
+        // internal: the import (NpcGroupUnit) writes a group through these same helpers, inside its
+        // own transaction, so an imported group is stored exactly as Save would store it.
 
-        private static void DeleteChildren(SqliteConnection connection, long groupId, bool includeSnapshot)
+        internal static void DeleteChildren(SqliteConnection connection, long groupId, bool includeSnapshot)
         {
             var tables = new List<string>
             {
@@ -392,7 +395,7 @@ namespace SkyrimCraftingTool.Services
         // INSERT OR IGNORE on all four, because each table's primary key is its own content: two
         // identical clauses are one clause, and a duplicate in the object is a caller's slip that
         // should not become an exception in the middle of a transaction.
-        private static void WritePredicates(SqliteConnection connection, long groupId, IEnumerable<NpcGroupPredicate>? rows)
+        internal static void WritePredicates(SqliteConnection connection, long groupId, IEnumerable<NpcGroupPredicate>? rows)
         {
             using var cmd = connection.CreateCommand();
             cmd.CommandText = @"
@@ -417,7 +420,7 @@ namespace SkyrimCraftingTool.Services
             }
         }
 
-        private static void WriteOverrides(SqliteConnection connection, long groupId, IEnumerable<NpcGroupMemberOverride>? rows)
+        internal static void WriteOverrides(SqliteConnection connection, long groupId, IEnumerable<NpcGroupMemberOverride>? rows)
         {
             using var cmd = connection.CreateCommand();
             cmd.CommandText = @"
@@ -437,7 +440,7 @@ namespace SkyrimCraftingTool.Services
             }
         }
 
-        private static void WriteValues(SqliteConnection connection, long groupId, IEnumerable<NpcGroupValue>? rows)
+        internal static void WriteValues(SqliteConnection connection, long groupId, IEnumerable<NpcGroupValue>? rows)
         {
             using var cmd = connection.CreateCommand();
             cmd.CommandText = @"
@@ -461,7 +464,7 @@ namespace SkyrimCraftingTool.Services
             }
         }
 
-        private static void WriteLists(SqliteConnection connection, long groupId, IEnumerable<NpcGroupList>? rows)
+        internal static void WriteLists(SqliteConnection connection, long groupId, IEnumerable<NpcGroupList>? rows)
         {
             using var cmd = connection.CreateCommand();
             cmd.CommandText = @"

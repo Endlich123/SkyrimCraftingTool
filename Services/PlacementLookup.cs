@@ -618,6 +618,50 @@ namespace SkyrimCraftingTool.Services
         public static IReadOnlyList<OwnerSummary> AllLeveledLists(string? dbPath = null)
             => ReadOwners(dbPath, HasOwnListColumn(dbPath) ? LeveledListsSql : LeveledListsWithoutOwnSql, "AllLeveledLists");
 
+        // --- The name of any list, for a placement into a NESTED list ---
+        //
+        // A container's rows come from ContainerLVLI, which only knows the lists hanging in it
+        // directly. A placement into a list further down (stored under the container it was reached
+        // through) has no such row, so ContainerEntryVM builds one - and needs the name for it, and
+        // the answer to "does this list still exist at all". A list that left the load order, or an
+        // own list that was deleted, resolves to null, and its placement is dropped exactly as a
+        // vanished direct list always was (see UserLeveledListStore.Delete).
+        //
+        // One query for every list, cached: the item editor rebuilds container rows on every item
+        // change, and a query per row would be the per-row cost LeveledListEditStore.EditedKeys was
+        // cached to avoid. Dropped on a rescan and on every own-list write.
+        private static Dictionary<string, string>? _listNames;
+        private static readonly object ListNamesLock = new();
+
+        // Test seam: answers instead of the database while set. AsyncLocal, so one test class setting
+        // it cannot change what a test running in parallel sees.
+        private static readonly System.Threading.AsyncLocal<Func<string, string?>?> _listNameOverride = new();
+        internal static Func<string, string?>? ListNameOverride
+        {
+            get => _listNameOverride.Value;
+            set => _listNameOverride.Value = value;
+        }
+
+        public static string? LeveledListName(string listKey)
+        {
+            if (string.IsNullOrWhiteSpace(listKey)) return null;
+            if (ListNameOverride is { } answer) return answer(listKey);
+
+            lock (ListNamesLock)
+            {
+                _listNames ??= AllLeveledLists()
+                    .GroupBy(l => l.Key, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.First().Name, StringComparer.OrdinalIgnoreCase);
+
+                return _listNames.TryGetValue(listKey, out var name) ? name : null;
+            }
+        }
+
+        public static void InvalidateListNames()
+        {
+            lock (ListNamesLock) _listNames = null;
+        }
+
         private const string ToolOutputKeyFilter =
             "(l.Key LIKE 'SkyrimCraftingTool.esp|%' OR l.Key LIKE 'SkyrimCraftingTool - %.esp|%')";
 

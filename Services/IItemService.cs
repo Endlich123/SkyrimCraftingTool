@@ -61,6 +61,11 @@ namespace SkyrimCraftingTool.Services
 
         // Placeable records (books, scrolls, misc, …): one editable field, one method.
         void UpdateWorldItemContainerString(string key, string containerString);
+
+        // The placement on its own, for the Container/LeveledList tab: which records have one of the
+        // user's, and taking one back to what the plugins say (ItemDBHandler.ResetPlacement).
+        HashSet<string> EditedPlacementKeys();
+        void ResetPlacement(string table, string key);
         List<WorldItemRecord> LoadWorldItems();
         void UpdateArmorKeywords(string key, List<string> keywordKeys);
         void UpdateArmorContainerString(string key, string containerString);

@@ -14,6 +14,7 @@ namespace SkyrimCraftingTool.Services
     public enum NavTab
     {
         Enchantments,
+        Spells,
         Npcs,
         NpcGroups,
         World,
@@ -30,6 +31,7 @@ namespace SkyrimCraftingTool.Services
         public static IReadOnlyList<(NavTab Tab, string Label)> Hideable { get; } = new[]
         {
             (NavTab.Enchantments, "Enchantments"),
+            (NavTab.Spells, "Spells"),
             (NavTab.Npcs, "NPCs"),
             (NavTab.NpcGroups, "NPC groups"),
             (NavTab.World, "Container/LeveledList"),

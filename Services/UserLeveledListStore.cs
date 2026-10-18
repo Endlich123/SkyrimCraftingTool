@@ -139,8 +139,15 @@ namespace SkyrimCraftingTool.Services
             return c;
         }
 
+        // internal: an import that created or changed own lists says so the same way (TE-6).
+        internal static void NotifyChanged() => RaiseChanged();
+
         private static void RaiseChanged()
         {
+            // An own list created, renamed or deleted changes what a nested placement resolves to.
+            PlacementLookup.InvalidateListNames();
+
+
             try { Changed?.Invoke(); }
             catch (Exception ex) { AppLogger.LogError("UserLeveledListStore.Changed handler failed", ex); }
         }

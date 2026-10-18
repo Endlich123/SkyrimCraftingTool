@@ -5,39 +5,75 @@ using SkyrimCraftingTool.Model;
 
 namespace SkyrimCraftingTool.Services
 {
-    // Shared glue for the Export / Import feature so the Items tab and the Enchantments tab don't
-    // each hand-roll it. The per-VM parts (which items to gather, what to refresh afterwards, error
-    // dialogs) stay at the call site; this owns file I/O and the preview -> conflict -> apply core.
+    // Shared glue for Export / Import, scoped to one tab's module. Owns file I/O and the
+    // preview -> conflict -> apply core; the dialogs around it live in TabImportExportVM, and what a
+    // tab refreshes afterwards stays with the tab.
     public static class ImportExportFlow
     {
-        // One JSON file per edited item under Output\Exports\. Returns (files written, root path).
-        public static (int Count, string Root) ExportItems(IEnumerable<EditedItemDto> items)
+        // One JSON file per edited record under Output\Exports\<Tab>\. Returns (records written, root).
+        //
+        // Records that land on the SAME path share the file. The path is built from key and name
+        // only, and several units describe one record under its own key: an edited armor and its
+        // removed-recipe decision. One file each
+        // meant the second write replaced the first, and the edit it held was gone from the
+        // export without a word (found 2026-10-18).
+        public static (int Count, string Root) ExportItems(TabExportModule module, IEnumerable<EditedItemDto> items)
         {
-            int count = 0;
-            foreach (var item in items)
+            var list = items.ToList();
+            var byPath = list
+                .GroupBy(i => ExportFileStore.GetItemFilePath(module.Folder, i.Key, i.DisplayName),
+                         StringComparer.OrdinalIgnoreCase);
+            foreach (var file in byPath)
             {
-                var path = ExportFileStore.GetItemFilePath(item.Key, item.DisplayName);
-                ExportFileStore.WriteFile(path, new ExportFile
+                ExportFileStore.WriteFile(file.Key, new ExportFile
                 {
                     ExportedAt = ItemDBHandler.NowIso(),
-                    Items = new List<EditedItemDto> { item },
+                    Items = file.ToList(),
                 });
-                count++;
             }
-            return (count, ExportFileStore.ExportsRoot);
+            return (list.Count, ExportFileStore.TabRoot(module.Folder));
         }
 
-        // Flat list of every item across all export files, optionally filtered (e.g. by table).
-        public static List<EditedItemDto> ReadAllExportedItems(Func<EditedItemDto, bool>? keep = null)
+        // Several records in ONE file, named after the record that owns them - the per-item export,
+        // where an item and its recipes travel together. Returns the path written.
+        public static string ExportBundle(TabExportModule module, string ownerKey, string ownerName, List<EditedItemDto> items)
+        {
+            var path = ExportFileStore.GetItemFilePath(module.Folder, ownerKey, ownerName);
+            ExportFileStore.WriteFile(path, new ExportFile { ExportedAt = ItemDBHandler.NowIso(), Items = items });
+            return path;
+        }
+
+        // Settings' "Export all": each tab's own export into its own folder - nothing written anywhere a
+        // tab would not write it. Returns, per tab, the records written.
+        public static List<(TabExportModule Module, int Count)> ExportAllTabs(
+            IImportExportService service, IEnumerable<TabExportModule> modules)
+        {
+            var written = new List<(TabExportModule, int)>();
+            foreach (var module in modules)
+            {
+                var items = service.GetEditedItems(module.Units, ExportScope.All);
+                written.Add((module, items.Count == 0 ? 0 : ExportItems(module, items).Count));
+            }
+            return written;
+        }
+
+        // Settings' "Import all": what each tab's own import would read, all of it. A legacy file is
+        // read by every tab but each keeps only its own units, so no record comes back twice.
+        public static List<EditedItemDto> ReadAllTabs(IEnumerable<TabExportModule> modules)
+            => modules.SelectMany(ReadAllExportedItems).ToList();
+
+        // Every DTO in the given files that belongs to the module. A file that can't be read is logged
+        // and skipped, never aborts the whole read.
+        public static List<EditedItemDto> ReadItems(TabExportModule module, IEnumerable<string> paths)
         {
             var all = new List<EditedItemDto>();
-            foreach (var path in ExportFileStore.FindAllFiles())
+            foreach (var path in paths)
             {
                 try
                 {
                     var file = ExportFileStore.ReadFile(path);
                     if (file?.Items != null)
-                        all.AddRange(keep == null ? file.Items : file.Items.Where(keep));
+                        all.AddRange(file.Items.Where(module.Accepts));
                 }
                 catch (Exception ex)
                 {
@@ -46,6 +82,10 @@ namespace SkyrimCraftingTool.Services
             }
             return all;
         }
+
+        // Everything this tab ever exported, plus the legacy files.
+        public static List<EditedItemDto> ReadAllExportedItems(TabExportModule module)
+            => ReadItems(module, ExportFileStore.FindAllFiles(module.Folder));
 
         // A DTO with no changed fields and no edited child rows carries nothing to apply — it comes
         // from an item that was edited then reset (the reset paths leave LastChanged non-null, so an
@@ -59,14 +99,21 @@ namespace SkyrimCraftingTool.Services
         // enchantment stripped of its effects, or a recipe stripped of its conditions, was silently
         // dropped before the preview ever saw it.
         public static bool HasPayload(EditedItemDto d) =>
-            d.Fields.Count > 0 || ChildTables.All.Any(spec => spec.Payload(d) != null);
+            d.Fields.Count > 0
+            || ChildTables.All.Any(spec => spec.Payload(d) != null)
+            || (d.Rows != null && d.Rows.Values.Any(list => list != null));
 
         // Preview -> (conflict window if needed) -> Apply. Returns null if the user cancelled the
         // conflict dialog; the caller does its own refresh + summary around this.
-        public static ImportResult? RunImport(IImportExportService service, List<EditedItemDto> items)
+        public static ImportResult? RunImport(IImportExportService service, TabExportModule module, List<EditedItemDto> items)
+            => RunImport(service, module.Units, items.Where(module.Accepts).ToList());
+
+        // Over any set of units - one tab's, or every tab's at once for "Import all".
+        public static ImportResult? RunImport(IImportExportService service, IReadOnlyList<ExportUnit> units, List<EditedItemDto> items)
         {
-            items = items.Where(HasPayload).ToList();
-            var plan = service.PreviewImport(items);
+            var tables = new HashSet<string>(units.Select(u => u.Table), StringComparer.Ordinal);
+            items = items.Where(i => i != null && tables.Contains(i.Table ?? "")).Where(HasPayload).ToList();
+            var plan = service.PreviewImport(units, items);
 
             var useFileVersion = new HashSet<string>();
             if (plan.Conflicts.Count > 0)
@@ -77,7 +124,7 @@ namespace SkyrimCraftingTool.Services
                 useFileVersion = resolved;
             }
 
-            return service.ApplyImport(plan, useFileVersion);
+            return service.ApplyImport(units, plan, useFileVersion);
         }
 
         public static string SummaryText(ImportResult r) =>
@@ -88,6 +135,9 @@ namespace SkyrimCraftingTool.Services
             // (unreadable LastChanged), not a missing plugin - very different fix for the user.
             $"Skipped (unreadable export file): {r.SkippedInvalid}{Environment.NewLine}" +
             $"Conflicts - used import: {r.ConflictsUsedFile}{Environment.NewLine}" +
-            $"Conflicts - kept local: {r.ConflictsKeptLocal}";
+            $"Conflicts - kept local: {r.ConflictsKeptLocal}" +
+            (r.Notes is { Count: > 0 }
+                ? Environment.NewLine + Environment.NewLine + string.Join(Environment.NewLine, r.Notes.Distinct())
+                : "");
     }
 }

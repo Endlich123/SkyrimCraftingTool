@@ -182,7 +182,8 @@ namespace SkyrimCraftingTool.Services
         // Once, and only if the NPC has never been edited: a second snapshot would record the user's
         // own earlier edit as if the plugin had shipped it, and the diff would then quietly lose
         // whatever they did first.
-        private static void SnapshotFactionsOnce(SqliteConnection connection, SqliteTransaction transaction, string npcKey)
+        // internal: the import (ItemDBHandler.ApplyNpcItem) takes the same snapshot, in its transaction.
+        internal static void SnapshotFactionsOnce(SqliteConnection connection, SqliteTransaction transaction, string npcKey)
         {
             using (var check = connection.CreateCommand())
             {
@@ -284,7 +285,7 @@ namespace SkyrimCraftingTool.Services
         //
         // Taking all three at once makes the ListsEdited flag a truthful answer for all of them, at
         // the cost of copying two lists nobody asked about.
-        private static void SnapshotAllListsOnce(SqliteConnection connection, SqliteTransaction transaction,
+        internal static void SnapshotAllListsOnce(SqliteConnection connection, SqliteTransaction transaction,
                                                  string npcKey)
         {
             using (var check = connection.CreateCommand())
