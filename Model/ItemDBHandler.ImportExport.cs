@@ -31,24 +31,26 @@ namespace SkyrimCraftingTool.Model
             }
         }
 
+        // Whole-database facade over every unit (ExportUnits.All). The tabs call the overloads that
+        // take their own unit list - see TabExportModule.
         public List<EditedItemDto> GetEditedItems(ExportScope scope, string scopeValue = null)
+            => GetEditedItems(ExportUnits.All, scope, scopeValue);
+
+        public List<EditedItemDto> GetEditedItems(IEnumerable<ExportUnit> units, ExportScope scope, string scopeValue = null)
         {
             var items = new List<EditedItemDto>();
             using var connection = new SqliteConnection(ConnString);
             connection.Open();
 
-            // Same arrays the reset + import-whitelist paths use — one source of truth per table for
-            // "which IsEdited* shadow columns exist" (they used to be spelled out three times).
-            items.AddRange(GetEditedArmorOrWeapons(connection, "Armor", ArmorShadowColumns, scope, scopeValue));
-            items.AddRange(GetEditedArmorOrWeapons(connection, "Weapons", WeaponShadowColumns, scope, scopeValue));
-            items.AddRange(GetEditedCOBJ(connection, scope, scopeValue));
-            items.AddRange(GetEditedEnchantments(connection, scope, scopeValue));
-            items.AddRange(GetEditedWornRestrictionLists(connection, scope, scopeValue));
+            foreach (var unit in units)
+                items.AddRange(unit.Collect(connection, scope, scopeValue));
 
             return items;
         }
 
-        private static List<EditedItemDto> GetEditedArmorOrWeapons(SqliteConnection connection, string table, string[] editedColumns, ExportScope scope, string scopeValue)
+        // Same arrays the reset + import-whitelist paths use — one source of truth per table for
+        // "which IsEdited* shadow columns exist" (they used to be spelled out three times).
+        internal static List<EditedItemDto> GetEditedArmorOrWeapons(SqliteConnection connection, string table, string[] editedColumns, ExportScope scope, string scopeValue)
         {
             var result = new List<EditedItemDto>();
             using var cmd = connection.CreateCommand();
@@ -76,7 +78,7 @@ namespace SkyrimCraftingTool.Model
             return result;
         }
 
-        private static List<EditedItemDto> GetEditedCOBJ(SqliteConnection connection, ExportScope scope, string scopeValue)
+        internal static List<EditedItemDto> GetEditedCOBJ(SqliteConnection connection, ExportScope scope, string scopeValue)
         {
             // The last column list in this file that was still written out by hand, and the last
             // place a new editable COBJ field could be forgotten. Both halves come from
@@ -147,10 +149,25 @@ namespace SkyrimCraftingTool.Model
             {
                 if (row.ConditionsEdited)
                     row.Dto.ConditionRows = GetCOBJConditionRowsForExport(connection, row.Key);
+                if (row.Dto.Original == 0)
+                    row.Dto.Uid = EnsureCobjUid(connection, row.Key);
                 result.Add(row.Dto);
             }
             return result;
         }
+
+        // ---------------------------------------------------
+        // Identity of a user-created recipe (TE-2) - see UserRecords
+        // ---------------------------------------------------
+
+        internal static bool HasColumn(SqliteConnection connection, string table, string column)
+            => UserRecords.HasColumn(connection, table, column);
+
+        private static string EnsureCobjUid(SqliteConnection connection, string key)
+            => UserRecords.EnsureUid(connection, "COBJ", key);
+
+        internal static void ResolveUserCobjKeys(SqliteConnection connection, IEnumerable<EditedItemDto> items, ImportKeyMap map)
+            => UserRecords.ResolveRecordKeys(connection, "COBJ", items, map);
 
         private static List<Dictionary<string, string>> GetCOBJConditionRowsForExport(SqliteConnection connection, string cobjKey)
         {
@@ -175,9 +192,9 @@ namespace SkyrimCraftingTool.Model
             return rows;
         }
 
-        private static List<EditedItemDto> GetEditedEnchantments(SqliteConnection connection, ExportScope scope, string scopeValue)
+        internal static List<EditedItemDto> GetEditedEnchantments(SqliteConnection connection, ExportScope scope, string scopeValue)
         {
-            var rows = new List<(string Key, bool EffectsEdited, EditedItemDto Dto)>();
+            var rows = new List<(string Key, bool EffectsEdited, bool Own, EditedItemDto Dto)>();
 
             // From the shared list, not a second copy of it - see EnchantmentShadowColumns.
             string[] editedCols = EnchantmentShadowColumns;
@@ -188,35 +205,51 @@ namespace SkyrimCraftingTool.Model
                 // non-null, so LastChanged means "ever touched incl. resets" — wrong for "what to
                 // export". Matches the tree's edited badge. E3: KeywordsEdited dropped — worn-
                 // restriction-list content is its own export unit (GetEditedWornRestrictionLists).
+                //
+                // Original = 0 (TE-3): a user-created enchantment is new content and always exports,
+                // edited flag or not - created and never touched again is still something the
+                // other machine does not have. Same rule as GetEditedCOBJ.
                 cmd.CommandText = $@"SELECT Key, LastChanged, EffectsEdited,
-                        Name,
+                        Name, Original,
                         {string.Join(", ", editedCols)}
                     FROM Enchantments
-                    WHERE (IsEdited = 1 OR EffectsEdited = 1)" + BuildScopeWhere(scope, scopeValue, cmd);
+                    WHERE (IsEdited = 1 OR EffectsEdited = 1 OR Original = 0)" + BuildScopeWhere(scope, scopeValue, cmd);
 
                 using var reader = cmd.ExecuteReader();
                 while (reader.Read())
                 {
                     string key = reader.GetString(0);
                     bool effectsEdited = reader.GetInt32(2) == 1;
+                    bool own = !reader.IsDBNull(4) && reader.GetInt64(4) == 0;
 
                     var dto = new EditedItemDto { Table = "Enchantments", Key = key, LastChanged = SafeStr(reader, 1), DisplayName = SafeStr(reader, 3) };
                     for (int i = 0; i < editedCols.Length; i++)
                     {
-                        int ordinal = 4 + i;
+                        int ordinal = 5 + i;
                         if (!reader.IsDBNull(ordinal))
                             dto.Fields[editedCols[i]] = reader.GetValue(ordinal).ToString();
                     }
 
-                    rows.Add((key, effectsEdited, dto));
+                    rows.Add((key, effectsEdited, own, dto));
                 }
             }
 
             var result = new List<EditedItemDto>();
             foreach (var row in rows)
             {
-                if (row.EffectsEdited)
+                if (row.Own)
+                {
+                    // The whole row, base and shadow alike, and its effects whatever the flag says:
+                    // there is no scanned record on the other side to fall back to. See UserRecords.
+                    row.Dto.Original = 0;
+                    row.Dto.Fields = UserRecords.ReadRow(connection, "Enchantments", row.Key);
+                    row.Dto.Uid = UserRecords.EnsureUid(connection, "Enchantments", row.Key);
                     row.Dto.EffectRows = GetEnchantmentEffectRowsForExport(connection, row.Key);
+                }
+                else if (row.EffectsEdited)
+                {
+                    row.Dto.EffectRows = GetEnchantmentEffectRowsForExport(connection, row.Key);
+                }
                 result.Add(row.Dto);
             }
             return result;
@@ -225,7 +258,7 @@ namespace SkyrimCraftingTool.Model
         // E3: worn-restriction-list content edits export as their own unit, keyed by ListKey. One
         // DTO per edited FLST (WornRestrictionListState.IsEdited=1) — not one per enchantment that
         // points at it.
-        private static List<EditedItemDto> GetEditedWornRestrictionLists(SqliteConnection connection, ExportScope scope, string scopeValue)
+        internal static List<EditedItemDto> GetEditedWornRestrictionLists(SqliteConnection connection, ExportScope scope, string scopeValue)
         {
             // Scope by plugin/item filters Armor/Weapon/COBJ/Enchantment keys; an FLST list key
             // doesn't fit that model, so edited lists are only included for a full ("All") export.
@@ -308,61 +341,72 @@ namespace SkyrimCraftingTool.Model
         private static bool TryParseIso(string value, out DateTime parsed) =>
             DateTime.TryParse(value, null, System.Globalization.DateTimeStyles.RoundtripKind, out parsed);
 
-        public ImportPlan PreviewImport(List<EditedItemDto> fileItems)
+        // Unit lookup by DTO.Table. The table name comes straight from an imported file - an untrusted
+        // or corrupted one - and a unit interpolates its own table into SQL. Only a Table that maps to
+        // one of the caller's units ever reaches a query; everything else is dropped here, which is
+        // also what keeps a tab's import from touching another tab's records.
+        private static Dictionary<string, ExportUnit> UnitsByTable(IEnumerable<ExportUnit> units)
         {
+            var map = new Dictionary<string, ExportUnit>(StringComparer.Ordinal);
+            foreach (var unit in units)
+                map[unit.Table] = unit;
+            return map;
+        }
+
+        // Whole-database facade over every unit (ExportUnits.All).
+        public ImportPlan PreviewImport(List<EditedItemDto> fileItems)
+            => PreviewImport(ExportUnits.All, fileItems);
+
+        public ImportPlan PreviewImport(IEnumerable<ExportUnit> units, List<EditedItemDto> fileItems)
+        {
+            var byTable = UnitsByTable(units);
             var plan = new ImportPlan();
             using var connection = new SqliteConnection(ConnString);
             connection.Open();
 
+            // Keys first, all units, then references - see ExportUnit.ResolveKeys / FollowKeys.
+            // Before the probe on purpose: a user-created recipe whose Key belongs to someone
+            // else's recipe here must be probed (and later applied) under its new Key.
+            var perUnit = fileItems
+                .Where(i => i != null && byTable.ContainsKey(i.Table ?? ""))
+                .GroupBy(i => byTable[i.Table])
+                .ToList();
+            var keyMap = new ImportKeyMap();
+            foreach (var group in perUnit)
+                group.Key.ResolveKeys(connection, group.ToList(), keyMap);
+            foreach (var group in perUnit)
+                group.Key.FollowKeys(connection, group.ToList(), keyMap, plan.Notes);
+
             foreach (var item in fileItems)
             {
-                // item.Table comes straight from an imported file — an untrusted or corrupted one —
-                // and gets interpolated into SQL below (table names can't be bound as parameters).
-                // Reject anything outside the known tables before it ever reaches a query.
-                if (!AllowedImportFields.ContainsKey(item.Table))
+                if (item == null || !byTable.TryGetValue(item.Table ?? "", out var unit))
                     continue;
 
-                // E3: worn-restriction-list content edits are keyed by ListKey in a different table.
-                if (item.Table == "WornRestrictionList")
+                var target = unit.Probe(connection, item);
+                switch (target.State)
                 {
-                    PreviewWornRestrictionListImport(connection, item, plan);
-                    continue;
-                }
-
-                using var cmd = connection.CreateCommand();
-                cmd.CommandText = $"SELECT LastChanged FROM {item.Table} WHERE Key = @key";
-                cmd.Parameters.AddWithValue("@key", item.Key);
-                var localResult = cmd.ExecuteScalar();
-
-                // ExecuteScalar returns C# null only when the query matched zero rows (no local row
-                // at all). A row that exists but has never been edited still matches — its LastChanged
-                // column is SQL NULL, which ExecuteScalar surfaces as DBNull.Value, not null. Treating
-                // both cases the same here previously misrouted every never-before-edited row (the
-                // normal case for a first-time import) into ToSkipMissing, so imports onto Armor/
-                // Weapons/Enchantments silently did nothing whenever the target had no prior edits.
-                if (localResult == null)
-                {
-                    // No local row at all. A user-created (Original=0) COBJ recipe carries its own
-                    // full data and needs no scanned base row to attach to, so it's always safe to
-                    // insert fresh. Everything else has no scan to build a real row from — skip it
-                    // (see plan risk: missing item usually means the owning plugin isn't installed).
-                    if (item.Table == "COBJ" && item.Original == 0)
-                        plan.ToApply.Add(item);
-                    else
+                    case ImportTargetState.Missing:
+                        // Nothing to build a real row from - usually the owning plugin isn't
+                        // installed (see plan risk).
                         plan.ToSkipMissing.Add(item);
-                    continue;
+                        continue;
+
+                    case ImportTargetState.Create:
+                    case ImportTargetState.Untouched:
+                        // Nothing local to conflict with.
+                        plan.ToApply.Add(item);
+                        continue;
+
+                    // No timestamp on either side - the unit compared content (TE-5).
+                    case ImportTargetState.Identical:
+                        plan.ToSkipEqual.Add(item);
+                        continue;
+                    case ImportTargetState.Differs:
+                        plan.Conflicts.Add(new ImportConflict { FileItem = item, LocalLastChanged = "(differs, no date)" });
+                        continue;
                 }
 
-                string localLastChanged = localResult as string;
-                if (string.IsNullOrEmpty(localLastChanged))
-                {
-                    // Row exists but was never edited locally (LastChanged IS NULL) — nothing to
-                    // conflict with.
-                    plan.ToApply.Add(item);
-                    continue;
-                }
-
-                if (!TryCompareIso(item.LastChanged, localLastChanged, out int cmp))
+                if (!TryCompareIso(item.LastChanged, target.LocalLastChanged, out int cmp))
                 {
                     // Corrupt/blank timestamp in the file — skip just this item instead of throwing
                     // out of the whole import run.
@@ -375,64 +419,25 @@ namespace SkyrimCraftingTool.Model
                 else if (cmp > 0)
                     plan.ToApply.Add(item);
                 else
-                    plan.Conflicts.Add(new ImportConflict { FileItem = item, LocalLastChanged = localLastChanged });
+                    plan.Conflicts.Add(new ImportConflict { FileItem = item, LocalLastChanged = target.LocalLastChanged });
             }
 
             return plan;
         }
 
-        // E3 worn-restriction-list import routing. "Exists locally" = the FLST has member rows or a
-        // state row; otherwise the list isn't in this load order and the edit has nothing to attach
-        // to (ToSkipMissing, matching the Enchantments rule). A local state row means it's been
-        // edited here → LastChanged conflict check; no state row → never edited → safe to apply.
-        private static void PreviewWornRestrictionListImport(SqliteConnection connection, EditedItemDto item, ImportPlan plan)
-        {
-            string localLastChanged = null;
-            bool stateExists = false, contentExists = false;
-
-            using (var cmd = connection.CreateCommand())
-            {
-                cmd.CommandText = "SELECT LastChanged FROM WornRestrictionListState WHERE ListKey = @key";
-                cmd.Parameters.AddWithValue("@key", item.Key);
-                var res = cmd.ExecuteScalar();
-                if (res != null) { stateExists = true; localLastChanged = res as string; }
-            }
-            using (var cmd = connection.CreateCommand())
-            {
-                cmd.CommandText = "SELECT 1 FROM WornRestrictionKeywords WHERE ListKey = @key LIMIT 1";
-                cmd.Parameters.AddWithValue("@key", item.Key);
-                contentExists = cmd.ExecuteScalar() != null;
-            }
-
-            if (!stateExists && !contentExists)
-            {
-                plan.ToSkipMissing.Add(item);
-                return;
-            }
-            if (string.IsNullOrEmpty(localLastChanged))
-            {
-                plan.ToApply.Add(item);
-                return;
-            }
-
-            if (!TryCompareIso(item.LastChanged, localLastChanged, out int cmp))
-            {
-                plan.ToSkipInvalid.Add(item);
-                return;
-            }
-
-            if (cmp == 0) plan.ToSkipEqual.Add(item);
-            else if (cmp > 0) plan.ToApply.Add(item);
-            else plan.Conflicts.Add(new ImportConflict { FileItem = item, LocalLastChanged = localLastChanged });
-        }
-
+        // Whole-database facade over every unit (ExportUnits.All).
         public ImportResult ApplyImport(ImportPlan plan, HashSet<string> conflictKeysToUseFileVersion)
+            => ApplyImport(ExportUnits.All, plan, conflictKeysToUseFileVersion);
+
+        public ImportResult ApplyImport(IEnumerable<ExportUnit> units, ImportPlan plan, HashSet<string> conflictKeysToUseFileVersion)
         {
+            var byTable = UnitsByTable(units);
             var result = new ImportResult
             {
                 SkippedEqual = plan.ToSkipEqual.Count,
                 SkippedMissing = plan.ToSkipMissing,
-                SkippedInvalid = plan.ToSkipInvalid.Count
+                SkippedInvalid = plan.ToSkipInvalid.Count,
+                Notes = plan.Notes
             };
 
             var toWrite = new List<EditedItemDto>(plan.ToApply);
@@ -458,7 +463,8 @@ namespace SkyrimCraftingTool.Model
                 {
                     // Only count what actually wrote something — a missing target row, a
                     // payload-less DTO or an unknown Table used to still bump "Updated: N".
-                    if (ApplyImportedItem(connection, transaction, item))
+                    if (byTable.TryGetValue(item.Table ?? "", out var unit)
+                        && unit.Apply(connection, transaction, item))
                         result.Applied++;
                 }
 
@@ -473,31 +479,10 @@ namespace SkyrimCraftingTool.Model
             return result;
         }
 
-        // Returns true only if this DTO actually caused a write — drives ImportResult.Applied so the
-        // summary can't claim "Updated: N" for rows that were skipped (target missing, no applicable
-        // field in the payload, unknown Table).
-        private bool ApplyImportedItem(SqliteConnection connection, SqliteTransaction transaction, EditedItemDto item)
-        {
-            switch (item.Table)
-            {
-                case "Armor":
-                case "Weapons":
-                    return ApplySimpleFieldItem(connection, transaction, item.Table, item);
-                case "COBJ":
-                    return ApplyCobjItem(connection, transaction, item);
-                case "Enchantments":
-                    return ApplyEnchantmentItem(connection, transaction, item);
-                case "WornRestrictionList":
-                    return ApplyWornRestrictionListItem(connection, transaction, item);
-                default:
-                    return false;
-            }
-        }
-
         // E3: rewrite one FLST's member rows from the imported payload and mark the list edited.
         // Snapshots the pristine members into _Original first if this is the list's first local edit
         // (same lazy-snapshot rule as SaveWornRestrictionKeywords), so a later Reset still works.
-        private static bool ApplyWornRestrictionListItem(SqliteConnection connection, SqliteTransaction transaction, EditedItemDto item)
+        internal static bool ApplyWornRestrictionListItem(SqliteConnection connection, SqliteTransaction transaction, EditedItemDto item)
         {
             if (KeyFactory.IsUnsetKey(item.Key) || item.WornRestrictionKeywords == null)
                 return false;
@@ -567,8 +552,10 @@ namespace SkyrimCraftingTool.Model
                 ["WorldItem"] = new HashSet<string>(WorldItemShadowColumns),
                 ["COBJ"] = new HashSet<string>(CobjShadowColumns),
                 ["Enchantments"] = new HashSet<string>(EnchantmentShadowColumns),
+                ["Spells"] = new HashSet<string>(SpellShadowColumns),
                 // E3: FLST content import unit — no scalar fields, its payload is
-                // WornRestrictionKeywords. Present only so PreviewImport's "known table" guard admits it.
+                // WornRestrictionKeywords. Which tables are importable at all is decided by the
+                // unit list (UnitsByTable), not by this dictionary.
                 ["WornRestrictionList"] = new HashSet<string>(),
             };
 
@@ -604,7 +591,7 @@ namespace SkyrimCraftingTool.Model
             return cmd.ExecuteNonQuery() > 0;
         }
 
-        private static bool ApplySimpleFieldItem(SqliteConnection connection, SqliteTransaction transaction, string table, EditedItemDto item)
+        internal static bool ApplySimpleFieldItem(SqliteConnection connection, SqliteTransaction transaction, string table, EditedItemDto item)
         {
             // Preview already routed missing keys to ToSkipMissing — this is just a defensive guard.
             if (!RowExists(connection, transaction, table, item.Key))
@@ -613,23 +600,31 @@ namespace SkyrimCraftingTool.Model
             return ApplyFieldUpdate(connection, transaction, table, item.Key, item.LastChanged, item.Fields);
         }
 
-        private static bool ApplyCobjItem(SqliteConnection connection, SqliteTransaction transaction, EditedItemDto item)
+        internal static bool ApplyCobjItem(SqliteConnection connection, SqliteTransaction transaction, EditedItemDto item)
         {
             bool exists = RowExists(connection, transaction, "COBJ", item.Key);
             bool wrote = false;
+
+            // The output count was exported for a user-created row from the start (it is one of
+            // CobjShadowColumns' base columns) but never written back - every imported own recipe
+            // came out producing one. Absent in older files -> 1, the column's default.
+            object createdCount = int.TryParse(item.Fields.GetValueOrDefault("CreatedObjectCount", ""), out var n) && n > 0 ? n : 1;
+            bool hasUid = !string.IsNullOrEmpty(item.Uid) && HasColumn(connection, "COBJ", "Uid");
 
             if (item.Original == 0 && !exists)
             {
                 using var insertCmd = connection.CreateCommand();
                 insertCmd.Transaction = transaction;
-                insertCmd.CommandText = @"INSERT INTO COBJ (Key, Original, Name, CreatedItem, WorkbenchKeyword, Ingredients, IsEdited, LastChanged)
-                                           VALUES (@key, 0, @name, @created, @wbk, @ingr, 1, @now)";
+                insertCmd.CommandText = $@"INSERT INTO COBJ (Key, Original, Name, CreatedItem, CreatedObjectCount, WorkbenchKeyword, Ingredients, IsEdited, LastChanged{(hasUid ? ", Uid" : "")})
+                                           VALUES (@key, 0, @name, @created, @count, @wbk, @ingr, 1, @now{(hasUid ? ", @uid" : "")})";
                 insertCmd.Parameters.AddWithValue("@key", item.Key);
                 insertCmd.Parameters.AddWithValue("@name", item.Fields.GetValueOrDefault("Name", ""));
                 insertCmd.Parameters.AddWithValue("@created", item.Fields.GetValueOrDefault("CreatedItem", ""));
+                insertCmd.Parameters.AddWithValue("@count", createdCount);
                 insertCmd.Parameters.AddWithValue("@wbk", item.Fields.GetValueOrDefault("WorkbenchKeyword", ""));
                 insertCmd.Parameters.AddWithValue("@ingr", item.Fields.GetValueOrDefault("Ingredients", ""));
                 insertCmd.Parameters.AddWithValue("@now", item.LastChanged);
+                if (hasUid) insertCmd.Parameters.AddWithValue("@uid", item.Uid);
                 insertCmd.ExecuteNonQuery();
                 wrote = true;
             }
@@ -643,10 +638,15 @@ namespace SkyrimCraftingTool.Model
                 // touches Original=0 rows, so there is no shadow/base split to preserve here.
                 using var updateCmd = connection.CreateCommand();
                 updateCmd.Transaction = transaction;
-                updateCmd.CommandText = @"UPDATE COBJ SET Name = @name, CreatedItem = @created, WorkbenchKeyword = @wbk,
-                                           Ingredients = @ingr, IsEdited = 1, LastChanged = @now WHERE Key = @key";
+                // Count only when the file has one: an export older than the column must not reset a
+                // local recipe that produces five back to one.
+                bool hasCount = item.Fields.ContainsKey("CreatedObjectCount");
+                updateCmd.CommandText = $@"UPDATE COBJ SET Name = @name, CreatedItem = @created{(hasCount ? ", CreatedObjectCount = @count" : "")}, WorkbenchKeyword = @wbk,
+                                           Ingredients = @ingr, IsEdited = 1, LastChanged = @now{(hasUid ? ", Uid = @uid" : "")} WHERE Key = @key";
                 updateCmd.Parameters.AddWithValue("@name", item.Fields.GetValueOrDefault("Name", ""));
                 updateCmd.Parameters.AddWithValue("@created", item.Fields.GetValueOrDefault("CreatedItem", ""));
+                updateCmd.Parameters.AddWithValue("@count", createdCount);
+                if (hasUid) updateCmd.Parameters.AddWithValue("@uid", item.Uid);
                 updateCmd.Parameters.AddWithValue("@wbk", item.Fields.GetValueOrDefault("WorkbenchKeyword", ""));
                 updateCmd.Parameters.AddWithValue("@ingr", item.Fields.GetValueOrDefault("Ingredients", ""));
                 updateCmd.Parameters.AddWithValue("@now", item.LastChanged);
@@ -695,8 +695,11 @@ namespace SkyrimCraftingTool.Model
                 using (var flagCmd = connection.CreateCommand())
                 {
                     flagCmd.Transaction = transaction;
-                    flagCmd.CommandText = "UPDATE COBJ SET ConditionsEdited = 1 WHERE Key = @key";
+                    // LastChanged too - see ApplySpellItem: a record whose only edit is its child rows
+                    // must not arrive without a timestamp.
+                    flagCmd.CommandText = "UPDATE COBJ SET ConditionsEdited = 1, LastChanged = @t WHERE Key = @key";
                     flagCmd.Parameters.AddWithValue("@key", item.Key);
+                    flagCmd.Parameters.AddWithValue("@t", string.IsNullOrEmpty(item.LastChanged) ? NowIso() : item.LastChanged);
                     flagCmd.ExecuteNonQuery();
                 }
                 wrote = true;
@@ -705,13 +708,24 @@ namespace SkyrimCraftingTool.Model
             return wrote;
         }
 
-        private static bool ApplyEnchantmentItem(SqliteConnection connection, SqliteTransaction transaction, EditedItemDto item)
+        internal static bool ApplyEnchantmentItem(SqliteConnection connection, SqliteTransaction transaction, EditedItemDto item)
         {
-            // Preview already routed missing keys to ToSkipMissing — this is just a defensive guard.
-            if (!RowExists(connection, transaction, "Enchantments", item.Key))
-                return false;
+            bool wrote;
+            if (item.Original == 0)
+            {
+                // TE-3: a user-created enchantment is recreated from its whole row (UserRecords) -
+                // created here if this machine does not have it, under the Key ResolveKeys settled.
+                wrote = UserRecords.WriteRow(connection, transaction, "Enchantments", item, item.LastChanged);
+                if (!wrote) return false;
+            }
+            else
+            {
+                // Preview already routed missing keys to ToSkipMissing — this is just a defensive guard.
+                if (!RowExists(connection, transaction, "Enchantments", item.Key))
+                    return false;
 
-            bool wrote = ApplyFieldUpdate(connection, transaction, "Enchantments", item.Key, item.LastChanged, item.Fields);
+                wrote = ApplyFieldUpdate(connection, transaction, "Enchantments", item.Key, item.LastChanged, item.Fields);
+            }
 
             if (item.EffectRows != null)
             {
@@ -754,8 +768,11 @@ namespace SkyrimCraftingTool.Model
                 using (var flagCmd = connection.CreateCommand())
                 {
                     flagCmd.Transaction = transaction;
-                    flagCmd.CommandText = "UPDATE Enchantments SET EffectsEdited = 1 WHERE Key = @key";
+                    // LastChanged too - see ApplySpellItem: a record whose only edit is its child rows
+                    // must not arrive without a timestamp.
+                    flagCmd.CommandText = "UPDATE Enchantments SET EffectsEdited = 1, LastChanged = @t WHERE Key = @key";
                     flagCmd.Parameters.AddWithValue("@key", item.Key);
+                    flagCmd.Parameters.AddWithValue("@t", string.IsNullOrEmpty(item.LastChanged) ? NowIso() : item.LastChanged);
                     flagCmd.ExecuteNonQuery();
                 }
                 wrote = true;

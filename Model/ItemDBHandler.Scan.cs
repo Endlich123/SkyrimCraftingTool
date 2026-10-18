@@ -51,6 +51,8 @@ namespace SkyrimCraftingTool.Model
             // is a flag on the PARENT row, checked before we touch its children below.
             var conditionsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM COBJ WHERE ConditionsEdited = 1;");
             var effectsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM Enchantments WHERE EffectsEdited = 1;");
+            // The same guard for the Spells tab (docs/Spells-Plan.md).
+            var spellEffectsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM Spells WHERE EffectsEdited = 1;");
             // Same protection for the NPC child lists: a rescan refreshes the record, never the
             // faction or skill list the user has taken over.
             var npcFactionsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM Npc WHERE FactionsEdited = 1;");
@@ -96,7 +98,9 @@ namespace SkyrimCraftingTool.Model
             using var insertNpcSpell = PrepareInsert(connection, "NpcSpells", NpcSpellColumnNames, NpcSpellParamNames);
             using var insertNpcPerk = PrepareInsert(connection, "NpcPerks", NpcPerkColumnNames, NpcPerkParamNames);
             using var insertNpcItem = PrepareInsert(connection, "NpcItems", NpcItemColumnNames, NpcItemParamNames);
-            using var insertSpells = PrepareUpsert(connection, "Spells", NamedCatalogueColumnNames, NamedCatalogueParamNames);
+            using var insertSpells = PrepareUpsert(connection, "Spells", SpellColumnNames, SpellParamNames);
+            using var insertSpellEff = PrepareInsert(connection, "SpellEffects", SpellEffectColumnNames, SpellEffectParamNames);
+            using var insertShoutWord = PrepareInsert(connection, "ShoutWords", ShoutWordColumnNames, ShoutWordParamNames);
             using var insertShouts = PrepareUpsert(connection, "Shouts", NamedCatalogueColumnNames, NamedCatalogueParamNames);
             using var insertLeveledSpells = PrepareUpsert(connection, "LeveledSpells", PlainCatalogueColumnNames, PlainCatalogueParamNames);
             using var insertPerkCatalogue = PrepareUpsert(connection, "NpcPerkCatalogue", NamedCatalogueColumnNames, NamedCatalogueParamNames);
@@ -141,7 +145,9 @@ namespace SkyrimCraftingTool.Model
             using var insertNpcSpellBatch = PrepareInsertBatch(connection, "NpcSpells", NpcSpellColumnNames, NpcSpellParamNames, RowsPerBatch(NpcSpellParamNames));
             using var insertNpcPerkBatch = PrepareInsertBatch(connection, "NpcPerks", NpcPerkColumnNames, NpcPerkParamNames, RowsPerBatch(NpcPerkParamNames));
             using var insertNpcItemBatch = PrepareInsertBatch(connection, "NpcItems", NpcItemColumnNames, NpcItemParamNames, RowsPerBatch(NpcItemParamNames));
-            using var insertSpellsBatch = PrepareUpsertBatch(connection, "Spells", NamedCatalogueColumnNames, NamedCatalogueParamNames, RowsPerBatch(NamedCatalogueParamNames));
+            using var insertSpellsBatch = PrepareUpsertBatch(connection, "Spells", SpellColumnNames, SpellParamNames, RowsPerBatch(SpellParamNames));
+            using var insertSpellEffBatch = PrepareInsertBatch(connection, "SpellEffects", SpellEffectColumnNames, SpellEffectParamNames, RowsPerBatch(SpellEffectParamNames));
+            using var insertShoutWordBatch = PrepareInsertBatch(connection, "ShoutWords", ShoutWordColumnNames, ShoutWordParamNames, RowsPerBatch(ShoutWordParamNames));
             using var insertShoutsBatch = PrepareUpsertBatch(connection, "Shouts", NamedCatalogueColumnNames, NamedCatalogueParamNames, RowsPerBatch(NamedCatalogueParamNames));
             using var insertLeveledSpellsBatch = PrepareUpsertBatch(connection, "LeveledSpells", PlainCatalogueColumnNames, PlainCatalogueParamNames, RowsPerBatch(PlainCatalogueParamNames));
             using var insertPerkCatalogueBatch = PrepareUpsertBatch(connection, "NpcPerkCatalogue", NamedCatalogueColumnNames, NamedCatalogueParamNames, RowsPerBatch(NamedCatalogueParamNames));
@@ -183,6 +189,8 @@ namespace SkyrimCraftingTool.Model
             insertNpcPerk.Transaction = transaction;
             insertNpcItem.Transaction = transaction;
             insertSpells.Transaction = transaction;
+            insertSpellEff.Transaction = transaction;
+            insertShoutWord.Transaction = transaction;
             insertShouts.Transaction = transaction;
             insertLeveledSpells.Transaction = transaction;
             insertPerkCatalogue.Transaction = transaction;
@@ -222,6 +230,8 @@ namespace SkyrimCraftingTool.Model
             insertNpcPerkBatch.Transaction = transaction;
             insertNpcItemBatch.Transaction = transaction;
             insertSpellsBatch.Transaction = transaction;
+            insertSpellEffBatch.Transaction = transaction;
+            insertShoutWordBatch.Transaction = transaction;
             insertShoutsBatch.Transaction = transaction;
             insertLeveledSpellsBatch.Transaction = transaction;
             insertPerkCatalogueBatch.Transaction = transaction;
@@ -626,7 +636,43 @@ namespace SkyrimCraftingTool.Model
             var allCombatStyles = Deduped(p => p.CombatStyleRows);
 
             var allSpellCatalogue = Deduped(p => p.SpellCatalogueRows);
+
+            // A spell's effect rows follow the winning record, and a spell whose effects the user has
+            // taken over keeps them: the scan refreshes the record, never an edit. Same two rules as
+            // EnchantmentEffects, for the same reason.
+            //
+            // The inner dedupe is not optional either. One SPEL's own effect list may name the same
+            // base MagicEffect twice with different values - PRIMARY KEY(SpellKey, MagicEffectKey)
+            // cannot hold both, and a plain INSERT would crash on the collision rather than keep one.
+            // How many were lost is counted per spell at parse time (DroppedEffectRows).
+            var allSpellEffects = new List<object[]>();
+            var spellEffectRewriteKeys = new List<string>();
+            {
+                var winners = new HashSet<string>(
+                    allSpellCatalogue.Select(r => (string)r[0]), StringComparer.OrdinalIgnoreCase);
+
+                var latestSpellEffectRow =
+                    new Dictionary<(string SpellKey, string MagicEffectKey), object[]>(NoCaseKeyPair.Instance);
+
+                foreach (var row in DedupedChildren(p => p.SpellEffectRows))
+                {
+                    string spellKey = (string)row[0];
+                    if (!winners.Contains(spellKey) || spellEffectsEditedKeys.Contains(spellKey)) continue;
+
+                    latestSpellEffectRow[(spellKey, (string)row[1])] = row;
+                }
+
+                allSpellEffects.AddRange(latestSpellEffectRow.Values);
+                spellEffectRewriteKeys.AddRange(
+                    allSpellCatalogue.Select(r => (string)r[0])
+                                     .Where(k => !spellEffectsEditedKeys.Contains(k)));
+            }
+
             var allShoutCatalogue = Deduped(p => p.ShoutCatalogueRows);
+
+            // Which spell each word of a shout casts, following the winning SHOU. Read-only, for the
+            // Spells tab's labels - every shout is rewritten, nothing here is ever edited.
+            var allShoutWords = DedupedChildren(p => p.ShoutWordRows);
             var allLeveledSpellCatalogue = Deduped(p => p.LeveledSpellCatalogueRows);
             var allPerkCatalogue = Deduped(p => p.PerkCatalogueRows);
 
@@ -687,6 +733,9 @@ namespace SkyrimCraftingTool.Model
             // above, so their rows are never deleted or reinserted here.
             DeleteChildRowsForKeys(connection, transaction, "COBJ_Conditions", "COBJKey", cobjConditionRewriteKeys);
             DeleteChildRowsForKeys(connection, transaction, "EnchantmentEffects", "EnchantmentKey", enchantmentEffectRewriteKeys);
+            DeleteChildRowsForKeys(connection, transaction, "SpellEffects", "SpellKey", spellEffectRewriteKeys);
+            DeleteChildRowsForKeys(connection, transaction, "ShoutWords", "ShoutKey",
+                allShoutCatalogue.Select(r => (string)r[0]).ToList());
             DeleteChildRowsForKeys(connection, transaction, "WornRestrictionKeywords", "ListKey", wornRestrictionListKeysToRewrite.Distinct().ToList());
             // Container has no *Edited protection flag (it's a pure reference table), so every
             // scanned container's LVLI rows are simply cleared and rewritten each scan — otherwise a
@@ -762,7 +811,9 @@ namespace SkyrimCraftingTool.Model
             ExecuteRowsBatched(insertNpcSpell, insertNpcSpellBatch, NpcSpellParamNames, allNpcSpells, RowsPerBatch(NpcSpellParamNames));
             ExecuteRowsBatched(insertNpcPerk, insertNpcPerkBatch, NpcPerkParamNames, allNpcPerks, RowsPerBatch(NpcPerkParamNames));
             ExecuteRowsBatched(insertNpcItem, insertNpcItemBatch, NpcItemParamNames, allNpcItems, RowsPerBatch(NpcItemParamNames));
-            ExecuteRowsBatched(insertSpells, insertSpellsBatch, NamedCatalogueParamNames, allSpellCatalogue, RowsPerBatch(NamedCatalogueParamNames));
+            ExecuteRowsBatched(insertSpells, insertSpellsBatch, SpellParamNames, allSpellCatalogue, RowsPerBatch(SpellParamNames));
+            ExecuteRowsBatched(insertSpellEff, insertSpellEffBatch, SpellEffectParamNames, allSpellEffects, RowsPerBatch(SpellEffectParamNames));
+            ExecuteRowsBatched(insertShoutWord, insertShoutWordBatch, ShoutWordParamNames, allShoutWords, RowsPerBatch(ShoutWordParamNames));
             ExecuteRowsBatched(insertShouts, insertShoutsBatch, NamedCatalogueParamNames, allShoutCatalogue, RowsPerBatch(NamedCatalogueParamNames));
             ExecuteRowsBatched(insertLeveledSpells, insertLeveledSpellsBatch, PlainCatalogueParamNames, allLeveledSpellCatalogue, RowsPerBatch(PlainCatalogueParamNames));
             ExecuteRowsBatched(insertPerkCatalogue, insertPerkCatalogueBatch, NamedCatalogueParamNames, allPerkCatalogue, RowsPerBatch(NamedCatalogueParamNames));
@@ -804,7 +855,10 @@ namespace SkyrimCraftingTool.Model
             MarkInactiveExcept(connection, transaction, "Outfits", "Key", allOutfits.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "VoiceTypes", "Key", allVoiceTypes.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "CombatStyles", "Key", allCombatStyles.Select(r => (string)r[0]));
-            MarkInactiveExcept(connection, transaction, "Spells", "Key", allSpellCatalogue.Select(r => (string)r[0]));
+            // Original = 1 only. A spell the user created in the tool exists in no plugin, so it is
+            // never "seen" by a scan - without this it would go inactive on the very next one.
+            MarkInactiveExcept(connection, transaction, "Spells", "Key",
+                               allSpellCatalogue.Select(r => (string)r[0]), extraWhere: "Original = 1");
             MarkInactiveExcept(connection, transaction, "Shouts", "Key", allShoutCatalogue.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "LeveledSpells", "Key", allLeveledSpellCatalogue.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "NpcPerkCatalogue", "Key", allPerkCatalogue.Select(r => (string)r[0]));
@@ -1095,6 +1149,11 @@ namespace SkyrimCraftingTool.Model
             public List<object[]> VoiceTypeRows = new();
             public List<object[]> CombatStyleRows = new();
             public List<object[]> SpellCatalogueRows = new();
+
+            // One row per effect entry of a spell, and per word of a shout. Child rows keyed on the
+            // parent in column 0, so DedupedChildren can follow the winning record.
+            public List<object[]> SpellEffectRows = new();
+            public List<object[]> ShoutWordRows = new();
             public List<object[]> ShoutCatalogueRows = new();
             public List<object[]> LeveledSpellCatalogueRows = new();
             public List<object[]> PerkCatalogueRows = new();
@@ -1263,7 +1322,8 @@ namespace SkyrimCraftingTool.Model
         private static readonly string[] RaceBoostColumnNames = { "RaceKey", "Skill", "Boost" };
 
         private static readonly string[] MagicEffectParamNames =
-            { "@key", "@editorID", "@name", "@hasMag", "@hasDur", "@hasAre", "@castType", "@targetType" };
+            { "@key", "@editorID", "@name", "@hasMag", "@hasDur", "@hasAre", "@castType", "@targetType",
+              "@school", "@skillLevel", "@baseCost" };
         private static readonly string[] GlobalParamNames = { "@key", "@editorID", "@value" };
 
         // Real table column names, in the same order as the matching *ParamNames array above.
@@ -1290,6 +1350,26 @@ namespace SkyrimCraftingTool.Model
               "EnchantType", "Flags", "ChargeTime", "EnchantmentAmount" };
         private static readonly string[] EnchantmentEffectColumnNames =
             { "EnchantmentKey", "MagicEffectKey", "EditorID", "Name", "Magnitude", "Duration", "Area" };
+
+        // The Spells tab's own columns (docs/Spells-Plan.md). Only the SCANNED half - the shadow
+        // columns and Original are written by the editor, never by the scan, so an upsert through
+        // these names refreshes a record without touching a single user edit.
+        internal static readonly string[] SpellParamNames =
+            { "@key", "@editorID", "@name", "@spellType", "@cast", "@target", "@equip", "@baseCost",
+              "@chargeTime", "@castDuration", "@range", "@description", "@halfCostPerk",
+              "@flags", "@keywords", "@dropped" };
+        internal static readonly string[] SpellColumnNames =
+            { "Key", "EditorID", "Name", "SpellType", "CastType", "TargetType", "EquipType", "BaseCost",
+              "ChargeTime", "CastDuration", "SpellRange", "Description", "HalfCostPerkKey",
+              "Flags", "Keywords", "DroppedEffectRows" };
+
+        private static readonly string[] SpellEffectParamNames =
+            { "@spell", "@mgef", "@editorID", "@name", "@mag", "@dur", "@area" };
+        private static readonly string[] SpellEffectColumnNames =
+            { "SpellKey", "MagicEffectKey", "EditorID", "Name", "Magnitude", "Duration", "Area" };
+
+        private static readonly string[] ShoutWordParamNames = { "@shout", "@ordinal", "@spell" };
+        private static readonly string[] ShoutWordColumnNames = { "ShoutKey", "Ordinal", "SpellKey" };
         private static readonly string[] WornRestrictionKeywordColumnNames = { "ListKey", "KeywordKey" };
         internal static readonly string[] ContainerColumnNames = { "ContainerKey", "Name" };
         private static readonly string[] ContainerLvliColumnNames = { "ContainerKey", "LVLiKey", "LVLiName" };
@@ -1326,7 +1406,8 @@ namespace SkyrimCraftingTool.Model
 
         private static readonly string[] LeveledListLostColumnNames = { "ListKey", "Reference", "Level", "Count", "LostFrom", "Ambiguous", "AddedBy", "DroppedBy" };
         internal static readonly string[] MagicEffectColumnNames =
-            { "Key", "EditorID", "Name", "HasMagnitude", "HasDuration", "HasArea", "CastType", "TargetType" };
+            { "Key", "EditorID", "Name", "HasMagnitude", "HasDuration", "HasArea", "CastType", "TargetType",
+              "MagicSkill", "MinimumSkillLevel", "BaseCost" };
         private static readonly string[] GlobalColumnNames = { "Key", "EditorID", "Value" };
 
         private static void ApplyRowAndExecute(SqliteCommand cmd, string[] paramNames, object[] values)
@@ -2152,7 +2233,20 @@ namespace SkyrimCraftingTool.Model
                     hasDuration ? 1 : 0,
                     hasArea,
                     mgef.CastType.ToString(),
-                    mgef.TargetType.ToString()
+                    mgef.TargetType.ToString(),
+
+                    // The magic SCHOOL, and the skill tier that goes with it. A SPELL HAS NEITHER -
+                    // Spell carries no school property at all; the game files a spell under the
+                    // school of its costliest effect. "None" is a real answer (script effects,
+                    // abilities, diseases), not missing data.
+                    mgef.MagicSkill.ToString(),
+
+                    // 0 / 25 / 50 / 75 / 100 - Novice .. Master. The number the record holds.
+                    (int)mgef.MinimumSkillLevel,
+
+                    // What makes one effect of a spell "costlier" than another, and so decides the
+                    // spell's school. See SpellCategory.
+                    (double)mgef.BaseCost
                 });
             }
 
@@ -2385,13 +2479,95 @@ namespace SkyrimCraftingTool.Model
                 result.CombatStyleRows.Add(new object[]
                 { KeyFactory.BuildMasterKey(style.FormKey), style.EditorID ?? "" });
 
+            // SPELLS - the NPC spell lists' name catalogue AND the Spells tab's record, one row each
+            // (docs/Spells-Plan.md). Master-keyed like every other record key: an override has to
+            // REPLACE the record, not sit beside it.
             foreach (var spell in mod.Spells.Records)
+            {
+                string spellKey = KeyFactory.BuildMasterKey(spell.FormKey);
+
+                // The FormLink is non-null even when it points at nothing, so the guard is on
+                // FormKey.IsNull - without it every spell without a perk shares "Null|000000".
+                string halfCostPerk = spell.HalfCostPerk != null && !spell.HalfCostPerk.FormKey.IsNull
+                    ? KeyFactory.BuildMasterKey(spell.HalfCostPerk.FormKey)
+                    : "";
+
+                string equipType = spell.EquipmentType != null && !spell.EquipmentType.FormKey.IsNull
+                    ? KeyFactory.BuildMasterKey(spell.EquipmentType.FormKey)
+                    : "";
+
+                var keywords = new List<string>();
+                foreach (var kw in spell.Keywords ?? Enumerable.Empty<IFormLinkGetter<IKeywordGetter>>())
+                    if (!kw.FormKey.IsNull)
+                        keywords.Add(KeyFactory.BuildMasterKey(kw.FormKey));
+
+                // How many effect entries SpellEffects will not be able to hold. Counted HERE,
+                // because the duplicates are gone by the time anything reads the table.
+                int droppedEffectRows = spell.Effects.Count
+                    - spell.Effects.Select(e => e.BaseEffect.FormKey).Distinct().Count();
+
                 result.SpellCatalogueRows.Add(new object[]
-                { KeyFactory.BuildMasterKey(spell.FormKey), spell.EditorID ?? "", spell.Name?.ToString() ?? "" });
+                {
+                    spellKey,
+                    spell.EditorID ?? "",
+                    spell.Name?.ToString() ?? "",
+                    spell.Type.ToString(),
+                    spell.CastType.ToString(),
+                    spell.TargetType.ToString(),
+                    equipType,
+                    (int)spell.BaseCost,
+                    spell.ChargeTime,
+                    spell.CastDuration,
+                    spell.Range,
+                    spell.Description?.ToString() ?? "",
+                    halfCostPerk,
+
+                    // The raw dword - see Services/SpellFlags.cs on why the names are no good.
+                    (int)spell.Flags,
+                    string.Join(",", keywords),
+                    droppedEffectRows,
+                });
+
+                foreach (var eff in spell.Effects)
+                {
+                    var fk = eff.BaseEffect.FormKey;
+                    string mgefKey = KeyFactory.BuildMasterKey(fk);
+
+                    string editorId = "";
+                    string name = "";
+                    if (mod.MagicEffects.TryGetValue(fk, out var magicEffect))
+                    {
+                        editorId = magicEffect.EditorID ?? "";
+                        name = magicEffect.Name?.ToString() ?? "";
+                    }
+
+                    result.SpellEffectRows.Add(new object[]
+                    {
+                        spellKey, mgefKey, editorId, name,
+                        eff.Data?.Magnitude ?? 0,
+                        eff.Data?.Duration ?? 0,
+                        eff.Data?.Area ?? 0,
+                    });
+                }
+            }
 
             foreach (var shout in mod.Shouts.Records)
+            {
+                string shoutKey = KeyFactory.BuildMasterKey(shout.FormKey);
+
                 result.ShoutCatalogueRows.Add(new object[]
-                { KeyFactory.BuildMasterKey(shout.FormKey), shout.EditorID ?? "", shout.Name?.ToString() ?? "" });
+                { shoutKey, shout.EditorID ?? "", shout.Name?.ToString() ?? "" });
+
+                // Word 1..3 in the order the shout lists them, which is the order the game unlocks.
+                int ordinal = 1;
+                foreach (var word in shout.WordsOfPower ?? Enumerable.Empty<IShoutWordGetter>())
+                {
+                    if (word.Spell != null && !word.Spell.FormKey.IsNull)
+                        result.ShoutWordRows.Add(new object[]
+                        { shoutKey, ordinal, KeyFactory.BuildMasterKey(word.Spell.FormKey) });
+                    ordinal++;
+                }
+            }
 
             foreach (var lvsp in mod.LeveledSpells.Records)
                 result.LeveledSpellCatalogueRows.Add(new object[]

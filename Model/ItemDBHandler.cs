@@ -37,8 +37,6 @@ namespace SkyrimCraftingTool.Model
         private readonly FormIDDBHandler _formIDDB = new FormIDDBHandler();
 
 
-        // count
-        private int? _count = null;
 
         // ============================
         //            CACHE
@@ -1281,6 +1279,64 @@ namespace SkyrimCraftingTool.Model
         public static void UpdateWorldItemContainerString(string key, string containerString)
             => UpdateField("WorldItem", "IsEditedContainerString", key, containerString ?? "{}");
 
+        // ---- The placement on its own (Container/LeveledList tab, 2026-10-17) ----
+        //
+        // A placement is one shadow column on three tables. The Container/LeveledList tab offers
+        // "only edited" and a reset for it, and both have to read the DATABASE: an ItemNodeVM only
+        // knows its scanned placement once its details were opened in the item tab, so a filter
+        // built on the view models would miss every item nobody clicked this session.
+
+        internal static readonly string[] PlacementTables = { "Armor", "Weapons", "WorldItem" };
+
+        private static string[] ShadowColumnsOf(string table) => table switch
+        {
+            "Armor" => ArmorShadowColumns,
+            "Weapons" => WeaponShadowColumns,
+            "WorldItem" => WorldItemShadowColumns,
+            _ => throw new ArgumentOutOfRangeException(nameof(table), table, "not a placement table"),
+        };
+
+        // Every record whose placement is the user's, across all three tables.
+        public static HashSet<string> EditedPlacementKeys()
+        {
+            var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!File.Exists(ItemdbPathStatic())) return keys;
+
+            using var connection = new SqliteConnection(ConnString);
+            connection.Open();
+            foreach (var table in PlacementTables)
+            {
+                if (!UserRecords.TableExists(connection, table)) continue;
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = $"SELECT Key FROM {table} WHERE IsEdited = 1 AND IsEditedContainerString IS NOT NULL";
+                using var r = cmd.ExecuteReader();
+                while (r.Read()) keys.Add(r.GetString(0));
+            }
+            return keys;
+        }
+
+        // Back to what the plugins say - for the placement ONLY. The record's other edits (an
+        // armor's rating, say) stay, and IsEdited stays up exactly while one of them does. That is
+        // the difference to ResetArmorEdits, which is the item tab's "reset everything".
+        public static void ResetPlacement(string table, string key)
+        {
+            if (string.IsNullOrWhiteSpace(key)) return;
+            var others = ShadowColumnsOf(table).Where(c => c != "IsEditedContainerString").ToList();
+            string stillEdited = others.Count == 0
+                ? "0"
+                : $"CASE WHEN {string.Join(" OR ", others.Select(c => c + " IS NOT NULL"))} THEN 1 ELSE 0 END";
+
+            using var connection = new SqliteConnection(ConnString);
+            connection.Open();
+            using var cmd = connection.CreateCommand();
+            // Only a row whose placement IS the user's - a reset of an untouched record must not move
+            // its LastChanged, which the import compares against.
+            cmd.CommandText = $"UPDATE {table} SET IsEditedContainerString = NULL, IsEdited = {stillEdited}, LastChanged = @now WHERE Key = @k AND IsEditedContainerString IS NOT NULL";
+            cmd.Parameters.AddWithValue("@now", NowIso());
+            cmd.Parameters.AddWithValue("@k", key);
+            cmd.ExecuteNonQuery();
+        }
+
         // Everything placeable, with the edited placement folded in the same way LoadArmor does it.
         public static List<WorldItemRecord> LoadWorldItems()
         {
@@ -1294,7 +1350,8 @@ namespace SkyrimCraftingTool.Model
                     CASE WHEN IsEdited = 1 AND IsEditedContainerString IS NOT NULL
                          THEN IsEditedContainerString
                          ELSE ContainerString
-                    END AS ContainerString
+                    END AS ContainerString,
+                    ContainerString AS ScannedContainerString
                 FROM WorldItem WHERE Active = 1;";
 
             using var reader = cmd.ExecuteReader();
@@ -1307,6 +1364,7 @@ namespace SkyrimCraftingTool.Model
                     Name = reader.IsDBNull(2) ? "" : reader.GetString(2),
                     Kind = reader.GetString(3),
                     ContainerString = reader.IsDBNull(4) ? "{}" : reader.GetString(4),
+                    ScannedContainerString = reader.IsDBNull(5) ? "{}" : reader.GetString(5),
                 });
             }
 
@@ -1578,15 +1636,14 @@ namespace SkyrimCraftingTool.Model
         // -------------------------------------------------
         public COBJRecord CreateNewCOBJRecordForItem(ItemNodeVM item, bool isTemper)
         {
-            string pluginName = KeyFactory.UserPluginName;
-            // FormID generator: retry until we find a key that doesn't exist in the DB yet
-            // (checked directly against the table, not just the Active-filtered in-memory cache,
-            // since an inactive row still occupies its Key in the UNIQUE index).
+            // The shared counter for every own record (UserKeyAllocator) - a recipe's key must not
+            // be an own enchantment's or spell's, because the patch turns all three into FormIDs of
+            // the same ESP. The existence check stays as a belt: an inactive row still occupies its
+            // Key in the UNIQUE index.
             string newKey;
             do
             {
-                string FormID = Count().ToString("X6");
-                newKey = pluginName + "|" + FormID;
+                newKey = UserKeyAllocator.NextRecordKey();
             } while (CobjKeyExists(newKey));
             string newName = item.Name;
 
@@ -1632,12 +1689,11 @@ namespace SkyrimCraftingTool.Model
         // report, so an unfinished row cannot produce a broken record.
         public COBJRecord CreateNewBreakdownRecordForItem(ItemNodeVM item, string workbenchKeywordKey)
         {
-            string pluginName = KeyFactory.UserPluginName;
+            // Same shared counter as CreateNewCOBJRecordForItem.
             string newKey;
             do
             {
-                string formID = Count().ToString("X6");
-                newKey = pluginName + "|" + formID;
+                newKey = UserKeyAllocator.NextRecordKey();
             } while (CobjKeyExists(newKey));
 
             return new COBJRecord
@@ -1650,46 +1706,6 @@ namespace SkyrimCraftingTool.Model
                 IngredientKeys = new List<string> { $"{item.Key}*1" },
                 Original = 0,
             };
-        }
-
-        public int Count()
-        {
-            if (_count == null)
-                _count = ComputeInitialCobjCounter();
-            _count++;
-            return _count.Value;
-        }
-
-        // _count used to be a hardcoded constant that reset on every app launch, so repeated
-        // sessions could regenerate the same low FormIDs and collide with keys already used in
-        // earlier sessions. Seed it from the actual max FormID ever used for this plugin instead.
-        private int ComputeInitialCobjCounter()
-        {
-            const int fallbackBaseline = 893462;
-            try
-            {
-                using var connection = new SqliteConnection(ConnString);
-                connection.Open();
-                using var cmd = connection.CreateCommand();
-                cmd.CommandText = "SELECT Key FROM COBJ WHERE Key LIKE @prefix";
-                cmd.Parameters.AddWithValue("@prefix", KeyFactory.UserPluginName + "|%");
-                int max = fallbackBaseline;
-                using var reader = cmd.ExecuteReader();
-                while (reader.Read())
-                {
-                    var key = reader.GetString(0);
-                    var idx = key.IndexOf('|');
-                    if (idx < 0) continue;
-                    var hex = key.Substring(idx + 1);
-                    if (int.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out var val) && val > max)
-                        max = val;
-                }
-                return max;
-            }
-            catch
-            {
-                return fallbackBaseline;
-            }
         }
 
         private bool CobjKeyExists(string key)
@@ -2088,36 +2104,10 @@ namespace SkyrimCraftingTool.Model
             }
         }
 
-        // Seeded from the highest ID ever used under the tool's plugin, not from a counter that
-        // restarts with the app - the same trap COBJ's counter fell into, where a second session
-        // handed out FormIDs that were already taken.
-        private static string AllocateUserEnchantmentKey()
-        {
-            const int baseline = 0x1000;
-            int max = baseline;
-
-            using (var connection = new SqliteConnection(ConnString))
-            {
-                connection.Open();
-                using var cmd = connection.CreateCommand();
-                cmd.CommandText = "SELECT Key FROM Enchantments WHERE Key LIKE @prefix";
-                cmd.Parameters.AddWithValue("@prefix", KeyFactory.UserPluginName + "|%");
-
-                using var reader = cmd.ExecuteReader();
-                while (reader.Read())
-                {
-                    var hex = reader.GetString(0);
-                    int bar = hex.IndexOf('|');
-                    if (bar < 0) continue;
-
-                    if (int.TryParse(hex.Substring(bar + 1), System.Globalization.NumberStyles.HexNumber,
-                                     null, out int value) && value > max)
-                        max = value;
-                }
-            }
-
-            return $"{KeyFactory.UserPluginName}|{max + 1:X6}";
-        }
+        // The shared counter for every own record (UserKeyAllocator). It used to count in this table
+        // alone, from 0x1000 - exactly like the spells - so the first own enchantment and the first
+        // own spell were the same tool key and the same FormID in the generated ESP.
+        private static string AllocateUserEnchantmentKey() => UserKeyAllocator.NextRecordKey();
 
         public static void SaveEnchantmentEffects(string enchantmentKey, List<EnchantmentEffectRecord> effects)
         {

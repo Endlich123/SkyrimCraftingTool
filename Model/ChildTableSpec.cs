@@ -60,6 +60,23 @@ namespace SkyrimCraftingTool.Model
             Payload = d => d.EffectRows,
         };
 
+        // The Spells tab (docs/Spells-Plan.md). Mutagen gives SPEL and ENCH the SAME effect type, so
+        // the column list below is the enchantment one with the parent key renamed.
+        public static readonly ChildTableSpec SpellEffects = new()
+        {
+            ParentTable = "Spells",
+            ParentKeyColumn = "Key",
+            EditedFlagColumn = "EffectsEdited",
+            Table = "SpellEffects",
+            OriginalTable = "SpellEffects_Original",
+            KeyColumn = "SpellKey",
+            Columns = new[] { "SpellKey", "MagicEffectKey", "EditorID", "Name", "Magnitude", "Duration", "Area" },
+
+            // No Payload: spells have no import/export yet, and null is exactly the right answer
+            // for "this export never carried them" - an empty list would mean "the user removed them
+            // all", which is the distinction that lost a cleared list once already.
+        };
+
         // E3: the FLST's edit flag lives on its own state table, not on the enchantments that
         // reference the list - and that row only appears on the first edit. A missing row therefore
         // reads as "never edited", which is precisely what the snapshot needs it to mean.

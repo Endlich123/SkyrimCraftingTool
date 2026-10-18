@@ -35,6 +35,12 @@ namespace SkyrimCraftingTool.Model
             // wrote the value before. The real numbers arrive with the next scan.
             AddColumnIfMissing(connection, "COBJ", "CreatedObjectCount", "INTEGER NOT NULL DEFAULT 1");
             AddColumnIfMissing(connection, "COBJ", "IsEditedCreatedObjectCount", "TEXT");
+            // Identity of a user-created recipe across machines (TE-2, docs/TabExport-Plan.md §6.4).
+            // NULL until the recipe is first exported - see ItemDBHandler.EnsureCobjUid.
+            AddColumnIfMissing(connection, "COBJ", "Uid", "TEXT");
+            // Same identity for the other two kinds of record the user creates (TE-3).
+            AddColumnIfMissing(connection, "Enchantments", "Uid", "TEXT");
+            AddColumnIfMissing(connection, "Spells", "Uid", "TEXT");
             AddColumnIfMissing(connection, "Armor", "ArmorType", "TEXT");
             AddColumnIfMissing(connection, "Armor", "IsEditedArmorType", "TEXT");
             AddColumnIfMissing(connection, "COBJ_Conditions", "CompareOperator", "TEXT");
@@ -80,6 +86,7 @@ namespace SkyrimCraftingTool.Model
             // L-P1). Same flag and the same consequence as on COBJ and Enchantments - the scan must
             // never mark such a row inactive, because no plugin will ever produce it again.
             AddColumnIfMissing(connection, "LeveledList", "Original", "INTEGER NOT NULL DEFAULT 1");
+            AddColumnIfMissing(connection, "LeveledList", "Uid", "TEXT");
             AddColumnIfMissing(connection, "Container", "Active", "INTEGER NOT NULL DEFAULT 1");
             AddColumnIfMissing(connection, "MagicEffects", "Active", "INTEGER NOT NULL DEFAULT 1");
 
@@ -156,6 +163,49 @@ namespace SkyrimCraftingTool.Model
             // The tangent frame, for per-pixel normal mapping. NULL on a row written before it existed.
             AddColumnIfMissing(connection, "MeshGeom", "Tangents", "BLOB");
             AddColumnIfMissing(connection, "MeshGeom", "Bitangents", "BLOB");
+
+            // The magic school, skill tier and base cost, for the Spells tab (docs/Spells-Plan.md).
+            // NULL until the next scan, which is the right answer: the scan is the only writer, and a
+            // NULL here reads as "not scanned yet" rather than as an effect belonging to no school.
+            // BaseCost is what picks a spell's COSTLIEST effect - the one the game files it under.
+            AddColumnIfMissing(connection, "MagicEffects", "MagicSkill", "TEXT");
+            AddColumnIfMissing(connection, "MagicEffects", "MinimumSkillLevel", "INTEGER");
+            AddColumnIfMissing(connection, "MagicEffects", "BaseCost", "REAL");
+
+            // The Spells tab (docs/Spells-Plan.md). Spells shipped long before it, as a bare name
+            // catalogue for the NPC spell lists - so every existing database has the table with four
+            // columns and needs the rest added rather than created.
+            //
+            // They stay NULL until the next scan, which is the right answer: the scan is the only
+            // writer of the base columns, and a NULL here reads as "not scanned yet" rather than as
+            // a spell with no cast type.
+            foreach (var (column, type) in new[]
+                     {
+                         ("SpellType", "TEXT"), ("CastType", "TEXT"), ("TargetType", "TEXT"),
+                         ("EquipType", "TEXT"),
+                         ("BaseCost", "INTEGER"), ("ChargeTime", "REAL"), ("CastDuration", "REAL"),
+                         ("SpellRange", "REAL"), ("Description", "TEXT"), ("HalfCostPerkKey", "TEXT"),
+                         ("Flags", "INTEGER"), ("Keywords", "TEXT"),
+                         ("DroppedEffectRows", "INTEGER NOT NULL DEFAULT 0"),
+
+                         ("IsEditedName", "TEXT"), ("IsEditedBaseCost", "INTEGER"),
+                         ("IsEditedCastType", "TEXT"), ("IsEditedChargeTime", "REAL"),
+                         ("IsEditedHalfCostPerkKey", "TEXT"), ("IsEditedFlags", "INTEGER"),
+                         ("IsEditedKeywords", "TEXT"),
+
+                         ("IsEdited", "INTEGER DEFAULT 0"),
+                         ("EffectsEdited", "INTEGER NOT NULL DEFAULT 0"),
+                         ("KeywordsEdited", "INTEGER NOT NULL DEFAULT 0"),
+
+                         // 1, not 0: every row an existing database holds came from a plugin. The
+                         // default has to say "scanned", or the first patch run would try to write
+                         // all of them into the generated ESP.
+                         ("Original", "INTEGER NOT NULL DEFAULT 1"),
+                         ("LastChanged", "TEXT"), ("LastPatched", "TEXT"),
+                     })
+            {
+                AddColumnIfMissing(connection, "Spells", column, type);
+            }
 
             DiscardGeometryFromOlderParser(connection);
 
@@ -304,7 +354,10 @@ namespace SkyrimCraftingTool.Model
             ("ContainerLVLI",                    new[] { "ContainerKey", "LVLiKey" }),
             ("EnchantmentEffects",               new[] { "EnchantmentKey", "MagicEffectKey" }),
             ("EnchantmentEffects_Original",      new[] { "EnchantmentKey", "MagicEffectKey" }),
-            ("WornRestrictionKeywords",          new[] { "ListKey", "KeywordKey" }),
+            ("Spells",                           new[] { "Key" }),
+            ("SpellEffects",                     new[] { "SpellKey", "MagicEffectKey" }),
+            ("SpellEffects_Original",            new[] { "SpellKey", "MagicEffectKey" }),
+            ("WornRestrictionKeywords",         new[] { "ListKey", "KeywordKey" }),
             ("WornRestrictionKeywords_Original", new[] { "ListKey", "KeywordKey" }),
             ("WornRestrictionListState",         new[] { "ListKey" }),
             ("COBJ_Conditions",                  new[] { "COBJKey" }),
@@ -667,7 +720,8 @@ namespace SkyrimCraftingTool.Model
                     Active INTEGER NOT NULL DEFAULT 1,
                     ConditionsEdited INTEGER NOT NULL DEFAULT 0,
                     LastChanged TEXT,
-                    LastPatched TEXT
+                    LastPatched TEXT,
+                    Uid TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS COBJ_Conditions (
@@ -754,7 +808,8 @@ namespace SkyrimCraftingTool.Model
                     -- 0 = created in this tool, exists in no plugin. See the migration above.
                     Original INTEGER NOT NULL DEFAULT 1,
                     LastChanged TEXT,
-                    LastPatched TEXT
+                    LastPatched TEXT,
+                    Uid TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS EnchantmentEffects (
@@ -862,7 +917,9 @@ namespace SkyrimCraftingTool.Model
                     GlobalKey TEXT COLLATE NOCASE,
                     Active INTEGER NOT NULL DEFAULT 1,
                     -- 0 = created in the tool, keyed under SkyrimCraftingTool.esp; see EnsureSchema.
-                    Original INTEGER NOT NULL DEFAULT 1
+                    Original INTEGER NOT NULL DEFAULT 1,
+                    -- Identity of an own list across machines (TE-6); NULL until first exported.
+                    Uid TEXT
                 );
 
                 -- One row per entry, in list order.
@@ -1430,11 +1487,97 @@ namespace SkyrimCraftingTool.Model
 
                 -- The catalogues these three point at. Spells, shouts and leveled spells are also
                 -- what the scan classifies ActorEffect entries against, so they are not optional.
+                --
+                -- SPELLS IS TWO THINGS IN ONE TABLE, deliberately (docs/Spells-Plan.md). It began as
+                -- a name catalogue for the NPC spell lists and is also the record the Spells tab
+                -- edits. One row per SPEL rather than a second table on the same keys: duplicate rows
+                -- for one record are what produced disagreeing copies in the enchantment table, and
+                -- the NPC side reads named columns, so it never notices.
                 CREATE TABLE IF NOT EXISTS Spells (
                     Key TEXT PRIMARY KEY COLLATE NOCASE,
                     EditorID TEXT,
                     Name TEXT,
-                    Active INTEGER NOT NULL DEFAULT 1
+
+                    -- SPIT. SpellType, TargetType and EquipType have no SkyPatcher operation, so
+                    -- they are shown, never patched. SpellType is also what the tree groups by.
+                    SpellType TEXT,
+                    CastType TEXT,
+                    TargetType TEXT,
+                    EquipType TEXT,
+                    BaseCost INTEGER,
+                    ChargeTime REAL,
+                    CastDuration REAL,
+
+                    -- NOT ""Range"": that is a reserved word in SQLite's window-function syntax.
+                    SpellRange REAL,
+
+                    Description TEXT,
+                    HalfCostPerkKey TEXT,
+
+                    -- The raw dword, NOT a name list. SkyPatcher's flag NAMES do not match
+                    -- Mutagen's, and three bits real spells set have no name in either - see
+                    -- Services/SpellFlags.cs.
+                    Flags INTEGER,
+
+                    -- Comma-joined keys, as Armor/Weapons store theirs.
+                    Keywords TEXT,
+
+                    -- How many of this spell's effect entries SpellEffects could not hold:
+                    -- PRIMARY KEY(SpellKey, MagicEffectKey) keeps one row per pair, and a SPEL may
+                    -- name one effect twice. Counted at scan time because the duplicates are gone
+                    -- afterwards. mgefsToChange cannot address the second instance either.
+                    DroppedEffectRows INTEGER NOT NULL DEFAULT 0,
+
+                    -- Shadow columns only for what SkyPatcher can patch on a SCANNED record.
+                    IsEditedName TEXT,
+                    IsEditedBaseCost INTEGER,
+                    IsEditedCastType TEXT,
+                    IsEditedChargeTime REAL,
+                    IsEditedHalfCostPerkKey TEXT,
+                    IsEditedFlags INTEGER,
+                    IsEditedKeywords TEXT,
+
+                    IsEdited INTEGER DEFAULT 0,
+                    Active INTEGER NOT NULL DEFAULT 1,
+                    EffectsEdited INTEGER NOT NULL DEFAULT 0,
+                    KeywordsEdited INTEGER NOT NULL DEFAULT 0,
+
+                    -- 0 = created in this tool, exists in no plugin.
+                    Original INTEGER NOT NULL DEFAULT 1,
+                    LastChanged TEXT,
+                    LastPatched TEXT,
+                    Uid TEXT
+                );
+
+                -- One row per effect entry of a spell. Same shape as EnchantmentEffects: Mutagen
+                -- gives Spell and ObjectEffect the SAME effect type.
+                CREATE TABLE IF NOT EXISTS SpellEffects (
+                    SpellKey TEXT NOT NULL COLLATE NOCASE,
+                    MagicEffectKey TEXT NOT NULL COLLATE NOCASE,
+                    EditorID TEXT,
+                    Name TEXT,
+                    Magnitude REAL,
+                    Duration INTEGER,
+                    Area INTEGER,
+
+                    IsEditedMagnitude REAL,
+                    IsEditedDuration INTEGER,
+                    IsEditedArea INTEGER,
+
+                    IsEdited INTEGER DEFAULT 0,
+
+                    PRIMARY KEY (SpellKey, MagicEffectKey)
+                );
+
+                -- The pre-edit snapshot, declared once in ChildTables.SpellEffects.
+                CREATE TABLE IF NOT EXISTS SpellEffects_Original (
+                    SpellKey TEXT NOT NULL COLLATE NOCASE,
+                    MagicEffectKey TEXT NOT NULL COLLATE NOCASE,
+                    EditorID TEXT,
+                    Name TEXT,
+                    Magnitude REAL,
+                    Duration INTEGER,
+                    Area INTEGER
                 );
 
                 CREATE TABLE IF NOT EXISTS Shouts (
@@ -1442,6 +1585,17 @@ namespace SkyrimCraftingTool.Model
                     EditorID TEXT,
                     Name TEXT,
                     Active INTEGER NOT NULL DEFAULT 1
+                );
+
+                -- Which spell each word of a shout casts. Read-only, for the Spells tab's labels:
+                -- the game shows ""Unrelenting Force"", the record behind word 2 is a Voice-type
+                -- SPEL with an EditorID nobody recognises. The shout's own data (recovery time,
+                -- word order) has no SkyPatcher operation and is not edited anywhere.
+                CREATE TABLE IF NOT EXISTS ShoutWords (
+                    ShoutKey TEXT NOT NULL COLLATE NOCASE,
+                    Ordinal INTEGER NOT NULL,
+                    SpellKey TEXT NOT NULL COLLATE NOCASE,
+                    PRIMARY KEY (ShoutKey, Ordinal)
                 );
 
                 CREATE TABLE IF NOT EXISTS LeveledSpells (
@@ -1615,6 +1769,15 @@ namespace SkyrimCraftingTool.Model
                     HasArea INTEGER,
                     CastType TEXT,
                     TargetType TEXT,
+
+                    -- The magic school, skill tier and base cost (docs/Spells-Plan.md). They live
+                    -- here because a spell has none of them: the game files a spell under the
+                    -- school of its costliest effect. ""None"" is a real value (script effects,
+                    -- abilities, diseases), not missing data.
+                    MagicSkill TEXT,
+                    MinimumSkillLevel INTEGER,
+                    BaseCost REAL,
+
                     Active INTEGER NOT NULL DEFAULT 1
                 );
 

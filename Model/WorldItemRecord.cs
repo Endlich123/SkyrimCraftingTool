@@ -23,6 +23,9 @@ namespace SkyrimCraftingTool.Model
         // The only editable field there is - see ArmorRecord.ContainerString for the format.
         public string ContainerString { get; set; } = "{}";
 
+        // What the plugins say, under any edit - where a reset of the placement goes back to.
+        public string ScannedContainerString { get; set; } = "{}";
+
         public string Display => string.IsNullOrWhiteSpace(Name) ? EditorID : Name;
     }
 }
