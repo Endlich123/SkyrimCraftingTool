@@ -30,6 +30,9 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // (docs/LeveledList-Create-Plan.md, L-P3).
         public int NewLeveledListCount { get; set; }
 
+        // Spells the user created in the tool and that this ESP brings into existence.
+        public int NewSpellCount { get; set; }
+
         // Recipes whose edited condition set was NOT written, because the real record carries
         // conditions the scan cannot represent and rewriting would have deleted them.
         public int ConditionRewriteSkippedCount { get; set; }
@@ -126,7 +129,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
             IReadOnlyList<EnchantmentEspEntry>? enchantmentOverrides = null,
             IReadOnlyList<NewEnchantmentEspEntry>? newEnchantments = null,
             IReadOnlyList<NpcEspEntry>? npcOverrides = null,
-            IReadOnlyList<NewLeveledListEspEntry>? newLeveledLists = null)
+            IReadOnlyList<NewLeveledListEspEntry>? newLeveledLists = null,
+            IReadOnlyList<NewSpellEspEntry>? newSpells = null)
         {
             var result = new CobjEspResult();
             var modKey = ModKey.FromFileName(espFileName);
@@ -186,6 +190,20 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 catch (Exception ex)
                 {
                     result.Warnings.Add($"{e.EditorId}: new leveled list skipped — {ex.Message}");
+                    result.SkippedCount++;
+                }
+            }
+
+            foreach (var e in (newSpells ?? Array.Empty<NewSpellEspEntry>())
+                     .OrderBy(x => x.ToolKey, StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    BuildNewSpell(mod, modKey, e, map, espFileName, ref maxNewId, result);
+                }
+                catch (Exception ex)
+                {
+                    result.Warnings.Add($"{e.EditorId}: new spell skipped — {ex.Message}");
                     result.SkippedCount++;
                 }
             }
@@ -434,6 +452,105 @@ namespace SkyrimCraftingTool.Services.PatchGen
             mod.ObjectEffects.Add(ench);
             result.NewCount++;
             result.NewEnchantmentCount++;
+        }
+
+        // A spell the user created in the tool. Like the new enchantment above there is nothing to
+        // deep-copy - the record exists nowhere yet, so every field it gets is one the tool tracks.
+        //
+        // It carries MORE fields than a patched spell can, and that is the point of the ESP route:
+        // SpellType, TargetType, Range and CastDuration have no SkyPatcher operation, so they are
+        // unreachable on a scanned record and perfectly writable on one built from scratch.
+        public sealed record NewSpellEspEntry(
+            string ToolKey,
+            string EditorId,
+            string Name,
+            string Description,
+            string SpellType,
+            string CastType,
+            string TargetType,
+            int BaseCost,
+            float ChargeTime,
+            float CastDuration,
+            float Range,
+            string HalfCostPerkKey,
+            int Flags,
+            IReadOnlyList<NewSpellEffect> Effects);
+
+        public sealed record NewSpellEffect(string MagicEffectKey, float Magnitude, int Duration, int Area);
+
+
+        // A spell the user created in the tool (docs/Spells-Plan.md, S-P6).
+        //
+        // Built from scratch, like a new enchantment and unlike every override: the record exists
+        // nowhere, so there is no winning copy to take and nothing to lose by writing every field.
+        private static void BuildNewSpell(
+            SkyrimMod mod, ModKey modKey, NewSpellEspEntry e, PatchFormIdMapStore map,
+            string espFileName, ref uint maxNewId, CobjEspResult result)
+        {
+            var id = map.Allocate(e.ToolKey, espFileName);
+            maxNewId = Math.Max(maxNewId, id);
+
+            var spell = new Spell(new FormKey(modKey, id), SkyrimRelease.SkyrimSE)
+            {
+                EditorID = string.IsNullOrWhiteSpace(e.EditorId) ? $"SCT_Spell_{id:X6}" : e.EditorId,
+                Name = e.Name ?? "",
+                Description = e.Description ?? "",
+                BaseCost = (uint)Math.Max(0, e.BaseCost),
+                ChargeTime = e.ChargeTime,
+                CastDuration = e.CastDuration,
+                Range = e.Range,
+                Flags = (SpellDataFlag)e.Flags,
+            };
+
+            // SPIT's spell type knows eight values, and an unparseable one left at Mutagen's default
+            // is a plain Spell - which is also the overwhelmingly common case (2.389 of 3.684
+            // measured), so the fallback costs nothing and an "<Unknown: 0>" record would match no
+            // vanilla SPEL at all.
+            if (Enum.TryParse<SpellType>(e.SpellType, ignoreCase: true, out var spellType))
+                spell.Type = spellType;
+
+            if (Enum.TryParse<CastType>(e.CastType, ignoreCase: true, out var castType))
+                spell.CastType = castType;
+            if (Enum.TryParse<TargetType>(e.TargetType, ignoreCase: true, out var targetType))
+                spell.TargetType = targetType;
+
+            // Unset is the normal case and means "no perk halves this", not a missing value.
+            if (!KeyFactory.IsUnsetKey(e.HalfCostPerkKey))
+                spell.HalfCostPerk.SetTo(KeyFactory.ParseFormKey(e.HalfCostPerkKey));
+
+            foreach (var effect in e.Effects ?? Array.Empty<NewSpellEffect>())
+            {
+                var mgef = KeyFactory.ParseFormKey(effect.MagicEffectKey);
+                if (mgef.IsNull)
+                {
+                    result.Warnings.Add($"{e.EditorId}: effect {effect.MagicEffectKey} could not be resolved — left out.");
+                    continue;
+                }
+
+                spell.Effects.Add(new Effect
+                {
+                    BaseEffect = new FormLinkNullable<IMagicEffectGetter>(mgef),
+                    Data = new EffectData
+                    {
+                        Magnitude = effect.Magnitude,
+                        Duration = effect.Duration,
+                        Area = Math.Max(0, effect.Area),
+                    },
+                });
+            }
+
+            if (spell.Effects.Count == 0)
+            {
+                // A spell with no effects does nothing in the game and would only puzzle whoever
+                // finds it in the ESP later. Same rule as a new enchantment.
+                result.Warnings.Add($"{e.EditorId}: no effects — not written.");
+                result.SkippedCount++;
+                return;
+            }
+
+            mod.Spells.Add(spell);
+            result.NewCount++;
+            result.NewSpellCount++;
         }
 
         // A leveled list the user created in the tool (docs/LeveledList-Create-Plan.md, L-P3).

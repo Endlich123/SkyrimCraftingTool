@@ -17,6 +17,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
         private readonly CobjPatchReader _cobjReader;
         private readonly EnchantmentPatchReader _enchReader;
         private readonly FormListPatchReader _formListReader;
+        private readonly SpellPatchReader _spellReader;
         private readonly PatchFormIdMapStore _formIdMap;
         private readonly IReferenceResolver? _references;
 
@@ -35,9 +36,11 @@ namespace SkyrimCraftingTool.Services.PatchGen
             CobjPatchReader? cobjReader = null,
             EnchantmentPatchReader? enchReader = null,
             FormListPatchReader? formListReader = null,
-            PatchFormIdMapStore? formIdMap = null)
+            PatchFormIdMapStore? formIdMap = null,
+            SpellPatchReader? spellReader = null)
         {
             _itemReader = itemReader ?? new PatchDataReader(connString);
+            _spellReader = spellReader ?? new SpellPatchReader(connString);
             _cobjReader = cobjReader ?? new CobjPatchReader(connString);
             _enchReader = enchReader ?? new EnchantmentPatchReader(connString);
             _formListReader = formListReader ?? new FormListPatchReader(connString);
@@ -136,6 +139,15 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 LeveledListRuleBuilder.ParsePlacements(
                     key, editorId, containerString,
                     placements, containerPlacements, lvliNames, containerNames);
+            }
+
+            // Spells (docs/Spells-Plan.md): the record's own fields and its effects, one rule each.
+            var spellByPlugin = new Dictionary<string, List<SkyPatcherRule>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in _spellReader.ReadEditedSpells())
+            {
+                var rule = SpellRuleBuilder.BuildRule(pair.Original, pair.Edited, out var spellNameSkip);
+                if (Accept(rule, spellNameSkip, report))
+                    report.SpellRuleCount += Add(spellByPlugin, rule!);
             }
 
             var enchByPlugin = new Dictionary<string, List<SkyPatcherRule>>(StringComparer.OrdinalIgnoreCase);
@@ -484,6 +496,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
             // "enchantment" is SkyPatcher's own folder name - see the patcher list in
             // docs/EnchantmentPatch-Plan.md (E-P0). Spelling matters, it is passed through verbatim.
             WriteCategory(options, "enchantment", enchByPlugin, report);
+            // "spell" is SkyPatcher's own folder name, confirmed against the reference install.
+            WriteCategory(options, "spell", spellByPlugin, report);
             // "formList" is camelCase in SkyPatcher's folder list - a lowercase spelling would
             // silently create a second folder next to the one other mods use.
             WriteCategory(options, "formList", formListByPlugin, report);
@@ -770,9 +784,13 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 .Select(l => new CobjEspBuilder.NewLeveledListEspEntry(l.Key, l.EditorId))
                 .ToList();
 
-            // Recipes, overridden enchantments, the user's own enchantments and lists share the ESP, so
-            // any one of them on its own is reason enough to build it.
-            if (entries.Count == 0 && enchOverrides.Count == 0 && newEnchantments.Count == 0 && newLists.Count == 0) return;
+            // The user's own spells, built from scratch in the ESP.
+            var newSpells = _spellReader.ReadNewSpells();
+
+            // Recipes, overridden enchantments, the user's own enchantments, lists and spells share
+            // the ESP, so any one of them on its own is reason enough to build it.
+            if (entries.Count == 0 && enchOverrides.Count == 0 && newEnchantments.Count == 0
+                && newLists.Count == 0 && newSpells.Count == 0) return;
 
             // A user-created enchantment's worn-restriction list goes straight into the ESP without
             // passing through Accept(), the same blind spot the override path guards above. A list
@@ -793,6 +811,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 report.EnchantmentEspOverrideCount = enchOverrides.Count;
                 report.NewEnchantmentCount = newEnchantments.Count;
                 report.NewLeveledListCount = newLists.Count;
+                report.NewSpellCount = newSpells.Count;
                 return;
             }
 
@@ -858,10 +877,16 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 .GroupBy(_ => options.EspNameFor(KeyFactory.UserPluginName), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
 
+            // Same rule for the user's own spells.
+            var newSpellByEsp = newSpells
+                .GroupBy(_ => options.EspNameFor(KeyFactory.UserPluginName), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
             var espNames = cobjByEsp.Keys
                 .Concat(enchByEsp.Keys)
                 .Concat(newEnchByEsp.Keys)
                 .Concat(newListsByEsp.Keys)
+                .Concat(newSpellByEsp.Keys)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(n => n, StringComparer.OrdinalIgnoreCase);
 
@@ -878,14 +903,19 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 var newListsForEsp = newListsByEsp.TryGetValue(espName, out var nl)
                     ? nl : new List<CobjEspBuilder.NewLeveledListEspEntry>();
 
+                var newSpellForEsp = newSpellByEsp.TryGetValue(espName, out var ns)
+                    ? ns : new List<CobjEspBuilder.NewSpellEspEntry>();
+
                 var res = builder.Build(
                     cobjForEsp, _formIdMap, loadOrder, options.OutputRoot, espName, options.EslWhenPossible,
-                    resolver, enchForEsp, newEnchForEsp, newLeveledLists: newListsForEsp);
+                    resolver, enchForEsp, newEnchForEsp, newLeveledLists: newListsForEsp,
+                    newSpells: newSpellForEsp);
 
-                // The lists are new records in the builder's count too, but "COBJ: 3 new" for three
-                // leveled lists would be wrong on its face - they get a line of their own.
-                report.CobjNewCount += res.NewCount - res.NewLeveledListCount;
+                // Lists and spells are new records in the builder's count too, but "COBJ: 3 new" for
+                // three leveled lists would be wrong on its face - they get lines of their own.
+                report.CobjNewCount += res.NewCount - res.NewLeveledListCount - res.NewSpellCount;
                 report.NewLeveledListCount += res.NewLeveledListCount;
+                report.NewSpellCount += res.NewSpellCount;
                 report.CobjOverrideCount += res.OverrideCount;
                 report.CobjDeepCopiedCount += res.DeepCopiedCount;
                 report.CobjFromScratchCount += res.FromScratchCount;

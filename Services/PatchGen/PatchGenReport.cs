@@ -11,6 +11,13 @@ namespace SkyrimCraftingTool.Services.PatchGen
         public int EnchantmentRuleCount { get; set; }
         public int FormListRuleCount { get; set; }
 
+        // Spells (docs/Spells-Plan.md). Counted apart from the enchantments: the two go into
+        // different SkyPatcher folders and a reader comparing against xEdit wants them apart.
+        public int SpellRuleCount { get; set; }
+
+        // Spells the user created in the tool, which the generated ESP brings into existence.
+        public int NewSpellCount { get; set; }
+
         // Container-tab placements, emitted as filterByLLs/addOnceToLLs rules - one per leveled
         // list, not per item (see LeveledListRuleBuilder).
         public int LeveledListRuleCount { get; set; }
@@ -108,7 +115,9 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // Non-fatal issues: dead keyword references, skipped name edits, recipes without output, etc.
         public List<string> Warnings { get; } = new();
 
-        public int SkyPatcherRuleCount => ArmorRuleCount + WeaponRuleCount + EnchantmentRuleCount + FormListRuleCount + LeveledListRuleCount + LeveledListPropertyRuleCount + ContainerRuleCount + RemovalRuleCount + NpcRuleCount + NpcGroupRuleCount;
+        // SpellRuleCount belongs in here: the first Spells tab left it out, so a patch whose only
+        // change was a spell reported "nothing generated".
+        public int SkyPatcherRuleCount => ArmorRuleCount + WeaponRuleCount + EnchantmentRuleCount + SpellRuleCount + FormListRuleCount + LeveledListRuleCount + LeveledListPropertyRuleCount + ContainerRuleCount + RemovalRuleCount + NpcRuleCount + NpcGroupRuleCount;
         public int CobjRecordCount => CobjNewCount + CobjOverrideCount;
         // Enchantment ESP overrides count too: a run whose only change is a re-pointed worn-
         // restriction list produces no rules and no COBJ records, but it definitely generated something.
@@ -116,7 +125,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
             SkyPatcherRuleCount > 0 || CobjRecordCount > 0 || EnchantmentEspOverrideCount > 0
             || NpcEspOverrideCount > 0
             || NewEnchantmentCount > 0
-            || NewLeveledListCount > 0;
+            || NewLeveledListCount > 0
+            || NewSpellCount > 0;
 
         // Deliberately separate from Warnings: an ESP override is not a problem, but it IS a
         // consequence the user should take in knowingly - the record is copied wholesale, so
@@ -155,6 +165,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 };
                 // The two NPC counts are named only when there are any: neither was in this line before
                 // G5, and a permanent "0 NPC rule(s)" on a patch that never touches NPCs is noise.
+                if (SpellRuleCount > 0)
+                    parts.Add($"{SpellRuleCount} spell rule(s)");
                 if (NpcRuleCount > 0)
                     parts.Add($"{NpcRuleCount} NPC rule(s)");
                 if (NpcGroupRuleCount > 0)
@@ -168,6 +180,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     parts.Add($"{NewEnchantmentCount} new enchantment(s)");
                 if (NewLeveledListCount > 0)
                     parts.Add($"{NewLeveledListCount} new leveled list(s)");
+                if (NewSpellCount > 0)
+                    parts.Add($"{NewSpellCount} new spell(s)");
                 if (NpcEspOverrideCount > 0)
                     parts.Add($"{NpcEspOverrideCount} NPC ESP override(s)");
                 if (CobjFromScratchCount > 0)
