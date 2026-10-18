@@ -12,13 +12,13 @@ namespace SkyrimCraftingTool.Services.Adapters
             _handler = handler;
         }
 
-        public List<EditedItemDto> GetEditedItems(ExportScope scope, string scopeValue = null)
-            => _handler.GetEditedItems(scope, scopeValue);
+        public List<EditedItemDto> GetEditedItems(IReadOnlyList<ExportUnit> units, ExportScope scope, string scopeValue = null)
+            => _handler.GetEditedItems(units, scope, scopeValue);
 
-        public ImportPlan PreviewImport(List<EditedItemDto> fileItems)
-            => _handler.PreviewImport(fileItems);
+        public ImportPlan PreviewImport(IReadOnlyList<ExportUnit> units, List<EditedItemDto> fileItems)
+            => _handler.PreviewImport(units, fileItems);
 
-        public ImportResult ApplyImport(ImportPlan plan, HashSet<string> conflictKeysToUseFileVersion)
-            => _handler.ApplyImport(plan, conflictKeysToUseFileVersion);
+        public ImportResult ApplyImport(IReadOnlyList<ExportUnit> units, ImportPlan plan, HashSet<string> conflictKeysToUseFileVersion)
+            => _handler.ApplyImport(units, plan, conflictKeysToUseFileVersion);
     }
 }

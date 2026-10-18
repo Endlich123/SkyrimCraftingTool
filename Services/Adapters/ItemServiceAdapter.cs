@@ -50,6 +50,8 @@ namespace SkyrimCraftingTool.Services.Adapters
         public void UpdateWeaponEnchantAmount(string key, int enchantAmount) => ItemDBHandler.UpdateWeaponEnchantAmount(key, enchantAmount);
 
         public void UpdateWorldItemContainerString(string key, string containerString) => ItemDBHandler.UpdateWorldItemContainerString(key, containerString);
+        public HashSet<string> EditedPlacementKeys() => ItemDBHandler.EditedPlacementKeys();
+        public void ResetPlacement(string table, string key) => ItemDBHandler.ResetPlacement(table, key);
         public List<WorldItemRecord> LoadWorldItems() => ItemDBHandler.LoadWorldItems();
         public void UpdateArmorKeywords(string key, List<string> keywordKeys)
         {
