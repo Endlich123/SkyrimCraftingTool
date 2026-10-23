@@ -1,0 +1,160 @@
+using SkyrimCraftingTool.Model;
+using SkyrimCraftingTool.Services;
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
+using System.Windows.Input;
+
+namespace SkyrimCraftingTool.ViewModel
+{
+    public class PluginNodeVM : ViewModelBase
+    {
+        public string PluginName { get; set; }
+
+        // Set by TreeBuilderService at construction (and carried over by FilterReference) — needed to
+        // reach Main.ImportExport for the per-plugin Export/Import buttons.
+        public MainContentVM Main { get; set; }
+
+        private bool _isExpanded;
+        public bool IsExpanded
+        {
+            get => _isExpanded;
+            set => SetProperty(ref _isExpanded, value);
+        }
+
+        public ObservableCollection<CategoryNodeVM> Categories { get; set; }
+            = new ObservableCollection<CategoryNodeVM>();
+
+        // Same as CategoryNodeVM.HasEditedItems, one level up - a plugin row collapsed over an
+        // edited item would otherwise show nothing at all.
+        public bool HasEditedItems
+        {
+            get
+            {
+                foreach (var cat in Categories)
+                    if (cat.HasEditedItems) return true;
+                return false;
+            }
+        }
+
+        internal void RaiseHasEditedItems() => OnPropertyChanged(nameof(HasEditedItems));
+
+        // --------------------
+        // Build box — the modular building blocks applied to every armor item in this plugin.
+        // --------------------
+        // Scope is the WHOLE plugin, independent of the tree filter — same rule as
+        // Export/Import/ResetPluginCommand below, and the reason the item list comes from
+        // Main.ModItemsTree instead of this node's own `Categories`: with a search or "only edited"
+        // active, this node is a filtered COPY (MainContentVM.ApplyFilter → FilterReference), so
+        // running over `Categories` would build just the visible subset without saying so. Building
+        // *some* items has its own, explicit home - select them in the tree - and the confirmation
+        // names the count. Slots are never chosen here: every item keeps its own.
+        private BuildBoxVM? _buildBox;
+        public BuildBoxVM? BuildBox => _buildBox;
+
+        internal void RefreshBuildBox()
+        {
+            if (Main == null) return;
+            _buildBox = new BuildBoxVM(Main, PluginItems, isSingle: false, scopeLabel: $"every item in '{PluginName}' (the whole plugin, regardless of the tree filter)");
+            OnPropertyChanged(nameof(BuildBox));
+        }
+
+        private IReadOnlyList<ItemNodeVM> PluginItems()
+        {
+            if (Main == null) return Array.Empty<ItemNodeVM>();
+            var source = Main.ModItemsTree.FirstOrDefault(p => p.PluginName == PluginName) ?? this;
+            return source.Categories.SelectMany(c => c.Items).ToList();
+        }
+
+        // --------------------
+        // Reset — the way back from a plugin-wide build.
+        // --------------------
+        // Reverts item fields + crafting + temper on every edited item of this plugin, through the
+        // same ItemNodeVM.ResetAllChanges the single-item and multi-select Reset buttons use.
+        // Auto-Apply can rewrite a whole plugin with one click, so it needs a way back that isn't
+        // "re-select hundreds of items by hand".
+        //
+        // Scope is the WHOLE plugin, deliberately independent of the tree filter — the same rule
+        // every button in this row follows (see ApplyPresetCommand above for why that means reading
+        // Main.ModItemsTree rather than this node's own `Categories`). The dialog says so, because
+        // unlike Apply this one can't be repeated away.
+        public ICommand ResetPluginCommand => new RelayCommand(async () =>
+        {
+            if (Main == null) return;
+
+            // See ExportPluginCommand below: a pending debounced save has to land BEFORE the edited
+            // set is read and the shadow columns are cleared. Otherwise it fires afterwards and
+            // re-marks a just-reset item as edited — with a shadow value that merely matches the
+            // original, which is exactly the state MainContentVM.ResetItemEdits exists to avoid.
+            await Main.FlushPendingSavesAsync();
+
+            var source = Main.ModItemsTree.FirstOrDefault(p => p.PluginName == PluginName) ?? this;
+            var candidates = source.Categories.SelectMany(c => c.Items).Where(i => i.IsEdited).ToList();
+
+            if (candidates.Count == 0)
+            {
+                System.Windows.MessageBox.Show("This plugin has no edited items to reset.",
+                    "Reset plugin", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            var answer = System.Windows.MessageBox.Show(
+                $"Revert ALL edits on {candidates.Count} item(s) in '{PluginName}' - item fields, crafting recipes and temper recipes - back to the scanned state?" +
+                $"{Environment.NewLine}{Environment.NewLine}This covers the whole plugin, regardless of any active tree filter, and cannot be undone.",
+                "Reset plugin", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+            if (answer != System.Windows.MessageBoxResult.Yes) return;
+
+            // Same hydrate-first rule as ApplyPresetCommand above, and the same IsEdited pre-filter
+            // as MultiSelectDetailVM.ResetSelectionAsync: a never-clicked item has no recipe VMs and no
+            // original-values snapshot, so all its change flags would read false and real, persisted
+            // edits would be skipped. Only the flagged items get hydrated, so a plugin with
+            // thousands of untouched records stays cheap.
+            int reset = 0;
+            foreach (var item in candidates)
+            {
+                Main.EnsureItemHydrated(item);
+                if (item.ResetAllChanges()) reset++;
+            }
+
+            System.Windows.MessageBox.Show(
+                reset == 0
+                    ? $"No change - the items in '{PluginName}' were already at their scanned state."
+                    : $"{reset} item(s) in '{PluginName}' reverted to the scanned state.",
+                "Reset plugin", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+        });
+
+        /// <summary>
+        /// Creates a filtered copy of this plugin.
+        /// </summary>
+        public PluginNodeVM FilterReference(string text, bool onlyEdited = false)
+        {
+            bool pluginMatches = string.IsNullOrWhiteSpace(text) ||
+                                 PluginName.Contains(text, StringComparison.OrdinalIgnoreCase);
+
+            var filtered = new PluginNodeVM { PluginName = this.PluginName, Main = this.Main };
+
+            foreach (var cat in Categories)
+            {
+                var filteredCat = cat.FilterReference(text, pluginMatches, onlyEdited);
+                if (filteredCat != null)
+                    filtered.Categories.Add(filteredCat);
+            }
+
+            return filtered.Categories.Count > 0 ? filtered : null;
+        }
+
+        // Export/Import for every edited item (and recipe) of this plugin, under
+        // Output/Exports/Items/<PluginName>/ - see ExportFileStore for the layout. Scope is the
+        // WHOLE plugin by name, independent of the tree filter: this node may be a filtered copy.
+        public ICommand ExportPluginCommand => new RelayCommand(async () =>
+        {
+            if (Main?.ImportExport != null) await Main.ImportExport.ExportPluginAsync(PluginName);
+        });
+
+        public ICommand ImportPluginCommand => new RelayCommand(async () =>
+        {
+            if (Main?.ImportExport != null) await Main.ImportExport.ImportPluginAsync(PluginName);
+        });
+    }
+}

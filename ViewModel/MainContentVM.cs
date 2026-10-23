@@ -1,0 +1,2671 @@
+﻿using Microsoft.Data.Sqlite;
+using SkyrimCraftingTool.Model;
+using SkyrimCraftingTool.Services;
+using SkyrimCraftingTool.Services.Adapters;
+using SkyrimCraftingTool.Services.PatchGen;
+using SkyrimCraftingTool.Services.SavePipline;
+using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.IO;
+using SkyrimCraftingTool.Services;
+
+namespace SkyrimCraftingTool.ViewModel
+{
+    public class MainContentVM : ViewModelBase, ITutorialHost
+    {
+        // --- Services ---
+        private readonly IItemService _itemService;
+        private readonly IFileService _fileService;
+        private readonly IFormIdService _formIdService;
+        private readonly ICacheManager _cacheManager;
+        private readonly IKeywordService _keywordService;
+        private readonly ITreeBuilderService _treeBuilder;
+        private readonly ISaveRequestService _saveRequestService;
+        private readonly IImportExportService _importExportService;
+
+        // --- Helpers ---
+        private readonly Debouncer _debouncer = new();
+        private readonly BackgroundFilterRunner<string, List<PluginNodeVM>> _filterRunner = new();
+        // Shared per-VM autosave debouncer. Only ever holds ONE pending action - bulk / multi-target
+        // saves must bypass it (see PersistFieldAsync). Flushed on app shutdown via
+        // FlushPendingSavesAsync so a last-second edit isn't lost.
+        private readonly Debouncer _saveDebouncer = new();
+
+        public Task FlushPendingSavesAsync() => _saveDebouncer.FlushAsync();
+
+        // Resolves "Plugin|FormID" keys against the current scan - rebuilt in ApplyCacheSnapshot.
+        // Consumed (soon) by dead-reference marking, quest validation, orphaned-edit detection.
+        private readonly ReferenceResolver _referenceResolver = new();
+        public IReferenceResolver References => _referenceResolver;
+
+        // --- Service helpers ---
+        internal IItemService ItemService => _itemService;
+        internal IFileService FileService => _fileService;
+        internal IFormIdService FormIdService => _formIdService;
+        internal IKeywordService KeywordService => _keywordService;
+        internal IImportExportService ImportExportService => _importExportService;
+
+        // --- State ---
+        private bool _isInitialized;
+        private bool _isInitializing;
+        private Task _initializationTask;
+
+        // Raised after the item DB has (re)loaded successfully — both from the initial auto-load
+        // and from a full rescan. Other VMs built from the same DB (e.g. EnchantmentMenuVM, whose
+        // tree/plugin list otherwise only ever reflected what existed at app-startup, before any
+        // scan had run) subscribe to this to know when to refresh themselves.
+        public event Action DataLoaded;
+
+        // "Show this enchantment in the Enchantments tab" (Prio 9). Raised by the item detail's
+        // jump button; MainWindowVM switches the view and hands the key to EnchantVM.
+        //
+        // An event rather than a reference to EnchantVM, following NpcMenuVM.TemplateOpened: this
+        // view model knows nothing about the other tabs, and the one place that knows about all of
+        // them is the one that owns them.
+        public event Action<string> EnchantmentJumpRequested;
+
+        internal void RequestEnchantmentJump(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key)) return;
+            EnchantmentJumpRequested?.Invoke(key);
+        }
+
+        public List<PluginInfo> ActivePlugins { get; private set; } = new();
+
+        private object _selectedNode;
+        private ItemNodeVM? _subscribedItemForContainerSelection;
+        public object SelectedNode
+        {
+            get => _selectedNode;
+            set
+            {
+                if (SetProperty(ref _selectedNode, value))
+                {
+                    // The placement panel follows the selection - it is bound to this view model,
+                    // not to the item, so nothing else would tell it the item changed.
+                    OnPropertyChanged(nameof(PlacementTarget));
+
+                    if (value is ItemNodeVM item)
+                    {
+                        // From the click in the tree until the detail pane is rendered, and hydrating the
+                        // item (its recipes, keywords, containers) as a step of its own (Logs\perf.log, P-P0).
+                        PerfLog.UntilRendered("Items: select an item");
+                        using (PerfLog.Measure("Items: hydrate the selected item"))
+                            EnsureItemHydrated(item);
+
+                        if (_subscribedItemForContainerSelection != null)
+                            _subscribedItemForContainerSelection.ContainerSelection.SelectedContainers.CollectionChanged -= OnSelectedContainersChanged;
+
+                        _subscribedItemForContainerSelection = item;
+                        _subscribedItemForContainerSelection.ContainerSelection.SelectedContainers.CollectionChanged += OnSelectedContainersChanged;
+
+                        UpdateAllContainerSelectionFlags(item);
+                        item.RefreshBuildBox();
+                    }
+                    else
+                    {
+                        if (_subscribedItemForContainerSelection != null)
+                        {
+                            _subscribedItemForContainerSelection.ContainerSelection.SelectedContainers.CollectionChanged -= OnSelectedContainersChanged;
+                            _subscribedItemForContainerSelection = null;
+                        }
+
+                        UpdateAllContainerSelectionFlags(null);
+
+                        if (value is PluginNodeVM plugin)
+                            plugin.RefreshBuildBox();
+                    }
+                }
+            }
+        }
+
+
+        // --- Multi-selection (item level only) ---
+        // TreeView itself only supports single-select - item-level clicks get intercepted in
+        // MainContentView (PreviewMouseLeftButtonDown, style of CategoryNodeVM.Items) and evaluated
+        // here, instead of using TreeView.SelectedItem/SelectedItemChanged.
+        public ObservableCollection<ItemNodeVM> SelectedItems { get; } = new();
+
+        // Drives the visibility of MultiSelectDetailView in MainContentView.xaml.
+        public bool IsMultiSelectActive => SelectedItems.Count > 1;
+
+        // THE ARITHMETIC IS SHARED (MultiSelectState), the bookkeeping is this tab's. It was written
+        // here first and then copied into the two Container/LeveledList trees; this is the copy
+        // going away. The state is handed SelectedItems rather than keeping a list of its own, so
+        // there is still exactly one collection and the bulk editor reads the same one it always
+        // did.
+        //
+        // One behaviour changed with the move, and it is the edge the old code left silent: a Shift
+        // click whose ANCHOR has since been filtered out of the tree used to do nothing at all. It
+        // now selects the clicked item on its own - see MultiSelectState.
+        private MultiSelectState<ItemNodeVM>? _pick;
+
+        private MultiSelectState<ItemNodeVM> Pick => _pick ??= new MultiSelectState<ItemNodeVM>(
+            GetFlatItemNodes,
+            SetItemSelected,
+            SelectedItems);
+
+        public void HandleItemNodeClick(ItemNodeVM clicked, bool ctrl, bool shift)
+        {
+            Pick.Handle(clicked, ctrl, shift);
+
+            // The single-detail panel stays active for exactly one selection, as before;
+            // at 0 or 2+ items it's the (MultiSelectDetailView's) domain.
+            SelectedNode = SelectedItems.Count == 1 ? SelectedItems[0] : null;
+        }
+
+        // Called from MainContentView's native TreeView.SelectedItemChanged handler whenever the user
+        // navigates via single-select semantics (plugin/category clicks, arrow keys) after having
+        // multi-selected items - see the comment there for why this needs to run first.
+        internal void ClearMultiSelection() => Pick.Clear();
+
+        // --- Guided tour (Tutorials/items.json) ---
+
+        public bool PrepareTutorialStep(string action) => action switch
+        {
+            "items.selectExample" => SelectTutorialExample(),
+            _ => false,
+        };
+
+        // The detail steps need an armor on screen. One the user already has open is kept - the tour
+        // then explains their own item; otherwise the Iron Cuirass, which every load order has, and
+        // failing that the first armor in the tree. Only what the tree currently shows counts: an item
+        // hidden by the search box would be selected with nothing in the tree to show for it.
+        private bool SelectTutorialExample()
+        {
+            if (SelectedNode is ItemNodeVM { IsArmor: true }) return true;
+
+            var items = GetFlatItemNodes();
+            var example = items.FirstOrDefault(i => i.IsArmor && string.Equals(i.EditorID, "ArmorIronCuirass", StringComparison.OrdinalIgnoreCase))
+                          ?? items.FirstOrDefault(i => i.IsArmor);
+            if (example == null) return false;
+
+            HandleItemNodeClick(example, ctrl: false, shift: false);
+            return SelectedNode == example;
+        }
+
+        // What being picked MEANS for an item, which is this tab's half of the arrangement above.
+        // Membership of SelectedItems is MultiSelectState's - adding to it here as well would put
+        // every item in twice.
+        private void SetItemSelected(ItemNodeVM item, bool value)
+        {
+            item.IsSelected = value;
+
+            if (value && (!item.HasLoadedDetails || !item.HasKeywordVMs))
+            {
+                // Items only get lazily "hydrated" (Keywords/Crafting/Temper/autosave wiring), so far
+                // exclusively on single-select via SelectedNode. For multi-selection this needs to
+                // happen the same way here, otherwise AllKeywords is empty and Crafting/TemperRecipe
+                // stays null even though the item actually already has a saved recipe. HasLoadedDetails
+                // avoids an item getting fully re-hydrated again on every repeated click/re-selection
+                // (noticeable on larger Shift range-selections).
+                LoadSelectedItemDetails(item);
+            }
+
+            OnPropertyChanged(nameof(IsMultiSelectActive));
+        }
+
+        // Bulk-apply operations (MultiSelectDetailVM) must not go through the normal
+        // NotifyFieldChanged path: OnItemFieldChanged debounces via a single, shared debouncer
+        // (_saveDebouncer) - with rapid successive changes across multiple items, each new call would
+        // cancel the previous one, so only the last-changed item would actually get saved. A direct,
+        // awaited call bypasses that.
+        internal Task PersistFieldAsync(ItemNodeVM item, string fieldName) =>
+            _saveRequestService.SaveAsync(new SaveRequest(item, fieldName));
+
+        private MultiSelectDetailVM? _multiSelectVM;
+        public MultiSelectDetailVM MultiSelectVM
+        {
+            get => _multiSelectVM ??= new MultiSelectDetailVM(this);
+            private set => SetProperty(ref _multiSelectVM, value);
+        }
+
+        // MultiSelectDetailVM's keyword/container lists are a snapshot taken at creation time -
+        // rebuild after a (re)scan so they reflect the current AllAvailableKeywords/AllContainers.
+        private void RebuildMultiSelectVM() => MultiSelectVM = new MultiSelectDetailVM(this);
+
+        // Order = tree order (plugin -> category -> item), not the actually visible Y position:
+        // IsExpanded on plugin/category nodes isn't currently bound to the TreeViewItem (Collapse-All
+        // only works because ApplyFilter rebuilds the containers entirely), so there's no reliable
+        // "currently collapsed" state to query. Because of this, a Shift range can also select
+        // currently-collapsed items.
+        private List<ItemNodeVM> GetFlatItemNodes()
+        {
+            var result = new List<ItemNodeVM>();
+            foreach (var plugin in FilteredTree)
+                foreach (var category in plugin.Categories)
+                    result.AddRange(category.Items);
+
+            return result;
+        }
+
+        private string _treeSearchText = string.Empty;
+        public string TreeSearchText
+        {
+            get => _treeSearchText;
+            set
+            {
+                if (SetProperty(ref _treeSearchText, value))
+                    ApplyFilterDebounced(value);
+            }
+        }
+
+        // --- Dirty-state (edited items) ---
+        private bool _showOnlyEditedItems;
+        public bool ShowOnlyEditedItems
+        {
+            get => _showOnlyEditedItems;
+            set
+            {
+                if (SetProperty(ref _showOnlyEditedItems, value))
+                    ApplyFilterDebounced(_treeSearchText);
+            }
+        }
+
+        private int _editedItemCount;
+
+        // The plugin and category dots hang off this. Raised here rather than at each call site,
+        // because there are three and they were not in agreement: NotifyItemBecameEdited (first live
+        // edit), NotifyItemEditedStateChanged (a reset flipping it back) and the bulk recount below.
+        // Anything that moves this number can change whether an ancestor still has an edited item
+        // under it.
+        public int EditedItemCount
+        {
+            get => _editedItemCount;
+            private set
+            {
+                if (SetProperty(ref _editedItemCount, value))
+                    RaiseTreeEditedFlags();
+            }
+        }
+
+        // Called by ItemNodeVM the first time an item picks up a live edit.
+        internal void NotifyItemBecameEdited()
+        {
+            EditedItemCount++;
+        }
+
+        // Called by ItemNodeVM after a reset (section or all) when its edited state actually flipped.
+        internal void NotifyItemEditedStateChanged(bool edited)
+        {
+            if (edited) EditedItemCount++;
+            else if (EditedItemCount > 0) EditedItemCount--;   // its setter raises the ancestors' dots
+            // keep the "only edited" view in sync - in a bulk run once at the end: per item it started
+            // ~4,200 filter timers per preset patch, and one that ran out during a slow item could swap
+            // the tree under the running loop (2026-10-22).
+            if (_bulkDepth > 0) { _filterPending = true; return; }
+            ApplyFilterDebounced(_treeSearchText);
+        }
+
+        // The plugin and category rows carry a dot when something below them is edited, and neither
+        // knows its children changed - the flag is computed on demand, so all they need is a nudge.
+        //
+        // Both trees, because they are not the same objects: ApplyFilter hands the TreeView COPIES
+        // of the plugin and category nodes (FilterReference). The copies share the item instances,
+        // so they answer correctly once asked - but a raise on the unfiltered tree never reaches
+        // them, and the filtered tree is the one on screen.
+        private void RaiseTreeEditedFlags()
+        {
+            // In a bulk run once at the end: every newly edited item made all ~300 plugin rows (in
+            // both trees) recompute their dot over all their items - most of why the same patch took
+            // 404 s in the app and 127 s without a window (2026-10-22).
+            if (_bulkDepth > 0) { _treeFlagsPending = true; return; }
+            foreach (var plugin in ModItemsTree)
+            {
+                plugin.RaiseHasEditedItems();
+                foreach (var cat in plugin.Categories) cat.RaiseHasEditedItems();
+            }
+
+            foreach (var plugin in FilteredTree)
+            {
+                plugin.RaiseHasEditedItems();
+                foreach (var cat in plugin.Categories) cat.RaiseHasEditedItems();
+            }
+        }
+
+        private IEnumerable<ItemNodeVM> GetAllItemNodes()
+        {
+            foreach (var plugin in ModItemsTree)
+                foreach (var cat in plugin.Categories)
+                    foreach (var item in cat.Items)
+                        yield return item;
+        }
+
+        // Item keys that have persisted edits, from the DB's IsEdited* columns. A COBJ edit is
+        // attributed to the item the recipe creates (via RecipeCacheByCreatedItem). Best-effort.
+        private HashSet<string> GetEditedItemKeys()
+        {
+            var set = new HashSet<string>(StringComparer.Ordinal);
+            try
+            {
+                var edited = _importExportService?.GetEditedItems(TabExportModules.Items.Units, ExportScope.All) ?? new List<EditedItemDto>();
+
+                foreach (var e in edited)
+                    if (e.Table is "Armor" or "Weapons")
+                        set.Add(e.Key);
+
+                var editedCobj = edited.Where(e => e.Table == "COBJ").Select(e => e.Key)
+                    .ToHashSet(StringComparer.Ordinal);
+                if (editedCobj.Count > 0)
+                    foreach (var kv in RecipeCacheByCreatedItem)
+                        if (kv.Value.Any(r => editedCobj.Contains(r.Key)))
+                            set.Add(kv.Key);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError("Reading edited item keys for the tree badges failed", ex);
+            }
+            return set;
+        }
+
+        // --- Trees ---
+        public ObservableCollection<PluginNodeVM> ModItemsTree { get; } = new();
+        public ObservableCollection<PluginNodeVM> FilteredTree { get; } = new();
+
+        // --- Caches ---
+        public Dictionary<string, ArmorRecord> ArmorCache { get; } = new();
+        public Dictionary<string, WeaponRecord> WeaponCache { get; } = new();
+        public Dictionary<string, FormIDRecord> KeywordCache { get; } = new();
+        public Dictionary<string, FormIDRecord> MaterialCache { get; } = new();
+        public Dictionary<string, List<COBJRecord>> RecipeCacheByCreatedItem { get; } = new();
+        public Dictionary<string, List<COBJConditionRecord>> COBJConditionCache { get; } = new();
+
+        // --- Global data lists ---
+        public List<FormIDRecord> AllAvailableMaterials { get; private set; } = new();
+        public List<FormIDRecord> AllAvailablePerks { get; private set; } = new();
+        public List<FormIDRecord> AllAvailableQuests { get; private set; } = new();
+        public List<FormIDRecord> AllAvailableKeywords { get; private set; } = new();
+        public List<FormIDRecord> AllAvailableWorkbenches { get; private set; } = new();
+
+        // The enchantments an item can be given (Prio 7), as the picker needs them: key plus a
+        // readable name. Read once from the scanned catalogue the Enchantments tab already fills -
+        // 2,197 of the vanilla armors' effects resolve against it, so the box shows "Fortify Block"
+        // rather than a FormID.
+        //
+        // The first entry is a synthetic "no enchantment", because taking one off is a legitimate
+        // choice and a second button for it would be a worse way to say the same thing.
+        public List<FormIDRecord> AllAvailableEnchantments { get; private set; } = new();
+
+        public const string NoEnchantmentKey = "";
+
+        // Named, not blank: an empty row in a dropdown reads as "nothing here yet", and this is a
+        // deliberate choice the user can make.
+        public static FormIDRecord NoEnchantmentChoice()
+            => new() { Key = NoEnchantmentKey, Name = "(no enchantment)" };
+
+        // "EnchArmorFortifyBlock04 | Fortify Block". Either half can be missing - 8 of the 632
+        // enchantments carry no name - so whichever exists is used alone rather than leaving a
+        // dangling separator, and a record with neither falls back to its key.
+        internal static string EnchantmentLabel(EnchantmentRecord e)
+        {
+            var editorId = (e.EditorID ?? "").Trim();
+            var name = (e.Name ?? "").Trim();
+
+            if (editorId.Length > 0 && name.Length > 0) return $"{editorId} | {name}";
+            if (editorId.Length > 0) return editorId;
+            if (name.Length > 0) return name;
+
+            return e.Key;
+        }
+
+        // --- Global keyword VM list ---
+        public ObservableCollection<KeywordSelectionVM> GlobalKeywords => _keywordService.GlobalKeywords;
+
+        // --- Container ---
+        public List<ContainerRecord> AllContainers { get; private set; } = new();
+
+        // --- Container UI State ---
+        private bool _showExpertContainers;
+        public bool ShowExpertContainers
+        {
+            get => _showExpertContainers;
+            set
+            {
+                if (SetProperty(ref _showExpertContainers, value))
+                {
+                    OnPropertyChanged(nameof(FilteredContainers));
+
+                    // The summary counts how many existing placements the current list cannot show,
+                    // so switching the list changes the sentence. Leaving it stale would tell the
+                    // user to switch to a view they are already in.
+                    UpdateAllContainerSelectionFlags(_subscribedItemForContainerSelection);
+                }
+            }
+        }
+
+        private string _containerSearchText = string.Empty;
+        public string ContainerSearchText
+        {
+            get => _containerSearchText;
+            set
+            {
+                if (SetProperty(ref _containerSearchText, value))
+                    OnPropertyChanged(nameof(FilteredContainers));
+            }
+        }
+
+        public RelayCommand ToggleExpertContainersCommand { get; }
+
+        // --- Generate Patch options (persisted to Input\prefs.json) ---
+
+        private bool _splitPatchPerPlugin = AppPrefs.GetBool("patch.splitPerPlugin");
+        public bool SplitPatchPerPlugin
+        {
+            get => _splitPatchPerPlugin;
+            set { if (SetProperty(ref _splitPatchPerPlugin, value)) AppPrefs.SetBool("patch.splitPerPlugin", value); }
+        }
+
+        // Where the patch is written. Empty means the default, Output\ next to the tool.
+        //
+        // Replaces the old "write patch next to app" toggle, which only ever offered two fixed
+        // places. A free folder also sidesteps MO2 entirely: pointing it straight at a mod folder
+        // means the tool never writes inside MO2's virtualised tree, so nothing lands in Overwrite
+        // and no per-executable redirect has to be configured (see docs/TODO.md, Prio 1).
+        private string _patchOutputPath = LoadPatchOutputPath();
+        public string PatchOutputPath
+        {
+            get => _patchOutputPath;
+            set
+            {
+                var v = (value ?? "").Trim();
+                if (!SetProperty(ref _patchOutputPath, v)) return;
+                AppPrefs.SetString("patch.outputPath", v);
+                OnPropertyChanged(nameof(EffectivePatchOutputPath));
+            }
+        }
+
+        // What the next patch run will actually use — the configured path, or the default when none
+        // is set. Shown in the settings so the answer is never guesswork.
+        public string EffectivePatchOutputPath =>
+            string.IsNullOrWhiteSpace(PatchOutputPath) ? GlobalState.Tool.OutputFolder : PatchOutputPath;
+
+        // One-time migration off the old boolean: someone who had "write patch next to app" ticked
+        // keeps writing there, now as an explicit path they can see and change. Runs once because it
+        // persists the result; the legacy key is left in prefs.json rather than deleted, so rolling
+        // back to an older build doesn't silently change where the patch goes.
+        private static string LoadPatchOutputPath()
+        {
+            var stored = AppPrefs.GetString("patch.outputPath");
+            if (!string.IsNullOrWhiteSpace(stored)) return stored;
+
+            if (AppPrefs.GetBool("patch.nextToApp"))
+            {
+                var migrated = GlobalState.Tool.ModFolder;
+                AppPrefs.SetString("patch.outputPath", migrated);
+                return migrated;
+            }
+
+            return "";
+        }
+
+
+        // What the shared placement panel is placing (Styles/ContainerPlacementPanel.xaml).
+        //
+        // The panel's DataContext is this view model rather than the item, so it needs a way back to
+        // the item's ContainerSelection. Exactly what the two container commands already act on -
+        // SelectedNode when it happens to be an item - so this is that rule written down once
+        // instead of repeated in every binding.
+        public ItemNodeVM PlacementTarget => SelectedNode as ItemNodeVM;
+
+        // The armor / weapon rows for the Container tab's placement sub-tabs.
+        //
+        // THE SAME INSTANCES THIS TREE HOLDS. Handing out copies would give one record two dirty
+        // flags and two ContainerStrings, and a preset writing a placement through
+        // PresetFile.Container would land on whichever of the two nobody is looking at.
+        internal IReadOnlyList<IPlaceable> PlaceableItems(bool isArmor)
+            => GetFlatItemNodes()
+                .Where(i => i.IsArmor == isArmor)
+                .OrderBy(i => i.Display, StringComparer.CurrentCultureIgnoreCase)
+                .Cast<IPlaceable>()
+                .ToList();
+
+        // limited list (e.g. only 20 containers)
+        public ObservableCollection<ContainerEntryVM> LimitedContainerVMs { get; } = new();
+
+        // filtered list for the UI
+        public IEnumerable<ContainerEntryVM> FilteredContainers =>
+            (ShowExpertContainers ? AllContainerVMs : LimitedContainerVMs)
+                .Where(c =>
+                    string.IsNullOrWhiteSpace(ContainerSearchText)
+                    || c.Name.Contains(ContainerSearchText, StringComparison.OrdinalIgnoreCase));
+
+
+        // UI-facing container VMs used by the left-hand list
+        public ObservableCollection<ContainerEntryVM> AllContainerVMs { get; } = new();
+
+        // --- Commands ---
+        public RelayCommand CollapseAllCommand { get; }
+        public RelayCommand ScanModsCommand { get; }
+        public RelayCommand<string> ToggleContainerForSelectedItemCommand { get; }
+        public RelayCommand ClearContainerSelectionCommand { get; }
+        // Export / Import of this tab: items and their recipes, nothing else (TabExportModules.Items).
+        // Also what PluginNodeVM and ItemNodeVM call for the plugin- and item-level buttons.
+        public TabImportExportVM ImportExport { get; }
+        public RelayCommand GeneratePatchCommand { get; }
+        public RelayCommand PreviewPatchCommand { get; }
+
+        private void Log(string msg)
+        {
+            Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] {msg}");
+        }
+
+        // --- ctor ---
+        public MainContentVM(
+            IItemService itemService,
+            IFileService fileService,
+            IFormIdService formIdService,
+            ICacheManager cacheManager = null,
+            ITreeBuilderService treeBuilder = null,
+            IKeywordService keywordService = null,
+            IImportExportService importExportService = null)
+        {
+            _itemService = itemService;
+            _fileService = fileService;
+            _formIdService = formIdService;
+            _importExportService = importExportService;
+
+            _cacheManager = cacheManager ?? new CacheManager(_itemService, _formIdService);
+            _treeBuilder = treeBuilder ?? new TreeBuilderService();
+            _keywordService = keywordService ?? new KeywordService();
+
+            // SavePipeline extended via ContainerSaveHandler
+            _saveRequestService = new SaveRequestService(new ISaveHandler[]
+            {
+                new ArmorSaveHandler(_itemService, _cacheManager),
+                new WeaponSaveHandler(_itemService, _cacheManager),
+                new CraftingSaveHandler(_itemService, _cacheManager),
+                new TemperSaveHandler(_itemService, _cacheManager),
+                new BreakdownSaveHandler(_itemService, _cacheManager),
+            });
+
+            CollapseAllCommand = new RelayCommand(() => ExpandAll(false));
+            ScanModsCommand = new RelayCommand(async () => await ExecuteFullScanAsync());
+            ToggleContainerForSelectedItemCommand = new RelayCommand<string>(key =>
+            {
+                if (SelectedNode is ItemNodeVM item)
+                {
+                    item.ContainerSelection.ToggleContainer(key);
+                    item.ContainerString = item.ContainerSelection.BuildString();
+
+                    // Update UI flag on left list
+                    var vm = AllContainerVMs.FirstOrDefault(c => c.ContainerKey == key);
+                    if (vm != null)
+                        vm.IsSelected = item.ContainerSelection.SelectedContainers.Any(sc => sc.ContainerKey == key);
+                }
+            });
+            ClearContainerSelectionCommand = new RelayCommand(() =>
+            {
+                if (SelectedNode is ItemNodeVM item)
+                {
+                    item.ContainerSelection.Clear();
+                    item.ContainerString = item.ContainerSelection.BuildString();
+                    UpdateAllContainerSelectionFlags(item);
+                }
+            });
+            ToggleExpertContainersCommand = new RelayCommand(() =>
+            {
+                ShowExpertContainers = !ShowExpertContainers;
+            });
+
+            ImportExport = new TabImportExportVM(
+                TabExportModules.Items, _importExportService, FlushPendingSavesAsync, RefreshFromDatabaseAsync);
+            GeneratePatchCommand = new RelayCommand(async () => await GeneratePatchAsync());
+            PreviewPatchCommand = new RelayCommand(async () => await PreviewPatchAsync());
+            ManageOrphanedEditsCommand = new RelayCommand(ManageOrphanedEdits);
+
+
+            Services.UserLeveledListStore.Changed += OnOwnListsChanged;
+        }
+
+        // A list hung into a container (or taken out, renamed, deleted) in the Leveled lists tab has to
+        // reach the item picker without a rescan (docs/LeveledList-Create-Plan.md, L-P5). The container
+        // definitions are refilled in place; the ROWS showing them were built from the old entries, so
+        // those are replaced.
+        private void OnOwnListsChanged()
+        {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher != null && !dispatcher.CheckAccess())
+            {
+                dispatcher.Invoke(OnOwnListsChanged);
+                return;
+            }
+
+            // No catalogue yet means nothing shows it - the first snapshot merges from the database.
+            if (AllContainers.Count == 0) return;
+
+            try
+            {
+                // The containers an own list was hung into: picking that chest has to offer the list
+                // among the chest's own lists.
+                var affected = Services.UserLeveledListStore.MergeOwnListsIntoContainers(AllContainers);
+                if (affected.Count == 0) return;
+
+                ReplaceRows(AllContainerVMs, LimitedContainerVMs, affected);
+
+                // The open item, if it already uses one of those: its rows were built from the old
+                // entries too. Re-read from its own string, which is what the item editor does on selection.
+                if (_subscribedItemForContainerSelection is { } item
+                    && item.ContainerSelection.SelectedContainers.Any(c => affected.Contains(c.ContainerKey)))
+                {
+                    item.ContainerSelection.LoadFromString(item.ContainerString ?? "");
+                }
+
+                UpdateAllContainerSelectionFlags(_subscribedItemForContainerSelection);
+                OnPropertyChanged(nameof(FilteredContainers));
+            }
+            catch (Exception ex)
+            {
+                // A stale picker row is a nuisance; taking the editor down over it would be worse.
+                AppLogger.LogError("MainContentVM.OnOwnListsChanged", ex);
+            }
+        }
+
+        // A row copies its definition's lists when it is built, so a changed definition needs a new row.
+        // The standard view holds the SAME instances as the full one (and the selection marks are set
+        // through the full one), so it gets the same new row, not one of its own.
+        private static void ReplaceRows(ObservableCollection<ContainerEntryVM> all,
+                                        ObservableCollection<ContainerEntryVM> limited,
+                                        IReadOnlySet<string> containerKeys)
+        {
+            for (int i = 0; i < all.Count; i++)
+            {
+                var old = all[i];
+                if (!containerKeys.Contains(old.ContainerKey)) continue;
+
+                var fresh = new ContainerEntryVM(old.Definition);
+                all[i] = fresh;
+
+                int j = limited.IndexOf(old);
+                if (j >= 0) limited[j] = fresh;
+            }
+        }
+
+        // --- Initial load ---
+        public Task LoadInitialDataAsync()
+        {
+            if (_isInitialized)
+                return _initializationTask;
+
+            _isInitialized = true;
+            _isInitializing = true;
+
+            _initializationTask = Task.Run(async () =>
+            {
+                try
+                {
+                    await ReloadFromDatabaseCoreAsync();
+                }
+                finally
+                {
+                    _isInitializing = false;
+                }
+            });
+
+            return _initializationTask;
+        }
+
+        // Re-runnable version of the initial DB->cache->tree load, for callers that need to refresh
+        // after the DB changed without a full plugin rescan (e.g. after applying an Import). Unlike
+        // LoadInitialDataAsync, this has no one-shot guard — every call actually reloads.
+        public Task RefreshFromDatabaseAsync() => Task.Run(ReloadFromDatabaseCoreAsync);
+
+        // Writes the full patch:
+        //  - SkyPatcher INIs for every edited armor/weapon field
+        //    (Output\SKSE\Plugins\SkyPatcher\{armor,weapon}\zzz_SkyrimCraftingTool\<Plugin>.esp.ini)
+        //  - one SkyrimCraftingTool.esp for created / edited COBJ recipes
+        // See docs/PatchGenerator-Plan.md.
+        // Both the preview and the real run build their options here, so a preview can never answer
+        // for a different configuration than the run it is previewing. The only difference between
+        // them is DryRun.
+        private PatchGenOptions BuildPatchOptions(bool dryRun) => new()
+        {
+            DryRun = dryRun,
+
+            CobjSplitMode = SplitPatchPerPlugin
+                ? PatchCobjSplitMode.PerSourcePlugin
+                : PatchCobjSplitMode.Global,
+            OutputRoot = EffectivePatchOutputPath,
+
+            // Real plugin paths in load order. The COBJ builder needs them to deep-copy the
+            // winning record for an override instead of rebuilding it from the tracked fields -
+            // rebuilding drops every field the scan does not read, above all the ~69% of
+            // condition types it cannot represent. GetActivePlugins() is already load-ordered
+            // (FileServiceAdapter maps it to GetActivePluginsInLoadOrder).
+            PluginsInLoadOrder = FileService.GetActivePlugins()
+                .SelectMany(p => p.FullPaths.Select(fp => (p.FileName, FullPath: fp)))
+                .ToList(),
+        };
+
+        // Runs the whole generation with DryRun set: every rule is built and every warning is
+        // produced, then it stops before writing anything. Answers "what would this do" without
+        // putting files into a mod folder first - which is the only way to find out today.
+        private async Task PreviewPatchAsync()
+        {
+            await FlushPendingSavesAsync();
+
+            var options = BuildPatchOptions(dryRun: true);
+            PatchGenReport report;
+            try
+            {
+                var svc = new PatchGeneratorService(references: References);
+                report = await Task.Run(() => svc.Generate(options));
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError("MainContentVM.PreviewPatchAsync failed", ex);
+                System.Windows.MessageBox.Show($"Patch preview failed:{Environment.NewLine}{ex.Message}",
+                    "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                return;
+            }
+
+            if (!report.AnythingGenerated)
+            {
+                System.Windows.MessageBox.Show(
+                    "No edited armor, weapon, recipe or enchantment found - a patch would produce nothing.",
+                    "Preview Patch", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            Services.PatchGen.PatchReportText.SaveLastRun(report, options.OutputRoot);
+
+            var msg = new System.Text.StringBuilder();
+            msg.Append(Services.PatchGen.PatchReportText.Render(report, options.OutputRoot, forFile: false));
+            if (report.Warnings.Count > 0)
+            {
+                msg.AppendLine();
+                msg.AppendLine($"Full preview saved to {Services.PatchGen.PatchReportText.LastPreviewPath}");
+            }
+
+            System.Windows.MessageBox.Show(msg.ToString(), "Preview Patch",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+        }
+
+        private async Task GeneratePatchAsync()
+        {
+            await FlushPendingSavesAsync();
+
+            var options = BuildPatchOptions(dryRun: false);
+            PatchGenReport report;
+            try
+            {
+                var svc = new PatchGeneratorService(references: References);
+                report = await Task.Run(() => svc.Generate(options));
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError("MainContentVM.GeneratePatchAsync failed", ex);
+                System.Windows.MessageBox.Show($"Patch generation failed:{Environment.NewLine}{ex.Message}",
+                    "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                return;
+            }
+
+            if (!report.AnythingGenerated)
+            {
+                System.Windows.MessageBox.Show("No edited armor, weapon, recipe or enchantment found - nothing to patch.",
+                    "Generate Patch", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            // Keep a copy on disk before showing the dialog: the ACTION NEEDED / NOTE blocks and the
+            // full warning list are the most useful part of a bug report, and a message box the user
+            // has already clicked away is not recoverable. Picked up by DiagnosticsReport.
+            Services.PatchGen.PatchReportText.SaveLastRun(report, options.OutputRoot);
+
+            var msg = new System.Text.StringBuilder();
+            msg.Append(Services.PatchGen.PatchReportText.Render(report, options.OutputRoot, forFile: false));
+            msg.AppendLine();
+            msg.Append("Open the output folder?");
+
+            var choice = System.Windows.MessageBox.Show(msg.ToString(), "Patch generated",
+                System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Information);
+
+            if (choice == System.Windows.MessageBoxResult.Yes)
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo("explorer.exe", $"\"{options.OutputRoot}\"") { UseShellExecute = true });
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.LogError("Opening the patch output folder failed", ex);
+                }
+            }
+        }
+
+        private static string MakeRelative(string root, string path)
+        {
+            try { return Path.GetRelativePath(root, path); }
+            catch { return path; }
+        }
+
+        private async Task ReloadFromDatabaseCoreAsync()
+        {
+            try
+            {
+                Log("LoadInitialData START");
+
+                var activePlugins = FileService.GetActivePlugins();
+
+                if (!File.Exists(GlobalState.Tool.InputFolder + "/Item/item.db") ||
+                    !File.Exists(GlobalState.Tool.InputFolder + "/FormID/formid.db"))
+                {
+                    Log("DB files missing.");
+                    return;
+                }
+
+                activePlugins.Add(new PluginInfo { FileName = KeyFactory.UserPluginName });
+                ActivePlugins = activePlugins;
+
+                var sw = PerfClock.StartNew();
+                await Task.Run(() =>
+                {
+                    var snapshot = _cacheManager.BuildCachesFromDB(activePlugins);
+                    ApplyCacheSnapshot(snapshot);
+                    _keywordService.InitializeFrom(snapshot.Keywords);
+                });
+                Log($"BuildCachesFromDB DONE in {sw.ElapsedMilliseconds} ms");
+                PerfLog.Record("Startup: read the database into the caches", sw);
+
+                sw.Restart();
+                await BuildTreeFromCacheAsync(activePlugins);
+                Log($"BuildTreeFromCacheAsync DONE in {sw.ElapsedMilliseconds} ms");
+                PerfLog.Record("Startup: build the item tree", sw);
+
+                // Must happen before the ApplyFilter call below — ApplyFilter no-ops while
+                // _isInitializing is still true (guards against filtering mid-load).
+                _isInitializing = false;
+
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                {
+                    ApplyFilter(_treeSearchText);
+                    RebuildMultiSelectVM();
+                    DataLoaded?.Invoke();
+                });
+
+                Log("LoadInitialData END");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError("LoadInitialDataAsync failed", ex);
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                {
+                    System.Windows.MessageBox.Show(
+                        $"Failed to load data:{Environment.NewLine}{ex.Message}{Environment.NewLine}{Environment.NewLine}Details were saved to Logs\\error.log.",
+                        "Load Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                });
+            }
+        }
+
+        private void ExpandAll(bool expand)
+        {
+            foreach (var p in ModItemsTree)
+            {
+                p.IsExpanded = expand;
+                foreach (var c in p.Categories)
+                    c.IsExpanded = expand;
+            }
+            ApplyFilter(_treeSearchText);
+
+        }
+
+        // --- Full rescan ---
+        internal sealed record ScanReport(
+            int Added, int Removed, int TotalAfter, int EditsStillActive,
+            System.Collections.Generic.IReadOnlyList<EditedItemDto> OrphanedEdits,
+            Services.ScanInventory? Before = null, Services.ScanInventory? After = null,
+            // NPC groups whose membership moved, by name (G6, docs/NPC-Gruppen-Plan.md section 8). This
+            // is the one thing in the report that is not about what the SCAN found - it is about what
+            // the scan CHANGED for a saved edit, which is a different and sharper question: a group
+            // reaches NPCs by predicate, so a mod install can put 17 records nobody saw inside a change
+            // that was made for 54.
+            System.Collections.Generic.IReadOnlyList<string>? GroupDrift = null);
+
+        internal static ScanReport BuildScanReport(
+            HashSet<string> before, HashSet<string> after, List<EditedItemDto> editedBefore,
+            Services.ScanInventory? inventoryBefore = null, Services.ScanInventory? inventoryAfter = null)
+        {
+            int added = after.Count(k => !before.Contains(k));
+            int removed = before.Count(k => !after.Contains(k));
+
+            var itemEdits = editedBefore.Where(e => e.Table is "Armor" or "Weapons").ToList();
+            int stillActive = itemEdits.Count(e => after.Contains(e.Key));
+            var orphans = itemEdits.Where(e => !after.Contains(e.Key)).ToList();
+
+            return new ScanReport(added, removed, after.Count, stillActive, orphans,
+                                  inventoryBefore, inventoryAfter);
+        }
+
+        internal static string FormatScanReport(ScanReport r)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("Scan complete.");
+            sb.AppendLine();
+
+            // Armor and weapons keep their exact added/removed figures: those two are held as key
+            // sets in memory anyway, and they are what decides whether an edit is orphaned.
+            sb.AppendLine($"Items:   +{r.Added}   -{r.Removed}     ({r.TotalAfter} total)");
+            sb.AppendLine($"Your edits still applying: {r.EditsStillActive}");
+
+            AppendInventory(sb, r);
+
+            if (r.OrphanedEdits.Count > 0)
+                sb.AppendLine($"⚠ {r.OrphanedEdits.Count} edit(s) no longer match any item - see the warnings strip.");
+
+            // Section 8. Named, not counted: "3 groups changed" tells you something moved, "Bandit 03:
+            // 54 -> 71, 17 new from Bandit Overhaul.esp" tells you whether you meant it.
+            if (r.GroupDrift is { Count: > 0 })
+            {
+                sb.AppendLine();
+                sb.AppendLine($"⚠ NPC groups that moved ({r.GroupDrift.Count}):");
+                foreach (var line in r.GroupDrift) sb.AppendLine("   " + line);
+                sb.AppendLine("   Check them on the NPC groups tab - until you confirm them, the patch");
+                sb.AppendLine("   report marks them as unchecked.");
+            }
+
+            return sb.ToString();
+        }
+
+        // The group half of the report (G6). Separate from BuildScanReport because it reads a different
+        // part of the database, and because it must be able to answer "nothing to do" without paying for
+        // the NPC tables at all: no groups, no read. Those tables are the biggest block in item.db
+        // (6.642 records with roughly 15.000 faction rows behind them), and a load order with no groups
+        // should not pay for them on every scan.
+        internal static System.Collections.Generic.List<string> BuildGroupDrift(string dbPath)
+        {
+            var drift = new System.Collections.Generic.List<string>();
+
+            var store = new Services.NpcGroupStore(dbPath);
+            var groups = store.LoadAll().Where(g => g.Active).ToList();
+            if (groups.Count == 0) return drift;
+
+            var resolver = new Services.NpcGroupResolver(Model.ItemDBHandler.LoadNpcsFrom(dbPath));
+            var snapshots = store.LoadSnapshots();
+
+            // Only the groups that MOVED. A group nobody ever confirmed is not news after a scan - it has
+            // been unchecked all along, and the group screen and the patch report both say so.
+            foreach (var d in Services.NpcGroupDiffService.CompareAll(groups, resolver, snapshots))
+            {
+                if (!d.Changed) continue;
+
+                drift.Add(d.Headline);
+                foreach (var name in d.AddedNames) drift.Add("     + " + name);
+                if (d.AddedNamesNotShown > 0) drift.Add($"     + ... and {d.AddedNamesNotShown} more");
+            }
+
+            return drift;
+        }
+
+        // The per-category breakdown. Dot leaders rather than column padding: this ends up in a
+        // MessageBox, which renders in a proportional font, so spaces would not line up anyway.
+        private static void AppendInventory(System.Text.StringBuilder sb, ScanReport r)
+        {
+            if (r.After == null || r.After.IsEmpty) return;
+
+            sb.AppendLine();
+            sb.AppendLine("Found in this scan");
+            sb.AppendLine();
+
+            AppendGroup(sb, "Records", r.After.Records, r.Before, r.After.RecordTotal);
+            sb.AppendLine();
+            AppendGroup(sb, "References", r.After.References, r.Before, r.After.ReferenceTotal);
+
+            sb.AppendLine();
+            sb.AppendLine($"{Leader("Total", 0)} {r.After.Total:n0}");
+            sb.AppendLine();
+
+            AppendMeshIndex(sb, r.After.MeshIndex);
+
+            // Without this the two blocks invite a comparison they do not support: only the first
+            // one remembers anything between scans.
+            sb.AppendLine("Records keep entries that left your load order (your edits to them survive);");
+            sb.AppendLine("references are rebuilt from scratch on every scan.");
+        }
+
+        // The mesh index, deliberately NOT another count block. It is kept out of the Total above for
+        // the same reason: a mesh is not a record, and adding 4.460 files to a record total would
+        // make the one number people quote at each other wrong.
+        //
+        // The line that matters is the last one. Everything else in this report says what exists; this
+        // says whether it can be FOUND, which is the only question a renderer will care about and the
+        // only one that catches a mod shipping records for meshes it forgot to pack.
+        private static void AppendMeshIndex(System.Text.StringBuilder sb, Services.MeshIndexSummary? mesh)
+        {
+            if (mesh is null || mesh.IsEmpty) return;
+
+            sb.AppendLine("Model files named by those records");
+            sb.AppendLine($"{Leader("loose files", 2)} {mesh.Loose:n0}");
+            sb.AppendLine($"{Leader("in archives", 2)} {mesh.Archive:n0}");
+            sb.AppendLine($"{Leader("distinct meshes", 2)} {mesh.Total:n0}");
+
+            if (mesh.Unresolved > 0)
+            {
+                sb.AppendLine($"{Leader("NOT FOUND", 2)} {mesh.Unresolved:n0}  ({mesh.UnresolvedShare:F1} %)");
+                sb.AppendLine("   A record names a mesh no mod and no archive carries. Usually a mod that");
+                sb.AppendLine("   ships records without its meshes, or a typo in the record itself.");
+            }
+
+            sb.AppendLine();
+        }
+
+        private static void AppendGroup(
+            System.Text.StringBuilder sb, string title,
+            System.Collections.Generic.IReadOnlyList<Services.ScanCategory> categories,
+            Services.ScanInventory? before, int subtotal)
+        {
+            if (categories.Count == 0) return;
+
+            sb.AppendLine(title);
+            foreach (var c in categories)
+            {
+                var value = c.IsKnown ? $"{c.Count:n0}" : "n/a";
+
+                // The count says how many records there are, the delta says how many came or went -
+                // and neither moves when a plugin update rewrites the ones already there. A mod that
+                // rebalances 37 armors reads as "+0" without this, which is the whole complaint the
+                // report exists to answer.
+                var changed = c.HasChanged ? $", {c.Changed:n0} changed" : "";
+
+                sb.AppendLine($"{Leader(c.Label, 2)} {value}{Delta(before, c)}{changed}");
+            }
+            sb.AppendLine($"{Leader("subtotal", 2)} {subtotal:n0}");
+        }
+
+        // Dot leaders that pad to a fixed column, rather than a fixed run of dots. The report is
+        // shown in a MessageBox, which uses a proportional font, so nothing lines up exactly - but
+        // padding to one column keeps the numbers in roughly the same place instead of scattering
+        // them by label length.
+        private const int LeaderWidth = 26;
+
+        private static string Leader(string label, int indent)
+            => (new string(' ', indent) + label + " ").PadRight(LeaderWidth, '.');
+
+        // Net change, not added/removed: these come from row counts, and a category that gained
+        // three entries and lost three looks unchanged here. Said as a net figure so it does not
+        // read as a promise of something it cannot see.
+        private static string Delta(Services.ScanInventory? before, Services.ScanCategory now)
+        {
+            if (before == null || !now.IsKnown) return "";
+
+            var was = before.CountOf(now.Label);
+            if (was == null) return "";
+
+            int diff = now.Count - was.Value;
+            return diff == 0 ? "" : $"   ({(diff > 0 ? "+" : "")}{diff:n0})";
+        }
+
+        private async Task ExecuteFullScanAsync()
+        {
+            Log("ExecuteFullScanAsync START");
+
+            // The loading overlay for the whole scan (docs/Performance-Plan.md, P-P1). Not only a
+            // "something is happening": without it the window stayed fully usable for the 15+ s the
+            // scan rewrites the databases - an edit, a second scan or a patch run in that window
+            // would read or write half-rewritten tables. The work runs on a worker, so the bar moves
+            // and each step below names itself. Closed before the result dialog, and by the finally
+            // on every other way out.
+            var busy = BusyService.Show("Scanning: saving pending edits…");
+
+            List<PluginInfo> activePlugins = null;
+            ScanReport? report = null;
+
+            try
+            {
+                // Rescan-Guard: flush a just-made edit (still inside the autosave debounce) to disk
+                // before we read/rebuild from the DB.
+                await FlushPendingSavesAsync();
+
+                var sw = PerfClock.StartNew();
+                await Task.Run(() =>
+                {
+                    // Previous scan's active item set (in-memory, no DB access). editedRows are read
+                    // AFTER ItemService.PutIntoDataBank below - it's what first creates the DB folder,
+                    // and it keeps the IsEdited* shadow columns (removed items just go Active=0), so
+                    // GetEditedItems still returns orphaned edits afterwards.
+                    var beforeKeys = new HashSet<string>(ArmorCache.Keys.Concat(WeaponCache.Keys), StringComparer.Ordinal);
+
+                    // Read before anything writes: formid.db is dropped and rebuilt below, so after
+                    // PutIntoDataBank there is nothing left to compare against. A handful of
+                    // COUNT(*) queries, and never allowed to hold up the scan.
+                    Services.ScanInventory? inventoryBefore = null;
+                    Services.ScanValueSnapshot? valuesBefore = null;
+                    try
+                    {
+                        inventoryBefore = Services.ScanInventoryReader.Read();
+                        // What each record LOOKED like, so the report after can say which ones a
+                        // plugin update actually rewrote - a rebalance moves no count at all.
+                        valuesBefore = Services.ScanInventoryReader.SnapshotValues();
+                    }
+                    catch (Exception invEx) { AppLogger.LogError("Scan inventory (before) failed", invEx); }
+
+                    var step = PerfClock.StartNew();
+
+                    BusyService.SetMessage("Scanning: reading the plugin list…");
+                    FileService.RefreshPluginDatabase();
+                    activePlugins = FileService.GetActivePlugins();
+                    ActivePlugins = activePlugins;
+                    Log($"  [scan] RefreshPluginDatabase+GetActivePlugins ({activePlugins.Count} plugins): {step.ElapsedMilliseconds} ms");
+                    PerfLog.Record("Scan: read the plugin list", step, $"{activePlugins.Count} plugins");
+
+                    // Load-order trace, disabled — re-enable if a similar investigation is needed again.
+                    //Log("  [scan] Load order: " + string.Join(" > ", activePlugins.Select((p, idx) => $"{idx}:{p.FileName}")));
+
+                    step.Restart();
+                    BusyService.SetMessage($"Scanning: building the FormID database ({activePlugins.Count:N0} plugins)…");
+                    FormIdService.PutIntoDataBank(activePlugins);
+                    Log($"  [scan] FormIdService.PutIntoDataBank: {step.ElapsedMilliseconds} ms");
+                    PerfLog.Record("Scan: FormID database", step);
+
+                    step.Restart();
+                    ItemService.PutIntoDataBank(activePlugins);
+                    Log($"  [scan] ItemService.PutIntoDataBank: {step.ElapsedMilliseconds} ms");
+                    PerfLog.Record("Scan: item database", step);
+
+                    // Added only after the DB writes above, same as LoadInitialDataAsync — this
+                    // pseudo-plugin never corresponds to a real file, so it must never reach
+                    // FormIdService/ItemService.PutIntoDataBank (which try to parse actual plugin
+                    // files), but cache/tree building needs to know about it so user-created COBJ
+                    // recipes stay visible after a rescan.
+                    activePlugins.Add(new PluginInfo { FileName = KeyFactory.UserPluginName });
+
+                    step.Restart();
+                    BusyService.SetMessage("Scanning: loading the results…");
+                    var snapshot = _cacheManager.BuildCachesFromDB(activePlugins);
+                    Log($"  [scan] BuildCachesFromDB: {step.ElapsedMilliseconds} ms");
+                    PerfLog.Record("Scan: read the database into the caches", step);
+
+                    step.Restart();
+                    ApplyCacheSnapshot(snapshot);
+                    _keywordService.InitializeFrom(snapshot.Keywords);
+                    Log($"  [scan] ApplyCacheSnapshot+InitializeFrom: {step.ElapsedMilliseconds} ms");
+                    PerfLog.Record("Scan: apply the caches to the view", step);
+
+                    // The merge report is a nice-to-have - never let it abort the scan.
+                    try
+                    {
+                        var editedRows = _importExportService?.GetEditedItems(TabExportModules.Items.Units, ExportScope.All) ?? new List<EditedItemDto>();
+                        var afterKeys = new HashSet<string>(ArmorCache.Keys.Concat(WeaponCache.Keys), StringComparer.Ordinal);
+                        var inventoryAfter = Services.ScanInventoryReader.Read(valuesBefore);
+                        report = BuildScanReport(beforeKeys, afterKeys, editedRows, inventoryBefore, inventoryAfter);
+
+                        // The group diff of section 8, folded into the same report. Inside the same
+                        // try/catch as the rest of it: a report is a nice-to-have and must never take
+                        // the scan down with it.
+                        var groupDrift = BuildGroupDrift(System.IO.Path.Combine(
+                            Model.GlobalState.Tool.InputFolder, "Item", "item.db"));
+
+                        if (groupDrift.Count > 0)
+                            report = report with { GroupDrift = groupDrift };
+                    }
+                    catch (Exception reportEx)
+                    {
+                        AppLogger.LogError("Rescan merge report failed (scan itself is fine)", reportEx);
+                    }
+                });
+                Log($"Full scan + caches DONE in {sw.ElapsedMilliseconds} ms");
+                PerfLog.Record("Scan: total, scan and caches", sw);
+
+                sw.Restart();
+                BusyService.SetMessage("Scanning: rebuilding the item tree…");
+                await BuildTreeFromCacheAsync(activePlugins);
+                Log($"Tree rebuild DONE in {sw.ElapsedMilliseconds} ms");
+                PerfLog.Record("Scan: rebuild the item tree", sw);
+
+                RebuildMultiSelectVM();
+                DataLoaded?.Invoke();
+
+                // Done: away with the overlay BEFORE the result dialog, which would otherwise sit
+                // on a dimmed window waiting for an OK that the overlay itself suggests is not yet due.
+                busy.Dispose();
+
+                // After DataLoaded: MainWindowVM's handler clears category "scan" and posts the
+                // scan-complete note, so orphan warnings have to go in after it. Guarded - the scan
+                // already succeeded, a report hiccup must not surface as "Scan failed".
+                try
+                {
+                    if (report != null)
+                    {
+                        foreach (var o in report.OrphanedEdits)
+                        {
+                            var label = string.IsNullOrEmpty(o.DisplayName) ? o.Key : o.DisplayName;
+                            IssueHub.Current.Report(new AppIssue(
+                                AppIssueSeverity.Warning,
+                                $"Edited {o.Table} '{label}' no longer matches any item in the load order.",
+                                Context: o.Key + " - the edit stays in the DB but won't be applied anywhere.",
+                                Category: "scan"));
+                        }
+
+                        if (report.OrphanedEdits.Count > 0)
+                        {
+                            var choice = System.Windows.MessageBox.Show(
+                                FormatScanReport(report) + Environment.NewLine + "Review the orphaned edits now?",
+                                "Scan complete",
+                                System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Information);
+                            if (choice == System.Windows.MessageBoxResult.Yes)
+                            {
+                                var orphans = report.OrphanedEdits
+                                    .Select(o => new OrphanedEdit(o.Table, o.Key, o.DisplayName, o.LastChanged))
+                                    .ToList();
+                                View.OrphanedEditsWindow.ShowDialog(orphans, ItemService);
+                                RefreshOrphanedEditCount();
+                                if (!HasOrphanedEdits) IssueHub.Current.Clear("scan");
+                            }
+                        }
+                        else
+                        {
+                            System.Windows.MessageBox.Show(FormatScanReport(report), "Scan complete",
+                                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                        }
+                    }
+                    else
+                    {
+                        System.Windows.MessageBox.Show("DB updated!", "System", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                    }
+                }
+                catch (Exception reportEx)
+                {
+                    AppLogger.LogError("Rescan report/dialog failed (scan itself is fine)", reportEx);
+                }
+
+                Log("ExecuteFullScanAsync END");
+            }
+            catch (Exception ex)
+            {
+                busy.Dispose();   // the error dialog on an undimmed window
+                AppLogger.LogError("ExecuteFullScanAsync failed", ex);
+                System.Windows.MessageBox.Show(
+                    $"Scan failed:{Environment.NewLine}{ex.Message}{Environment.NewLine}{Environment.NewLine}Details were saved to Logs\\error.log.",
+                    "Scan Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
+            finally
+            {
+                busy.Dispose();   // no-op when already closed above; covers every other way out
+            }
+        }
+
+        // --- Tree build ---
+        private async Task BuildTreeFromCacheAsync(List<PluginInfo> activePlugins)
+        {
+            Log("BuildTreeFromCacheAsync START");
+
+            var nodes = await Task.Run(() => _treeBuilder.BuildTreeFromCache(activePlugins, ArmorCache, WeaponCache, this));
+
+            var editedKeys = await Task.Run(GetEditedItemKeys);
+
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                ModItemsTree.Clear();
+                foreach (var n in nodes)
+                    ModItemsTree.Add(n);
+
+                int edited = 0;
+                foreach (var item in GetAllItemNodes())
+                {
+                    item.IsEdited = editedKeys.Contains(item.Key);
+                    if (item.IsEdited) edited++;
+                }
+                EditedItemCount = edited;
+
+                // Explicitly, not only through the setter above: a reload can replace WHICH items
+                // are edited while the total stays the same, and then SetProperty raises nothing.
+                RaiseTreeEditedFlags();
+
+                if (!_isInitializing)
+                    ApplyFilter(_treeSearchText);
+            });
+
+            Log("BuildTreeFromCacheAsync END");
+        }
+
+        // --- Tree filter ---
+        private void ApplyFilterDebounced(string text)
+        {
+            if (_isInitializing)
+                return;
+
+            _debouncer.Debounce(120, _ =>
+            {
+                _filterRunner.Run(
+                    text,
+                    (search, token) => FilterOnBackground(search, token),
+                    result => UpdateFilteredTree(result)
+                );
+            });
+        }
+
+        private void ApplyFilter(string text)
+        {
+            if (_isInitializing)
+                return;
+
+            FilteredTree.Clear();
+
+            if (string.IsNullOrWhiteSpace(text) && !_showOnlyEditedItems)
+            {
+                foreach (var p in ModItemsTree)
+                    FilteredTree.Add(p);
+                return;
+            }
+
+            foreach (var plugin in ModItemsTree)
+            {
+                var filtered = plugin.FilterReference(text, _showOnlyEditedItems);
+                if (filtered != null)
+                {
+                    filtered.IsExpanded = plugin.IsExpanded;
+                    foreach (var cat in filtered.Categories)
+                        cat.IsExpanded = cat.IsExpanded; 
+
+                    FilteredTree.Add(filtered);
+                }
+            }
+        }
+
+        private List<PluginNodeVM> FilterOnBackground(string search, CancellationToken token)
+        {
+            bool onlyEdited = _showOnlyEditedItems;
+
+            if (string.IsNullOrWhiteSpace(search) && !onlyEdited)
+                return ModItemsTree.ToList();
+
+            search = search.ToLowerInvariant();
+
+            var result = new List<PluginNodeVM>();
+
+            foreach (var plugin in ModItemsTree)
+            {
+                token.ThrowIfCancellationRequested();
+
+                var filtered = plugin.FilterReference(search, onlyEdited);
+                if (filtered != null)
+                    result.Add(filtered);
+            }
+
+            return result;
+        }
+
+        private void UpdateFilteredTree(List<PluginNodeVM> nodes)
+        {
+            FilteredTree.Clear();
+            foreach (var n in nodes)
+                FilteredTree.Add(n);
+        }
+
+        // --- "Already in your load order" (read-only) ---
+        //
+        // What the scanned game already holds, shown next to what the patch will add - and kept
+        // strictly apart from it. A container the user selected and a container that already holds
+        // the item look the same in a list and mean the opposite; ContainerEntryVM carries the two
+        // as separate states for exactly that reason.
+        //
+        // Only DIRECT container hits are marked. An item that sits in a leveled list which hangs in
+        // five containers would otherwise mark five containers plus the list, and 86 % of all 4,312
+        // leveled lists hang in no container at all - the tree would claim placements nobody made.
+        // Those go into the summary line instead, where they can be counted without being located.
+        private readonly Dictionary<string, IReadOnlyList<Services.Placement>> _existingPlacementCache
+            = new(StringComparer.OrdinalIgnoreCase);
+
+        // --- Lists whose own properties the user changed ---
+        //
+        // Counted here so the container section can offer the way back to them. Refreshed whenever
+        // the selection changes, which is often enough to be current and cheap enough not to matter -
+        // the underlying set is cached in the store.
+        public int ChangedListCount => Services.LeveledListEditStore.EditedKeys().Count;
+
+        public string ChangedListsButtonText => ChangedListCount == 1
+            ? "1 changed list"
+            : $"{ChangedListCount} changed lists";
+
+        public bool HasChangedLists => ChangedListCount > 0;
+
+        public RelayCommand ShowChangedListsCommand => new(() =>
+        {
+            View.ChangedListsWindow.Show(System.Windows.Application.Current?.MainWindow);
+            RefreshChangedListCount();
+        });
+
+        private void RefreshChangedListCount()
+        {
+            OnPropertyChanged(nameof(ChangedListCount));
+            OnPropertyChanged(nameof(ChangedListsButtonText));
+            OnPropertyChanged(nameof(HasChangedLists));
+        }
+
+        // Lists that lost entries to an override. Counted once and cached, unlike ChangedListCount
+        // above: this comes from the scan and cannot change while the app is running, and the query
+        // groups over every lost row - not something to repeat on every selection change.
+        private int? _lostListCount;
+        public int LostListCount =>
+            _lostListCount ??= Services.PlacementLookup.ReadListsWithLostEntries().Count;
+
+        public string LostListsButtonText => LostListCount == 1
+            ? "1 list lost entries"
+            : $"{LostListCount} lists lost entries";
+
+        public bool HasLostLists => LostListCount > 0;
+
+        // Modular presets, dry run (docs/ItemPresets-Plan.md, P4): over the tree as filtered now.
+        public RelayCommand ShowModularDryRunCommand => new(() =>
+            View.ModularDryRunWindow.Show(System.Windows.Application.Current?.MainWindow, this));
+
+
+        // Reset for the whole items view (user, 2026-10-22: with the dry run every item can be built,
+        // so the way back must not be "one plugin at a time"). Every edited item the tree shows now -
+        // unfiltered that is the whole load order - through the same ItemNodeVM.ResetAllChanges the
+        // item, multi-select and plugin Reset buttons use.
+        public RelayCommand ResetAllItemsCommand => new(async () =>
+        {
+            // A pending debounced save has to land first, or it re-marks a just-reset item (see
+            // PluginNodeVM.ResetPluginCommand).
+            await FlushPendingSavesAsync();
+
+            var candidates = FilteredTree.SelectMany(p => p.Categories).SelectMany(c => c.Items)
+                .Where(i => i.IsEdited).Distinct().ToList();
+            if (candidates.Count == 0)
+            {
+                System.Windows.MessageBox.Show("The tree shows no edited items.", "Reset all items",
+                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            bool filtered = candidates.Count < EditedItemCount;   // search or filter hides some
+            var answer = System.Windows.MessageBox.Show(
+                $"Revert ALL edits on {candidates.Count} item(s) - item fields, crafting recipes and temper recipes - back to the scanned state?"
+                + (filtered ? $"{Environment.NewLine}{Environment.NewLine}Only the items the tree shows now: {candidates.Count} of {EditedItemCount} edited item(s). Clear the search to reset everything." : "")
+                + $"{Environment.NewLine}{Environment.NewLine}This cannot be undone.",
+                "Reset all items", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+            if (answer != System.Windows.MessageBoxResult.Yes) return;
+
+            int reset = 0;
+            var total = PerfClock.StartNew();
+            var tHydrate = new System.Diagnostics.Stopwatch();
+            var tReset = new System.Diagnostics.Stopwatch();
+            var tRelease = new System.Diagnostics.Stopwatch();
+            using (BeginBulk())
+            using (Services.BusyService.Show("Reset all items…", blocksUiThread: true))
+            {
+                for (int i = 0; i < candidates.Count; i++)
+                {
+                    if (i % 25 == 0) Services.BusyService.SetMessage($"Reset all items: {i + 1:N0} / {candidates.Count:N0}");
+                    // Hydrate first: a never-clicked item has no recipe VMs or original snapshot, and its
+                    // persisted edits would be skipped (same rule as the plugin reset).
+                    var item = candidates[i];
+                    bool wasLoaded = item.HasLoadedDetails;
+                    tHydrate.Start(); EnsureItemHydrated(item, lean: true); tHydrate.Stop();
+                    tReset.Start(); if (item.ResetAllChanges()) reset++; tReset.Stop();
+                    tRelease.Start(); if (!wasLoaded) ReleaseItemDetails(item); tRelease.Stop();   // keeps an item on screen hydrated
+                }
+            }
+            PerfLog.Record("Reset all items", total,
+                $"{candidates.Count} item(s), {reset} reverted; hydrate {tHydrate.ElapsedMilliseconds} ms, reset {tReset.ElapsedMilliseconds} ms, release {tRelease.ElapsedMilliseconds} ms");
+
+            System.Windows.MessageBox.Show(
+                reset == 0 ? "No change - the items were already at their scanned state." : $"{reset} item(s) reverted to the scanned state.",
+                "Reset all items", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+        });
+
+        public RelayCommand ShowLostListsCommand => new(() =>
+            View.LostListsWindow.Show(System.Windows.Application.Current?.MainWindow));
+
+        private void RefreshLostListCount()
+        {
+            _lostListCount = null;
+            OnPropertyChanged(nameof(LostListCount));
+            OnPropertyChanged(nameof(LostListsButtonText));
+            OnPropertyChanged(nameof(HasLostLists));
+        }
+
+        private string _existingPlacementSummary = "";
+        public string ExistingPlacementSummary
+        {
+            get => _existingPlacementSummary;
+            private set => SetProperty(ref _existingPlacementSummary, value);
+        }
+
+        // ~3 ms against the real database (28,475 leveled-list entries, 13,158 container entries):
+        // fine once per selected item, not fine per container toggle - and every toggle comes back
+        // through OnSelectedContainersChanged. Hence the cache, cleared by a rescan, which is the
+        // only thing that changes the answer.
+        private IReadOnlyList<Services.Placement> ExistingPlacementsFor(ItemNodeVM? item)
+        {
+            if (item == null || string.IsNullOrWhiteSpace(item.Key))
+                return Array.Empty<Services.Placement>();
+
+            if (_existingPlacementCache.TryGetValue(item.Key, out var cached))
+                return cached;
+
+            var found = Services.PlacementLookup.WhereIs(item.Key);
+            _existingPlacementCache[item.Key] = found;
+            return found;
+        }
+
+        internal void UpdateAllContainerSelectionFlags(ItemNodeVM? item)
+        {
+            var selectedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (item != null)
+            {
+                foreach (var sc in item.ContainerSelection.SelectedContainers)
+                    selectedKeys.Add(sc.ContainerKey);
+            }
+
+            var existing = ExistingPlacementsFor(item);
+            var heldCounts = Services.PlacementLookup.HeldPerContainer(existing);
+
+            // The leveled-list half of the same answer. It lands on the rows inside the selected
+            // containers, which is the only place a list is visible at all - the container list on
+            // the left has no row for a list, and 86% of them hang in no container anyway.
+            item?.ContainerSelection.SetExistingListKeys(
+                existing.Where(p => p.Kind == Services.PlacementKind.LeveledList).Select(p => p.Key));
+
+            foreach (var vm in AllContainerVMs)
+            {
+                vm.IsSelected = selectedKeys.Contains(vm.ContainerKey);
+                vm.SetExistingPlacement(heldCounts.TryGetValue(vm.ContainerKey, out var held) ? held : 0);
+            }
+
+            ExistingPlacementSummary = BuildExistingPlacementSummary(item, existing, heldCounts);
+            RefreshChangedListCount();
+        }
+
+        private string BuildExistingPlacementSummary(
+            ItemNodeVM? item,
+            IReadOnlyList<Services.Placement> existing,
+            Dictionary<string, int> heldCounts)
+        {
+            if (item == null) return "";
+
+            // Counted against the rows the user is actually looking at: everything the lookup found
+            // minus what the current list can show. The standard view lists merchants only.
+            int visible = (ShowExpertContainers ? AllContainerVMs : LimitedContainerVMs)
+                .Count(vm => heldCounts.ContainsKey(vm.ContainerKey));
+
+            return Services.PlacementLookup.DescribeExisting(
+                heldCounts.Count,
+                existing.Count(p => p.Kind == Services.PlacementKind.LeveledList),
+                Math.Max(heldCounts.Count - visible, 0));
+        }
+
+        private void OnSelectedContainersChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        {
+            if (_subscribedItemForContainerSelection != null)
+                UpdateAllContainerSelectionFlags(_subscribedItemForContainerSelection);
+        }
+
+        // --- Cache snapshot ---
+        private void ApplyCacheSnapshot(CacheSnapshot snapshot)
+        {
+            if (snapshot == null) return;
+
+            // The other half of "read the database into the caches" in Logs\perf.log (P-P0): copying
+            // the snapshot into this view model's caches and catalogues.
+            using var timing = PerfLog.Measure("Caches: apply the snapshot to the item view");
+
+            Log("ApplyCacheSnapshot START");
+
+            ArmorCache.Clear();
+            WeaponCache.Clear();
+            RecipeCacheByCreatedItem.Clear();
+            COBJConditionCache.Clear();
+
+            foreach (var kv in snapshot.Armor)
+                ArmorCache[kv.Key] = kv.Value;
+
+            foreach (var kv in snapshot.Weapons)
+                WeaponCache[kv.Key] = kv.Value;
+
+            foreach (var kv in snapshot.RecipesByCreatedItem)
+                RecipeCacheByCreatedItem[kv.Key] = kv.Value;
+
+            foreach (var kv in snapshot.COBJConditions)
+                COBJConditionCache[kv.Key] = kv.Value;
+
+            KeywordCache.Clear();
+            MaterialCache.Clear();
+
+            foreach (var kw in snapshot.Keywords)
+                KeywordCache[kw.Key] = kw;
+
+            foreach (var mat in snapshot.Materials)
+                MaterialCache[mat.Key] = mat;
+
+            AllAvailableMaterials = snapshot.Materials?.OrderBy(p => p.Name).ToList()
+                ?? new List<FormIDRecord>();
+
+            AllAvailablePerks = snapshot.Perks?.OrderBy(p => p.Name).ToList()
+                ?? new List<FormIDRecord>();
+
+            AllAvailableQuests = snapshot.Quests?.OrderBy(q => q.Name).ToList()
+                ?? new List<FormIDRecord>();
+
+            AllAvailableKeywords = snapshot.Keywords?.OrderBy(k => k.Name).ToList()
+                ?? new List<FormIDRecord>();
+
+            // The two tempering keywords are excluded because the Temper section pins its own
+            // workbench; the SMELTER is excluded for a different reason - crafting an armour in a
+            // furnace is not a thing. It belongs to the Breakdown section, which pins it the same
+            // way Temper does.
+            //
+            // The TANNING RACK deliberately stays: unlike the furnace it is a real crafting bench
+            // (leather from pelts, leather strips), so it is needed in BOTH lists.
+            AllAvailableWorkbenches =
+                snapshot.Keywords?
+                    .Where(k =>
+                        k.Name.StartsWith("Crafting", StringComparison.OrdinalIgnoreCase) &&
+                        k.Key != "Skyrim.esm|088108" &&
+                        k.Key != "Skyrim.esm|0ADB78" &&
+                        k.Key != BreakdownRecipeVM.SmelterKey)
+                    .OrderBy(k => k.Name)
+                    .ToList()
+                ?? new List<FormIDRecord>();
+
+            AllContainers = snapshot.Containers?.OrderBy(c => c.Name).ToList()
+                ?? new List<ContainerRecord>();
+
+            // Own lists hung into a real container sit among that container's lists - see
+            // UserLeveledListStore.MergeOwnListsIntoContainers. Before the rows below are built from it.
+            Services.UserLeveledListStore.MergeOwnListsIntoContainers(AllContainers);
+
+            // The enchantment picker's catalogue, listed as "EditorID | Name".
+            //
+            // NOT the name alone, and the numbers are the reason: 473 of the 632 enchantments in the
+            // real load order share their name with at least one other - "Fortify Destruction"
+            // appears 19 times, "Fortify Block" exists as Base plus tiers 01 to 06. A list of names
+            // cannot tell a base effect from its tiers, which is exactly the choice being made here.
+            // EditorID first, so the tiers of one effect sort together.
+            var enchantments = ItemService?.GetAllEnchantments() ?? new List<EnchantmentRecord>();
+
+            // Two records can still share an EditorID across plugins - measured, exactly two pairs
+            // do, each a Skyrim.esm record and a Dawnguard.esm one. Only those get their plugin
+            // appended: putting it on all 632 would be noise for the 630 that read fine without it.
+            var ambiguous = enchantments
+                .GroupBy(EnchantmentLabel, StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() > 1)
+                .Select(g => g.Key)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            AllAvailableEnchantments = new List<FormIDRecord> { NoEnchantmentChoice() };
+            AllAvailableEnchantments.AddRange(
+                enchantments
+                    .Select(e =>
+                    {
+                        var label = EnchantmentLabel(e);
+                        if (ambiguous.Contains(label))
+                            label += $"  [{KeyFactory.SplitMasterKey(e.Key).master}]";
+
+                        return new FormIDRecord { Key = e.Key, Name = label };
+                    })
+                    .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase));
+
+            _referenceResolver.Rebuild(
+                AllAvailableKeywords, AllAvailableMaterials, AllAvailableWorkbenches,
+                AllAvailablePerks, AllAvailableQuests, AllContainers);
+
+            // Populate UI VM collection
+            //
+            // A rescan is the only thing that changes where an item already sits, so this is the one
+            // place the lookup cache has to be thrown away - keeping it would mark containers from
+            // the previous scan.
+            _existingPlacementCache.Clear();
+            ExistingPlacementSummary = "";
+
+            // Same reasoning for the "changed by you" marks: a rescan rebuilds the lists those edits
+            // point at, and an edit whose list left the load order stops counting.
+            Services.LeveledListEditStore.InvalidateCache();
+            Services.PlacementLookup.InvalidateListNames();
+            RefreshChangedListCount();
+
+            // The lost-entry count is scanned data, so a rescan is the one thing that can change it.
+            // Cached rather than queried per read - it groups over every lost row - which means this
+            // is also the only place it can be let go of. Without it the settings page keeps
+            // reporting the count from startup, and offers a report for lists that may no longer
+            // have lost anything.
+            RefreshLostListCount();
+
+            AllContainerVMs.Clear();
+            foreach (var c in AllContainers)
+            {
+                var vm = new ContainerEntryVM(c);
+                AllContainerVMs.Add(vm);
+            }
+
+            // The standard view - see ContainerEntryVM.IsShown for the rule.
+            LimitedContainerVMs.Clear();
+            foreach (var vm in AllContainerVMs
+                .Where(vm => ContainerEntryVM.IsShown(vm, expert: false)))
+                {
+                    LimitedContainerVMs.Add(vm);
+                }
+
+            RefreshOrphanedEditCount();
+
+            Log("ApplyCacheSnapshot END");
+        }
+
+        // --- Orphaned edits ---
+
+        private int _orphanedEditCount;
+        public int OrphanedEditCount
+        {
+            get => _orphanedEditCount;
+            private set
+            {
+                if (SetProperty(ref _orphanedEditCount, value))
+                    OnPropertyChanged(nameof(HasOrphanedEdits));
+            }
+        }
+
+        public bool HasOrphanedEdits => OrphanedEditCount > 0;
+
+        internal void RefreshOrphanedEditCount()
+        {
+            try { OrphanedEditCount = ItemService.GetOrphanedItemEdits().Count; }
+            catch (Exception ex) { AppLogger.LogError("RefreshOrphanedEditCount failed", ex); }
+        }
+
+        public RelayCommand ManageOrphanedEditsCommand { get; }
+
+        private void ManageOrphanedEdits()
+        {
+            List<OrphanedEdit> orphans;
+            try
+            {
+                orphans = ItemService.GetOrphanedItemEdits();
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError("Loading orphaned edits failed", ex);
+                System.Windows.MessageBox.Show($"Could not read orphaned edits:{Environment.NewLine}{ex.Message}",
+                    "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                return;
+            }
+
+            if (orphans.Count == 0)
+            {
+                System.Windows.MessageBox.Show("No orphaned edits.", "Orphaned Edits",
+                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                OrphanedEditCount = 0;
+                return;
+            }
+
+            int deleted = View.OrphanedEditsWindow.ShowDialog(orphans, ItemService);
+            RefreshOrphanedEditCount();
+            if (deleted > 0 && !HasOrphanedEdits)
+                IssueHub.Current.Clear("scan");
+        }
+
+        // --- Item selection ---
+        // Bulk-apply paths (MultiSelectDetailVM, PluginNodeVM) operate on items that may never have
+        // been individually clicked in the tree - without this, their AllKeywords/CraftingRecipe/
+        // TemperRecipe/ContainerSelection would still be empty/default, so PresetApplyService would
+        // wrongly think e.g. a weapon has no WeapType keyword, or that an item with a real COBJ has
+        // none yet (and create a duplicate one). Call this before applying a preset to any item that
+        // wasn't reached through the normal single-select path.
+        // The keyword list sorted by name once, not once per hydrated item (~4,000 entries each time).
+        private List<FormIDRecord>? _sortedKeywordsSource;
+        private int _sortedKeywordsCount;
+        private List<FormIDRecord> _sortedKeywords = new();
+
+        private List<FormIDRecord> SortedKeywords(List<FormIDRecord>? source)
+        {
+            if (source == null) return new List<FormIDRecord>();
+            if (!ReferenceEquals(source, _sortedKeywordsSource) || source.Count != _sortedKeywordsCount)
+            {
+                _sortedKeywords = source.OrderBy(k => k.Name).ToList();
+                _sortedKeywordsSource = source;
+                _sortedKeywordsCount = source.Count;
+            }
+            return _sortedKeywords;
+        }
+
+        // lean: no keyword checkbox VMs (the preset patch and reset all write the keyword LIST).
+        internal void EnsureItemHydrated(ItemNodeVM item, bool lean = false)
+        {
+            if (!item.HasLoadedDetails)
+                LoadSelectedItemDetails(item, forDisplay: false, lean: lean);
+        }
+
+        // The other direction, for a bulk run that hydrated thousands of items it is not showing:
+        // drop the ~4,000 keyword VMs again. The next click hydrates afresh from the caches, which
+        // the save handlers have already updated. An item on screen (single or multi-selected) keeps
+        // its details - its editor is bound to them.
+        internal void ReleaseItemDetails(ItemNodeVM item)
+        {
+            if (item.IsSelected || ReferenceEquals(SelectedNode, item)) return;
+            item.AllKeywords.Clear();
+            item.HasKeywordVMs = false;
+            item.HasLoadedDetails = false;
+        }
+
+        // ItemNodeVM.CreateCraftingRecipe/CreateTemperRecipe call this the moment a brand-new recipe
+        // is created (an item that had zero recipes before now has one). RecipeCacheByCreatedItem is
+        // only ever bulk-populated once, from ApplyCacheSnapshot - ICacheManager.UpdateRecipe (called
+        // right after, from CraftingSaveHandler/TemperSaveHandler) mutates its OWN separate
+        // CacheSnapshot.RecipesByCreatedItem instead, and only an already-existing List<COBJRecord>
+        // for that CreatedItemKey is actually shared by reference between the two. A CreatedItemKey
+        // with no recipe yet has no such list here at all, so without this, LoadSelectedItemDetails/
+        // EnsureItemHydrated would keep finding nothing under item.Key and treat the recipe as if it
+        // never existed until the next full rescan repopulates this dictionary from scratch.
+        internal void RegisterNewRecipe(COBJRecord rec)
+        {
+            if (rec == null || string.IsNullOrEmpty(rec.CreatedItemKey)) return;
+
+            if (!RecipeCacheByCreatedItem.TryGetValue(rec.CreatedItemKey, out var list))
+            {
+                list = new List<COBJRecord>();
+                RecipeCacheByCreatedItem[rec.CreatedItemKey] = list;
+            }
+            if (!list.Contains(rec))
+                list.Add(rec);
+        }
+
+        // The BREAKDOWN recipes for this item: the ones at the smelter or the tanning rack that
+        // consume it.
+        //
+        // An earlier version listed EVERY recipe consuming the item, including the
+        // variant-conversion recipes outfit mods ship, shown read-only. In the running UI that was
+        // simply confusing - a Steel Circlet showed a greyed "CraftingSmithingForge gives 1x
+        // <raw key>" line, which is a crafting recipe for a DIFFERENT item (the Steel Armored
+        // Circlet) and belongs to that item's own Crafting section. Those are gone from here.
+        //
+        // Scanned on demand instead of kept as a second index, deliberately. A
+        // _cobjByIngredient dictionary would have to be maintained on every recipe edit - and an
+        // ingredient edit is exactly what changes which items a recipe consumes, so the index would
+        // go stale in the one case it exists for. One pass over the recipe lists that are already
+        // in memory is ~5k key comparisons on a large modlist, which is nothing next to the
+        // thousands of KeywordSelectionVMs this same method builds a few lines below.
+        //
+        // Breakdown recipes come first: they are what the section is for. The rest - the
+        // variant-conversion recipes outfit mods ship, which on the author's modlist outnumber the
+        // real breakdowns - follow, because "which recipe eats this item" is the useful question
+        // either way.
+        // --- Bulk runs (preset patch, reset all) ---
+        // Two lookups that are fine for one clicked item are not for 19,000 (perf.log 2026-10-22):
+        // every item scanned all ~20,000 recipes for breakdowns that consume it, and every new recipe
+        // key scanned every user key stored so far. Inside BeginBulk both are done once.
+        private int _bulkDepth;
+        private bool _treeFlagsPending;
+        private bool _filterPending;
+        private Dictionary<string, List<COBJRecord>>? _breakdownIndex;
+        private IDisposable? _bulkKeys;
+
+        internal IDisposable BeginBulk()
+        {
+            if (_bulkDepth++ == 0)
+            {
+                _breakdownIndex = null;
+                _bulkKeys = UserKeyAllocator.BeginBatch();
+            }
+            return new BulkScope(this);
+        }
+
+        private sealed class BulkScope : IDisposable
+        {
+            private MainContentVM? _owner;
+            public BulkScope(MainContentVM owner) => _owner = owner;
+            public void Dispose()
+            {
+                var o = _owner;
+                _owner = null;
+                if (o == null || --o._bulkDepth > 0) return;
+                o._breakdownIndex = null;
+                o._bulkKeys?.Dispose();
+                o._bulkKeys = null;
+                if (o._treeFlagsPending)
+                {
+                    o._treeFlagsPending = false;
+                    o.RaiseTreeEditedFlags();
+                }
+                if (o._filterPending)
+                {
+                    o._filterPending = false;
+                    o.ApplyFilterDebounced(o._treeSearchText);
+                }
+            }
+        }
+
+        // The breakdown recipes that may consume this item: all of them outside a bulk run, the
+        // indexed ones inside (built on first use, keyed by every ingredient they consume).
+        private IEnumerable<COBJRecord> BreakdownCandidates(string itemKey)
+        {
+            if (_bulkDepth == 0)
+                return RecipeCacheByCreatedItem.Values.SelectMany(l => l);
+
+            if (_breakdownIndex == null)
+            {
+                _breakdownIndex = new Dictionary<string, List<COBJRecord>>(StringComparer.OrdinalIgnoreCase);
+                foreach (var recipe in RecipeCacheByCreatedItem.Values.SelectMany(l => l))
+                {
+                    if (recipe.IngredientKeys == null || !BreakdownRecipeVM.IsBreakdownWorkbench(recipe.WorkbenchKeywordKey)) continue;
+                    foreach (var key in recipe.IngredientKeys.Select(raw => BreakdownRecipeVM.ParseIngredient(raw).Key).Distinct(StringComparer.OrdinalIgnoreCase))
+                    {
+                        if (string.IsNullOrEmpty(key)) continue;
+                        if (!_breakdownIndex.TryGetValue(key, out var l)) _breakdownIndex[key] = l = new List<COBJRecord>();
+                        l.Add(recipe);
+                    }
+                }
+            }
+            return _breakdownIndex.TryGetValue(itemKey, out var found) ? found : Enumerable.Empty<COBJRecord>();
+        }
+
+        // Loading is not editing: the rows raise RaiseBreakdownChanged, which re-derives IsEdited from
+        // what is VISIBLE - and an item whose stored edits equal the scanned values (or whose recipe
+        // part was not loaded yet) lost its mark right here, before any reset could see it. The
+        // database kept the flag, so the item came back as edited after every restart (2026-10-23).
+        private void LoadBreakdownRecipes(ItemNodeVM item)
+        {
+            item.SuppressEditedRefresh = true;
+            try { LoadBreakdownRecipesCore(item); }
+            finally { item.SuppressEditedRefresh = false; }
+        }
+
+        private void LoadBreakdownRecipesCore(ItemNodeVM item)
+        {
+            var found = new List<BreakdownRecipeVM>();
+            var all = new List<COBJRecord>();
+            var removed = RemovalStore.RemovedKeys(RemovalScope.Recipe, item.Key);
+
+            foreach (var recipe in BreakdownCandidates(item.Key))
+            {
+                {
+                    if (recipe.IngredientKeys == null) continue;
+                    if (!BreakdownRecipeVM.IsBreakdownWorkbench(recipe.WorkbenchKeywordKey)) continue;
+
+                    bool consumesIt = recipe.IngredientKeys.Any(raw =>
+                        string.Equals(BreakdownRecipeVM.ParseIngredient(raw).Key, item.Key,
+                            StringComparison.OrdinalIgnoreCase));
+
+                    if (!consumesIt) continue;
+
+                    // The window needs every one of them; only the editor skips the removed.
+                    all.Add(recipe);
+                    if (!removed.Contains(recipe.Key))
+                        found.Add(NewBreakdownRow(recipe, item));
+                }
+            }
+
+            item.AllBreakdownRecipes = all;
+
+            var sorted = found
+                .OrderBy(r => r.WorkbenchName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(r => r.OutputName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            // The MAIN one goes first, because that is what the section shows
+            // (ItemNodeVM.BreakdownRecipe is the first entry). Resolving the decision here rather
+            // than in the property keeps it to one database read per load instead of one per
+            // binding evaluation.
+            var ordered = sorted;
+            var main = MainRecipeStore.Choose(
+                sorted, r => r.Key, MainRecipeStore.MainFor(item.Key, RecipeKind.Breakdown));
+
+            if (main != null && sorted.IndexOf(main) > 0)
+            {
+                ordered = new List<BreakdownRecipeVM> { main };
+                ordered.AddRange(sorted.Where(r => !ReferenceEquals(r, main)));
+            }
+
+            var collection = new ObservableCollection<BreakdownRecipeVM>(ordered);
+
+            // Same null-safe shape as ItemNodeVM.RefreshKeywordView: there is no Application in a
+            // test host, and the existing Dispatcher.Invoke calls further down only get away with
+            // assuming one because they sit behind a recipe-exists check the tests never satisfy.
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher != null && !dispatcher.CheckAccess())
+                dispatcher.Invoke(() => item.BreakdownRecipes = collection);
+            else
+                item.BreakdownRecipes = collection;
+        }
+
+        // One editable breakdown row, wired to the save pipeline and to the material catalogue.
+        private BreakdownRecipeVM NewBreakdownRow(COBJRecord recipe, ItemNodeVM item)
+        {
+            var row = new BreakdownRecipeVM(
+                recipe,
+                item.Key,
+                FormIdService,
+                save: rec => PersistBreakdownAsync(item, rec),
+                delete: vm => DeleteBreakdownRecipe(item, vm),
+                reset: vm => ResetBreakdownRecipeEdits(item, vm),
+                changed: item.RaiseBreakdownChanged,
+                saveConditions: PersistBreakdownConditions);
+
+            // Same wiring the crafting and temper ingredient rows get, otherwise the material
+            // ComboBox stays empty until the next restart.
+            InitializeRecipeIngredients(row.OutputRow);
+
+            // The catalogues the shared condition templates read off this object. Must be in place
+            // BEFORE the conditions are loaded - ConditionMapper.ToViewModel resolves a perk or a
+            // quest against them, and without them every existing condition would come back with an
+            // empty picker and look like a dead reference.
+            row.AttachConditionCatalogues(item.AllAvailablePerks, item.AllAvailableQuests);
+            row.LoadConditions(ItemService.GetCOBJConditions(recipe.Key));
+
+            // The baseline the change marker and Reset compare against. A row whose COBJ the
+            // database does not know keeps no snapshot, and then nothing counts as changed - there
+            // would be nothing to restore it to.
+            var original = ItemService.GetOriginalCOBJ(recipe.Key);
+            if (original != null)
+            {
+                row.CaptureOriginalSnapshot(original);
+                // The DB column is the only honest source: InsertCOBJ flips the in-memory Original
+                // to 1 right after writing, so the record itself cannot be asked. See the comment
+                // on BreakdownRecipeVM.IsUserCreated.
+                row.MarkUserCreated(original.Original == 0);
+            }
+
+            return row;
+        }
+
+        // Mirrors ResetCraftingRecipeEdits, including its two awkward cases.
+        internal void ResetBreakdownRecipeEdits(ItemNodeVM item, BreakdownRecipeVM row)
+        {
+            if (item == null || row == null) return;
+
+            var key = row.Key;
+
+            ItemService.ResetCOBJEdits(key);
+            var original = ItemService.GetOriginalCOBJ(key);
+
+            // No COBJ row behind it at all - it lives only in the ViewModel. Dropping it puts the
+            // item into the state the database already says it is in, instead of leaving a Reset
+            // button that stays enabled and does nothing on every further click.
+            if (original == null)
+            {
+                AppLogger.LogWarning(
+                    $"ResetBreakdownRecipeEdits: no COBJ row for key {key} (item {item.Key}) - dropping the ViewModel-only recipe.");
+                item.BreakdownRecipes.Remove(row);
+                item.RaiseBreakdownChanged();
+                return;
+            }
+
+            // A recipe the tool created never existed in a plugin: clearing the shadow columns would
+            // only bring back the empty just-created stub rather than undoing it. Delete it outright
+            // so no orphaned row is left to be patched into the ESP later.
+            if (original.Original == 0)
+            {
+                DeleteBreakdownRecipe(item, row);
+                return;
+            }
+
+            _cacheManager?.UpdateRecipe(original);
+
+            var index = item.BreakdownRecipes.IndexOf(row);
+            var restored = NewBreakdownRow(original, item);
+
+            if (index >= 0) item.BreakdownRecipes[index] = restored;
+            else item.BreakdownRecipes.Add(restored);
+
+            item.RaiseBreakdownChanged();
+        }
+
+        // Straight to the pipeline, NOT through _saveDebouncer. That one keeps a single pending
+        // action for the whole view model, so a second breakdown row edited within the window
+        // would cancel the first one's save - exactly what the Debouncer doc warns about for
+        // multi-target paths. Each row debounces its own keystrokes instead (see
+        // BreakdownRecipeVM.QueueSave), so what arrives here is already coalesced.
+        private void PersistBreakdownAsync(ItemNodeVM item, COBJRecord recipe)
+        {
+            _ = _saveRequestService.SaveAsync(new SaveRequest(item, BreakdownSaveHandler.FieldName)
+            {
+                Recipe = recipe,
+            });
+        }
+
+        // --- The other recipes: make one the main, or take one out ---
+
+        // Stores the decision and reloads the item, so the editor shows the newly chosen recipe.
+        internal void MakeRecipeMain(ItemNodeVM item, RecipeKind kind, string cobjKey)
+        {
+            if (item == null || string.IsNullOrWhiteSpace(cobjKey)) return;
+
+            MainRecipeStore.Set(item.Key, kind, cobjKey);
+            ReloadItemDetails(item);
+        }
+
+        // Two very different cases behind one button.
+        //
+        // A recipe the TOOL created never existed in any plugin, so the row is simply deleted - no
+        // patch involvement at all. A MOD's recipe cannot be deleted from the database: the next
+        // scan would read it straight back in. It gets a removal DECISION instead, which the patch
+        // turns into an ESP override carrying the Deleted record flag.
+        //
+        // This is the second place in the whole tool that takes away content another mod put there
+        // (RemovalStore's own note calls that out for containers and leveled lists), which is why
+        // the decision lives in that same store and is reported separately.
+        internal void RemoveRecipe(ItemNodeVM item, RecipeKind kind, string cobjKey, bool isUserCreated)
+        {
+            if (item == null || string.IsNullOrWhiteSpace(cobjKey)) return;
+
+            // ALWAYS a decision, never a hard delete - including for a recipe the tool created.
+            //
+            // Deleting the row outright was the first version and it was wrong in use: the recipe
+            // simply vanished from the list with no way back, while a mod's recipe stayed visible
+            // and restorable. Two different behaviours behind one button, and the irreversible one
+            // was the one that looked harmless.
+            //
+            // The patch tells the two apart instead: a mod's recipe gets an override carrying the
+            // Deleted record flag, a tool-created one is simply not written at all - it never
+            // existed in the game, so leaving it out IS its removal.
+            RemovalStore.Add(RemovalScope.Recipe, new RemovedEntry(item.Key, cobjKey));
+
+            // A main-recipe decision pointing at a removed recipe would send the editor looking for
+            // one it no longer shows.
+            MainRecipeStore.ForgetRecipe(cobjKey);
+
+            ReloadItemDetails(item);
+        }
+
+        // Undo for a removed MOD recipe: drop the decision, and the next load shows it again.
+        internal void RestoreRecipe(ItemNodeVM item, string cobjKey)
+        {
+            if (item == null || string.IsNullOrWhiteSpace(cobjKey)) return;
+
+            RemovalStore.Remove(RemovalScope.Recipe, item.Key, cobjKey);
+            ReloadItemDetails(item);
+        }
+
+        // Re-runs the detail load so every snapshot is taken against whatever is now the main
+        // recipe. Without the re-baseline the change markers would keep comparing the NEW main
+        // against the OLD one's scanned values and report edits nobody made.
+        private void ReloadItemDetails(ItemNodeVM item)
+        {
+            item.IsLoading = true;
+            try
+            {
+                LoadSelectedItemDetails(item);
+            }
+            finally
+            {
+                item.IsLoading = false;
+            }
+
+            item.RaiseBreakdownChanged();
+            item.RaiseOtherRecipeCounts();
+        }
+
+        // Conditions live in their own table and have their own reset path, so they do not travel
+        // through the SaveRequest pipeline the way the record's own fields do - the crafting
+        // handler calls the same two methods directly for the same reason.
+        private void PersistBreakdownConditions(string cobjKey, List<COBJConditionRecord> conditions)
+        {
+            ItemService.SaveCOBJConditions(cobjKey, conditions);
+            _cacheManager?.UpdateRecipeConditions(cobjKey, conditions);
+        }
+
+        // Only ever reachable for a recipe the tool itself created (Original = 0): the command is
+        // disabled otherwise. Removing a MOD's recipe needs an ESP override carrying the Deleted
+        // record flag, which is its own open item in docs/TODO.md.
+        private void DeleteBreakdownRecipe(ItemNodeVM item, BreakdownRecipeVM row)
+        {
+            if (row == null || !row.IsUserCreated) return;
+
+            ItemService.DeleteCOBJ(row.Key);
+            _cacheManager?.RemoveRecipe(row.Key);
+            RecipeCacheByCreatedItem.Remove(row.Key);
+
+            foreach (var list in RecipeCacheByCreatedItem.Values)
+                list.RemoveAll(r => string.Equals(r.Key, row.Key, StringComparison.OrdinalIgnoreCase));
+
+            item.BreakdownRecipes.Remove(row);
+            item.RaiseBreakdownChanged();
+        }
+
+        // Adds an empty breakdown recipe at the given bench and persists it at once.
+        //
+        // Written immediately rather than left in the ViewModel on purpose: a recipe that only
+        // exists in a VM until some field happens to be saved is the phantom-recipe trap the
+        // crafting side already has. An output-less row is harmless in the meantime - the ESP
+        // builder skips it and names it in the patch report.
+        internal void AddBreakdownRecipe(ItemNodeVM item, string workbenchKey)
+        {
+            if (item == null || string.IsNullOrWhiteSpace(workbenchKey)) return;
+
+            var record = ItemService.CreateNewBreakdownRecordForItem(item, workbenchKey);
+            if (record == null) return;
+
+            ItemService.SaveCOBJ(record);
+            RegisterNewRecipe(record);
+
+            var row = NewBreakdownRow(record, item);
+            item.BreakdownRecipes.Insert(0, row);
+            item.RaiseBreakdownChanged();
+        }
+
+        // forDisplay false = a bulk run (preset patch, reset all, plugin apply) that hydrates items
+        // nobody looks at: no keyword list views. Building and filtering them twice over ~4,000
+        // keywords for each of 19,000 items was most of why a load-order-wide patch took ages
+        // (2026-10-22).
+        // lean: also no keyword VMs at all - 18,867 items x ~4,000 of them was 4.4 GB and most of a
+        // 649 s patch (perf.log 2026-10-22).
+        private void LoadSelectedItemDetails(ItemNodeVM item, bool forDisplay = true, bool lean = false)
+        {
+            item.IsLoading = true;
+
+            ArmorRecord armor = null;
+            WeaponRecord weapon = null;
+            List<string> activeKeywords = null;
+
+            if (ArmorCache.TryGetValue(item.Key, out armor))
+            {
+                item.ApplyArmorRecord(armor);
+                activeKeywords = armor.Keywords;
+            }
+            else if (WeaponCache.TryGetValue(item.Key, out weapon))
+            {
+                item.ApplyWeaponRecord(weapon);
+                activeKeywords = weapon.Keywords;
+            }
+
+            activeKeywords ??= new List<string>();
+            item.SelectedKeywordKeys = activeKeywords.ToList();
+
+            item.AllKeywords.Clear();
+            item.HasKeywordVMs = !lean;
+            if (!lean)
+            {
+                var active = new HashSet<string>(activeKeywords, StringComparer.OrdinalIgnoreCase);
+                foreach (var kw in SortedKeywords(item.AllAvailableKeywords))
+                {
+                    item.AllKeywords.Add(new KeywordSelectionVM(
+                        key: kw.Key,
+                        name: kw.Name,
+                        isSelected: active.Contains(kw.Key),
+                        onSelectedChanged: null
+                    ));
+                }
+
+                foreach (var kw in item.AllKeywords.Where(k => k.IsSelected))
+                    item.ApplyKeywordRules(kw);
+
+                RegisterItemKeywordEvents(item);
+                if (forDisplay) item.RefreshKeywords();
+            }
+
+            LoadBreakdownRecipes(item);
+
+            if (RecipeCacheByCreatedItem.TryGetValue(item.Key, out var recipes))
+            {
+                // Recipes the user took out are gone from the editor's point of view: they only
+                // still exist so the patch can write a Deleted override for them.
+                // The All* lists keep the REMOVED recipes too - the "other recipes" window shows
+                // them struck through with a Restore button, so a removal stays undoable. Only the
+                // choice of what the editor shows skips them.
+                var removed = RemovalStore.RemovedKeys(RemovalScope.Recipe, item.Key);
+                item.RemovedRecipeKeys = removed;
+
+                item.AllCraftingRecipes = recipes.Where(r =>
+                    r.WorkbenchKeywordKey != "Skyrim.esm|088108" &&
+                    r.WorkbenchKeywordKey != "Skyrim.esm|0ADB78").ToList();
+
+                item.AllTemperRecipes = recipes.Where(r =>
+                    r.WorkbenchKeywordKey == "Skyrim.esm|088108" ||
+                    r.WorkbenchKeywordKey == "Skyrim.esm|0ADB78").ToList();
+
+                // The stored decision when there is one, the first otherwise - which is exactly what
+                // FirstOrDefault did before, so an item nobody ever decided about behaves unchanged.
+                var craftRec = MainRecipeStore.Choose(
+                    item.AllCraftingRecipes.Where(r => !removed.Contains(r.Key)), r => r.Key,
+                    MainRecipeStore.MainFor(item.Key, RecipeKind.Crafting));
+
+                var temperRec = MainRecipeStore.Choose(
+                    item.AllTemperRecipes.Where(r => !removed.Contains(r.Key)), r => r.Key,
+                    MainRecipeStore.MainFor(item.Key, RecipeKind.Temper));
+
+                if (craftRec != null)
+                {
+                    System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        item.CraftingRecipe = new COBJNodeVM(item, craftRec, FormIdService, false);
+                        InitializeRecipeIngredients(item.CraftingRecipe.Ingredients);
+                    });
+
+                    var originalCraft = ItemService.GetOriginalCOBJ(craftRec.Key);
+                    if (originalCraft != null)
+                    {
+                        var originalCraftConditions = ItemService.GetOriginalCOBJConditions(craftRec.Key);
+                        item.CaptureCraftingOriginalSnapshot(originalCraft.WorkbenchKeywordKey, originalCraft.IngredientKeys, originalCraftConditions);
+                        // Original == 0 forever means this recipe has no plugin origin (see
+                        // ItemDBHandler.InsertCOBJ) - keeps Reset enabled across a reload, not just in
+                        // the same session it was created in (see MarkCraftingRecipeUserCreated).
+                        item.MarkCraftingRecipeUserCreated(originalCraft.Original == 0);
+                    }
+                }
+                else
+                {
+                    item.CraftingRecipe = null;
+                    item.CraftingIngredients = new ObservableCollection<IngredientEntryVM>();
+                    item.CraftingConditions = new ObservableCollection<BaseConditionViewModel>();
+                    item.MarkCraftingRecipeUserCreated(false);
+                }
+
+                if (temperRec != null)
+                {
+                    System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        item.TemperRecipe = new COBJNodeVM(item, temperRec, FormIdService, true);
+                        InitializeRecipeIngredients(item.TemperRecipe.Ingredients);
+                        item.TemperIngredients = item.TemperRecipe.Ingredients;
+                        item.TemperConditions = item.TemperRecipe.Conditions;
+                    });
+
+                    var originalTemper = ItemService.GetOriginalCOBJ(temperRec.Key);
+                    if (originalTemper != null)
+                    {
+                        var originalTemperConditions = ItemService.GetOriginalCOBJConditions(temperRec.Key);
+                        item.CaptureTemperOriginalSnapshot(originalTemper.WorkbenchKeywordKey, originalTemper.IngredientKeys, originalTemperConditions);
+                        item.MarkTemperRecipeUserCreated(originalTemper.Original == 0);
+                    }
+                }
+                else
+                {
+                    item.TemperRecipe = null;
+                    item.TemperIngredients = new ObservableCollection<IngredientEntryVM>();
+                    item.TemperConditions = new ObservableCollection<BaseConditionViewModel>();
+                    item.MarkTemperRecipeUserCreated(false);
+                }
+            }
+            else
+            {
+                item.CraftingRecipe = null;
+                item.CraftingIngredients = new ObservableCollection<IngredientEntryVM>();
+                item.TemperRecipe = null;
+                item.TemperIngredients = new ObservableCollection<IngredientEntryVM>();
+                item.CraftingConditions = new ObservableCollection<BaseConditionViewModel>();
+                item.TemperConditions = new ObservableCollection<BaseConditionViewModel>();
+                item.MarkCraftingRecipeUserCreated(false);
+                item.MarkTemperRecipeUserCreated(false);
+            }
+
+            item.FieldChanged -= OnItemFieldChanged;
+            item.FieldChanged += OnItemFieldChanged;
+
+            item.IsLoading = false;
+            item.HasLoadedDetails = true;
+
+            // Snapshot against the pristine (never-edited) base columns, not the possibly-already-
+            // edited effective values ArmorCache/WeaponCache just applied above - otherwise change-
+            // tracking/Reset would only ever see edits made in *this* session (see ResetItemEdits).
+            if (item.IsArmor)
+            {
+                var originalArmor = ItemService.GetOriginalArmor(item.Key);
+                if (originalArmor != null)
+                    item.CaptureOriginalSnapshot(originalArmor.Name, originalArmor.Value, originalArmor.Weight,
+                        originalArmor.ArmorRating, originalArmor.BodySlotMask, 0, 0, 0, 0, originalArmor.ContainerString, originalArmor.Keywords,
+                        originalArmor.ArmorType, originalArmor.ObjectEffectKey, originalArmor.EnchantAmount);
+            }
+            else
+            {
+                var originalWeapon = ItemService.GetOriginalWeapon(item.Key);
+                if (originalWeapon != null)
+                    item.CaptureOriginalSnapshot(originalWeapon.Name, originalWeapon.Value, originalWeapon.Weight,
+                        0, 0, originalWeapon.Damage, originalWeapon.Speed, originalWeapon.Reach, originalWeapon.Stagger,
+                        originalWeapon.ContainerString, originalWeapon.Keywords, "", originalWeapon.ObjectEffectKey, originalWeapon.EnchantAmount,
+                        originalWeapon.CritDamage, originalWeapon.CritPercentMult);
+            }
+
+            item.ReportRecipeIssues();
+        }
+
+        // Reverts item's Name/Cost/Weight/Armor-or-Weapon-stats/Keywords/Container back to the
+        // pristine plugin-scanned values by clearing the DB's IsEdited* shadow columns for this row
+        // (not just pushing the old values back through the normal edit pipeline, which would leave
+        // IsEdited=1 with the shadow value merely matching the original - see the earlier, session-only
+        // version of this feature). Also updates the live ArmorCache/WeaponCache entry so the reverted
+        // values take effect immediately without a rescan.
+        internal void ResetItemEdits(ItemNodeVM item)
+        {
+            if (item.IsArmor)
+            {
+                ItemService.ResetArmorEdits(item.Key);
+                var original = ItemService.GetOriginalArmor(item.Key);
+                // The DB shadow columns are already cleared at this point, so a missing base row leaves
+                // the ViewModel showing edited values it can no longer revert - silent until the next
+                // restart. Shouldn't happen (the tree is built from this very table), so log it rather
+                // than guess at replacement values.
+                if (original == null)
+                {
+                    AppLogger.LogWarning($"ResetItemEdits: no Armor row for key {item.Key} - fields left as they are.");
+                    return;
+                }
+
+                _cacheManager.UpdateArmorName(item.Key, original.Name);
+                _cacheManager.UpdateArmorWeight(item.Key, original.Weight);
+                _cacheManager.UpdateArmorValue(item.Key, original.Value);
+                _cacheManager.UpdateArmorRating(item.Key, original.ArmorRating);
+                _cacheManager.UpdateArmorBodySlotMask(item.Key, original.BodySlotMask);
+                _cacheManager.UpdateArmorKeywords(item.Key, original.Keywords);
+                _cacheManager.UpdateArmorArmorType(item.Key, original.ArmorType);
+                _cacheManager.UpdateArmorContainerString(item.Key, original.ContainerString);
+                _cacheManager.UpdateArmorObjectEffect(item.Key, original.ObjectEffectKey);
+                _cacheManager.UpdateArmorEnchantAmount(item.Key, original.EnchantAmount);
+
+                item.ApplyResetValues(original.Name, original.Value, original.Weight,
+                    original.ArmorRating, original.BodySlotMask, 0, 0, 0, 0, original.ContainerString, original.Keywords,
+                    original.ArmorType, original.ObjectEffectKey, original.EnchantAmount);
+            }
+            else
+            {
+                ItemService.ResetWeaponEdits(item.Key);
+                var original = ItemService.GetOriginalWeapon(item.Key);
+                // See the Armor branch above.
+                if (original == null)
+                {
+                    AppLogger.LogWarning($"ResetItemEdits: no Weapons row for key {item.Key} - fields left as they are.");
+                    return;
+                }
+
+                _cacheManager.UpdateWeaponName(item.Key, original.Name);
+                _cacheManager.UpdateWeaponWeight(item.Key, original.Weight);
+                _cacheManager.UpdateWeaponValue(item.Key, original.Value);
+                _cacheManager.UpdateWeaponDamage(item.Key, original.Damage);
+                _cacheManager.UpdateWeaponSpeed(item.Key, original.Speed);
+                _cacheManager.UpdateWeaponReach(item.Key, original.Reach);
+                _cacheManager.UpdateWeaponStagger(item.Key, original.Stagger);
+                _cacheManager.UpdateWeaponCritDamage(item.Key, original.CritDamage);
+                _cacheManager.UpdateWeaponCritPercentMult(item.Key, original.CritPercentMult);
+                _cacheManager.UpdateWeaponKeywords(item.Key, original.Keywords);
+                _cacheManager.UpdateWeaponContainerString(item.Key, original.ContainerString);
+                _cacheManager.UpdateWeaponObjectEffect(item.Key, original.ObjectEffectKey);
+                _cacheManager.UpdateWeaponEnchantAmount(item.Key, original.EnchantAmount);
+
+                item.ApplyResetValues(original.Name, original.Value, original.Weight,
+                    0, 0, original.Damage, original.Speed, original.Reach, original.Stagger,
+                    original.ContainerString, original.Keywords, "", original.ObjectEffectKey, original.EnchantAmount,
+                    original.CritDamage, original.CritPercentMult);
+            }
+        }
+
+        // The placement alone, from the Container/LeveledList tab. A pending debounced save of this
+        // very field would otherwise land after the reset and put the placement straight back - so it
+        // is flushed first, like every other reset and import here.
+        internal async Task ResetItemPlacementAsync(ItemNodeVM item)
+        {
+            await FlushPendingSavesAsync();
+
+            ItemService.ResetPlacement(item.PlacementTable, item.Key);
+
+            var scanned = item.IsArmor
+                ? ItemService.GetOriginalArmor(item.Key)?.ContainerString
+                : ItemService.GetOriginalWeapon(item.Key)?.ContainerString;
+            scanned ??= "{}";
+
+            if (item.IsArmor) _cacheManager.UpdateArmorContainerString(item.Key, scanned);
+            else _cacheManager.UpdateWeaponContainerString(item.Key, scanned);
+
+            item.ApplyResetPlacement(scanned);
+        }
+
+        // Reverts the item's Crafting/Temper recipe Workbench + Ingredients + Conditions back to the
+        // pristine plugin-scanned values, same shape as ResetItemEdits above. Conditions revert via
+        // ResetCOBJConditions, which restores COBJ_Conditions from the lazily-snapshotted
+        // COBJ_Conditions_Original table (see Model/ItemDBHandler.cs's schema comment there).
+        // Removes a recipe entirely - from the DB (when a row exists), from both caches and from the
+        // item's ViewModel - instead of restoring it to some earlier state. Used by both reset paths
+        // for the two cases where there is nothing to restore TO: a user-created recipe
+        // (rowExists: true, Original == 0 - never in any plugin, so the only honest "undo" is
+        // deletion) and a recipe with no DB row at all (rowExists: false - ViewModel-only, so
+        // there's nothing to delete either, just state to clear).
+        //
+        // Clearing the snapshot is the part that matters for the Reset button: without it,
+        // _craftingRecipeIsUserCreated / _hasCraftingSnapshot keep HasCraftingChanges true and the
+        // item stays stuck as "edited" with a button that no longer does anything.
+        private void DropRecipeFromViewModel(ItemNodeVM item, string key, bool isTemper, bool rowExists)
+        {
+            if (rowExists)
+                ItemService.DeleteCOBJ(key);
+
+            _cacheManager.RemoveRecipe(key);
+
+            // See RegisterNewRecipe's comment: this item's entry here holds a plain List<COBJRecord>
+            // that only RegisterNewRecipe/this method ever touch, unrelated to _cacheManager's own
+            // snapshot - leaving the dropped rec behind would let the next LoadSelectedItemDetails
+            // resurrect it as a phantom recipe with a Key that no longer exists in the DB.
+            if (RecipeCacheByCreatedItem.TryGetValue(item.Key, out var recipes))
+                recipes.RemoveAll(r => r.Key == key);
+
+            item.IsLoading = true;
+            if (isTemper) item.TemperRecipe = null; else item.CraftingRecipe = null;
+            item.IsLoading = false;
+
+            if (isTemper) item.ClearTemperSnapshot(); else item.ClearCraftingSnapshot();
+        }
+
+        internal void ResetCraftingRecipeEdits(ItemNodeVM item)
+        {
+            if (!item.HasCraftingRecipe) return;
+            var key = item.CraftingRecipe.Record.Key;
+
+            ItemService.ResetCOBJEdits(key);
+            var original = ItemService.GetOriginalCOBJ(key);
+
+            // No COBJ row behind this recipe at all - it exists only in the ViewModel. This used to
+            // just `return`, which left the item marked as edited with change flags that NOTHING
+            // could clear: HasCraftingChanges stayed true, so the Reset button stayed enabled and
+            // did nothing on every further click, on every level, until a restart rebuilt the tree
+            // from the DB. Dropping the phantom instead puts the item into the state the DB already
+            // says it's in. See PresetApplyService.ApplyRecipe for how one got created.
+            if (original == null)
+            {
+                AppLogger.LogWarning($"ResetCraftingRecipeEdits: no COBJ row for key {key} (item {item.Key}) - dropping the ViewModel-only recipe.");
+                DropRecipeFromViewModel(item, key, isTemper: false, rowExists: false);
+                return;
+            }
+
+            // A user-created recipe (Original stays 0 forever for these, see ItemDBHandler.
+            // InsertCOBJ) never existed in the plugin - ResetCOBJEdits above only cleared the shadow
+            // edit columns, so "restoring" it would just bring back the empty just-created stub
+            // instead of undoing the recipe entirely. Delete it outright so no orphaned COBJ row is
+            // left behind to get patched into the ESP later.
+            if (original.Original == 0)
+            {
+                DropRecipeFromViewModel(item, key, isTemper: false, rowExists: true);
+                return;
+            }
+
+            ItemService.ResetCOBJConditions(key);
+            var restoredConditions = ItemService.GetOriginalCOBJConditions(key);
+            original.Conditions = restoredConditions;
+
+            _cacheManager.UpdateRecipe(original);
+            _cacheManager.UpdateRecipeConditions(key, restoredConditions);
+
+            item.IsLoading = true;
+            item.CraftingRecipe = new COBJNodeVM(item, original, FormIdService, false);
+            item.IsLoading = false;
+
+            InitializeRecipeIngredients(item.CraftingRecipe.Ingredients);
+            item.CaptureCraftingOriginalSnapshot(original.WorkbenchKeywordKey, original.IngredientKeys, restoredConditions);
+        }
+
+        internal void ResetTemperRecipeEdits(ItemNodeVM item)
+        {
+            if (!item.HasTemperRecipe) return;
+            var key = item.TemperRecipe.Record.Key;
+
+            ItemService.ResetCOBJEdits(key);
+            var original = ItemService.GetOriginalCOBJ(key);
+
+            // See the identical guard in ResetCraftingRecipeEdits above.
+            if (original == null)
+            {
+                AppLogger.LogWarning($"ResetTemperRecipeEdits: no COBJ row for key {key} (item {item.Key}) - dropping the ViewModel-only recipe.");
+                DropRecipeFromViewModel(item, key, isTemper: true, rowExists: false);
+                return;
+            }
+
+            // A user-created recipe never existed in the plugin, so it must be deleted outright on
+            // reset instead of being restored to its empty just-created stub.
+            if (original.Original == 0)
+            {
+                DropRecipeFromViewModel(item, key, isTemper: true, rowExists: true);
+                return;
+            }
+
+            ItemService.ResetCOBJConditions(key);
+            var restoredConditions = ItemService.GetOriginalCOBJConditions(key);
+            original.Conditions = restoredConditions;
+
+            _cacheManager.UpdateRecipe(original);
+            _cacheManager.UpdateRecipeConditions(key, restoredConditions);
+
+            item.IsLoading = true;
+            item.TemperRecipe = new COBJNodeVM(item, original, FormIdService, true);
+            item.IsLoading = false;
+
+            InitializeRecipeIngredients(item.TemperRecipe.Ingredients);
+            item.CaptureTemperOriginalSnapshot(original.WorkbenchKeywordKey, original.IngredientKeys, restoredConditions);
+        }
+
+        private void RegisterItemKeywordEvents(ItemNodeVM item)
+        {
+            foreach (var kw in item.AllKeywords)
+            {
+                kw.PropertyChanged -= item.OnKeywordPropertyChanged;
+                kw.PropertyChanged += item.OnKeywordPropertyChanged;
+            }
+        }
+
+        // Wires each ingredient row's material ComboBox catalog (LocalMaterialsView) and silently
+        // binds its already-known material. Called on every recipe load path AND when a recipe is
+        // first created in-session (ItemNodeVM.CreateCraftingRecipe/CreateTemperRecipe) - a freshly
+        // built COBJNodeVM rebuilds its IngredientEntryVMs from the record's IngredientKeys and does
+        // NOT touch the material catalog, so without this call the dropdown stays empty until the
+        // next app restart reloads via the load path.
+        internal void InitializeRecipeIngredients(IEnumerable<IngredientEntryVM> ingredients)
+        {
+            if (AllAvailableMaterials == null || AllAvailableMaterials.Count == 0)
+                return;
+
+            foreach (var ingVM in ingredients)
+            {
+                ingVM.InitializeMaterials(AllAvailableMaterials);
+
+                var mat = AllAvailableMaterials.FirstOrDefault(m => m.Key == ingVM.Key);
+                if (mat != null)
+                    ingVM.SetSelectedMaterialSilent(mat);
+                else if (!string.IsNullOrEmpty(ingVM.Key))
+                    ingVM.ShowUnresolvedKey(); // dead reference - show the raw key, not a blank box
+            }
+        }
+
+        // --- Autosave ---
+        private void OnItemFieldChanged(ItemNodeVM item, string fieldName)
+        {
+            // A bulk run persists every field itself (PersistFieldAsync), and the debouncer keeps only
+            // the last request anyway. Without this, each of ~25,000 field changes of a preset patch
+            // started a delay task the next one cancelled - 25,783 TaskCanceledExceptions per run
+            // (2026-10-22), cheap in Release, but the stop-and-go under the debugger.
+            if (_bulkDepth > 0) return;
+
+            _saveDebouncer.DebounceAsync(350, async ct =>
+            {
+                await SaveItemFieldAsync(item, fieldName);
+            });
+        }
+
+        private async Task SaveItemFieldAsync(ItemNodeVM item, string fieldName)
+        {
+            await _saveRequestService.SaveAsync(new SaveRequest(item, fieldName));
+        }
+
+    }
+}
