@@ -1,0 +1,940 @@
+<UserControl x:Class="SkyrimCraftingTool.View.ModularCatalogView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:SkyrimCraftingTool.ViewModel"
+             xmlns:model="clr-namespace:SkyrimCraftingTool.Model"
+             xmlns:views="clr-namespace:SkyrimCraftingTool.View">
+
+    <!-- The building-block editor (docs/ItemPresets-Plan.md): the whole Presets tab, and the body of
+         the window the dry run opens. DataContext = ModularCatalogEditorVM. -->
+    <UserControl.Resources>
+
+        <!-- Search box + matches + Add: one look for every keyword / material / perk picker. -->
+        <DataTemplate DataType="{x:Type local:RecordPickerVM}">
+            <StackPanel>
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="Add" Width="60" Margin="6,0,0,5"
+                            Command="{Binding AddCommand}" Style="{StaticResource StandardButtonStyle}"/>
+                    <TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}"
+                             Tag="Search by name or Plugin|FormID (2+ letters)..."
+                             Style="{StaticResource ItemTextBoxStyle}"/>
+                </DockPanel>
+                <ListBox ItemsSource="{Binding Matches}" SelectedItem="{Binding Selected}"
+                         Visibility="{Binding HasMatches, Converter={StaticResource BoolToVis}}"
+                         DisplayMemberPath="Name" MaxHeight="120" Margin="0,4,0,0"
+                         Background="{DynamicResource ColorBackgroundPanel}"
+                         BorderBrush="{DynamicResource ColorBorder}"
+                         VirtualizingPanel.IsVirtualizing="True"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- A key shown by name, with a remove button. -->
+        <DataTemplate x:Key="KeyEntryTemplate" DataType="{x:Type local:KeyEntryVM}">
+            <DockPanel Margin="0,1">
+                <Button DockPanel.Dock="Right" Content="✕" Width="26" Margin="6,0,0,0"
+                        Command="{Binding RemoveCommand}" Style="{StaticResource StandardButtonStyle}"
+                        ToolTip="Remove"/>
+                <TextBlock Text="{Binding Display, Mode=OneWay}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+            </DockPanel>
+        </DataTemplate>
+
+        <DataTemplate x:Key="NameChoiceTemplate" DataType="{x:Type local:NameChoiceVM}">
+            <CheckBox Content="{Binding Name, Mode=OneWay}" IsChecked="{Binding IsChecked}"
+                      Foreground="{DynamicResource ColorTextPrimary}" Margin="0,1,12,1"/>
+        </DataTemplate>
+
+        <ItemsPanelTemplate x:Key="WrapPanelTemplate">
+            <WrapPanel Orientation="Horizontal"/>
+        </ItemsPanelTemplate>
+
+        <!-- ===== Type ===== -->
+        <DataTemplate DataType="{x:Type local:TypeEditVM}">
+            <StackPanel>
+                <TextBlock Text="Type" Style="{StaticResource TitelStyle}" Margin="0,0,0,10"/>
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Name:" Style="{StaticResource ItemLabelStyle}"/>
+                    <TextBox Grid.Column="1" Text="{Binding Name}" Style="{StaticResource ItemTextBoxStyle}"/>
+                </Grid>
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Armor type:" Style="{StaticResource ItemLabelStyle}"/>
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding ArmorTypeChoices}" SelectedItem="{Binding ArmorType}"
+                              Style="{StaticResource ItemComboBoxStyle}"/>
+                </Grid>
+                <TextBlock Text="The ArmorType written to the item. The pre-fill picks the type whose armor type matches the item's."
+                           Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,0,0,12"/>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Padding="10">
+                    <GroupBox.Header><TextBlock Text="Fallback set totals (no material)" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <CheckBox Content="Use fallback totals" IsChecked="{Binding HasFallback}"
+                                  Foreground="{DynamicResource ColorTextPrimary}" Margin="0,0,0,8"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="90"/><ColumnDefinition Width="20"/>
+                                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="90"/><ColumnDefinition Width="20"/>
+                                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="90"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Armor" Style="{StaticResource ItemLabelStyle}" Margin="0,0,6,5"/>
+                            <TextBox Grid.Column="1" Text="{Binding FallbackArmorRating}" IsEnabled="{Binding HasFallback}"
+                                     model:NumericTextBoxBehavior.Mode="Decimal" Style="{StaticResource ItemTextBoxStyle}"/>
+                            <TextBlock Grid.Column="3" Text="Value" Style="{StaticResource ItemLabelStyle}" Margin="0,0,6,5"/>
+                            <TextBox Grid.Column="4" Text="{Binding FallbackValue}" IsEnabled="{Binding HasFallback}"
+                                     model:NumericTextBoxBehavior.Mode="Integer" Style="{StaticResource ItemTextBoxStyle}"/>
+                            <TextBlock Grid.Column="6" Text="Weight" Style="{StaticResource ItemLabelStyle}" Margin="0,0,6,5"/>
+                            <TextBox Grid.Column="7" Text="{Binding FallbackWeight}" IsEnabled="{Binding HasFallback}"
+                                     model:NumericTextBoxBehavior.Mode="Decimal" Style="{StaticResource ItemTextBoxStyle}"/>
+                        </Grid>
+                        <TextBlock Text="A full set's values for pieces whose material is not known (or whose material has no totals for this type). Each piece gets its slot share, times its addons' multipliers. No material keyword - that cannot be guessed. Unticked: armor keeps its own values, clothing gets 0."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Padding="10" Margin="0,12,0,0">
+                    <GroupBox.Header><TextBlock Text="Rounding" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="90"/><ColumnDefinition Width="20"/>
+                                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="90"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Armor in steps of" Style="{StaticResource ItemLabelStyle}" Margin="0,0,6,5"/>
+                            <TextBox Grid.Column="1" Text="{Binding ArmorRatingStep}" model:NumericTextBoxBehavior.Mode="Decimal" Style="{StaticResource ItemTextBoxStyle}"/>
+                            <TextBlock Grid.Column="3" Text="Weight in steps of" Style="{StaticResource ItemLabelStyle}" Margin="0,0,6,5"/>
+                            <TextBox Grid.Column="4" Text="{Binding WeightStep}" model:NumericTextBoxBehavior.Mode="Decimal" Style="{StaticResource ItemTextBoxStyle}"/>
+                        </Grid>
+                        <TextBlock Text="Rounds the computed values: 1 = whole numbers, 0.5 = half steps, 0 = no rounding. Vanilla armor rating is whole numbers, weight half steps (rings 0.25)."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <TextBlock Text="Fallback recipes - used per kind when there is no material, or the material lists nothing for that kind. Leave a list empty for no fallback."
+                           Foreground="{DynamicResource ColorTextSecondary}" TextWrapping="Wrap" Margin="0,12,0,8"/>
+                <ContentControl Content="{Binding FallbackCraft}"/>
+                <ContentControl Content="{Binding FallbackTemper}"/>
+                <ContentControl Content="{Binding FallbackBreakdown}"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- ===== Recipe (inside a material) ===== -->
+        <DataTemplate DataType="{x:Type local:RecipeEditVM}">
+            <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Margin="0,0,0,12" Padding="10">
+                <GroupBox.Header>
+                    <TextBlock Text="{Binding Title, Mode=OneWay}" Style="{StaticResource TitelStyle}"/>
+                </GroupBox.Header>
+                <StackPanel>
+                    <TextBlock Text="{Binding Hint, Mode=OneWay}" Foreground="{DynamicResource ColorTextTertiary}"
+                               TextWrapping="Wrap" FontSize="11" Margin="0,0,0,8"/>
+                    <Grid Margin="0,0,0,8" Visibility="{Binding ShowsWorkbench, Converter={StaticResource BoolToVis}}">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="Workbench:" Style="{StaticResource ItemLabelStyle}"/>
+                        <ComboBox Grid.Column="1" ItemsSource="{Binding Workbenches}" SelectedItem="{Binding Workbench}"
+                                  DisplayMemberPath="Name" Style="{StaticResource ItemComboBoxStyle}"/>
+                    </Grid>
+
+                    <TextBlock Text="Materials (position 1, 2, 3 … - a slot definition's factors apply in this order):"
+                               Style="{StaticResource ItemLabelStyle}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding Entries}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type local:RecipeEntryEditVM}">
+                                <DockPanel Margin="0,1">
+                                    <Button DockPanel.Dock="Right" Content="✕" Width="26" Margin="6,0,0,0"
+                                            Command="{Binding RemoveCommand}" Style="{StaticResource StandardButtonStyle}"/>
+                                    <CheckBox DockPanel.Dock="Right" Content="Fixed" IsChecked="{Binding Fixed}"
+                                              Foreground="{DynamicResource ColorTextPrimary}" VerticalAlignment="Center" Margin="8,0,0,0"
+                                              ToolTip="Same amount on every piece - the slot factor is ignored (catalysts)."/>
+                                    <TextBox DockPanel.Dock="Right" Width="60" Text="{Binding Count}"
+                                             model:NumericTextBoxBehavior.Mode="Decimal" Style="{StaticResource ItemTextBoxStyle}"/>
+                                    <TextBlock Text="{Binding Display, Mode=OneWay}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                </DockPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <ContentControl Content="{Binding MaterialPicker}" Margin="0,6,0,10"/>
+
+                    <TextBlock Text="Required perks:" Style="{StaticResource ItemLabelStyle}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding Perks}" ItemTemplate="{StaticResource KeyEntryTemplate}"/>
+                    <ContentControl Content="{Binding PerkPicker}" Margin="0,6,0,0"/>
+                    <TextBlock Text="{Binding OtherConditions, Mode=OneWay}" Foreground="{DynamicResource ColorTextTertiary}"
+                               FontSize="11" Margin="0,4,0,0"/>
+                </StackPanel>
+            </GroupBox>
+        </DataTemplate>
+
+        <!-- ===== Material ===== -->
+        <DataTemplate DataType="{x:Type local:MaterialEditVM}">
+            <StackPanel>
+                <TextBlock Text="Material / tier" Style="{StaticResource TitelStyle}" Margin="0,0,0,10"/>
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Name:" Style="{StaticResource ItemLabelStyle}"/>
+                    <TextBox Grid.Column="1" Text="{Binding Name}" Style="{StaticResource ItemTextBoxStyle}"/>
+                </Grid>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Margin="0,6,0,12" Padding="10">
+                    <GroupBox.Header><TextBlock Text="Material keyword" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <DockPanel Margin="0,0,0,6">
+                            <Button DockPanel.Dock="Right" Content="Clear" Width="60" Margin="6,0,0,0"
+                                    Command="{Binding ClearKeywordCommand}" Style="{StaticResource StandardButtonStyle}"/>
+                            <TextBlock Text="{Binding MaterialKeywordDisplay, Mode=OneWay}" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <ContentControl Content="{Binding KeywordPicker}"/>
+                        <TextBlock Text="Only slot definitions marked 'carries the material keyword' get it - Matching Set counts exactly 4 pieces."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Margin="0,0,0,12" Padding="10">
+                    <GroupBox.Header><TextBlock Text="Set totals (a full set; each piece gets its slot share)" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <Grid Margin="0,0,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="140"/><ColumnDefinition Width="110"/><ColumnDefinition Width="110"/><ColumnDefinition Width="110"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="1" Text="Armor" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBlock Grid.Column="2" Text="Value" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBlock Grid.Column="3" Text="Weight" Style="{StaticResource ItemLabelStyle}"/>
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding Totals}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type local:TotalsRowVM}">
+                                    <Grid Margin="0,1">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="140"/><ColumnDefinition Width="110"/><ColumnDefinition Width="110"/><ColumnDefinition Width="110"/>
+                                        </Grid.ColumnDefinitions>
+                                        <CheckBox Content="{Binding ArmorType, Mode=OneWay}" IsChecked="{Binding Enabled}"
+                                                  Foreground="{DynamicResource ColorTextPrimary}" VerticalAlignment="Center"/>
+                                        <TextBox Grid.Column="1" Text="{Binding ArmorRating}" IsEnabled="{Binding Enabled}" Margin="0,0,6,0"
+                                                 model:NumericTextBoxBehavior.Mode="Decimal" Style="{StaticResource ItemTextBoxStyle}"/>
+                                        <TextBox Grid.Column="2" Text="{Binding Value}" IsEnabled="{Binding Enabled}" Margin="0,0,6,0"
+                                                 model:NumericTextBoxBehavior.Mode="Integer" Style="{StaticResource ItemTextBoxStyle}"/>
+                                        <TextBox Grid.Column="3" Text="{Binding Weight}" IsEnabled="{Binding Enabled}" Margin="0,0,6,0"
+                                                 model:NumericTextBoxBehavior.Mode="Decimal" Style="{StaticResource ItemTextBoxStyle}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="Unticked: armor of that type keeps its own values; clothing gets 0."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Margin="0,0,0,12" Padding="10">
+                    <GroupBox.Header><TextBlock Text="Exceptions per slot (optional)" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <Grid Margin="0,0,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="200"/><ColumnDefinition Width="80"/><ColumnDefinition Width="80"/><ColumnDefinition Width="80"/><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="1" Text="Armor %" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBlock Grid.Column="2" Text="Value %" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBlock Grid.Column="3" Text="Weight %" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBlock Grid.Column="4" Text="Recipe factors" Style="{StaticResource ItemLabelStyle}"/>
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding Overrides}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type local:MaterialOverrideRowVM}">
+                                    <Grid Margin="0,1">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="200"/><ColumnDefinition Width="80"/><ColumnDefinition Width="80"/><ColumnDefinition Width="80"/><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding Label, Mode=OneWay}" Style="{StaticResource ItemLabelStyle}"/>
+                                        <TextBox Grid.Column="1" Text="{Binding ArmorRatingText, UpdateSourceTrigger=LostFocus}" Margin="0,0,6,5" Style="{StaticResource ItemTextBoxStyle}"/>
+                                        <TextBox Grid.Column="2" Text="{Binding ValueText, UpdateSourceTrigger=LostFocus}" Margin="0,0,6,5" Style="{StaticResource ItemTextBoxStyle}"/>
+                                        <TextBox Grid.Column="3" Text="{Binding WeightText, UpdateSourceTrigger=LostFocus}" Margin="0,0,6,5" Style="{StaticResource ItemTextBoxStyle}"/>
+                                        <TextBox Grid.Column="4" Text="{Binding RecipeFactorsText, UpdateSourceTrigger=LostFocus}" Margin="0,0,6,5" Style="{StaticResource ItemTextBoxStyle}"/>
+                                        <Button Grid.Column="5" Content="Remove" Command="{Binding RemoveCommand}" Style="{StaticResource StandardButtonStyle}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Grid Margin="0,6,0,0">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="6"/><ColumnDefinition Width="160"/><ColumnDefinition Width="6"/><ColumnDefinition Width="80"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <ComboBox ItemsSource="{Binding ArmorTypeChoices}" SelectedItem="{Binding NewOverrideType}" Style="{StaticResource ItemComboBoxStyle}"/>
+                            <ComboBox Grid.Column="2" ItemsSource="{Binding SlotChoices}" SelectedItem="{Binding NewOverrideSlot}" Style="{StaticResource ItemComboBoxStyle}"/>
+                            <Button Grid.Column="4" Content="Add" Command="{Binding AddOverrideCommand}" Style="{StaticResource StandardButtonStyle}"/>
+                        </Grid>
+                        <TextBlock Text="Where this material breaks the pattern - a Daedric helmet weighs 30 % of its set where the slot says 14 %. Empty cells use the slot definition's numbers (and its per-type ones). A recipe factor of 0 also drops a fixed catalyst."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Margin="0,0,0,12" Padding="10">
+                    <GroupBox.Header><TextBlock Text="Name fallback (when the item has none of the material keywords)" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Patterns:" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBox Grid.Column="1" Text="{Binding NamePatterns}" Style="{StaticResource ItemTextBoxStyle}"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Exclusions:" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBox Grid.Column="1" Text="{Binding NameExclusions}" Style="{StaticResource ItemTextBoxStyle}"/>
+                        </Grid>
+                        <TextBlock Text="Comma-separated whole words; a trailing * matches the start of a word (steel* = Steel, Steelforged; not Bluesteel). The first material in the list that matches wins."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <ContentControl Content="{Binding Craft}"/>
+                <ContentControl Content="{Binding Temper}"/>
+                <ContentControl Content="{Binding Breakdown}"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- ===== Weapon type (weapon catalog) ===== -->
+        <DataTemplate DataType="{x:Type local:WeaponTypeEditVM}">
+            <StackPanel>
+                <TextBlock Text="Weapon type" Style="{StaticResource TitelStyle}" Margin="0,0,0,10"/>
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Name:" Style="{StaticResource ItemLabelStyle}"/>
+                    <TextBox Grid.Column="1" Text="{Binding Name}" Style="{StaticResource ItemTextBoxStyle}"/>
+                </Grid>
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="200"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Weapon class:" Style="{StaticResource ItemLabelStyle}"/>
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding ClassChoices, Mode=OneWay}" Text="{Binding WeaponClass, UpdateSourceTrigger=LostFocus}"
+                              IsEditable="True" Style="{StaticResource ItemComboBoxStyle}"/>
+                    <TextBlock Grid.Column="2" Text="  Which material bonus applies (OneHanded, TwoHanded, Bow ...). Type a new name for a class of its own."
+                               Foreground="{DynamicResource ColorTextTertiary}" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                </Grid>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Margin="0,6,0,12" Padding="10">
+                    <GroupBox.Header><TextBlock Text="Recognised by" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <TextBlock Text="Keywords (one of them is enough):" Style="{StaticResource ItemLabelStyle}" Margin="0,0,0,4"/>
+                        <ItemsControl ItemsSource="{Binding Keywords}" ItemTemplate="{StaticResource KeyEntryTemplate}"/>
+                        <ContentControl Content="{Binding KeywordPicker}" Margin="0,6,0,8"/>
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="EditorID patterns:" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBox Grid.Column="1" Text="{Binding EditorIdPatterns}" Style="{StaticResource ItemTextBoxStyle}"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Name patterns:" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBox Grid.Column="1" Text="{Binding NamePatterns}" Style="{StaticResource ItemTextBoxStyle}"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Name exclusions:" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBox Grid.Column="1" Text="{Binding NameExclusions}" Style="{StaticResource ItemTextBoxStyle}"/>
+                        </Grid>
+                        <TextBlock Text="Checked in this order: keyword, EditorID, name. The FIRST weapon type in the list that matches wins - mods add their own keyword next to the vanilla one (a halberd carries WeapTypeBattleaxe and ShWeapTypeHalberd), so a specific type goes above the general one. EditorID: * = anything (*Crossbow*). Name: whole words, a trailing * matches the start of a word (crossbow*). The weapon type is never written - WeapType keywords follow the animation."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Margin="0,0,0,12" Padding="10">
+                    <GroupBox.Header><TextBlock Text="Values (empty = the weapon keeps its own)" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="140"/><ColumnDefinition Width="90"/><ColumnDefinition Width="20"/>
+                                <ColumnDefinition Width="140"/><ColumnDefinition Width="90"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                            <TextBlock Text="Base damage:" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBox Grid.Column="1" Text="{Binding BaseDamageText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ItemTextBoxStyle}"/>
+                            <TextBlock Grid.Column="3" Text="Base weight:" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBox Grid.Column="4" Text="{Binding BaseWeightText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ItemTextBoxStyle}"/>
+
+                            <TextBlock Grid.Row="1" Text="Value factor:" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ValueFactorText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ItemTextBoxStyle}"/>
+                            <TextBlock Grid.Row="1" Grid.Column="3" Text="Weight in steps of:" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBox Grid.Row="1" Grid.Column="4" Text="{Binding WeightStep}" model:NumericTextBoxBehavior.Mode="Decimal" Style="{StaticResource ItemTextBoxStyle}"/>
+
+                            <TextBlock Grid.Row="2" Text="Speed:" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding SpeedText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ItemTextBoxStyle}"/>
+                            <TextBlock Grid.Row="2" Grid.Column="3" Text="Reach:" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBox Grid.Row="2" Grid.Column="4" Text="{Binding ReachText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ItemTextBoxStyle}"/>
+
+                            <TextBlock Grid.Row="3" Text="Stagger:" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding StaggerText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ItemTextBoxStyle}"/>
+
+                            <TextBlock Grid.Row="4" Text="Crit factor:" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding CritFactorText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ItemTextBoxStyle}"/>
+                            <TextBlock Grid.Row="4" Grid.Column="3" Text="Crit chance mult:" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBox Grid.Row="4" Grid.Column="4" Text="{Binding CritChanceText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ItemTextBoxStyle}"/>
+                        </Grid>
+                        <TextBlock Text="Damage = base damage + the material's bonus for this class; weight the same way; value = the material's base value × value factor. Without a material, damage, weight and value stay - the base alone is the lowest tier. Critical damage = the damage × crit factor, rounded down (vanilla 0.5). Speed, reach, stagger and crit chance are written as they are; a bow's speed can come from its material."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <Grid Margin="0,0,0,2">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Recipe factors:" Style="{StaticResource ItemLabelStyle}"/>
+                    <TextBox Grid.Column="1" Text="{Binding RecipeFactorsText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ItemTextBoxStyle}"/>
+                </Grid>
+                <TextBlock Text="One factor per position of the material's recipe, e.g. 2, 1 = twice the main material, once the second (an iron sword: 2 ingots, 1 leather strip). Empty = the material's amounts as they are. A missing position counts as 0; any factor above 0 costs at least 1."
+                           Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="140,0,0,8"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- ===== Weapon material (weapon catalog) ===== -->
+        <DataTemplate DataType="{x:Type local:WeaponMaterialEditVM}">
+            <StackPanel>
+                <TextBlock Text="Weapon material / tier" Style="{StaticResource TitelStyle}" Margin="0,0,0,10"/>
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Name:" Style="{StaticResource ItemLabelStyle}"/>
+                    <TextBox Grid.Column="1" Text="{Binding Name}" Style="{StaticResource ItemTextBoxStyle}"/>
+                </Grid>
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Base value:" Style="{StaticResource ItemLabelStyle}"/>
+                    <TextBox Grid.Column="1" Text="{Binding BaseValueText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ItemTextBoxStyle}"/>
+                    <TextBlock Grid.Column="2" Text="  The reference weapon's value (a sword); each weapon type multiplies it. Empty = value unchanged."
+                               Foreground="{DynamicResource ColorTextTertiary}" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                </Grid>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Margin="0,6,0,12" Padding="10">
+                    <GroupBox.Header><TextBlock Text="Material keyword" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <DockPanel Margin="0,0,0,6">
+                            <Button DockPanel.Dock="Right" Content="Clear" Width="60" Margin="6,0,0,0"
+                                    Command="{Binding ClearKeywordCommand}" Style="{StaticResource StandardButtonStyle}"/>
+                            <TextBlock Text="{Binding MaterialKeywordDisplay, Mode=OneWay}" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <ContentControl Content="{Binding KeywordPicker}"/>
+                        <TextBlock Text="WeapMaterial* - finds the material on a weapon, and is what the smithing perks read. A weapon that already carries it keeps its other material keywords."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Margin="0,0,0,12" Padding="10">
+                    <GroupBox.Header><TextBlock Text="Bonus per weapon class" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <Grid Margin="0,0,0,4">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="90"/><ColumnDefinition Width="90"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="1" Text="Damage +" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBlock Grid.Column="2" Text="Weight +" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBlock Grid.Column="3" Text="Speed" Style="{StaticResource ItemLabelStyle}"/>
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding Classes}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type local:WeaponClassRowVM}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="90"/><ColumnDefinition Width="90"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding WeaponClass, Mode=OneWay}" Style="{StaticResource ItemLabelStyle}"/>
+                                        <TextBox Grid.Column="1" Text="{Binding DamageText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ItemTextBoxStyle}"/>
+                                        <TextBox Grid.Column="2" Text="{Binding WeightText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ItemTextBoxStyle}"/>
+                                        <TextBox Grid.Column="3" Text="{Binding SpeedText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ItemTextBoxStyle}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="Added to the weapon type's base: Daedric adds 7 damage to every one-handed weapon (sword 7 + 7 = 14), 9 to two-handed ones. Speed replaces the type's speed - vanilla bows get slower with the material (Daedric 0.5). A row left empty adds nothing."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Margin="0,0,0,12" Padding="10">
+                    <GroupBox.Header><TextBlock Text="Exceptions per weapon type (optional)" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <Grid Margin="0,0,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="130"/><ColumnDefinition Width="58"/><ColumnDefinition Width="58"/><ColumnDefinition Width="58"/><ColumnDefinition Width="58"/><ColumnDefinition Width="58"/><ColumnDefinition Width="58"/><ColumnDefinition Width="58"/><ColumnDefinition Width="58"/><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="1" Text="Damage" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBlock Grid.Column="2" Text="Weight" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBlock Grid.Column="3" Text="Value" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBlock Grid.Column="4" Text="Speed" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBlock Grid.Column="5" Text="Reach" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBlock Grid.Column="6" Text="Stagger" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBlock Grid.Column="7" Text="Crit" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBlock Grid.Column="8" Text="Crit ch." Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBlock Grid.Column="9" Text="Recipe factors" Style="{StaticResource ItemLabelStyle}"/>
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding Overrides}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type local:WeaponOverrideRowVM}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="130"/><ColumnDefinition Width="58"/><ColumnDefinition Width="58"/><ColumnDefinition Width="58"/><ColumnDefinition Width="58"/><ColumnDefinition Width="58"/><ColumnDefinition Width="58"/><ColumnDefinition Width="58"/><ColumnDefinition Width="58"/><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding WeaponType, Mode=OneWay}" Style="{StaticResource ItemLabelStyle}"/>
+                                        <TextBox Grid.Column="1" Text="{Binding DamageText, UpdateSourceTrigger=LostFocus}" Margin="0,0,6,5" Style="{StaticResource ItemTextBoxStyle}"/>
+                                        <TextBox Grid.Column="2" Text="{Binding WeightText, UpdateSourceTrigger=LostFocus}" Margin="0,0,6,5" Style="{StaticResource ItemTextBoxStyle}"/>
+                                        <TextBox Grid.Column="3" Text="{Binding ValueText, UpdateSourceTrigger=LostFocus}" Margin="0,0,6,5" Style="{StaticResource ItemTextBoxStyle}"/>
+                                        <TextBox Grid.Column="4" Text="{Binding SpeedText, UpdateSourceTrigger=LostFocus}" Margin="0,0,6,5" Style="{StaticResource ItemTextBoxStyle}"/>
+                                        <TextBox Grid.Column="5" Text="{Binding ReachText, UpdateSourceTrigger=LostFocus}" Margin="0,0,6,5" Style="{StaticResource ItemTextBoxStyle}"/>
+                                        <TextBox Grid.Column="6" Text="{Binding StaggerText, UpdateSourceTrigger=LostFocus}" Margin="0,0,6,5" Style="{StaticResource ItemTextBoxStyle}"/>
+                                        <TextBox Grid.Column="7" Text="{Binding CritText, UpdateSourceTrigger=LostFocus}" Margin="0,0,6,5" Style="{StaticResource ItemTextBoxStyle}"/>
+                                        <TextBox Grid.Column="8" Text="{Binding CritChanceText, UpdateSourceTrigger=LostFocus}" Margin="0,0,6,5" Style="{StaticResource ItemTextBoxStyle}"/>
+                                        <TextBox Grid.Column="9" Text="{Binding RecipeFactorsText, UpdateSourceTrigger=LostFocus}" Margin="0,0,6,5" Style="{StaticResource ItemTextBoxStyle}"/>
+                                        <Button Grid.Column="10" Content="Remove" Command="{Binding RemoveCommand}" Style="{StaticResource StandardButtonStyle}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Grid Margin="0,6,0,0">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="160"/><ColumnDefinition Width="6"/><ColumnDefinition Width="80"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <ComboBox ItemsSource="{Binding TypeChoices, Mode=OneWay}" SelectedItem="{Binding NewOverrideType}" Style="{StaticResource ItemComboBoxStyle}"/>
+                            <Button Grid.Column="2" Content="Add" Command="{Binding AddOverrideCommand}" Style="{StaticResource StandardButtonStyle}"/>
+                        </Grid>
+                        <TextBlock Text="Absolute values for one weapon type of this material, where vanilla breaks the pattern (a Daedric warhammer is worth 4,000; vanilla Glass daggers have critical damage 0). Empty cells use the formula."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Margin="0,0,0,12" Padding="10">
+                    <GroupBox.Header><TextBlock Text="Name fallback (when the weapon has none of the material keywords)" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Patterns:" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBox Grid.Column="1" Text="{Binding NamePatterns}" Style="{StaticResource ItemTextBoxStyle}"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Exclusions:" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBox Grid.Column="1" Text="{Binding NameExclusions}" Style="{StaticResource ItemTextBoxStyle}"/>
+                        </Grid>
+                        <TextBlock Text="Comma-separated whole words; a trailing * matches the start of a word. The first material in the list that matches wins."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <ContentControl Content="{Binding Craft}"/>
+                <ContentControl Content="{Binding Temper}"/>
+                <ContentControl Content="{Binding Breakdown}"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- ===== Slot definition ===== -->
+        <DataTemplate DataType="{x:Type local:SlotEditVM}">
+            <StackPanel>
+                <TextBlock Text="Slot definition" Style="{StaticResource TitelStyle}" Margin="0,0,0,10"/>
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="160"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Name:" Style="{StaticResource ItemLabelStyle}"/>
+                    <TextBox Grid.Column="1" Text="{Binding Name}" Style="{StaticResource ItemTextBoxStyle}"/>
+                </Grid>
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="160"/><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Share of the set (%):" Style="{StaticResource ItemLabelStyle}"/>
+                    <TextBox Grid.Column="1" Text="{Binding Share}" model:NumericTextBoxBehavior.Mode="Decimal" Style="{StaticResource ItemTextBoxStyle}"/>
+                    <TextBlock Grid.Column="2" Text="  Armor rating. An item with several slot definitions gets the sum."
+                               Foreground="{DynamicResource ColorTextTertiary}" FontSize="11" VerticalAlignment="Center"/>
+                </Grid>
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="160"/><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Value share (%):" Style="{StaticResource ItemLabelStyle}"/>
+                    <TextBox Grid.Column="1" Text="{Binding ValueShareText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ItemTextBoxStyle}"/>
+                    <TextBlock Grid.Column="2" Text="  Empty = same as the armor rating share."
+                               Foreground="{DynamicResource ColorTextTertiary}" FontSize="11" VerticalAlignment="Center"/>
+                </Grid>
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="160"/><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Weight share (%):" Style="{StaticResource ItemLabelStyle}"/>
+                    <TextBox Grid.Column="1" Text="{Binding WeightShareText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ItemTextBoxStyle}"/>
+                    <TextBlock Grid.Column="2" Text="  Empty = same as the armor rating share."
+                               Foreground="{DynamicResource ColorTextTertiary}" FontSize="11" VerticalAlignment="Center"/>
+                </Grid>
+                <Grid Margin="0,4,0,2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="160"/><ColumnDefinition Width="90"/><ColumnDefinition Width="90"/><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Per type (optional):" Style="{StaticResource ItemLabelStyle}"/>
+                    <TextBlock Grid.Column="1" Text="Armor %" Foreground="{DynamicResource ColorTextSecondary}" FontSize="11" Margin="4,0"/>
+                    <TextBlock Grid.Column="2" Text="Value %" Foreground="{DynamicResource ColorTextSecondary}" FontSize="11" Margin="4,0"/>
+                    <TextBlock Grid.Column="3" Text="Weight %" Foreground="{DynamicResource ColorTextSecondary}" FontSize="11" Margin="4,0"/>
+                    <TextBlock Grid.Column="4" Text="Recipe factors" Foreground="{DynamicResource ColorTextSecondary}" FontSize="11" Margin="4,0"/>
+                </Grid>
+                <ItemsControl ItemsSource="{Binding TypeShares}" Margin="0,0,0,2">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160"/><ColumnDefinition Width="90"/><ColumnDefinition Width="90"/><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding Label, Mode=OneWay}" Style="{StaticResource ItemLabelStyle}" Margin="16,0,5,5"/>
+                                <TextBox Grid.Column="1" Text="{Binding ArmorRatingText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ItemTextBoxStyle}" Margin="0,0,5,5"/>
+                                <TextBox Grid.Column="2" Text="{Binding ValueText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ItemTextBoxStyle}" Margin="0,0,5,5"/>
+                                <TextBox Grid.Column="3" Text="{Binding WeightText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ItemTextBoxStyle}" Margin="0,0,5,5"/>
+                                <TextBox Grid.Column="4" Text="{Binding RecipeFactorsText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ItemTextBoxStyle}"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Text="Empty cells use the values above. Vanilla splits a set differently per type: a light cuirass is half the set's armor, a heavy one 45 %; a light helm takes 1 leather strip, a heavy one 2."
+                           Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="160,0,0,8"/>
+                <Grid Margin="0,0,0,2">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="160"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Recipe factors:" Style="{StaticResource ItemLabelStyle}"/>
+                    <TextBox Grid.Column="1" Text="{Binding FactorsText, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ItemTextBoxStyle}"/>
+                </Grid>
+                <TextBlock Text="{Binding FactorsError, Mode=OneWay}" Foreground="{DynamicResource ColorWarning}" FontSize="11" Margin="160,0,0,2"/>
+                <TextBlock Text="One factor per material position, e.g. 0.5, 0.5, 0.5. A missing position counts as 0; any factor above 0 costs at least 1."
+                           Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="160,0,0,8"/>
+                <CheckBox Content="Carries the material keyword (main pieces: helm, body, hands, feet, shield)"
+                          IsChecked="{Binding CarriesMaterialKeyword}" Foreground="{DynamicResource ColorTextPrimary}" Margin="0,0,0,12"/>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Padding="10">
+                    <GroupBox.Header><TextBlock Text="{Binding BitsSummary, Mode=OneWay}" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <ItemsControl ItemsSource="{Binding Bits}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><UniformGrid Columns="4"/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type local:BitChoiceVM}">
+                                <CheckBox Content="{Binding Label, Mode=OneWay}" IsChecked="{Binding IsChecked}"
+                                          Foreground="{DynamicResource ColorTextPrimary}" Margin="0,2"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </GroupBox>
+                <TextBlock Text="An item takes the definition that matches its slots exactly; otherwise its slots are covered by the largest definitions that fit."
+                           Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,0"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- ===== Addon ===== -->
+        <DataTemplate DataType="{x:Type local:AddonEditVM}">
+            <StackPanel>
+                <TextBlock Text="Addon" Style="{StaticResource TitelStyle}" Margin="0,0,0,10"/>
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Name:" Style="{StaticResource ItemLabelStyle}"/>
+                    <TextBox Grid.Column="1" Text="{Binding Name}" Style="{StaticResource ItemTextBoxStyle}"/>
+                </Grid>
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Padding="10" Margin="0,0,0,12">
+                    <GroupBox.Header><TextBlock Text="Keywords" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <ItemsControl ItemsSource="{Binding Keywords}" ItemTemplate="{StaticResource KeyEntryTemplate}"/>
+                        <ContentControl Content="{Binding KeywordPicker}" Margin="0,6,0,0"/>
+                        <TextBlock Text="Added to the item. An item that already carries all of them gets this addon picked automatically."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Padding="10" Margin="0,0,0,12">
+                    <GroupBox.Header><TextBlock Text="Name trigger" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Patterns:" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBox Grid.Column="1" Text="{Binding NamePatterns}" Style="{StaticResource ItemTextBoxStyle}"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Exclusions:" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBox Grid.Column="1" Text="{Binding NameExclusions}" Style="{StaticResource ItemTextBoxStyle}"/>
+                        </Grid>
+                        <TextBlock Text="An item whose name matches also gets this addon picked - e.g. gold*, jewel*, ornate. Keyword OR name is enough. Comma-separated whole words; a trailing * matches the start of a word (gold* = Golden, not Marigold). With neither keywords nor a pattern, the addon is only ever picked by hand."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11"/>
+
+                        <TextBlock Text="{Binding OnlySlotsLabel, Mode=OneWay}"
+                                   Style="{StaticResource ItemLabelStyle}" Margin="0,10,0,4"/>
+                        <ItemsControl ItemsSource="{Binding SlotChoices}" ItemTemplate="{StaticResource NameChoiceTemplate}"
+                                      ItemsPanel="{StaticResource WrapPanelTemplate}"/>
+
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <ContentControl Content="{Binding OnlyPlugins}"/>
+                            <ContentControl Grid.Column="2" Content="{Binding ExcludePlugins}"/>
+                        </Grid>
+                        <TextBlock Text="The plugin an item comes from (its key before '|'). A trailing * matches the start of a file name - TAWOBA* covers TAWOBA and all its add-ons; type it and press Add. With keywords or a name pattern set, slots and plugins only narrow the automatic pick. With neither, the ticked slots or the 'only from' plugins pick the addon by themselves. To bring another addon along, use 'Also adds these addons' below. A blacklist alone picks nothing. An addon picked by hand always applies."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Padding="10" Margin="0,0,0,12">
+                    <GroupBox.Header><TextBlock Text="EditorID trigger and hold-backs" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="EditorID patterns:" Style="{StaticResource ItemLabelStyle}"/>
+                            <TextBox Grid.Column="1" Text="{Binding EditorIdPatterns}" Style="{StaticResource ItemTextBoxStyle}"/>
+                        </Grid>
+                        <TextBlock Text="Picks the addon by EditorID - comma-separated, * = anything, the whole EditorID must match: Skin* takes SkinChicken, *Skin takes DLC2NetchSkin, neither takes ArmorDragonSkinCuirass."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,0,0,8"/>
+                        <CheckBox Content="Leave the item untouched (nothing is changed)" IsChecked="{Binding LeaveUntouched}" Foreground="{DynamicResource ColorTextPrimary}" Margin="0,0,0,4"/>
+                        <CheckBox Content="Keep the item's own armor rating, value and weight" IsChecked="{Binding KeepValues}" Foreground="{DynamicResource ColorTextPrimary}" Margin="0,0,0,4"/>
+                        <CheckBox Content="Keep the item's own recipes" IsChecked="{Binding KeepRecipes}" Foreground="{DynamicResource ColorTextPrimary}" Margin="0,0,0,4"/>
+                        <CheckBox Content="Keep the item's own keywords" IsChecked="{Binding KeepKeywords}" Foreground="{DynamicResource ColorTextPrimary}"/>
+                        <TextBlock Text="Untouched: creature skins and effect records. Keep values / recipes: uniques whose numbers follow no set (Shield of Solitude) - type, slots and keywords are still built."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Padding="10">
+                    <GroupBox.Header><TextBlock Text="Multipliers" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="90"/><ColumnDefinition Width="20"/>
+                                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="90"/><ColumnDefinition Width="20"/>
+                                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="90"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Armor ×" Style="{StaticResource ItemLabelStyle}" Margin="0,0,6,5"
+                                       Visibility="{Binding IsArmor, Mode=OneWay, Converter={StaticResource BoolToVis}}"/>
+                            <TextBox Grid.Column="1" Text="{Binding ArmorRatingFactor}" model:NumericTextBoxBehavior.Mode="Decimal" Style="{StaticResource ItemTextBoxStyle}"
+                                     Visibility="{Binding IsArmor, Mode=OneWay, Converter={StaticResource BoolToVis}}"/>
+                            <TextBlock Text="Damage ×" Style="{StaticResource ItemLabelStyle}" Margin="0,0,6,5"
+                                       Visibility="{Binding IsWeapons, Mode=OneWay, Converter={StaticResource BoolToVis}}"/>
+                            <TextBox Grid.Column="1" Text="{Binding DamageFactor}" model:NumericTextBoxBehavior.Mode="Decimal" Style="{StaticResource ItemTextBoxStyle}"
+                                     Visibility="{Binding IsWeapons, Mode=OneWay, Converter={StaticResource BoolToVis}}"/>
+                            <TextBlock Grid.Column="3" Text="Value ×" Style="{StaticResource ItemLabelStyle}" Margin="0,0,6,5"/>
+                            <TextBox Grid.Column="4" Text="{Binding ValueFactor}" model:NumericTextBoxBehavior.Mode="Decimal" Style="{StaticResource ItemTextBoxStyle}"/>
+                            <TextBlock Grid.Column="6" Text="Weight ×" Style="{StaticResource ItemLabelStyle}" Margin="0,0,6,5"/>
+                            <TextBox Grid.Column="7" Text="{Binding WeightFactor}" model:NumericTextBoxBehavior.Mode="Decimal" Style="{StaticResource ItemTextBoxStyle}"/>
+                        </Grid>
+                        <TextBlock Text="Multiply the values computed from the set totals (material, or the type's fallback) - e.g. JewelryExpensive with value × 10. 1 = no effect. Values an item keeps are not multiplied; several addons multiply together."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Padding="10" Margin="0,12,0,0">
+                    <GroupBox.Header><TextBlock Text="Also adds these addons" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <ItemsControl ItemsSource="{Binding AlsoChoices}" ItemTemplate="{StaticResource NameChoiceTemplate}"
+                                      ItemsPanel="{StaticResource WrapPanelTemplate}"/>
+                        <TextBlock Text="Whenever this addon is in - picked automatically or by hand - the ticked ones come along (e.g. Premium -> Rich). Use this rather than giving it another addon's keyword: an addon's keywords also pick it, so that would hand it to every item already carrying the keyword."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Padding="10" Margin="0,12,0,0">
+                    <GroupBox.Header><TextBlock Text="Recipe additions" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <ContentControl Content="{Binding CraftAdditions}"/>
+                        <ContentControl Content="{Binding TemperAdditions}" Margin="0,10,0,0"/>
+                        <TextBlock Text="Added on top of the recipe the material or type gives - a fixed amount per piece, not scaled by the slot; an ingredient already in the recipe is increased. An addon never creates a recipe on its own."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- A plugin white- or blacklist. -->
+        <DataTemplate DataType="{x:Type local:PluginListVM}">
+            <StackPanel>
+                <TextBlock Text="{Binding Title, Mode=OneWay}" Style="{StaticResource ItemLabelStyle}" Margin="0,0,0,4"/>
+                <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource KeyEntryTemplate}"/>
+                <ContentControl Content="{Binding Picker}" Margin="0,4,0,0"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- An addon's ingredient additions for one recipe kind. -->
+        <DataTemplate DataType="{x:Type local:AddedIngredientsVM}">
+            <StackPanel>
+                <TextBlock Text="{Binding Title, Mode=OneWay}" Style="{StaticResource ItemLabelStyle}" Margin="0,0,0,4"/>
+                <ItemsControl ItemsSource="{Binding Rows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type local:AddedIngredientRowVM}">
+                            <DockPanel Margin="0,1">
+                                <Button DockPanel.Dock="Right" Content="✕" Width="26" Margin="6,0,0,0"
+                                        Command="{Binding RemoveCommand}" Style="{StaticResource StandardButtonStyle}"/>
+                                <TextBox DockPanel.Dock="Right" Width="60" Text="{Binding Count}"
+                                         model:NumericTextBoxBehavior.Mode="Integer" Style="{StaticResource ItemTextBoxStyle}"/>
+                                <TextBlock Text="{Binding Display, Mode=OneWay}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                            </DockPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <ContentControl Content="{Binding MaterialPicker}" Margin="0,4,0,0"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- ===== Rule ===== -->
+        <DataTemplate DataType="{x:Type local:RuleEditVM}">
+            <StackPanel>
+                <TextBlock Text="Combination rule" Style="{StaticResource TitelStyle}" Margin="0,0,0,10"/>
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Name:" Style="{StaticResource ItemLabelStyle}"/>
+                    <TextBox Grid.Column="1" Text="{Binding Name}" Style="{StaticResource ItemTextBoxStyle}"/>
+                </Grid>
+                <TextBlock Text="{Binding ConditionSummary, Mode=OneWay}" Foreground="{DynamicResource ColorTextSecondary}"
+                           TextWrapping="Wrap" Margin="0,0,0,10"/>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Margin="0,0,0,10" Padding="10">
+                    <GroupBox.Header><TextBlock Text="When (nothing ticked in a group = any)" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <TextBlock Text="{Binding TypeLabel, Mode=OneWay}" Style="{StaticResource ItemLabelStyle}"/>
+                        <ItemsControl ItemsSource="{Binding TypeChoices}" ItemTemplate="{StaticResource NameChoiceTemplate}"
+                                      ItemsPanel="{StaticResource WrapPanelTemplate}" Margin="0,2,0,8"/>
+                        <StackPanel Visibility="{Binding ShowsSlots, Mode=OneWay, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Slot definition:" Style="{StaticResource ItemLabelStyle}"/>
+                            <ItemsControl ItemsSource="{Binding SlotChoices}" ItemTemplate="{StaticResource NameChoiceTemplate}"
+                                          ItemsPanel="{StaticResource WrapPanelTemplate}" Margin="0,2,0,8"/>
+                        </StackPanel>
+                        <TextBlock Text="Material:" Style="{StaticResource ItemLabelStyle}"/>
+                        <ItemsControl ItemsSource="{Binding MaterialChoices}" ItemTemplate="{StaticResource NameChoiceTemplate}"
+                                      ItemsPanel="{StaticResource WrapPanelTemplate}" Margin="0,2,0,8"/>
+                        <StackPanel Visibility="{Binding ShowsSlots, Mode=OneWay, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="But not when the item also has (optional):" Style="{StaticResource ItemLabelStyle}"/>
+                            <ItemsControl ItemsSource="{Binding ExcludeChoices}" ItemTemplate="{StaticResource NameChoiceTemplate}"
+                                          ItemsPanel="{StaticResource WrapPanelTemplate}" Margin="0,2,0,8"/>
+                        </StackPanel>
+                        <TextBlock Text="Addon (optional, one of them):" Style="{StaticResource ItemLabelStyle}"/>
+                        <ItemsControl ItemsSource="{Binding AddonChoices}" ItemTemplate="{StaticResource NameChoiceTemplate}"
+                                      ItemsPanel="{StaticResource WrapPanelTemplate}" Margin="0,2,0,8"/>
+                        <TextBlock Text="But not when the item also has this addon (optional):" Style="{StaticResource ItemLabelStyle}"/>
+                        <ItemsControl ItemsSource="{Binding ExcludeAddonChoices}" ItemTemplate="{StaticResource NameChoiceTemplate}"
+                                      ItemsPanel="{StaticResource WrapPanelTemplate}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Padding="10">
+                    <GroupBox.Header><TextBlock Text="Then add these keywords" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <ItemsControl ItemsSource="{Binding Keywords}" ItemTemplate="{StaticResource KeyEntryTemplate}"/>
+                        <ContentControl Content="{Binding KeywordPicker}" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- List + detail, the same for every tab. DataContext = an EditList. -->
+        <DataTemplate x:Key="ListDetailTemplate">
+            <Grid Margin="0,10,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="230"/>
+                    <ColumnDefinition Width="12"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+                        <Button Content="+ Add" Command="{Binding AddCommand}" Style="{StaticResource ActionButtonGreenStyle}"/>
+                        <Button Content="Remove" Command="{Binding RemoveCommand}" Style="{StaticResource ActionButtonStyle}"/>
+                    </StackPanel>
+                    <ListBox ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}"
+                             Background="{DynamicResource ColorBackgroundPanel}"
+                             BorderBrush="{DynamicResource ColorBorder}" BorderThickness="1">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Name, Mode=OneWay}" Margin="2,2" TextTrimming="CharacterEllipsis"/>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+                <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                    <ContentControl Content="{Binding Selected}" Margin="0,0,10,0"/>
+                </ScrollViewer>
+            </Grid>
+        </DataTemplate>
+
+        <!-- ===== Extra ===== -->
+        <DataTemplate DataType="{x:Type local:ExtraEditVM}">
+            <StackPanel>
+                <TextBlock Text="Extra" Style="{StaticResource TitelStyle}" Margin="0,0,0,10"/>
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Name:" Style="{StaticResource ItemLabelStyle}"/>
+                    <TextBox Grid.Column="1" Text="{Binding Name}" Style="{StaticResource ItemTextBoxStyle}"/>
+                </Grid>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Margin="0,0,0,12" Padding="10">
+                    <GroupBox.Header><TextBlock Text="Enchantment" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <CheckBox Content="Set the enchantment" IsChecked="{Binding SetsEnchantment}"
+                                  Foreground="{DynamicResource ColorTextPrimary}" Margin="0,0,0,6"/>
+                        <TextBlock Text="{Binding EnchantmentDisplay, Mode=OneWay}" Margin="0,0,0,6"/>
+                        <ContentControl Content="{Binding EnchantmentPicker}"
+                                        IsEnabled="{Binding SetsEnchantment}"/>
+                        <TextBlock Text="Pick '(no enchantment)' to strip the item's enchantment. Unticked, the item keeps its own."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,4,0,10"/>
+
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="120"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <CheckBox Content="Set the charge" IsChecked="{Binding SetsAmount}"
+                                      Foreground="{DynamicResource ColorTextPrimary}" VerticalAlignment="Center"/>
+                            <TextBox Grid.Column="1" Text="{Binding EnchantmentAmount}" IsEnabled="{Binding SetsAmount}"
+                                     model:NumericTextBoxBehavior.Mode="Integer" Style="{StaticResource ItemTextBoxStyle}"/>
+                            <TextBlock Grid.Column="2" Text="  The item's charge pool (EAMT). An enchantment without charge cannot be recharged."
+                                       Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" VerticalAlignment="Center"/>
+                        </Grid>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Padding="10">
+                    <GroupBox.Header><TextBlock Text="Leveled lists / containers" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <!-- The item editor's own placement panel; this extra is its host. -->
+                    <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource ContainerPlacementPanelTemplate}"/>
+                </GroupBox>
+            </StackPanel>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <DockPanel>
+            <views:OpenFolderButton DockPanel.Dock="Right" FolderPath="{Binding CatalogPath, Mode=OneWay}" Margin="8,0,0,0"/>
+            <TextBlock Text="{Binding CatalogPath, Mode=OneWay, StringFormat=Building blocks in {0} - one file per tab.}"
+                       Foreground="{DynamicResource ColorTextTertiary}" FontSize="11" TextTrimming="CharacterEllipsis"
+                       VerticalAlignment="Center"/>
+        </DockPanel>
+
+        <!-- Weapon catalog: its own two kinds, then the shared ones. A separate tab strip rather than
+             hidden tabs - a hidden tab can still be the selected one. -->
+        <TabControl Grid.Row="1" Style="{StaticResource ThemedTabControlStyle}" Margin="0,8,0,0"
+                    Visibility="{Binding IsWeapons, Mode=OneWay, Converter={StaticResource BoolToVis}}">
+            <TabItem Header="Weapon types" Style="{StaticResource ThemedTabItemStyle}">
+                <ContentControl Content="{Binding WeaponTypes}" ContentTemplate="{StaticResource ListDetailTemplate}"/>
+            </TabItem>
+            <TabItem Header="Materials" Style="{StaticResource ThemedTabItemStyle}">
+                <ContentControl Content="{Binding WeaponMaterials}" ContentTemplate="{StaticResource ListDetailTemplate}"/>
+            </TabItem>
+            <TabItem Header="Addons" Style="{StaticResource ThemedTabItemStyle}">
+                <ContentControl Content="{Binding Addons}" ContentTemplate="{StaticResource ListDetailTemplate}"/>
+            </TabItem>
+            <TabItem Header="Extras" Style="{StaticResource ThemedTabItemStyle}">
+                <ContentControl Content="{Binding Extras}" ContentTemplate="{StaticResource ListDetailTemplate}"/>
+            </TabItem>
+            <TabItem Header="Rules" Style="{StaticResource ThemedTabItemStyle}">
+                <ContentControl Content="{Binding Rules}" ContentTemplate="{StaticResource ListDetailTemplate}"/>
+            </TabItem>
+        </TabControl>
+
+        <TabControl Grid.Row="1" Style="{StaticResource ThemedTabControlStyle}" Margin="0,8,0,0"
+                    Visibility="{Binding IsArmor, Mode=OneWay, Converter={StaticResource BoolToVis}}"
+                    views:Tutorial.Id="presets.tabs">
+            <TabItem Header="Types" Style="{StaticResource ThemedTabItemStyle}">
+                <ContentControl Content="{Binding Types}" ContentTemplate="{StaticResource ListDetailTemplate}"/>
+            </TabItem>
+            <TabItem Header="Materials" Style="{StaticResource ThemedTabItemStyle}">
+                <ContentControl Content="{Binding Materials}" ContentTemplate="{StaticResource ListDetailTemplate}"/>
+            </TabItem>
+            <TabItem Header="Slot definitions" Style="{StaticResource ThemedTabItemStyle}">
+                <ContentControl Content="{Binding Slots}" ContentTemplate="{StaticResource ListDetailTemplate}"/>
+            </TabItem>
+            <TabItem Header="Addons" Style="{StaticResource ThemedTabItemStyle}">
+                <ContentControl Content="{Binding Addons}" ContentTemplate="{StaticResource ListDetailTemplate}"/>
+            </TabItem>
+            <TabItem Header="Extras" Style="{StaticResource ThemedTabItemStyle}">
+                <ContentControl Content="{Binding Extras}" ContentTemplate="{StaticResource ListDetailTemplate}"/>
+            </TabItem>
+            <TabItem Header="Rules" Style="{StaticResource ThemedTabItemStyle}">
+                <ContentControl Content="{Binding Rules}" ContentTemplate="{StaticResource ListDetailTemplate}"/>
+            </TabItem>
+        </TabControl>
+
+        <DockPanel Grid.Row="2" Margin="0,12,0,0">
+            <Button DockPanel.Dock="Right" Content="Save" Width="90" Margin="0,0,8,0"
+                    Command="{Binding SaveCommand}" Style="{StaticResource ActionButtonGreenStyle}"
+                    views:Tutorial.Id="presets.save"/>
+            <Button DockPanel.Dock="Right" Content="Import slot presets" Width="150" Margin="0,0,8,0"
+                    Visibility="{Binding IsArmor, Mode=OneWay, Converter={StaticResource BoolToVis}}"
+                    Command="{Binding ImportSlotPresetsCommand}" Style="{StaticResource StandardButtonStyle}"
+                    ToolTip="Turn every old slot preset in Output\Presets (LVL2_Iron_Heavy ...) into a material: set totals from the body slot, its recipe as base amounts, perks and catalysts included. Materials that already exist under the preset's name are left alone."/>
+            <TextBlock DockPanel.Dock="Right" Text="● unsaved changes" Foreground="{DynamicResource ColorWarning}"
+                       VerticalAlignment="Center" Margin="0,0,12,0"
+                       Visibility="{Binding IsDirty, Converter={StaticResource BoolToVis}}"/>
+            <TextBlock Text="{Binding Status, Mode=OneWay}" Foreground="{DynamicResource ColorTextSecondary}"
+                       VerticalAlignment="Center" TextWrapping="Wrap"/>
+        </DockPanel>
+    </Grid>
+</UserControl>

@@ -1,0 +1,121 @@
+<UserControl x:Class="SkyrimCraftingTool.View.TemplateListView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:SkyrimCraftingTool.ViewModel"
+             xmlns:views="clr-namespace:SkyrimCraftingTool.View">
+
+    <!-- Every template, listed and editable (docs/NPC-Plan.md §12).
+         Its DataContext is the SAME NpcMenuVM the NPC tab uses, so the editor on the right is the
+         same editor over the same records - a template IS an NPC, and an edit here is the edit the
+         NPC tab shows. The first cut of this was an inheritance tree, which could be read but not
+         used; the number that matters (how many NPCs take their values from this record) is in the
+         list, and everything else is the ordinary editor. -->
+    <Grid Margin="10">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="340"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Grid.ColumnSpan="2"
+                   Text="{Binding TemplateSummary}"
+                   Foreground="{DynamicResource ColorTextSecondary}"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,8"/>
+
+        <Border Grid.Row="1" Grid.Column="0"
+                Background="{DynamicResource ColorBackgroundPanel}"
+                BorderBrush="{DynamicResource ColorBorder}"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="5"
+                Margin="0,0,10,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <TextBox Grid.Row="0"
+                         Text="{Binding TemplateSearchFilter, UpdateSourceTrigger=PropertyChanged}"
+                         Tag="Search templates..."
+                         Background="{DynamicResource ColorBackgroundControl}"
+                         Foreground="{DynamicResource ColorTextPrimary}"
+                         BorderBrush="{DynamicResource ColorBorder}"
+                         Padding="5"
+                         Margin="0,0,0,5"/>
+
+                <!-- Sorted by how many NPCs inherit from each, because that is the whole reason to
+                     open one: most templates feed one or two, a handful feed hundreds. -->
+                <ListBox Grid.Row="1"
+                         ItemsSource="{Binding Templates}"
+                         SelectedItem="{Binding SelectedNpc, Mode=TwoWay}"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Foreground="{DynamicResource ColorTextPrimary}"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         VirtualizingPanel.IsVirtualizing="True"
+                         VirtualizingPanel.VirtualizationMode="Recycling">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,1" ToolTip="{Binding Key}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Text="●"
+                                           Foreground="{DynamicResource ColorWarning}"
+                                           Margin="0,0,4,0"
+                                           ToolTip="Has unsaved-to-plugin edits"
+                                           Visibility="{Binding IsEdited, Converter={StaticResource BoolToVis}}"/>
+
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding DisplayName}"
+                                           TextTrimming="CharacterEllipsis"/>
+
+                                <TextBlock Grid.Column="2"
+                                           Text="{Binding HeirCount}"
+                                           Foreground="{DynamicResource ColorTextTertiary}"
+                                           Margin="8,0,0,0"
+                                           ToolTip="NPCs that inherit from this record"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1" Grid.Column="1"
+                Background="{DynamicResource ColorBackgroundPanel}"
+                BorderBrush="{DynamicResource ColorBorder}"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="10">
+            <Grid>
+                <TextBlock Text="Pick a template on the left to edit it. The number beside each one is how many NPCs take their values from it."
+                           Foreground="{DynamicResource ColorTextSecondary}"
+                           TextWrapping="Wrap"
+                           VerticalAlignment="Top">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasSelection}" Value="False">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <!-- The same editor the NPC tab shows, over the same view model instance. -->
+                <views:NpcDetailView Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}"/>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

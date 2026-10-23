@@ -1,0 +1,124 @@
+﻿<Window x:Class="SkyrimCraftingTool.View.OtherRecipesWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="{Binding Title}"
+        Width="820"
+        Height="420"
+        Background="{DynamicResource ColorBackgroundBase}"
+        TextElement.Foreground="{DynamicResource ColorTextPrimary}"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,10"
+                   Foreground="{DynamicResource ColorTextSecondary}"
+                   Text="Every recipe of this kind the item has. The one marked MAIN is what the editor shows and edits; the others are patched unchanged."/>
+
+        <TextBlock Grid.Row="1"
+                   Text="{Binding EmptyText}"
+                   Foreground="{DynamicResource ColorTextTertiary}"
+                   Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}"/>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                      Visibility="{Binding HasRows, Converter={StaticResource BoolToVis}}">
+            <ItemsControl ItemsSource="{Binding Rows}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border BorderBrush="{DynamicResource ColorBorder}"
+                                BorderThickness="0,0,0,1"
+                                Padding="0,8,0,8">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="60"/>
+                                    <ColumnDefinition Width="2*"/>
+                                    <ColumnDefinition Width="150"/>
+                                    <ColumnDefinition Width="2*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0" Text="MAIN"
+                                           FontWeight="Bold"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource ColorSuccess}"
+                                           Visibility="{Binding IsMain, Converter={StaticResource BoolToVis}}"/>
+
+                                <!-- A removed recipe is struck through and dimmed, not hidden: the
+                                     removal is a decision, and this window is the only way back
+                                     from it. -->
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsRemoved}" Value="True">
+                                                        <Setter Property="TextDecorations" Value="Strikethrough"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource ColorTextTertiary}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding Key}"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource ColorTextTertiary}"/>
+                                    <TextBlock Text="removed — the patch takes this recipe out of the game"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource ColorWarning}"
+                                               Visibility="{Binding IsRemoved, Converter={StaticResource BoolToVis}}"/>
+                                </StackPanel>
+
+                                <TextBlock Grid.Column="2" Text="{Binding WorkbenchName}"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"/>
+
+                                <TextBlock Grid.Column="3" Text="{Binding Summary}"
+                                           VerticalAlignment="Center"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource ColorTextSecondary}"/>
+
+                                <Button Grid.Column="4"
+                                        Content="Make main"
+                                        Margin="8,0,0,0"
+                                        Command="{Binding DataContext.MakeMainCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding}"
+                                        Visibility="{Binding CanMakeMain, Converter={StaticResource BoolToVis}}"
+                                        Style="{StaticResource StandardButtonStyle}"/>
+
+                                <Button Grid.Column="5"
+                                        Content="Remove"
+                                        Margin="8,0,0,0"
+                                        Command="{Binding DataContext.RemoveCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding}"
+                                        ToolTip="{Binding RemoveHint}"
+                                        Visibility="{Binding CanRemove, Converter={StaticResource BoolToVis}}"
+                                        Style="{StaticResource ActionButtonWarmStyle}"/>
+
+                                <Button Grid.Column="5"
+                                        Content="Restore"
+                                        Margin="8,0,0,0"
+                                        Command="{Binding DataContext.RestoreCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding}"
+                                        ToolTip="Put this recipe back; the patch stops removing it."
+                                        Visibility="{Binding IsRemoved, Converter={StaticResource BoolToVis}}"
+                                        Style="{StaticResource StandardButtonStyle}"/>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <Button Grid.Row="2" Content="Close" Width="110" Height="30"
+                HorizontalAlignment="Right" Margin="0,12,0,0"
+                IsCancel="True"
+                Style="{StaticResource ActionButtonStyle}"/>
+    </Grid>
+</Window>

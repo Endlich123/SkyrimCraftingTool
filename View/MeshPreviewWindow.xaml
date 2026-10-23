@@ -1,0 +1,230 @@
+﻿<Window x:Class="SkyrimCraftingTool.View.MeshPreviewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Mesh preview"
+        Width="1000" Height="700"
+        MinWidth="600" MinHeight="420"
+        Background="{DynamicResource ColorBackgroundBase}"
+        TextElement.Foreground="{DynamicResource ColorTextPrimary}"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="280"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <DockPanel Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,10">
+
+            <!-- An armor genuinely has several meshes - race variants, and a male and a female slot per
+                 addon. Measured: 22 addons park bare vanilla skin in the male slot because the garment
+                 has no male version, which is why picking one silently was wrong. -->
+            <ComboBox DockPanel.Dock="Right" Width="330"
+                      ItemsSource="{Binding Variants}"
+                      SelectedItem="{Binding SelectedVariant}"
+                      DisplayMemberPath="Label"
+                      Style="{StaticResource ItemComboBoxStyle}"
+                      ToolTip="Which of this item's meshes to show. An armour has one per body shape and gender.">
+                <ComboBox.Visibility>
+                    <Binding Path="HasVariants">
+                        <Binding.Converter>
+                            <BooleanToVisibilityConverter/>
+                        </Binding.Converter>
+                    </Binding>
+                </ComboBox.Visibility>
+            </ComboBox>
+
+            <TextBlock Style="{StaticResource TitelStyle}" VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" Margin="0,0,10,0"
+                       Text="{Binding Title}"/>
+        </DockPanel>
+
+        <!-- Shape list. Every NIF is several shapes and some of them sit over the ones you want to
+             look at - blood decals on a blade, a skin underlayer on armour - so each is switchable. -->
+        <DockPanel Grid.Row="1" Grid.Column="0" Margin="0,0,12,0">
+            <TextBlock DockPanel.Dock="Top" Margin="0,0,0,6"
+                       Foreground="{DynamicResource ColorTextSecondary}"
+                       Text="Shapes in this file"/>
+
+            <ListBox ItemsSource="{Binding Shapes}"
+                     Background="{DynamicResource ColorBackgroundPanel}"
+                     BorderBrush="{DynamicResource ColorBorder}"
+                     BorderThickness="1"
+                     HorizontalContentAlignment="Stretch"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="2,4">
+                            <CheckBox IsChecked="{Binding IsVisible}"
+                                      Content="{Binding Name}"
+                                      FontWeight="SemiBold"
+                                      Foreground="{DynamicResource ColorTextPrimary}"/>
+                            <TextBlock Text="{Binding Summary}" Margin="20,1,0,0"
+                                       TextWrapping="Wrap" FontSize="11"
+                                       Foreground="{DynamicResource ColorTextTertiary}"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </DockPanel>
+
+        <!-- The drawing area. An Image, not a Viewport3D: the frame is rasterised in SoftwareRenderer,
+             which is what makes per-pixel normal mapping possible at all - WPF's 3D pipeline is
+             fixed-function and has no shader stage. -->
+        <Border Grid.Row="1" Grid.Column="1"
+                Background="{DynamicResource ColorBackgroundPanel}"
+                BorderBrush="{DynamicResource ColorBorder}"
+                BorderThickness="1"
+                ClipToBounds="True">
+            <Grid x:Name="Viewport"
+                  Background="Transparent"
+                  SizeChanged="Viewport_SizeChanged"
+                  MouseLeftButtonDown="Viewport_MouseDown"
+                  MouseMove="Viewport_MouseMove"
+                  MouseLeftButtonUp="Viewport_MouseUp"
+                  MouseWheel="Viewport_MouseWheel">
+
+                <!-- Stretch=None: the renderer is handed the control's exact pixel size and the bitmap
+                     is declared at the display's own dpi, so one rasterised pixel is one screen pixel
+                     and there is nothing to scale.
+
+                     HighQuality is insurance for the moment that is not quite true - a window size that
+                     rounds to an odd number of device pixels, say. Where there is no scaling it does
+                     nothing; where there is a fraction of one it softens rather than showing blocks,
+                     which is the failure worth having. -->
+                <Image Source="{Binding Image}" Stretch="None"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       RenderOptions.BitmapScalingMode="HighQuality"/>
+
+                <!-- Shown instead of an empty black box when there is nothing to draw. -->
+                <TextBlock Text="{Binding Status}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           TextWrapping="Wrap" MaxWidth="360" TextAlignment="Center"
+                           Foreground="{DynamicResource ColorTextMuted}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasGeometry}" Value="False">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </Grid>
+        </Border>
+
+        <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Margin="0,10,0,0">
+
+            <!-- The parent-node warning. Composing the node tree is the likeliest remaining cause of a
+                 shape sitting in the wrong place, so when it was involved the window says so rather than
+                 leaving a displaced mesh looking like a broken one. -->
+            <Border Background="{DynamicResource ColorSurfaceInfo}"
+                    BorderBrush="{DynamicResource ColorBorderLight}"
+                    BorderThickness="1" CornerRadius="3"
+                    Padding="8,5" Margin="0,0,0,8">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding AnyShapeMovedByParentNode}" Value="True">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <TextBlock TextWrapping="Wrap" FontSize="11"
+                           Foreground="{DynamicResource ColorTextSecondary}"
+                           Text="At least one shape here is positioned by a parent node rather than by itself. That placement is computed from the file's node tree — if a part looks like it is in the wrong place, this is the first thing to suspect."/>
+            </Border>
+
+            <!-- A grey patch on an otherwise textured model is a question. This is the answer. -->
+            <Border Background="{DynamicResource ColorSurfaceWarn}"
+                    BorderBrush="{DynamicResource ColorBorderLight}"
+                    BorderThickness="1" CornerRadius="3"
+                    Padding="8,5" Margin="0,0,0,8">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasMissingTextures}" Value="True">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <TextBlock TextWrapping="Wrap" FontSize="11"
+                           Foreground="{DynamicResource ColorTextSecondary}">
+                    <Run Text="{Binding MissingTextureCount, Mode=OneWay}"/>
+                    <Run Text="shape(s) name a texture that could not be loaded, so they are drawn grey. Either no active mod ships that file, or it is in a format this tool does not decode."/>
+                </TextBlock>
+            </Border>
+
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="Reset view" Width="90"
+                        Command="{Binding ResetViewCommand}"
+                        Style="{StaticResource StandardButtonStyle}"/>
+
+                <!-- Both states are worth having: the texture says what the item IS, grey says what its
+                     SHAPE is, which a busy diffuse map can hide completely. -->
+                <CheckBox DockPanel.Dock="Right" Content="Textures"
+                          IsChecked="{Binding ShowTextures}"
+                          VerticalAlignment="Center" Margin="0,0,14,0"
+                          Foreground="{DynamicResource ColorTextSecondary}"
+                          ToolTip="Off shows plain grey, which makes the geometry easier to judge."/>
+
+                <!-- The real thing, per pixel: most of what makes a Skyrim armour look like anything is
+                     in the normal map rather than the diffuse. -->
+                <CheckBox DockPanel.Dock="Right" Content="Normal map"
+                          IsChecked="{Binding NormalMapping}"
+                          VerticalAlignment="Center" Margin="0,0,14,0"
+                          Foreground="{DynamicResource ColorTextSecondary}"
+                          ToolTip="Lights the surface detail from the normal map, per pixel. Leather grain, stitching, studs and scales become visible, and their shading moves as you turn the model."/>
+
+                <!-- The only thing that gives a black garment back its shape: a highlight is ADDED
+                     rather than multiplied by the texture, so it shows up where light alone cannot. -->
+                <CheckBox DockPanel.Dock="Right" Content="Shine"
+                          IsChecked="{Binding Shine}"
+                          VerticalAlignment="Center" Margin="0,0,14,0"
+                          Foreground="{DynamicResource ColorTextSecondary}"
+                          ToolTip="A specular highlight. Needed for anything with a near-black texture — latex, dark leather — where no amount of light helps."/>
+
+                <Slider DockPanel.Dock="Right" Width="90" Minimum="0.2" Maximum="2.5"
+                        Value="{Binding Brightness}" VerticalAlignment="Center" Margin="0,0,14,0"
+                        ToolTip="Brightness. Some diffuse maps are nearly black by design — Daedric armour, for one."/>
+                <TextBlock DockPanel.Dock="Right" Text="Light" VerticalAlignment="Center" Margin="0,0,6,0"
+                           Foreground="{DynamicResource ColorTextTertiary}"/>
+
+                <!-- The fixed lamps stand still while the camera orbits, so turning the model turns its
+                     lit side away. The headlight follows the camera and never does that; the fixed pair
+                     is what still gives the surface its shape. -->
+                <CheckBox DockPanel.Dock="Right" Content="Fixed lights"
+                          IsChecked="{Binding FixedLights}"
+                          VerticalAlignment="Center" Margin="0,0,14,0"
+                          Foreground="{DynamicResource ColorTextSecondary}"
+                          ToolTip="Two lamps fixed in the scene. They give the surface its shading — switch them off for a flat, evenly lit look."/>
+
+                <CheckBox DockPanel.Dock="Right" Content="Headlight"
+                          IsChecked="{Binding Headlight}"
+                          VerticalAlignment="Center" Margin="0,0,14,0"
+                          Foreground="{DynamicResource ColorTextSecondary}"
+                          ToolTip="A lamp that follows the camera, so nothing goes dark as you turn the model."/>
+
+                <TextBlock VerticalAlignment="Center"
+                           Foreground="{DynamicResource ColorTextSecondary}">
+                    <Run Text="{Binding Status, Mode=OneWay}"/>
+                    <Run Text="  ·  " Foreground="{DynamicResource ColorTextTertiary}"/>
+                    <Run Text="{Binding BoundsText, Mode=OneWay}" Foreground="{DynamicResource ColorTextTertiary}"/>
+                    <Run Text="  ·  drag to turn, wheel to zoom" Foreground="{DynamicResource ColorTextMuted}"/>
+                    <Run Text="{Binding RenderNote, Mode=OneWay}" Foreground="{DynamicResource ColorTextMuted}"/>
+                </TextBlock>
+            </DockPanel>
+        </StackPanel>
+    </Grid>
+</Window>
