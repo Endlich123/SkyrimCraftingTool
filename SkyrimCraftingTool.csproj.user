@@ -4,6 +4,9 @@
     <_LastSelectedProfileId>D:\ModdingSkyrim\TOOL\WPF\SkyrimCraftingTool\SkyrimCraftingTool\Properties\PublishProfiles\FolderProfile.pubxml</_LastSelectedProfileId>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Update="Model\ItemDbConnection.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Update="View\MainContentView.xaml.cs">
       <SubType>Code</SubType>
     </Compile>

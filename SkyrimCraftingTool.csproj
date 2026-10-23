@@ -13,8 +13,8 @@
          InformationalVersion, which is what the bug report prints as "Tool version" (see
          DiagnosticsReport). Kept spelled exactly like the uploaded file name so a report and a
          download name can be compared without translating between them. -->
-    <Version>0.9.9</Version>
-    <InformationalVersion>0.9.9</InformationalVersion>
+    <Version>0.9.9.5</Version>
+    <InformationalVersion>0.9.9.5</InformationalVersion>
 
     <!-- Ship only English resources. The 13 satellite folders are localized error strings from .NET
          and third-party libraries; the tool's own UI is English either way. -->
@@ -62,6 +62,14 @@
        is one more thing the release ZIP can be missing. -->
   <ItemGroup>
     <EmbeddedResource Include="Tutorials\*.json" LogicalName="SkyrimCraftingTool.Tutorials.%(Filename).json" />
+  </ItemGroup>
+
+  <!-- The shipped preset catalog (vanilla Skyrim, built and checked 2026-10-22). Embedded for the same
+       reason; written to Output/Presets/Modules/<Armor|Weapons> on a start that finds no catalog there
+       (ModularCatalogStore.SeedDefaultsIfEmpty). -->
+  <ItemGroup>
+    <EmbeddedResource Include="PresetDefaults\Modules\Armor\*.json" LogicalName="SkyrimCraftingTool.PresetDefaults.Armor.%(Filename).json" />
+    <EmbeddedResource Include="PresetDefaults\Modules\Weapons\*.json" LogicalName="SkyrimCraftingTool.PresetDefaults.Weapons.%(Filename).json" />
   </ItemGroup>
 
   <ItemGroup>
