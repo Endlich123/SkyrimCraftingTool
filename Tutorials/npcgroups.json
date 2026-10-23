@@ -1,0 +1,83 @@
+{
+  // Guided tour of the NPC groups tab. Targets: views:Tutorial.Id in View/NpcGroupView.xaml.
+  "id": "npcgroups",
+  "title": "NPC groups tab",
+  "steps": [
+    {
+      "title": "NPC groups",
+      "text": "A group is a named set of filters - 'class is Bandit, level 1-5', say - and everything you set on it is written as ONE rule for all its members.\n\nThis is the main tool for NPC balance: edit 'all bandits' once instead of hundreds of NPCs one by one.",
+      "more": "Members are not stored, they are worked out from the filters every time. A mod you install later that adds new bandits is picked up automatically on the next scan - and the tab tells you by name who joined, so nothing changes behind your back."
+    },
+    {
+      "target": "groups.fill",
+      "title": "Fill automatically, New",
+      "text": "Fill automatically creates a starting set of groups from the way Bethesda names NPCs (EncBandit01, EncBandit02 ... are level tiers) and from the biggest classes. Groups already here are left alone. New starts an empty group.",
+      "more": "The automatic groups are a starting point, not a verdict. Open them, check the 'is' column in Values, and split or merge where a group turns out too coarse."
+    },
+    {
+      "target": "groups.list",
+      "title": "The group list",
+      "text": "All groups with their member count. '(without a group)' counts the NPCs no group reaches.\n\nA mark in front of a group: '!' means its members changed since you last confirmed it, '?' means nobody has confirmed it yet."
+    },
+    {
+      "target": "groups.definition",
+      "prepare": "npcgroups.selectExample",
+      "prepareFailedText": "There is no group yet to walk through. Press 'Fill automatically' or 'New' on the left, then start the tour again.",
+      "title": "Definition",
+      "text": "The group in one sentence, and how many NPCs it reaches. 'Show members' lists them. 'Confirm' remembers the current members, so the next scan can report what changed.",
+      "more": "Confirm after you have checked a group. Until then it stays marked as unchecked - in the list and in the patch report."
+    },
+    {
+      "target": "groups.clauses",
+      "skipIfMissing": true,
+      "title": "Filter lines",
+      "text": "Each line is one condition: an axis (class, race, faction, EditorID, gender, plugin, flags), a mode (is / is any of / is not) and a value. Lines are combined with AND.",
+      "more": "The EditorID trap: EditorID matches a PART of the name. 'contains EncBandit03' also catches DLC2EncBandit03... from Dragonborn. Add a second line 'does not contain DLC2' to keep them out.\n\nClass, race, plugin and gender: an NPC has exactly one of each, so two lines on the same axis mean EITHER one. Factions, EditorIDs and flags: an NPC can have several, so two lines there mean BOTH.\n\nA line marked 'auto' was written by 'Exclude what other groups already cover'; edit it and it becomes yours."
+    },
+    {
+      "target": "groups.addFilter",
+      "title": "Add filter",
+      "text": "Adds a new line. It counts only once it has a value."
+    },
+    {
+      "target": "groups.byHand",
+      "title": "By hand",
+      "text": "For the exceptions a filter cannot express: search an NPC by name, EditorID or FormID and add it to the group. NPCs you took out (with the X in the member list) are listed here too, each with a button to undo it."
+    },
+    {
+      "target": "groups.overlap",
+      "skipIfMissing": true,
+      "title": "Also in other groups",
+      "text": "Which other groups share NPCs with this one. Sharing is allowed; it only matters where both groups set the same value - then both rules run and one of them wins. Those cases are marked in amber.",
+      "more": "'Exclude what other groups already cover' adds filter lines that take the shared NPCs out of THIS group. Press it on the group that should give them up. The button next to it takes those lines back again."
+    },
+    {
+      "target": "groups.drift",
+      "skipIfMissing": true,
+      "title": "Since last confirmed",
+      "text": "After a rescan: the NPCs that joined or left this group, by name. Check them, then Confirm."
+    },
+    {
+      "target": "groups.values",
+      "title": "Values",
+      "text": "'is' shows what the members have now - a single number, or a range. Amber means the range is wide: the group probably mixes very different NPCs. 'how' and 'should be' set the new value.",
+      "more": "The 'how' choices:\n•  direct: every member gets this value.\n•  span: from - to, spread over the group's level range: an NPC at the low end gets the first number, one at the high end the second.\n•  mult: multiplies each member's own value (1.5 = +50 %).\n•  calc: a value per level - the game works out the total from each NPC's level.\n\nOn the Level row, a span makes the group scale with the player between the two levels.\n\nSpan and calc need a fixed level: on a group that scales with the player they cannot be written, and the rule preview says so.\n\nSkills take one number from 0 to 100. An empty box takes a value back out of the group."
+    },
+    {
+      "target": "groups.perks",
+      "title": "Perks this group adds",
+      "text": "Perks every member should get. The second column says how many members already have it - a perk all of them have is marked, because that line would change nothing.",
+      "more": "Only adding: a perk the plugins give an NPC cannot be removed by a rule. The list below shows the perks all members already share - the baseline to build on."
+    },
+    {
+      "target": "groups.preview",
+      "title": "Rule preview",
+      "text": "The exact SkyPatcher rule this group becomes. Amber lines below it are what the rule CANNOT carry, or carries only with a decision you still have to make - read them before generating the patch.",
+      "more": "The rule automatically switches off the game's own stat calculation for its members; without that, the engine would recalculate health, magicka, stamina and all skills when an NPC spawns, and your values would be gone."
+    },
+    {
+      "title": "Groups and single NPCs",
+      "text": "Group rules go into '0 SkyrimCraftingTool - NPC groups.ini' and are read FIRST. An edit to a single NPC in the NPCs tab is read later and wins - so the NPCs tab is where the exceptions go.\n\nAs always, Generate Patch writes it all."
+    }
+  ]
+}

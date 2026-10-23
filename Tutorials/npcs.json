@@ -1,0 +1,73 @@
+{
+  // Guided tour of the NPCs tab. Targets: views:Tutorial.Id in View/NpcMenuView.xaml and
+  // View/NpcDetailView.xaml.
+  "id": "npcs",
+  "title": "NPCs tab",
+  "steps": [
+    {
+      "title": "The NPCs tab",
+      "text": "Single NPCs: their health, magicka, stamina, level, skills and perks.\n\nFor whole kinds of NPCs - all bandits, all draugr - the NPC groups tab is the better tool: one rule instead of hundreds of single edits. This tab is for the exceptions, and an edit here wins over a group rule for the same NPC."
+    },
+    {
+      "target": "npcs.tree",
+      "title": "The tree",
+      "text": "Plugin, then class, then the NPCs. The number after a branch counts the NPCs below it. A dot marks an NPC you edited.",
+      "more": "•  Click an NPC to open it.\n•  Ctrl+click adds NPCs to a selection.\n•  Shift+click on a class or plugin selects everything below it - 'every bandit' in one click.\n\nWith several selected, the right side becomes a bulk editor: set one value on all of them, or add a perk/spell/item to each. Every NPC keeps its own edit, so any of them can still be corrected or reset on its own."
+    },
+    {
+      "target": "npcs.search",
+      "title": "Search",
+      "text": "Matches the name, EditorID or FormID of an NPC. A plugin or class name matches everything below it."
+    },
+    {
+      "target": "npcs.faction",
+      "title": "Faction filter",
+      "text": "Narrows the tree to the members of one faction. Type to find the faction, pick it, and 'clear' brings the full tree back.",
+      "more": "Faction is a filter and not a level of the tree on purpose: many NPCs belong to no faction at all, and many to several. A tree needs exactly one parent per NPC."
+    },
+    {
+      "target": "npcs.filters",
+      "title": "Only edited",
+      "text": "Shows only the NPCs you changed."
+    },
+    {
+      "target": "npcs.template",
+      "prepare": "npcs.selectExample",
+      "prepareFailedText": "The rest of this tour walks through one NPC, and the tree is empty. Run Scan/Rescan in the Items tab, then open this tab again.",
+      "skipIfMissing": true,
+      "title": "Inherits from a template",
+      "text": "Many NPCs take their stats, skills or other parts from another record - their template. This box says which, and 'open' jumps to it. Read the warning in it, if there is one: it says which of the numbers below the game actually uses.",
+      "more": "Templates are how Bethesda builds generic enemies: one template, many variants. A template can itself be a leveled list, in which case the NPC is drawn from it and there is no single record to open.\n\nStat, skill and perk edits made here reach the NPC in game even when it inherits those fields - SkyPatcher applies them to the NPC itself. A level change on a TEMPLATE record, however, has no effect in game: edit the NPCs that use it instead."
+    },
+    {
+      "target": "npcs.stats",
+      "title": "Stats",
+      "text": "Health, magicka and stamina. Type a new value; a changed field gets a coloured border. 'Reset this NPC' at the top undoes every change on this NPC.",
+      "more": "If an amber line appears above the fields, the game calculates this NPC's stats itself from race, class and level, and the stored numbers are not what you meet in game. The line says what the game would compute."
+    },
+    {
+      "target": "npcs.level",
+      "title": "Level",
+      "text": "Either a fixed level, or 'Scales with the player': then the NPC's level follows yours, kept between Calc min and Calc max level.",
+      "more": "Scaling with the player is what keeps an NPC relevant over a whole playthrough; a fixed level is what makes a place dangerous (or trivial) no matter when you arrive. 'In the record' shows what the plugins currently say, as one line."
+    },
+    {
+      "target": "npcs.skills",
+      "expand": [ "npcs.skills" ],
+      "title": "Skills",
+      "text": "The NPC's skill values. They matter more than health for how tough an NPC is: damage, armor and spell strength all come from skills.",
+      "more": "Some skills do nothing on an NPC - smithing, alchemy, enchanting, lockpicking and pickpocket are not read by the game for NPCs. The combat and magic skills are the ones that count."
+    },
+    {
+      "target": "npcs.perks",
+      "expand": [ "npcs.perks" ],
+      "title": "Perks",
+      "text": "Perks to give this NPC. Perks can only be added: a perk the plugins already give an NPC cannot be taken away by a rule.",
+      "more": "Perks are a strong lever for difficulty - an archer with the archery damage perks hits much harder at the same skill value."
+    },
+    {
+      "title": "Generate Patch",
+      "text": "NPC edits are written as SkyPatcher rules by Generate Patch. They take effect in game when an NPC is loaded; a rescan of this tool still shows the plugin values, because SkyPatcher never changes the plugins themselves."
+    }
+  ]
+}

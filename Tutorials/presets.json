@@ -1,0 +1,35 @@
+{
+  // Guided tour of the Presets tab. Targets: views:Tutorial.Id in View/ModularCatalogView.xaml.
+  "id": "presets",
+  "title": "Presets tab",
+  "steps": [
+    {
+      "title": "Building blocks",
+      "text": "Presets are built from blocks: a type (heavy, light, clothing), a material or tier, slot definitions, addons and extras. Rules combine them into the keywords an item gets.\n\nOn the Items tab, the Build box puts the blocks together for one item, a selection or a whole plugin.",
+      "more": "Why blocks and not one preset per slot: the same slot means different things on different items (a circlet slot is a helmet on armor and a diadem on clothing), and mods choose accessory slots freely. Blocks keep the meaning in one place and let the rules work out the rest."
+    },
+    {
+      "target": "presets.tabs",
+      "title": "One tab per kind",
+      "text": "Each tab is a list on the left and the selected entry on the right.\n\n•  Types: the armor type written to the item, fallback totals for items without a known material, and rounding.\n•  Materials: the set totals (armor, value, weight of a full set), the material keyword and the crafting, temper and breakdown recipes.\n•  Slot definitions: which body slots make a piece, and its share of the set.",
+      "more": "•  Addons: extra keywords and value multipliers, picked by hand or automatically - when the item already carries their keywords, its name matches (gold* -> Expensive, value x10) or its EditorID matches. An addon can also hold an item back: leave it untouched, or keep its own values, recipes or keywords - for unique items whose stats should not follow the formula.\n•  Extras: an enchantment with its charge, and leveled-list placements.\n•  Rules: 'when type X and slot Y, add these keywords' - for example heavy armor in the body slot gets ArmorCuirass. A rule can also require an addon, or be blocked by one.\n\nA piece's values are the material's totals times the shares of its slot definitions; an item with several slot definitions gets their sum."
+    },
+    {
+      "target": "presets.tabs",
+      "title": "Shares per type and exceptions",
+      "text": "A slot definition has one share for armor rating, and optional separate shares for value and weight (empty = same as armor rating).\n\n'Per type' overrides them for one armor type - vanilla splits a set differently: a light cuirass is half the set's armor, a heavy one 45 %.",
+      "more": "•  Recipe factors scale the material's recipe per slot (a helmet takes fewer bars than a cuirass). Per type they can differ too: a light helm takes 1 leather strip, a heavy one 2.\n•  Materials have 'Exceptions per slot' for the rare piece that breaks the pattern of its own material - say one boot that costs more than the slot share gives.\n•  Order of precedence: material exception, then the slot's per-type value, then the slot's own share.\n•  Enchanted items get no crafting or temper recipe - like vanilla, where enchanted variants are found, not made."
+    },
+    {
+      "target": "presets.save",
+      "title": "Save",
+      "text": "Nothing here saves on its own - a half-made rule should not take effect. Save writes the blocks to Output/Presets/Modules/Armor; leaving the tab with unsaved changes asks first.",
+      "more": "'Import slot presets' turns old slot presets (files in Output/Presets) into materials: the body slot's values become the set totals, its recipe the base amounts."
+    },
+    {
+      "title": "Applying to many items",
+      "text": "On the Items tab, 'Preset dry run' opens a window with one card per plugin, in load order, and one card per item inside it. Each card shows what the blocks would do - nothing is written until you press Apply.\n\nApplying is an ordinary edit: it shows up as edited, and Reset ALL (one item) or Reset all items (the whole tree) takes it back.",
+      "more": "•  Switch a plugin or a single item off and it is left out of every Apply. Off cards turn red.\n•  'Preset for all items' on a plugin card sets type, material or addons for the whole plugin; an item card can override that again. '(auto: ...)' shows what the tool detected and uses when you choose nothing.\n•  All of this is remembered for next time (Output/Presets/PatchPlugins.json). Reset all puts the cards shown back to on and (auto).\n•  'Only items that change' and 'Only items with notes' narrow the list; Apply acts on what is shown and switched on.\n•  Edit building blocks opens this editor; the cards are computed again with what you save.\n•  Something a plugin should always get belongs in an addon or a rule, not in a card choice - blocks are shared with the preset, card choices stay on this PC."
+    }
+  ]
+}
