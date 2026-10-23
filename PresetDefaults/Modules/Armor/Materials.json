@@ -1,0 +1,4794 @@
+{
+  "SchemaVersion": 1,
+  "Entries": [
+    {
+      "Name": "Falmer",
+      "MaterialKeyword": "Update.esm|0009BD",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 84.97,
+          "Value": 38,
+          "Weight": 69.17
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|03AD57",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "falmer",
+      "NameExclusions": "",
+      "SlotOverrides": []
+    },
+    {
+      "Name": "Hunter",
+      "MaterialKeyword": "Dawnguard.esm|0050C4",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 56.94,
+          "Value": 237,
+          "Weight": 43.92
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Hands",
+          "ArmorRating": 17.562,
+          "Value": null,
+          "Weight": 9.107,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Body",
+          "ArmorRating": 43.906,
+          "Value": null,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Feet",
+          "ArmorRating": 17.562,
+          "Value": null,
+          "Weight": 11.384,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "FalmerHeavyOriginal",
+      "MaterialKeyword": "Dawnguard.esm|012CD0",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 66.01,
+          "Value": 442,
+          "Weight": 31.99
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|03AD57",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Hands",
+          "ArmorRating": 18.179,
+          "Value": 12.443,
+          "Weight": 12.504,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Feet",
+          "ArmorRating": 18.179,
+          "Value": 12.443,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Body",
+          "ArmorRating": 46.963,
+          "Value": 62.217,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Hair",
+          "ArmorRating": 15.149,
+          "Value": 5.656,
+          "Weight": 15.63,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "FalmerHardened",
+      "MaterialKeyword": "Dawnguard.esm|012CCE",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 77.37,
+          "Value": 495,
+          "Weight": 63.75
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|03AD57",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Helm",
+          "ArmorRating": 23.265,
+          "Value": 30.303,
+          "Weight": 15.686,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Hands",
+          "ArmorRating": null,
+          "Value": 12.121,
+          "Weight": 10.98,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Body",
+          "ArmorRating": 43.945,
+          "Value": 50.505,
+          "Weight": 62.745,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Feet",
+          "ArmorRating": null,
+          "Value": 10.101,
+          "Weight": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "MS02Forsworn",
+      "MaterialKeyword": "Update.esm|0009BA",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 48.96,
+          "Value": 190,
+          "Weight": 5.45
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": 24.51,
+          "Value": 26.316,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 49.02,
+          "Value": 52.632,
+          "Weight": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "ThievesGuildLeader",
+      "MaterialKeyword": "Update.esm|0009BF",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 75.71,
+          "Value": 627,
+          "Weight": 17.63
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": 21.133,
+          "Value": 31.898,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 14.529,
+          "Value": 15.949,
+          "Weight": 11.344,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": null,
+          "Value": 47.847,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": 14.529,
+          "Value": 15.949,
+          "Weight": 11.344,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Forsworn",
+      "MaterialKeyword": "Update.esm|0009B9",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 52.04,
+          "Value": 190,
+          "Weight": 11.26
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "forsworn",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 13.451,
+          "Value": null,
+          "Weight": 17.762,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": 23.059,
+          "Value": 26.316,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": null,
+          "Value": 52.632,
+          "Weight": 53.286,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": null,
+          "Value": null,
+          "Weight": 17.762,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Penitus",
+      "MaterialKeyword": "Update.esm|0009BB",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 46.13,
+          "Value": 140,
+          "Weight": 10.07
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 13.007,
+          "Value": null,
+          "Weight": 9.93,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hair",
+          "ArmorRating": 23.846,
+          "Value": 25,
+          "Weight": 9.93,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": 13.007,
+          "Value": null,
+          "Weight": 9.93,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": null,
+          "Value": 53.571,
+          "Weight": 59.583,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "BearStormcloak",
+      "MaterialKeyword": "Update.esm|0009BE",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 53.52,
+          "Value": 65,
+          "Weight": 14.22
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": 22.422,
+          "Value": 23.077,
+          "Weight": 14.065,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 13.079,
+          "Value": null,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": 13.079,
+          "Value": null,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": null,
+          "Value": 53.846,
+          "Weight": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "MoragTong",
+      "MaterialKeyword": "Dragonborn.esm|03A328",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 52.45,
+          "Value": 233,
+          "Weight": 9.56
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Mask",
+          "ArmorRating": 22.879,
+          "Value": 0.858,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 13.346,
+          "Value": null,
+          "Weight": 20.921,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 49.571,
+          "Value": 64.378,
+          "Weight": 52.301,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": 15.253,
+          "Value": 15.021,
+          "Weight": 20.921,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Blades",
+      "MaterialKeyword": "Update.esm|0009C0",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 88.6,
+          "Value": 777,
+          "Weight": 70.65
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE5",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "blades",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Shield",
+          "ArmorRating": 29.345,
+          "Value": 28.958,
+          "Weight": 16.985,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Helm",
+          "ArmorRating": 20.316,
+          "Value": 25.74,
+          "Weight": 16.985,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Hands",
+          "ArmorRating": 14.673,
+          "Value": 10.94,
+          "Weight": 11.323,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Body",
+          "ArmorRating": 49.661,
+          "Value": 51.48,
+          "Weight": 63.694,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Feet",
+          "ArmorRating": 14.673,
+          "Value": 10.94,
+          "Weight": 14.154,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "FalmerHeavy",
+      "MaterialKeyword": "Dawnguard.esm|012CCF",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 96.08,
+          "Value": 2270,
+          "Weight": 55.24
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|03AD57",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Feet",
+          "ArmorRating": null,
+          "Value": 9.912,
+          "Weight": 10.862,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Hands",
+          "ArmorRating": null,
+          "Value": 9.912,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Helm",
+          "ArmorRating": 21.857,
+          "Value": 26.432,
+          "Weight": 14.482,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Body",
+          "ArmorRating": null,
+          "Value": 52.863,
+          "Weight": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Stormcloak",
+      "MaterialKeyword": "Skyrim.esm|0AC13A",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 41.69,
+          "Value": 47,
+          "Weight": 14.22
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 11.993,
+          "Value": null,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": 11.993,
+          "Value": null,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Mask",
+          "ArmorRating": 23.987,
+          "Value": null,
+          "Weight": 14.065,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Studded",
+      "MaterialKeyword": "Skyrim.esm|06BBDF",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 45.82,
+          "Value": 142,
+          "Weight": 10.8
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 4,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": []
+    },
+    {
+      "Name": "ThievesGuild",
+      "MaterialKeyword": "Update.esm|0009BC",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 62.38,
+          "Value": 627,
+          "Weight": 10.07
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": 24.046,
+          "Value": 31.898,
+          "Weight": 9.93,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 16.031,
+          "Value": 15.949,
+          "Weight": 9.93,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 48.092,
+          "Value": 47.847,
+          "Weight": 59.583,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": 16.031,
+          "Value": 15.949,
+          "Weight": 9.93,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Dawnguard",
+      "MaterialKeyword": "Dawnguard.esm|012CCD",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 77.77,
+          "Value": 828,
+          "Weight": 64.89
+        },
+        "LightArmor": {
+          "ArmorRating": 63.36,
+          "Value": 611,
+          "Weight": 11.07
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE5",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Hands",
+          "ArmorRating": null,
+          "Value": 10.266,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Feet",
+          "ArmorRating": null,
+          "Value": 10.266,
+          "Weight": 13.87,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Mask",
+          "ArmorRating": 23.145,
+          "Value": 26.57,
+          "Weight": 15.411,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Shield",
+          "ArmorRating": 33.432,
+          "Value": 28.986,
+          "Weight": 15.411,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Body",
+          "ArmorRating": 43.719,
+          "Value": 51.329,
+          "Weight": 64.725,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": 25.253,
+          "Value": 16.367,
+          "Weight": 13.55,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Shield",
+          "ArmorRating": 42.614,
+          "Value": 73.65,
+          "Weight": 54.201,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 45.77,
+          "Value": 36.007,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": 12.626,
+          "Value": 4.092,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 12.626,
+          "Value": 6.547,
+          "Weight": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Vampire",
+      "MaterialKeyword": "Dawnguard.esm|01463E",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 50.32,
+          "Value": 324,
+          "Weight": 9.4
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 15.898,
+          "Value": 7.716,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 49.682,
+          "Value": 54.012,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": null,
+          "Value": 7.716,
+          "Weight": 21.277,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "ElvenGilded",
+      "MaterialKeyword": "Skyrim.esm|06BBDA",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 69.73,
+          "Value": 1039,
+          "Weight": 7.2
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05AD9F",
+            "Count": 4,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": true
+          },
+          {
+            "Key": "Skyrim.esm|05ADA0",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB40F",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ADA0",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "elven gilded",
+      "NameExclusions": "",
+      "SlotOverrides": []
+    },
+    {
+      "Name": "ImperialStudded",
+      "MaterialKeyword": "Skyrim.esm|06BBE1",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 67.54,
+          "Value": 95,
+          "Weight": 36.89
+        },
+        "LightArmor": {
+          "ArmorRating": 45.82,
+          "Value": 236,
+          "Weight": 10.8
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": []
+    },
+    {
+      "Name": "IronBanded",
+      "MaterialKeyword": "Skyrim.esm|06BBE4",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 64.15,
+          "Value": 379,
+          "Weight": 55.33
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 5,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05AD93",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05AD93",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "banded iron",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Shield",
+          "ArmorRating": 34.295,
+          "Value": null,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Body",
+          "ArmorRating": 43.648,
+          "Value": null,
+          "Weight": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "ImperialHeavy",
+      "MaterialKeyword": "Skyrim.esm|06BBE2",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 60.81,
+          "Value": 393,
+          "Weight": 54.51
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE5",
+            "Count": 4,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 2,
+            "Fixed": false
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB40D",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE5",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Body",
+          "ArmorRating": 41.112,
+          "Value": 69.975,
+          "Weight": 64.208,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Hands",
+          "ArmorRating": null,
+          "Value": 0.763,
+          "Weight": 7.338,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Feet",
+          "ArmorRating": null,
+          "Value": 13.995,
+          "Weight": 14.676,
+          "RecipeFactors": [
+            0.5,
+            0.667,
+            0.5
+          ]
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Mask",
+          "ArmorRating": 29.6,
+          "Value": 7.634,
+          "Weight": 9.173,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Helm",
+          "ArmorRating": 24.667,
+          "Value": 12.723,
+          "Weight": 9.173,
+          "RecipeFactors": [
+            0.5,
+            0.333,
+            0.5
+          ]
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Shield",
+          "ArmorRating": null,
+          "Value": 12.723,
+          "Weight": null,
+          "RecipeFactors": [
+            1,
+            0.667,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "ChitinHeavy",
+      "MaterialKeyword": "Dragonborn.esm|024103",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 88.02,
+          "Value": 1178,
+          "Weight": 54.09
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Dragonborn.esm|02B04E",
+            "Count": 6,
+            "Fixed": false
+          },
+          {
+            "Key": "Dragonborn.esm|01CD7C",
+            "Count": 2,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05AD93",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB40F",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Dragonborn.esm|02B04E",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Mask",
+          "ArmorRating": 21.586,
+          "Value": 25.467,
+          "Weight": 9.244,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Hands",
+          "ArmorRating": 15.905,
+          "Value": 10.611,
+          "Weight": 9.244,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Body",
+          "ArmorRating": 45.444,
+          "Value": 53.056,
+          "Weight": 64.707,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Feet",
+          "ArmorRating": 15.905,
+          "Value": 10.611,
+          "Weight": 11.093,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "ImperialLight",
+      "MaterialKeyword": "Skyrim.esm|06BBE0",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 47.39,
+          "Value": 142,
+          "Weight": 9.59
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 2,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05ACE5",
+            "Count": 2,
+            "Fixed": false
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB40D",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": 23.212,
+          "Value": 24.648,
+          "Weight": 20.855,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 12.661,
+          "Value": null,
+          "Weight": 10.428,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 48.533,
+          "Value": null,
+          "Weight": 62.565,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": 12.661,
+          "Value": null,
+          "Weight": 20.855,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Shield",
+          "ArmorRating": 40.093,
+          "Value": 28.169,
+          "Weight": 41.71,
+          "RecipeFactors": [
+            0,
+            0.667,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "SteelPlate",
+      "MaterialKeyword": "Skyrim.esm|06BBE7",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 88.02,
+          "Value": 1178,
+          "Weight": 59.74
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE5",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": true
+          },
+          {
+            "Key": "Skyrim.esm|05AD93",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB414",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE5",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "steel plate",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Feet",
+          "ArmorRating": 15.905,
+          "Value": 10.611,
+          "Weight": 15.065,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Body",
+          "ArmorRating": 45.444,
+          "Value": 53.056,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Hands",
+          "ArmorRating": 15.905,
+          "Value": 10.611,
+          "Weight": 10.044,
+          "RecipeFactors": [
+            0.667,
+            0.667,
+            1,
+            1
+          ]
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Mask",
+          "ArmorRating": 21.586,
+          "Value": 25.467,
+          "Weight": 10.044,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Helm",
+          "ArmorRating": 23.858,
+          "Value": 14.007,
+          "Weight": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "StalhrimHeavy",
+      "MaterialKeyword": "Dragonborn.esm|024106",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 102.31,
+          "Value": 4027,
+          "Weight": 59.72
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Dragonborn.esm|02B06B",
+            "Count": 6,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05ADA0",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "GetStageDone",
+            "Target": "Dragonborn.esm|01CAF1",
+            "Value": "200",
+            "RunOn": "Subject"
+          },
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB412",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Dragonborn.esm|02B06B",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Helm",
+          "ArmorRating": 21.503,
+          "Value": 26.074,
+          "Weight": 11.721,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Hands",
+          "ArmorRating": null,
+          "Value": 10.554,
+          "Weight": 11.721,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Body",
+          "ArmorRating": 44.961,
+          "Value": 52.769,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Feet",
+          "ArmorRating": null,
+          "Value": 10.554,
+          "Weight": 11.721,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Scaled",
+      "MaterialKeyword": "Skyrim.esm|06BBDE",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 63.87,
+          "Value": 664,
+          "Weight": 11.26
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE5",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05AD93",
+            "Count": 2,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 2,
+            "Fixed": false
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB414",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05AD93",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "scaled",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": null,
+          "Value": null,
+          "Weight": 17.762,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": null,
+          "Value": 52.711,
+          "Weight": 53.286,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": null,
+          "Value": 26.355,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": null,
+          "Value": null,
+          "Weight": 17.762,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "BonemoldHeavy",
+      "MaterialKeyword": "Dragonborn.esm|024101",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 70.67,
+          "Value": 142,
+          "Weight": 50.96
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|034CDD",
+            "Count": 10,
+            "Fixed": false
+          },
+          {
+            "Key": "Dragonborn.esm|01CD7C",
+            "Count": 2,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB40D",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|034CDD",
+            "Count": 2,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Body",
+          "ArmorRating": 45.281,
+          "Value": null,
+          "Weight": 66.719,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Feet",
+          "ArmorRating": 16.98,
+          "Value": null,
+          "Weight": 13.736,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Shield",
+          "ArmorRating": 30.423,
+          "Value": 28.169,
+          "Weight": 15.699,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Mask",
+          "ArmorRating": 24.055,
+          "Value": 24.648,
+          "Weight": 8.83,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Hands",
+          "ArmorRating": 16.98,
+          "Value": null,
+          "Weight": 6.868,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Orcish",
+      "MaterialKeyword": "Skyrim.esm|06BBE5",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 90.16,
+          "Value": 1899,
+          "Weight": 56.6
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05AD99",
+            "Count": 4,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB410",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05AD99",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "orcish",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Shield",
+          "ArmorRating": 33.274,
+          "Value": 26.33,
+          "Weight": 24.735,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Body",
+          "ArmorRating": null,
+          "Value": 52.659,
+          "Weight": 61.837,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Helm",
+          "ArmorRating": null,
+          "Value": 26.33,
+          "Weight": 14.134,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Hands",
+          "ArmorRating": null,
+          "Value": null,
+          "Weight": 12.367,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "NordicHeavy",
+      "MaterialKeyword": "Dragonborn.esm|024105",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 90.61,
+          "Value": 1899,
+          "Weight": 56.66
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE5",
+            "Count": 6,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05AD9D",
+            "Count": 1,
+            "Fixed": true
+          },
+          {
+            "Key": "Skyrim.esm|05ADA0",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB414",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ADA0",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Shield",
+          "ArmorRating": 29.246,
+          "Value": 26.33,
+          "Weight": 17.649,
+          "RecipeFactors": [
+            0.667,
+            0.333,
+            0,
+            1
+          ]
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Helm",
+          "ArmorRating": null,
+          "Value": 26.33,
+          "Weight": 12.354,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Body",
+          "ArmorRating": 47.456,
+          "Value": 52.659,
+          "Weight": 65.302,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Feet",
+          "ArmorRating": null,
+          "Value": null,
+          "Weight": 10.589,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Dwarven",
+      "MaterialKeyword": "Skyrim.esm|06BBD7",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 77.77,
+          "Value": 777,
+          "Weight": 70.65
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB8A2",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": true
+          },
+          {
+            "Key": "Skyrim.esm|05ACE5",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB40E",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB8A2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "dwarven",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Shield",
+          "ArmorRating": 33.432,
+          "Value": 28.958,
+          "Weight": 16.985,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Feet",
+          "ArmorRating": null,
+          "Value": 10.94,
+          "Weight": 14.154,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Body",
+          "ArmorRating": 43.719,
+          "Value": 51.48,
+          "Weight": 63.694,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Mask",
+          "ArmorRating": 23.145,
+          "Value": 25.74,
+          "Weight": 16.985,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Hands",
+          "ArmorRating": null,
+          "Value": 10.94,
+          "Weight": 11.323,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "ChitinLight",
+      "MaterialKeyword": "Dragonborn.esm|024102",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 61.6,
+          "Value": 426,
+          "Weight": 10.81
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Dragonborn.esm|02B04E",
+            "Count": 5,
+            "Fixed": false
+          },
+          {
+            "Key": "Dragonborn.esm|01CD7C",
+            "Count": 2,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB40F",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Dragonborn.esm|02B04E",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Shield",
+          "ArmorRating": 39.773,
+          "Value": 26.995,
+          "Weight": 74.006,
+          "RecipeFactors": [
+            0.8,
+            0.5,
+            1
+          ]
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Mask",
+          "ArmorRating": null,
+          "Value": null,
+          "Weight": 9.251,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": null,
+          "Value": null,
+          "Weight": 18.501,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 48.701,
+          "Value": 52.817,
+          "Weight": 37.003,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": null,
+          "Value": null,
+          "Weight": 9.251,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Ebony",
+      "MaterialKeyword": "Skyrim.esm|06BBD8",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 96.35,
+          "Value": 2836,
+          "Weight": 61
+        },
+        "LightArmor": {
+          "ArmorRating": 51.8,
+          "Value": 3778,
+          "Weight": 10.8
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05AD9D",
+            "Count": 5,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB412",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05AD9D",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "ebony",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Shield",
+          "ArmorRating": 33.212,
+          "Value": 26.446,
+          "Weight": 22.951,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Feet",
+          "ArmorRating": null,
+          "Value": 9.697,
+          "Weight": 11.475,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Body",
+          "ArmorRating": null,
+          "Value": 52.891,
+          "Weight": 62.295,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Mask",
+          "ArmorRating": 21.796,
+          "Value": 26.446,
+          "Weight": 16.393,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Hands",
+          "ArmorRating": null,
+          "Value": 9.697,
+          "Weight": 11.475,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Hide",
+      "MaterialKeyword": "Skyrim.esm|06BBDD",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 40.09,
+          "Value": 95,
+          "Weight": 8.5
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 4,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          }
+        ],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "hide",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Shield",
+          "ArmorRating": null,
+          "Value": null,
+          "Weight": 47.059,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": 12.472,
+          "Value": null,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": null,
+          "Value": null,
+          "Weight": 58.824,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 12.472,
+          "Value": null,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": 24.944,
+          "Value": null,
+          "Weight": 23.529,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Steel",
+      "MaterialKeyword": "Skyrim.esm|06BBE6",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 71.58,
+          "Value": 522,
+          "Weight": 54.51
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE5",
+            "Count": 4,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB40D",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE5",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "steel",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Shield",
+          "ArmorRating": 33.529,
+          "Value": 28.736,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Feet",
+          "ArmorRating": null,
+          "Value": null,
+          "Weight": 14.676,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Body",
+          "ArmorRating": 43.308,
+          "Value": null,
+          "Weight": 64.208,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Helm",
+          "ArmorRating": 23.75,
+          "Value": 23.946,
+          "Weight": 9.173,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Hands",
+          "ArmorRating": null,
+          "Value": null,
+          "Weight": 7.338,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Leather",
+      "MaterialKeyword": "Skyrim.esm|06BBDB",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 52.04,
+          "Value": 235,
+          "Weight": 11.26
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 4,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          }
+        ],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "leather",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": null,
+          "Value": null,
+          "Weight": 17.762,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": null,
+          "Value": 53.191,
+          "Weight": 53.286,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 13.451,
+          "Value": null,
+          "Weight": 17.762,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": 23.059,
+          "Value": 25.532,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Ring",
+          "ArmorRating": 57.648,
+          "Value": 106.383,
+          "Weight": 79.929,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Dragonplate",
+      "MaterialKeyword": "Skyrim.esm|06BBD5",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 102.54,
+          "Value": 4020,
+          "Weight": 63.93
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|03ADA3",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|03ADA4",
+            "Count": 2,
+            "Fixed": false
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|052190",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|03ADA3",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "dragonplate",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Shield",
+          "ArmorRating": null,
+          "Value": 26.119,
+          "Weight": 23.463,
+          "RecipeFactors": [
+            1,
+            0.333,
+            0.5
+          ]
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Feet",
+          "ArmorRating": null,
+          "Value": 10.572,
+          "Weight": null,
+          "RecipeFactors": [
+            1,
+            0.667,
+            0.5
+          ]
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Body",
+          "ArmorRating": null,
+          "Value": 52.861,
+          "Weight": 62.568,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Helm",
+          "ArmorRating": 21.455,
+          "Value": 26.119,
+          "Weight": 12.514,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Hands",
+          "ArmorRating": null,
+          "Value": 10.572,
+          "Weight": 12.514,
+          "RecipeFactors": [
+            0.667,
+            0.667,
+            0.5
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "Elven",
+      "MaterialKeyword": "Skyrim.esm|06BBD9",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 57.3,
+          "Value": 426,
+          "Weight": 7.38
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05AD9F",
+            "Count": 4,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 1,
+            "Fixed": true
+          },
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB40F",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05AD9F",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "elven",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Shield",
+          "ArmorRating": 36.649,
+          "Value": 26.995,
+          "Weight": null,
+          "RecipeFactors": [
+            1,
+            0.667,
+            0,
+            1
+          ]
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": null,
+          "Value": 52.817,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": 22.688,
+          "Value": null,
+          "Weight": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Dragonscale",
+      "MaterialKeyword": "Skyrim.esm|06BBD6",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 80.24,
+          "Value": 2838,
+          "Weight": 15.83
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|03ADA3",
+            "Count": 4,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 2,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|052190",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|03ADA3",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "dragonscale",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Shield",
+          "ArmorRating": 36.142,
+          "Value": 26.427,
+          "Weight": 37.903,
+          "RecipeFactors": [
+            1,
+            0.667,
+            1,
+            0
+          ]
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": 14.955,
+          "Value": 10.571,
+          "Weight": 18.951,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 14.955,
+          "Value": 10.571,
+          "Weight": 18.951,
+          "RecipeFactors": [
+            0.5,
+            0.667,
+            0.5,
+            1
+          ]
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 51.097,
+          "Value": 52.854,
+          "Weight": 63.171,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": 21.186,
+          "Value": 26.427,
+          "Weight": 25.268,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Iron",
+      "MaterialKeyword": "Skyrim.esm|06BBE3",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 59.2,
+          "Value": 234,
+          "Weight": 47.79
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 5,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          }
+        ],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "iron",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Shield",
+          "ArmorRating": 33.784,
+          "Value": 25.641,
+          "Weight": 25.11,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Body",
+          "ArmorRating": 42.23,
+          "Value": 53.419,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Helm",
+          "ArmorRating": 25.338,
+          "Value": 25.641,
+          "Weight": 10.462,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Glass",
+      "MaterialKeyword": "Skyrim.esm|06BBDC",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 74.51,
+          "Value": 1708,
+          "Weight": 12.28
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ADA1",
+            "Count": 4,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05AD9F",
+            "Count": 2,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB411",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ADA1",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "glass",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Shield",
+          "ArmorRating": 36.237,
+          "Value": 26.347,
+          "Weight": 48.86,
+          "RecipeFactors": [
+            1,
+            0.667,
+            0.5,
+            0
+          ]
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": 14.763,
+          "Value": 11.124,
+          "Weight": 16.287,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 51,
+          "Value": 52.693,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": 21.474,
+          "Value": 26.347,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 14.763,
+          "Value": 11.124,
+          "Weight": 16.287,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "StalhrimLight",
+      "MaterialKeyword": "Dragonborn.esm|024107",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 78.03,
+          "Value": 1708,
+          "Weight": 15.5
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Dragonborn.esm|02B06B",
+            "Count": 5,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05ACE5",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "GetStageDone",
+            "Target": "Dragonborn.esm|01CAF1",
+            "Value": "200",
+            "RunOn": "Subject"
+          },
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB412",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Dragonborn.esm|02B06B",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": 21.146,
+          "Value": 26.347,
+          "Weight": 12.903,
+          "RecipeFactors": [
+            0.6,
+            0.667,
+            1
+          ]
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 14.738,
+          "Value": 11.124,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": null,
+          "Value": 52.693,
+          "Weight": 45.161,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": 14.738,
+          "Value": 11.124,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Shield",
+          "ArmorRating": null,
+          "Value": 26.347,
+          "Weight": 64.516,
+          "RecipeFactors": [
+            0.8,
+            0.333,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "Daedric",
+      "MaterialKeyword": "Skyrim.esm|06BBD4",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 108.73,
+          "Value": 6069,
+          "Weight": 78.78
+        },
+        "LightArmor": {
+          "ArmorRating": 96.29,
+          "Value": 1236,
+          "Weight": 30
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05AD9D",
+            "Count": 5,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 3,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|03AD5B",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB413",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05AD9D",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "daedric",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Mask",
+          "ArmorRating": 21.153,
+          "Value": 26.363,
+          "Weight": 19.04,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Shield",
+          "ArmorRating": null,
+          "Value": null,
+          "Weight": 19.04,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Feet",
+          "ArmorRating": null,
+          "Value": 10.298,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Body",
+          "ArmorRating": 45.066,
+          "Value": 52.727,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Hands",
+          "ArmorRating": null,
+          "Value": 10.298,
+          "Weight": 7.616,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Hair",
+          "ArmorRating": 21.153,
+          "Value": 5.273,
+          "Weight": 11.424,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Helm",
+          "ArmorRating": 13.796,
+          "Value": 5.273,
+          "Weight": 5.077,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "HeavyArmor",
+          "Slot": "Priest Mask",
+          "ArmorRating": 21.153,
+          "Value": 5.273,
+          "Weight": 11.424,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Shrouded",
+      "MaterialKeyword": "",
+      "Totals": {
+        "HeavyArmor": {
+          "ArmorRating": 96.33,
+          "Value": 569,
+          "Weight": 50.59
+        },
+        "LightArmor": {
+          "ArmorRating": 57.96,
+          "Value": 491,
+          "Weight": 12.74
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "shrouded",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": null,
+          "Value": 40.733,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": null,
+          "Value": 45.825,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": null,
+          "Value": 24.44,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": 22.429,
+          "Value": 22.403,
+          "Weight": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Worn Shrouded",
+      "MaterialKeyword": "",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 37.69,
+          "Value": 177,
+          "Weight": 11.26
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "worn shrouded",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 10.613,
+          "Value": 28.249,
+          "Weight": 17.762,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": null,
+          "Value": 28.249,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": 7.96,
+          "Value": 25.424,
+          "Weight": 17.762,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 53.064,
+          "Value": 45.198,
+          "Weight": 53.286,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Guild Master\u0027s",
+      "MaterialKeyword": "",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 100.62,
+          "Value": 595,
+          "Weight": 17.6
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "guild master s",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 14.908,
+          "Value": 16.807,
+          "Weight": 11.364,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 49.692,
+          "Value": 50.42,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": 14.908,
+          "Value": 16.807,
+          "Weight": 11.364,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Linwe\u0027s",
+      "MaterialKeyword": "",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 65.33,
+          "Value": 492,
+          "Weight": 14.22
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "linwe s",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": 24.491,
+          "Value": 30.488,
+          "Weight": 14.065,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 16.838,
+          "Value": 10.163,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 47.451,
+          "Value": 50.813,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": 16.838,
+          "Value": 10.163,
+          "Weight": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Summerset Shadows",
+      "MaterialKeyword": "",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 57.69,
+          "Value": 236,
+          "Weight": 12.4
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "summerset shadows",
+      "NameExclusions": "",
+      "SlotOverrides": []
+    },
+    {
+      "Name": "Fur",
+      "MaterialKeyword": "",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 46.13,
+          "Value": 92,
+          "Weight": 10.44
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "fur",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": null,
+          "Value": 54.348,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": 23.846,
+          "Value": 25,
+          "Weight": 9.579,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 13.007,
+          "Value": null,
+          "Weight": 9.579,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": 13.007,
+          "Value": 4.348,
+          "Weight": 19.157,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Nightingale",
+      "MaterialKeyword": "",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 68.31,
+          "Value": 1713,
+          "Weight": 20.15
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|03AD60",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "nightingale",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Mask",
+          "ArmorRating": null,
+          "Value": 26.27,
+          "Weight": 9.926,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 14.639,
+          "Value": 11.092,
+          "Weight": 9.926,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 49.773,
+          "Value": 52.539,
+          "Weight": 59.553,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": 14.639,
+          "Value": 11.092,
+          "Weight": 9.926,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Solitude Guard\u0027s",
+      "MaterialKeyword": "",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 46.55,
+          "Value": 140,
+          "Weight": 10.9
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "solitude guard s",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Mask",
+          "ArmorRating": 23.631,
+          "Value": 25,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 49.409,
+          "Value": 53.571,
+          "Weight": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Riften Guard\u0027s",
+      "MaterialKeyword": "",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 46.55,
+          "Value": 140,
+          "Weight": 10.9
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "riften guard s",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Mask",
+          "ArmorRating": 23.631,
+          "Value": 25,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 49.409,
+          "Value": 53.571,
+          "Weight": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Pale Guard\u0027s",
+      "MaterialKeyword": "",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 46.55,
+          "Value": 140,
+          "Weight": 10.9
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "pale guard s",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Mask",
+          "ArmorRating": 23.631,
+          "Value": 25,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 49.409,
+          "Value": 53.571,
+          "Weight": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Winterhold Guard\u0027s",
+      "MaterialKeyword": "",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 46.55,
+          "Value": 140,
+          "Weight": 10.9
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "winterhold guard s",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Mask",
+          "ArmorRating": 23.631,
+          "Value": 25,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 49.409,
+          "Value": 53.571,
+          "Weight": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Hjaalmarch Guard\u0027s",
+      "MaterialKeyword": "",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 46.55,
+          "Value": 140,
+          "Weight": 10.9
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "hjaalmarch guard s",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Mask",
+          "ArmorRating": 23.631,
+          "Value": 25,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 49.409,
+          "Value": 53.571,
+          "Weight": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Falkreath Guard\u0027s",
+      "MaterialKeyword": "",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 46.55,
+          "Value": 140,
+          "Weight": 10.9
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "falkreath guard s",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Mask",
+          "ArmorRating": 23.631,
+          "Value": 25,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 49.409,
+          "Value": 53.571,
+          "Weight": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Whiterun Guard\u0027s",
+      "MaterialKeyword": "",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 46.55,
+          "Value": 140,
+          "Weight": 10.9
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "whiterun guard s",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Mask",
+          "ArmorRating": 23.631,
+          "Value": 25,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 49.409,
+          "Value": 53.571,
+          "Weight": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Markarth Guard\u0027s",
+      "MaterialKeyword": "",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 46.55,
+          "Value": 140,
+          "Weight": 10.9
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "markarth guard s",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Mask",
+          "ArmorRating": 23.631,
+          "Value": 25,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 49.409,
+          "Value": 53.571,
+          "Weight": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Karliah\u0027s",
+      "MaterialKeyword": "",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 56.71,
+          "Value": 0,
+          "Weight": 7.2
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "karliah s",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": 22.924,
+          "Value": null,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 8.817,
+          "Value": null,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 51.137,
+          "Value": null,
+          "Weight": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Thieves Guild Variant",
+      "MaterialKeyword": "",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 56.71,
+          "Value": 0,
+          "Weight": 7.2
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "thieves guild variant",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": 22.924,
+          "Value": null,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 8.817,
+          "Value": null,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 51.137,
+          "Value": null,
+          "Weight": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Ancient Shrouded",
+      "MaterialKeyword": "",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 68.48,
+          "Value": 655,
+          "Weight": 8.41
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "ancient shrouded",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": null,
+          "Value": 22.901,
+          "Weight": 11.891,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 17.523,
+          "Value": 25.954,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 48.189,
+          "Value": 45.802,
+          "Weight": 59.453,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": 17.523,
+          "Value": 38.168,
+          "Weight": 5.945,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Tsun\u0027s",
+      "MaterialKeyword": "",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 57.76,
+          "Value": 0,
+          "Weight": 0
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "tsun s",
+      "NameExclusions": "",
+      "SlotOverrides": []
+    },
+    {
+      "Name": "Thieves Guild",
+      "MaterialKeyword": "",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 57.96,
+          "Value": 236,
+          "Weight": 7.97
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "thieves guild",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": null,
+          "Value": null,
+          "Weight": 18.821,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": 22.429,
+          "Value": null,
+          "Weight": 12.547,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Miraak\u0027s",
+      "MaterialKeyword": "",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 64.19,
+          "Value": 260,
+          "Weight": 12.6
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "miraak s",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": 17.137,
+          "Value": 9.615,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 10.905,
+          "Value": 11.538,
+          "Weight": 11.905,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Blackguard\u0027s",
+      "MaterialKeyword": "",
+      "Totals": {
+        "LightArmor": {
+          "ArmorRating": 69.16,
+          "Value": 1254,
+          "Weight": 12.74
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "Skyrim.esm|0ADB78",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB5D2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "blackguard s",
+      "NameExclusions": "",
+      "SlotOverrides": [
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Feet",
+          "ArmorRating": 18.797,
+          "Value": 15.949,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Body",
+          "ArmorRating": 47.715,
+          "Value": 47.847,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Hands",
+          "ArmorRating": 11.567,
+          "Value": 15.949,
+          "Weight": null,
+          "RecipeFactors": null
+        },
+        {
+          "ArmorType": "LightArmor",
+          "Slot": "Helm",
+          "ArmorRating": 26.027,
+          "Value": 31.898,
+          "Weight": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Silver (jewelry)",
+      "MaterialKeyword": "",
+      "Totals": {
+        "Clothing": {
+          "ArmorRating": 0,
+          "Value": 28,
+          "Weight": 3
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE3",
+            "Count": 1,
+            "Fixed": false
+          }
+        ],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "silver*",
+      "NameExclusions": "",
+      "SlotOverrides": []
+    },
+    {
+      "Name": "Gold (jewelry)",
+      "MaterialKeyword": "",
+      "Totals": {
+        "Clothing": {
+          "ArmorRating": 0,
+          "Value": 28,
+          "Weight": 3
+        }
+      },
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05AD9E",
+            "Count": 1,
+            "Fixed": false
+          }
+        ],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "NamePatterns": "gold*",
+      "NameExclusions": "",
+      "SlotOverrides": []
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "SchemaVersion": 1,
+  "Entries": [
+    {
+      "Name": "Weapon vendor",
+      "Types": [
+        "Dagger",
+        "Sword",
+        "War Axe",
+        "Mace",
+        "Greatsword",
+        "Battleaxe",
+        "Warhammer",
+        "Crossbow",
+        "Bow"
+      ],
+      "Slots": [],
+      "Materials": [],
+      "ExcludeSlots": [],
+      "Addons": [],
+      "ExcludeAddons": [],
+      "Keywords": [
+        "Skyrim.esm|08F958"
+      ]
+    }
+  ]
+}

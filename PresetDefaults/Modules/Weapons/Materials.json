@@ -1,0 +1,2202 @@
+{
+  "SchemaVersion": 1,
+  "Entries": [
+    {
+      "Name": "Wood",
+      "MaterialKeyword": "Skyrim.esm|01E717",
+      "NamePatterns": "wooden*",
+      "NameExclusions": "",
+      "Classes": {
+        "OneHanded": {
+          "Damage": -5,
+          "Weight": -6,
+          "Speed": null
+        }
+      },
+      "BaseValue": 25,
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "TypeOverrides": [
+        {
+          "WeaponType": "Sword",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": 0,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Iron",
+      "MaterialKeyword": "Skyrim.esm|01E718",
+      "NamePatterns": "iron*",
+      "NameExclusions": "",
+      "Classes": {
+        "OneHanded": {
+          "Damage": 0,
+          "Weight": 0,
+          "Speed": null
+        },
+        "TwoHanded": {
+          "Damage": 0,
+          "Weight": 0,
+          "Speed": null
+        },
+        "Bow": {
+          "Damage": 0,
+          "Weight": 0,
+          "Speed": 1
+        }
+      },
+      "BaseValue": 25,
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 1,
+            "Fixed": false
+          }
+        ],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "TypeOverrides": [
+        {
+          "WeaponType": "Bow",
+          "Damage": null,
+          "Weight": null,
+          "Value": 90,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Sword",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": 0,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Dagger",
+          "Damage": null,
+          "Weight": 2,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Battleaxe",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": 7,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Mace",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            3,
+            2
+          ]
+        },
+        {
+          "WeaponType": "Greatsword",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            4,
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "Steel",
+      "MaterialKeyword": "Skyrim.esm|01E719",
+      "NamePatterns": "steel*",
+      "NameExclusions": "",
+      "Classes": {
+        "Bow": {
+          "Damage": 1,
+          "Weight": 2,
+          "Speed": 0.9375
+        },
+        "OneHanded": {
+          "Damage": 1,
+          "Weight": 1,
+          "Speed": null
+        },
+        "TwoHanded": {
+          "Damage": 2,
+          "Weight": 1,
+          "Speed": null
+        },
+        "Crossbow": {
+          "Damage": 0,
+          "Weight": 0,
+          "Speed": null
+        }
+      },
+      "BaseValue": 46,
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE5",
+            "Count": 1,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 1,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": false
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB40D",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE5",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "TypeOverrides": [
+        {
+          "WeaponType": "Bow",
+          "Damage": null,
+          "Weight": null,
+          "Value": 50,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Dagger",
+          "Damage": null,
+          "Weight": 2.5,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Greatsword",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            4,
+            3,
+            2
+          ]
+        },
+        {
+          "WeaponType": "Battleaxe",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": 8,
+          "CritChance": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Silver",
+      "MaterialKeyword": "Skyrim.esm|10AA1A",
+      "NamePatterns": "silver*",
+      "NameExclusions": "",
+      "Classes": {
+        "TwoHanded": {
+          "Damage": 4,
+          "Weight": -2,
+          "Speed": null
+        },
+        "OneHanded": {
+          "Damage": 1,
+          "Weight": -2,
+          "Speed": null
+        }
+      },
+      "BaseValue": 128,
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "TypeOverrides": [
+        {
+          "WeaponType": "Greatsword",
+          "Damage": null,
+          "Weight": null,
+          "Value": 330,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": 8,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Sword",
+          "Damage": null,
+          "Weight": null,
+          "Value": 100,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Draugr",
+      "MaterialKeyword": "Skyrim.esm|0C5C01",
+      "NamePatterns": "ancient*",
+      "NameExclusions": "",
+      "Classes": {
+        "OneHanded": {
+          "Damage": 1,
+          "Weight": 3,
+          "Speed": null
+        },
+        "Bow": {
+          "Damage": 2,
+          "Weight": 7,
+          "Speed": 0.875
+        },
+        "TwoHanded": {
+          "Damage": 2,
+          "Weight": 2,
+          "Speed": null
+        }
+      },
+      "BaseValue": 13,
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "TypeOverrides": [
+        {
+          "WeaponType": "Bow",
+          "Damage": null,
+          "Weight": null,
+          "Value": 45,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Greatsword",
+          "Damage": null,
+          "Weight": null,
+          "Value": 35,
+          "Speed": 0.75,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Battleaxe",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": 8,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "War Axe",
+          "Damage": null,
+          "Weight": null,
+          "Value": 15,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": 6,
+          "CritChance": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Orcish",
+      "MaterialKeyword": "Skyrim.esm|01E71C",
+      "NamePatterns": "orcish*",
+      "NameExclusions": "",
+      "Classes": {
+        "TwoHanded": {
+          "Damage": 3,
+          "Weight": 2,
+          "Speed": null
+        },
+        "Bow": {
+          "Damage": 4,
+          "Weight": 4,
+          "Speed": 0.8126
+        },
+        "OneHanded": {
+          "Damage": 2,
+          "Weight": 2,
+          "Speed": null
+        }
+      },
+      "BaseValue": 75,
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05AD99",
+            "Count": 1,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 1,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": false
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB410",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05AD99",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "TypeOverrides": [
+        {
+          "WeaponType": "Bow",
+          "Damage": null,
+          "Weight": null,
+          "Value": 150,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "War Axe",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": 1,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": 0,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Greatsword",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            4,
+            3,
+            2
+          ]
+        },
+        {
+          "WeaponType": "Battleaxe",
+          "Damage": null,
+          "Weight": 25,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Dwarven",
+      "MaterialKeyword": "Skyrim.esm|01E71A",
+      "NamePatterns": "dwarven*",
+      "NameExclusions": "",
+      "Classes": {
+        "OneHanded": {
+          "Damage": 3,
+          "Weight": 3,
+          "Speed": null
+        },
+        "Crossbow": {
+          "Damage": 3,
+          "Weight": 6,
+          "Speed": null
+        },
+        "TwoHanded": {
+          "Damage": 4,
+          "Weight": 3,
+          "Speed": null
+        },
+        "Bow": {
+          "Damage": 6,
+          "Weight": 5,
+          "Speed": 0.75
+        }
+      },
+      "BaseValue": 135,
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB8A2",
+            "Count": 1,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 1,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05ACE5",
+            "Count": 1,
+            "Fixed": false
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB40E",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|0DB8A2",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "TypeOverrides": [
+        {
+          "WeaponType": "Dagger",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "WeaponType": "Warhammer",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            2,
+            3,
+            1,
+            2
+          ]
+        },
+        {
+          "WeaponType": "War Axe",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": 6,
+          "CritChance": null,
+          "RecipeFactors": [
+            1,
+            2,
+            1,
+            1
+          ]
+        },
+        {
+          "WeaponType": "Sword",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "WeaponType": "Mace",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            2,
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "WeaponType": "Greatsword",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            2,
+            3,
+            2,
+            2
+          ]
+        },
+        {
+          "WeaponType": "Battleaxe",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            2,
+            2,
+            1,
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "Falmer",
+      "MaterialKeyword": "Skyrim.esm|0C5C03",
+      "NamePatterns": "falmer*",
+      "NameExclusions": "",
+      "Classes": {
+        "OneHanded": {
+          "Damage": 3,
+          "Weight": 9.5,
+          "Speed": null
+        }
+      },
+      "BaseValue": 68,
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "TypeOverrides": [
+        {
+          "WeaponType": "War Axe",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": 7,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Sword",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": 0,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "DraugrHoned",
+      "MaterialKeyword": "Skyrim.esm|0C5C02",
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "Classes": {
+        "TwoHanded": {
+          "Damage": 5,
+          "Weight": 5,
+          "Speed": null
+        },
+        "Bow": {
+          "Damage": 8,
+          "Weight": 13,
+          "Speed": 0.875
+        },
+        "OneHanded": {
+          "Damage": 4,
+          "Weight": 5.5,
+          "Speed": null
+        }
+      },
+      "BaseValue": 23,
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "TypeOverrides": [
+        {
+          "WeaponType": "Greatsword",
+          "Damage": null,
+          "Weight": null,
+          "Value": 63,
+          "Speed": 0.75,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Bow",
+          "Damage": null,
+          "Weight": null,
+          "Value": 235,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "War Axe",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": 0,
+          "CritDamage": 7,
+          "CritChance": null,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Elven",
+      "MaterialKeyword": "Skyrim.esm|01E71B",
+      "NamePatterns": "elven*",
+      "NameExclusions": "",
+      "Classes": {
+        "OneHanded": {
+          "Damage": 4,
+          "Weight": 4,
+          "Speed": null
+        },
+        "Bow": {
+          "Damage": 7,
+          "Weight": 7,
+          "Speed": 0.6875
+        },
+        "TwoHanded": {
+          "Damage": 5,
+          "Weight": 4,
+          "Speed": null
+        }
+      },
+      "BaseValue": 235,
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05AD9F",
+            "Count": 1,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 1,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05ACE4",
+            "Count": 1,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05ADA0",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB40F",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05AD9F",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "TypeOverrides": [
+        {
+          "WeaponType": "Sword",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "WeaponType": "Bow",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            2,
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "WeaponType": "Warhammer",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            2,
+            3,
+            2,
+            1
+          ]
+        },
+        {
+          "WeaponType": "War Axe",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            1,
+            2,
+            1,
+            1
+          ]
+        },
+        {
+          "WeaponType": "Mace",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            2,
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "WeaponType": "Greatsword",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            2,
+            3,
+            2,
+            1
+          ]
+        },
+        {
+          "WeaponType": "Battleaxe",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            2,
+            2,
+            2,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "Nordic",
+      "MaterialKeyword": "Dragonborn.esm|026230",
+      "NamePatterns": "nordic*",
+      "NameExclusions": "",
+      "Classes": {
+        "TwoHanded": {
+          "Damage": 5,
+          "Weight": 3,
+          "Speed": null
+        },
+        "OneHanded": {
+          "Damage": 4,
+          "Weight": 3,
+          "Speed": null
+        },
+        "Bow": {
+          "Damage": 7,
+          "Weight": 6,
+          "Speed": 0.6875
+        }
+      },
+      "BaseValue": 235,
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ACE5",
+            "Count": 1,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 1,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05ADA0",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB414",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ADA0",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "TypeOverrides": [
+        {
+          "WeaponType": "Warhammer",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": 12,
+          "CritChance": null,
+          "RecipeFactors": [
+            5,
+            3,
+            1
+          ]
+        },
+        {
+          "WeaponType": "Sword",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": 6,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Mace",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": 7,
+          "CritChance": null,
+          "RecipeFactors": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "WeaponType": "Greatsword",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            5,
+            3,
+            1
+          ]
+        },
+        {
+          "WeaponType": "Bow",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": 7,
+          "CritChance": null,
+          "RecipeFactors": [
+            3,
+            0,
+            1
+          ]
+        },
+        {
+          "WeaponType": "Battleaxe",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": 11,
+          "CritChance": null,
+          "RecipeFactors": [
+            5,
+            2,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "Glass",
+      "MaterialKeyword": "Skyrim.esm|01E71D",
+      "NamePatterns": "glass*",
+      "NameExclusions": "",
+      "Classes": {
+        "OneHanded": {
+          "Damage": 5,
+          "Weight": 5,
+          "Speed": null
+        },
+        "TwoHanded": {
+          "Damage": 6,
+          "Weight": 5,
+          "Speed": null
+        },
+        "Bow": {
+          "Damage": 9,
+          "Weight": 9,
+          "Speed": 0.625
+        }
+      },
+      "BaseValue": 410,
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ADA1",
+            "Count": 1,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 1,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05AD9F",
+            "Count": 1,
+            "Fixed": false
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB411",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05ADA1",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "TypeOverrides": [
+        {
+          "WeaponType": "Sword",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "WeaponType": "Warhammer",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": 0,
+          "CritChance": null,
+          "RecipeFactors": [
+            3,
+            3,
+            2
+          ]
+        },
+        {
+          "WeaponType": "War Axe",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": 8,
+          "CritChance": null,
+          "RecipeFactors": [
+            1,
+            2,
+            1
+          ]
+        },
+        {
+          "WeaponType": "Mace",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": 0,
+          "CritChance": null,
+          "RecipeFactors": [
+            2,
+            1,
+            1
+          ]
+        },
+        {
+          "WeaponType": "Greatsword",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            2,
+            3,
+            2
+          ]
+        },
+        {
+          "WeaponType": "Dagger",
+          "Damage": null,
+          "Weight": 4.5,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": 0,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Battleaxe",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            2,
+            2,
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "FalmerHoned",
+      "MaterialKeyword": "Skyrim.esm|0C5C04",
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "Classes": {
+        "OneHanded": {
+          "Damage": 5,
+          "Weight": 9.5,
+          "Speed": null
+        }
+      },
+      "BaseValue": 205,
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "TypeOverrides": [
+        {
+          "WeaponType": "War Axe",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": 8,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Sword",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": 0,
+          "RecipeFactors": null
+        }
+      ]
+    },
+    {
+      "Name": "Ebony",
+      "MaterialKeyword": "Skyrim.esm|01E71E",
+      "NamePatterns": "ebony*",
+      "NameExclusions": "",
+      "Classes": {
+        "TwoHanded": {
+          "Damage": 7,
+          "Weight": 6,
+          "Speed": null
+        },
+        "OneHanded": {
+          "Damage": 6,
+          "Weight": 6,
+          "Speed": null
+        },
+        "Bow": {
+          "Damage": 11,
+          "Weight": 11,
+          "Speed": 0.5625
+        }
+      },
+      "BaseValue": 720,
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05AD9D",
+            "Count": 1,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 1,
+            "Fixed": false
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB412",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05AD9D",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "TypeOverrides": [
+        {
+          "WeaponType": "Warhammer",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            5,
+            3
+          ]
+        },
+        {
+          "WeaponType": "War Axe",
+          "Damage": 15,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Mace",
+          "Damage": 16,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Greatsword",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            5,
+            3
+          ]
+        },
+        {
+          "WeaponType": "Dagger",
+          "Damage": null,
+          "Weight": 5,
+          "Value": null,
+          "Speed": 1,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Bow",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            3,
+            0
+          ]
+        },
+        {
+          "WeaponType": "Battleaxe",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            5,
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "Stalhrim",
+      "MaterialKeyword": "Dragonborn.esm|02622F",
+      "NamePatterns": "stalhrim*",
+      "NameExclusions": "",
+      "Classes": {
+        "TwoHanded": {
+          "Damage": 8,
+          "Weight": 5,
+          "Speed": null
+        },
+        "Bow": {
+          "Damage": 11,
+          "Weight": 10,
+          "Speed": 0.5625
+        },
+        "OneHanded": {
+          "Damage": 6,
+          "Weight": 5,
+          "Speed": null
+        }
+      },
+      "BaseValue": 720,
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Dragonborn.esm|02B06B",
+            "Count": 1,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 1,
+            "Fixed": false
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB412",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [
+          {
+            "Key": "Dragonborn.esm|02B06B",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "TypeOverrides": [
+        {
+          "WeaponType": "Battleaxe",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": 1.25,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            5,
+            2
+          ]
+        },
+        {
+          "WeaponType": "Bow",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": 9,
+          "CritChance": null,
+          "RecipeFactors": [
+            3,
+            0
+          ]
+        },
+        {
+          "WeaponType": "Dagger",
+          "Damage": null,
+          "Weight": 4.5,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Greatsword",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": 1.2,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            5,
+            3
+          ]
+        },
+        {
+          "WeaponType": "Mace",
+          "Damage": 16,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": 1.1,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Sword",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": 0.85,
+          "CritDamage": 7,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "War Axe",
+          "Damage": 15,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": 0.95,
+          "CritDamage": 8,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Warhammer",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": 1.35,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            5,
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "Daedric",
+      "MaterialKeyword": "Skyrim.esm|01E71F",
+      "NamePatterns": "daedric*",
+      "NameExclusions": "",
+      "Classes": {
+        "TwoHanded": {
+          "Damage": 9,
+          "Weight": 7,
+          "Speed": null
+        },
+        "OneHanded": {
+          "Damage": 7,
+          "Weight": 7,
+          "Speed": null
+        },
+        "Bow": {
+          "Damage": 13,
+          "Weight": 13,
+          "Speed": 0.5
+        }
+      },
+      "BaseValue": 1250,
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05AD9D",
+            "Count": 1,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 1,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|03AD5B",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|0CB413",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|05AD9D",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "TypeOverrides": [
+        {
+          "WeaponType": "Greatsword",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            5,
+            3,
+            1
+          ]
+        },
+        {
+          "WeaponType": "Warhammer",
+          "Damage": null,
+          "Weight": null,
+          "Value": 4000,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            5,
+            3,
+            1
+          ]
+        },
+        {
+          "WeaponType": "Dagger",
+          "Damage": null,
+          "Weight": 6,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Bow",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            3,
+            0,
+            1
+          ]
+        },
+        {
+          "WeaponType": "Battleaxe",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            5,
+            2,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "Dragonbone",
+      "MaterialKeyword": "Dawnguard.esm|019822",
+      "NamePatterns": "dragonbone*",
+      "NameExclusions": "",
+      "Classes": {
+        "TwoHanded": {
+          "Damage": 8,
+          "Weight": 10,
+          "Speed": null
+        },
+        "OneHanded": {
+          "Damage": 8,
+          "Weight": 6,
+          "Speed": null
+        },
+        "Bow": {
+          "Damage": 10,
+          "Weight": 11.5,
+          "Speed": 0.6562
+        }
+      },
+      "BaseValue": 1459,
+      "Craft": {
+        "WorkbenchKey": "Skyrim.esm|088105",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|03ADA4",
+            "Count": 1,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|0800E4",
+            "Count": 1,
+            "Fixed": false
+          },
+          {
+            "Key": "Skyrim.esm|05AD9D",
+            "Count": 1,
+            "Fixed": false
+          }
+        ],
+        "Conditions": [
+          {
+            "ConditionType": "HasPerk",
+            "Target": "Skyrim.esm|052190",
+            "Value": "1",
+            "RunOn": "Subject"
+          }
+        ]
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [
+          {
+            "Key": "Skyrim.esm|03ADA4",
+            "Count": 1,
+            "Fixed": true
+          }
+        ],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "TypeOverrides": [
+        {
+          "WeaponType": "Battleaxe",
+          "Damage": 26,
+          "Weight": null,
+          "Value": 3000,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            3,
+            2,
+            2
+          ]
+        },
+        {
+          "WeaponType": "Greatsword",
+          "Damage": null,
+          "Weight": null,
+          "Value": 2725,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Warhammer",
+          "Damage": null,
+          "Weight": null,
+          "Value": 4275,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            3,
+            3,
+            2
+          ]
+        },
+        {
+          "WeaponType": "Sword",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "WeaponType": "Bow",
+          "Damage": null,
+          "Weight": null,
+          "Value": 2725,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": null
+        },
+        {
+          "WeaponType": "Mace",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            2,
+            1,
+            1
+          ]
+        },
+        {
+          "WeaponType": "War Axe",
+          "Damage": null,
+          "Weight": 21,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            1,
+            2,
+            1
+          ]
+        },
+        {
+          "WeaponType": "Dagger",
+          "Damage": null,
+          "Weight": null,
+          "Value": null,
+          "Speed": null,
+          "Reach": null,
+          "Stagger": null,
+          "CritDamage": null,
+          "CritChance": null,
+          "RecipeFactors": [
+            1,
+            1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "Imperial",
+      "MaterialKeyword": "Skyrim.esm|0C5C00",
+      "NamePatterns": "imperial*",
+      "NameExclusions": "",
+      "Classes": {
+        "Bow": {
+          "Damage": 3,
+          "Weight": 3,
+          "Speed": 0.875
+        }
+      },
+      "BaseValue": 46,
+      "Craft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Temper": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "Breakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "TypeOverrides": []
+    }
+  ]
+}

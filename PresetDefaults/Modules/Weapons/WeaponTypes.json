@@ -1,0 +1,243 @@
+{
+  "SchemaVersion": 1,
+  "Entries": [
+    {
+      "Name": "Dagger",
+      "WeaponClass": "OneHanded",
+      "Keywords": [
+        "Skyrim.esm|01E713"
+      ],
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "EditorIdPatterns": "",
+      "BaseDamage": 4,
+      "BaseWeight": 0.5,
+      "ValueFactor": 0.4,
+      "Speed": 1.3,
+      "Reach": 0.7,
+      "Stagger": 0,
+      "CritFactor": 0.5,
+      "CritChance": 1,
+      "RecipeFactors": [
+        1,
+        1,
+        1,
+        0
+      ],
+      "WeightStep": 0.5
+    },
+    {
+      "Name": "Sword",
+      "WeaponClass": "OneHanded",
+      "Keywords": [
+        "Skyrim.esm|01E711"
+      ],
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "EditorIdPatterns": "",
+      "BaseDamage": 7,
+      "BaseWeight": 9,
+      "ValueFactor": 1,
+      "Speed": 1,
+      "Reach": 1,
+      "Stagger": 0.75,
+      "CritFactor": 0.5,
+      "CritChance": 1,
+      "RecipeFactors": [
+        2,
+        1,
+        1,
+        0
+      ],
+      "WeightStep": 0.5
+    },
+    {
+      "Name": "War Axe",
+      "WeaponClass": "OneHanded",
+      "Keywords": [
+        "Skyrim.esm|01E712"
+      ],
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "EditorIdPatterns": "",
+      "BaseDamage": 8,
+      "BaseWeight": 11,
+      "ValueFactor": 1.2,
+      "Speed": 0.9,
+      "Reach": 1,
+      "Stagger": 0.85,
+      "CritFactor": 0.5,
+      "CritChance": 1,
+      "RecipeFactors": [
+        2,
+        2,
+        1,
+        0
+      ],
+      "WeightStep": 0.5
+    },
+    {
+      "Name": "Mace",
+      "WeaponClass": "OneHanded",
+      "Keywords": [
+        "Skyrim.esm|01E714"
+      ],
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "EditorIdPatterns": "",
+      "BaseDamage": 9,
+      "BaseWeight": 13,
+      "ValueFactor": 1.4,
+      "Speed": 0.8,
+      "Reach": 1,
+      "Stagger": 1,
+      "CritFactor": 0.5,
+      "CritChance": 1,
+      "RecipeFactors": [
+        3,
+        1,
+        1,
+        0
+      ],
+      "WeightStep": 0.5
+    },
+    {
+      "Name": "Greatsword",
+      "WeaponClass": "TwoHanded",
+      "Keywords": [
+        "Skyrim.esm|06D931"
+      ],
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "EditorIdPatterns": "",
+      "BaseDamage": 15,
+      "BaseWeight": 16,
+      "ValueFactor": 2,
+      "Speed": 0.7,
+      "Reach": 1.3,
+      "Stagger": 1.1,
+      "CritFactor": 0.5,
+      "CritChance": 1,
+      "RecipeFactors": [
+        4,
+        3,
+        1,
+        0
+      ],
+      "WeightStep": 0.5
+    },
+    {
+      "Name": "Battleaxe",
+      "WeaponClass": "TwoHanded",
+      "Keywords": [
+        "Skyrim.esm|06D932"
+      ],
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "EditorIdPatterns": "",
+      "BaseDamage": 16,
+      "BaseWeight": 20,
+      "ValueFactor": 2.2,
+      "Speed": 0.7,
+      "Reach": 1.3,
+      "Stagger": 1.15,
+      "CritFactor": 0.5,
+      "CritChance": 1,
+      "RecipeFactors": [
+        4,
+        2,
+        1,
+        0
+      ],
+      "WeightStep": 0.5
+    },
+    {
+      "Name": "Warhammer",
+      "WeaponClass": "TwoHanded",
+      "Keywords": [
+        "Skyrim.esm|06D930"
+      ],
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "EditorIdPatterns": "",
+      "BaseDamage": 18,
+      "BaseWeight": 24,
+      "ValueFactor": 2.4,
+      "Speed": 0.6,
+      "Reach": 1.3,
+      "Stagger": 1.25,
+      "CritFactor": 0.5,
+      "CritChance": 1,
+      "RecipeFactors": [
+        4,
+        3,
+        1,
+        0
+      ],
+      "WeightStep": 0.5
+    },
+    {
+      "Name": "Crossbow",
+      "WeaponClass": "Crossbow",
+      "Keywords": [],
+      "NamePatterns": "crossbow*",
+      "NameExclusions": "",
+      "EditorIdPatterns": "*Crossbow*",
+      "BaseDamage": 19,
+      "BaseWeight": 14,
+      "ValueFactor": 2.6,
+      "Speed": 1,
+      "Reach": 1,
+      "Stagger": 0.75,
+      "CritFactor": 0.5,
+      "CritChance": 1,
+      "RecipeFactors": [],
+      "WeightStep": 0.5
+    },
+    {
+      "Name": "Bow",
+      "WeaponClass": "Bow",
+      "Keywords": [
+        "Skyrim.esm|01E715"
+      ],
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "EditorIdPatterns": "",
+      "BaseDamage": 6,
+      "BaseWeight": 5,
+      "ValueFactor": 0.7,
+      "Speed": 0.7188,
+      "Reach": 1,
+      "Stagger": 0,
+      "CritFactor": 0.5,
+      "CritChance": 1,
+      "RecipeFactors": [
+        2,
+        0,
+        1,
+        0
+      ],
+      "WeightStep": 0.5
+    },
+    {
+      "Name": "Staff",
+      "WeaponClass": "Staff",
+      "Keywords": [
+        "Skyrim.esm|01E716"
+      ],
+      "NamePatterns": "",
+      "NameExclusions": "",
+      "EditorIdPatterns": "",
+      "BaseDamage": null,
+      "BaseWeight": null,
+      "ValueFactor": null,
+      "Speed": null,
+      "Reach": null,
+      "Stagger": null,
+      "CritFactor": null,
+      "CritChance": null,
+      "RecipeFactors": [],
+      "WeightStep": 0
+    }
+  ]
+}

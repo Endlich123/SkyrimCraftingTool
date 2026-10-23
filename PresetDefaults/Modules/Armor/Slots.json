@@ -1,0 +1,1031 @@
+{
+  "SchemaVersion": 1,
+  "Entries": [
+    {
+      "Name": "Helm",
+      "Bits": [
+        1,
+        12
+      ],
+      "Share": 22.21,
+      "ValueShare": 26.2,
+      "WeightShare": 13.55,
+      "TypeShares": {
+        "LightArmor": {
+          "ArmorRating": 21.81,
+          "Value": 25.88,
+          "Weight": 16.67,
+          "RecipeFactors": [
+            0.5,
+            0.33,
+            0.5,
+            0.5,
+            0.5,
+            0.5
+          ]
+        },
+        "Clothing": {
+          "ArmorRating": null,
+          "Value": 17.77,
+          "Weight": 16.67,
+          "RecipeFactors": null
+        }
+      },
+      "RecipeFactors": [
+        0.6,
+        0.67,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": true
+    },
+    {
+      "Name": "Full Helm",
+      "Bits": [
+        1,
+        12,
+        13
+      ],
+      "Share": 22.21,
+      "ValueShare": 26.2,
+      "WeightShare": 13.55,
+      "TypeShares": {
+        "LightArmor": {
+          "ArmorRating": 21.81,
+          "Value": 25.88,
+          "Weight": 16.67,
+          "RecipeFactors": [
+            0.5,
+            0.33,
+            0.5,
+            0.5,
+            0.5,
+            0.5
+          ]
+        },
+        "Clothing": {
+          "ArmorRating": null,
+          "Value": 17.77,
+          "Weight": 16.67,
+          "RecipeFactors": null
+        }
+      },
+      "RecipeFactors": [
+        0.6,
+        0.67,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": true
+    },
+    {
+      "Name": "Visor Helm",
+      "Bits": [
+        1,
+        12,
+        14
+      ],
+      "Share": 22.21,
+      "ValueShare": 26.2,
+      "WeightShare": 13.55,
+      "TypeShares": {
+        "LightArmor": {
+          "ArmorRating": 21.81,
+          "Value": 25.88,
+          "Weight": 16.67,
+          "RecipeFactors": [
+            0.5,
+            0.33,
+            0.5,
+            0.5,
+            0.5,
+            0.5
+          ]
+        },
+        "Clothing": {
+          "ArmorRating": null,
+          "Value": 17.77,
+          "Weight": 16.67,
+          "RecipeFactors": null
+        }
+      },
+      "RecipeFactors": [
+        0.6,
+        0.67,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": true
+    },
+    {
+      "Name": "Mask",
+      "Bits": [
+        0,
+        1,
+        12,
+        13
+      ],
+      "Share": 22.21,
+      "ValueShare": 26.2,
+      "WeightShare": 13.55,
+      "TypeShares": {
+        "LightArmor": {
+          "ArmorRating": 21.81,
+          "Value": 25.88,
+          "Weight": 16.67,
+          "RecipeFactors": [
+            0.5,
+            0.33,
+            0.5,
+            0.5,
+            0.5,
+            0.5
+          ]
+        },
+        "Clothing": {
+          "ArmorRating": null,
+          "Value": 17.77,
+          "Weight": 16.67,
+          "RecipeFactors": null
+        }
+      },
+      "RecipeFactors": [
+        0.6,
+        0.67,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": true
+    },
+    {
+      "Name": "Priest Mask",
+      "Bits": [
+        0,
+        12
+      ],
+      "Share": 22.21,
+      "ValueShare": 26.2,
+      "WeightShare": 13.55,
+      "TypeShares": {
+        "LightArmor": {
+          "ArmorRating": 21.81,
+          "Value": 25.88,
+          "Weight": 16.67,
+          "RecipeFactors": [
+            0.5,
+            0.33,
+            0.5,
+            0.5,
+            0.5,
+            0.5
+          ]
+        },
+        "Clothing": {
+          "ArmorRating": null,
+          "Value": 17.77,
+          "Weight": 16.67,
+          "RecipeFactors": null
+        }
+      },
+      "RecipeFactors": [
+        0.6,
+        0.67,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": true
+    },
+    {
+      "Name": "Head",
+      "Bits": [
+        0
+      ],
+      "Share": 22.21,
+      "ValueShare": 26.2,
+      "WeightShare": 13.55,
+      "TypeShares": {
+        "LightArmor": {
+          "ArmorRating": 21.81,
+          "Value": 25.88,
+          "Weight": 16.67,
+          "RecipeFactors": [
+            0.5,
+            0.33,
+            0.5,
+            0.5,
+            0.5,
+            0.5
+          ]
+        },
+        "Clothing": {
+          "ArmorRating": null,
+          "Value": 17.77,
+          "Weight": 16.67,
+          "RecipeFactors": null
+        }
+      },
+      "RecipeFactors": [
+        0.6,
+        0.67,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": true
+    },
+    {
+      "Name": "Hair",
+      "Bits": [
+        1
+      ],
+      "Share": 22.21,
+      "ValueShare": 26.2,
+      "WeightShare": 13.55,
+      "TypeShares": {
+        "LightArmor": {
+          "ArmorRating": 21.81,
+          "Value": 25.88,
+          "Weight": 16.67,
+          "RecipeFactors": [
+            0.5,
+            0.33,
+            0.5,
+            0.5,
+            0.5,
+            0.5
+          ]
+        },
+        "Clothing": {
+          "ArmorRating": null,
+          "Value": 17.77,
+          "Weight": 16.67,
+          "RecipeFactors": null
+        }
+      },
+      "RecipeFactors": [
+        0.6,
+        0.67,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": true
+    },
+    {
+      "Name": "Circlet",
+      "Bits": [
+        12
+      ],
+      "Share": 14,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {
+        "Clothing": {
+          "ArmorRating": null,
+          "Value": 1137.08,
+          "Weight": 66.67,
+          "RecipeFactors": null
+        }
+      },
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": true
+    },
+    {
+      "Name": "Body",
+      "Bits": [
+        2
+      ],
+      "Share": 44.64,
+      "ValueShare": 52.71,
+      "WeightShare": 63.25,
+      "TypeShares": {
+        "LightArmor": {
+          "ArmorRating": 50.2,
+          "Value": 52.94,
+          "Weight": 55.56,
+          "RecipeFactors": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "Clothing": {
+          "ArmorRating": null,
+          "Value": 17.77,
+          "Weight": 33.33,
+          "RecipeFactors": null
+        }
+      },
+      "RecipeFactors": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "CarriesMaterialKeyword": true
+    },
+    {
+      "Name": "Robe \u002B Hood",
+      "Bits": [
+        1,
+        2,
+        12
+      ],
+      "Share": 44.64,
+      "ValueShare": 52.71,
+      "WeightShare": 63.25,
+      "TypeShares": {
+        "LightArmor": {
+          "ArmorRating": 50.2,
+          "Value": 52.94,
+          "Weight": 55.56,
+          "RecipeFactors": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "Clothing": {
+          "ArmorRating": null,
+          "Value": 17.77,
+          "Weight": 33.33,
+          "RecipeFactors": null
+        }
+      },
+      "RecipeFactors": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "CarriesMaterialKeyword": true
+    },
+    {
+      "Name": "Robe \u002B Hair",
+      "Bits": [
+        1,
+        2
+      ],
+      "Share": 44.64,
+      "ValueShare": 52.71,
+      "WeightShare": 63.25,
+      "TypeShares": {
+        "LightArmor": {
+          "ArmorRating": 50.2,
+          "Value": 52.94,
+          "Weight": 55.56,
+          "RecipeFactors": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "Clothing": {
+          "ArmorRating": null,
+          "Value": 17.77,
+          "Weight": 33.33,
+          "RecipeFactors": null
+        }
+      },
+      "RecipeFactors": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "CarriesMaterialKeyword": true
+    },
+    {
+      "Name": "Hands",
+      "Bits": [
+        3
+      ],
+      "Share": 16.58,
+      "ValueShare": 10.54,
+      "WeightShare": 10.54,
+      "TypeShares": {
+        "LightArmor": {
+          "ArmorRating": 14.1,
+          "Value": 10.59,
+          "Weight": 13.89,
+          "RecipeFactors": [
+            0.3,
+            0.67,
+            0.5,
+            0.5,
+            0.5,
+            0.5
+          ]
+        },
+        "Clothing": {
+          "ArmorRating": null,
+          "Value": 50.25,
+          "Weight": 16.67,
+          "RecipeFactors": null
+        }
+      },
+      "RecipeFactors": [
+        0.45,
+        0.67,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": true
+    },
+    {
+      "Name": "Feet",
+      "Bits": [
+        7
+      ],
+      "Share": 16.57,
+      "ValueShare": 10.54,
+      "WeightShare": 12.65,
+      "TypeShares": {
+        "LightArmor": {
+          "ArmorRating": 13.9,
+          "Value": 10.59,
+          "Weight": 13.89,
+          "RecipeFactors": [
+            0.5,
+            0.67,
+            0.5,
+            0.5,
+            0.5,
+            0.5
+          ]
+        },
+        "Clothing": {
+          "ArmorRating": null,
+          "Value": 14.21,
+          "Weight": 33.33,
+          "RecipeFactors": null
+        }
+      },
+      "RecipeFactors": [
+        0.65,
+        0.67,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": true
+    },
+    {
+      "Name": "Shield",
+      "Bits": [
+        9
+      ],
+      "Share": 32.95,
+      "ValueShare": 26.36,
+      "WeightShare": 21.69,
+      "TypeShares": {
+        "LightArmor": {
+          "ArmorRating": 37.68,
+          "Value": 26.76,
+          "Weight": 51.59,
+          "RecipeFactors": [
+            1,
+            0.67,
+            0.5,
+            0.5
+          ]
+        }
+      },
+      "RecipeFactors": [
+        0.8,
+        0.33,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": true
+    },
+    {
+      "Name": "Amulet",
+      "Bits": [
+        5
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {
+        "Clothing": {
+          "ArmorRating": null,
+          "Value": 888.35,
+          "Weight": 16.67,
+          "RecipeFactors": null
+        }
+      },
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Ring",
+      "Bits": [
+        6
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {
+        "Clothing": {
+          "ArmorRating": null,
+          "Value": 355.34,
+          "Weight": 8.33,
+          "RecipeFactors": null
+        }
+      },
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Forearms 34",
+      "Bits": [
+        4
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Calves 38",
+      "Bits": [
+        8
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Tail 40",
+      "Bits": [
+        10
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Long Hair 41",
+      "Bits": [
+        11
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Ears 43",
+      "Bits": [
+        13
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Face 44",
+      "Bits": [
+        14
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Neck 45",
+      "Bits": [
+        15
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Chest 46",
+      "Bits": [
+        16
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Back 47",
+      "Bits": [
+        17
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Misc 48",
+      "Bits": [
+        18
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Pelvis 49",
+      "Bits": [
+        19
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Slot 50",
+      "Bits": [
+        20
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Slot 51",
+      "Bits": [
+        21
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Pelvis 52",
+      "Bits": [
+        22
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Leg 53",
+      "Bits": [
+        23
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Leg 54",
+      "Bits": [
+        24
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Face 55",
+      "Bits": [
+        25
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Chest 56",
+      "Bits": [
+        26
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Shoulder 57",
+      "Bits": [
+        27
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Arm 58",
+      "Bits": [
+        28
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Arm 59",
+      "Bits": [
+        29
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Slot 60",
+      "Bits": [
+        30
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    },
+    {
+      "Name": "Slot 61",
+      "Bits": [
+        31
+      ],
+      "Share": 2.25,
+      "ValueShare": null,
+      "WeightShare": null,
+      "TypeShares": {},
+      "RecipeFactors": [
+        0.1,
+        0.34,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "CarriesMaterialKeyword": false
+    }
+  ]
+}

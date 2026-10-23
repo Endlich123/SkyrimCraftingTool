@@ -1,0 +1,83 @@
+{
+  "SchemaVersion": 1,
+  "Entries": [
+    {
+      "Name": "Heavy",
+      "ArmorType": "HeavyArmor",
+      "FallbackTotals": {
+        "ArmorRating": 61.51,
+        "Value": 146,
+        "Weight": 28.48
+      },
+      "FallbackCraft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "FallbackTemper": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "FallbackBreakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "ArmorRatingStep": 0.5,
+      "WeightStep": 0.5
+    },
+    {
+      "Name": "Light",
+      "ArmorType": "LightArmor",
+      "FallbackTotals": {
+        "ArmorRating": 39.92,
+        "Value": 81,
+        "Weight": 10.03
+      },
+      "FallbackCraft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "FallbackTemper": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "FallbackBreakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "ArmorRatingStep": 0.5,
+      "WeightStep": 0.5
+    },
+    {
+      "Name": "Clothing",
+      "ArmorType": "Clothing",
+      "FallbackTotals": {
+        "ArmorRating": 0,
+        "Value": 28,
+        "Weight": 3
+      },
+      "FallbackCraft": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "FallbackTemper": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "FallbackBreakdown": {
+        "WorkbenchKey": "",
+        "Materials": [],
+        "Conditions": []
+      },
+      "ArmorRatingStep": 0,
+      "WeightStep": 0.25
+    }
+  ]
+}

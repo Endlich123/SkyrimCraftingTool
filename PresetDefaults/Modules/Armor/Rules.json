@@ -1,0 +1,382 @@
+{
+  "SchemaVersion": 1,
+  "Entries": [
+    {
+      "Name": "Heavy type",
+      "Types": [
+        "Heavy"
+      ],
+      "Slots": [],
+      "Materials": [],
+      "ExcludeSlots": [
+        "Shield"
+      ],
+      "Addons": [],
+      "ExcludeAddons": [],
+      "Keywords": [
+        "Skyrim.esm|06BBD2"
+      ]
+    },
+    {
+      "Name": "Light type",
+      "Types": [
+        "Light"
+      ],
+      "Slots": [],
+      "Materials": [],
+      "ExcludeSlots": [
+        "Shield"
+      ],
+      "Addons": [],
+      "ExcludeAddons": [],
+      "Keywords": [
+        "Skyrim.esm|06BBD3"
+      ]
+    },
+    {
+      "Name": "Armor vendor",
+      "Types": [
+        "Heavy",
+        "Light"
+      ],
+      "Slots": [],
+      "Materials": [],
+      "ExcludeSlots": [],
+      "Addons": [],
+      "ExcludeAddons": [],
+      "Keywords": [
+        "Skyrim.esm|08F959"
+      ]
+    },
+    {
+      "Name": "Armor helmet",
+      "Types": [
+        "Heavy",
+        "Light"
+      ],
+      "Slots": [
+        "Helm",
+        "Full Helm",
+        "Visor Helm",
+        "Mask",
+        "Priest Mask",
+        "Head",
+        "Hair",
+        "Long Hair 41",
+        "Ears 43",
+        "Face 44",
+        "Neck 45",
+        "Circlet"
+      ],
+      "Materials": [],
+      "ExcludeSlots": [],
+      "Addons": [],
+      "ExcludeAddons": [],
+      "Keywords": [
+        "Skyrim.esm|06C0EE"
+      ]
+    },
+    {
+      "Name": "Armor cuirass",
+      "Types": [
+        "Heavy",
+        "Light"
+      ],
+      "Slots": [
+        "Body",
+        "Robe \u002B Hood",
+        "Robe \u002B Hair",
+        "Pelvis 49",
+        "Pelvis 52",
+        "Chest 56"
+      ],
+      "Materials": [],
+      "ExcludeSlots": [],
+      "Addons": [],
+      "ExcludeAddons": [],
+      "Keywords": [
+        "Skyrim.esm|06C0EC"
+      ]
+    },
+    {
+      "Name": "Armor gauntlets",
+      "Types": [
+        "Heavy",
+        "Light"
+      ],
+      "Slots": [
+        "Hands",
+        "Forearms 34",
+        "Shoulder 57",
+        "Arm 58",
+        "Arm 59"
+      ],
+      "Materials": [],
+      "ExcludeSlots": [],
+      "Addons": [],
+      "ExcludeAddons": [],
+      "Keywords": [
+        "Skyrim.esm|06C0EF"
+      ]
+    },
+    {
+      "Name": "Armor boots",
+      "Types": [
+        "Heavy",
+        "Light"
+      ],
+      "Slots": [
+        "Feet",
+        "Calves 38"
+      ],
+      "Materials": [],
+      "ExcludeSlots": [],
+      "Addons": [],
+      "ExcludeAddons": [],
+      "Keywords": [
+        "Skyrim.esm|06C0ED"
+      ]
+    },
+    {
+      "Name": "Armor shield",
+      "Types": [
+        "Heavy",
+        "Light"
+      ],
+      "Slots": [
+        "Shield"
+      ],
+      "Materials": [],
+      "ExcludeSlots": [],
+      "Addons": [],
+      "ExcludeAddons": [],
+      "Keywords": [
+        "Skyrim.esm|0965B2"
+      ]
+    },
+    {
+      "Name": "Clothing base",
+      "Types": [
+        "Clothing"
+      ],
+      "Slots": [
+        "Helm",
+        "Full Helm",
+        "Visor Helm",
+        "Mask",
+        "Priest Mask",
+        "Head",
+        "Hair",
+        "Body",
+        "Robe \u002B Hood",
+        "Robe \u002B Hair",
+        "Hands",
+        "Feet",
+        "Shield",
+        "Forearms 34",
+        "Calves 38",
+        "Tail 40",
+        "Long Hair 41",
+        "Face 44",
+        "Neck 45",
+        "Chest 46",
+        "Back 47",
+        "Misc 48",
+        "Pelvis 49",
+        "Slot 50",
+        "Pelvis 52",
+        "Leg 53",
+        "Leg 54",
+        "Face 55",
+        "Shoulder 57",
+        "Arm 58",
+        "Arm 59",
+        "Slot 60",
+        "Slot 61"
+      ],
+      "Materials": [],
+      "ExcludeSlots": [],
+      "Addons": [],
+      "ExcludeAddons": [],
+      "Keywords": [
+        "Skyrim.esm|06BBE8",
+        "Skyrim.esm|08F95B"
+      ]
+    },
+    {
+      "Name": "Clothing headwear",
+      "Types": [
+        "Clothing"
+      ],
+      "Slots": [],
+      "Materials": [],
+      "ExcludeSlots": [],
+      "Addons": [
+        "Headwear"
+      ],
+      "ExcludeAddons": [],
+      "Keywords": [
+        "Skyrim.esm|06BBE8",
+        "Skyrim.esm|08F95B"
+      ]
+    },
+    {
+      "Name": "Jewelry base",
+      "Types": [
+        "Clothing"
+      ],
+      "Slots": [
+        "Amulet",
+        "Ring",
+        "Circlet",
+        "Ears 43",
+        "Slot 51",
+        "Chest 56"
+      ],
+      "Materials": [],
+      "ExcludeSlots": [],
+      "Addons": [],
+      "ExcludeAddons": [
+        "Headwear"
+      ],
+      "Keywords": [
+        "Skyrim.esm|06BBE9",
+        "Skyrim.esm|08F95A"
+      ]
+    },
+    {
+      "Name": "Clothing head",
+      "Types": [
+        "Clothing"
+      ],
+      "Slots": [
+        "Helm",
+        "Full Helm",
+        "Visor Helm",
+        "Mask",
+        "Priest Mask",
+        "Head",
+        "Hair",
+        "Long Hair 41",
+        "Face 44"
+      ],
+      "Materials": [],
+      "ExcludeSlots": [],
+      "Addons": [],
+      "ExcludeAddons": [],
+      "Keywords": [
+        "Skyrim.esm|10CD11"
+      ]
+    },
+    {
+      "Name": "Clothing body",
+      "Types": [
+        "Clothing"
+      ],
+      "Slots": [
+        "Body",
+        "Robe \u002B Hood",
+        "Robe \u002B Hair",
+        "Pelvis 49",
+        "Pelvis 52"
+      ],
+      "Materials": [],
+      "ExcludeSlots": [],
+      "Addons": [],
+      "ExcludeAddons": [],
+      "Keywords": [
+        "Skyrim.esm|0A8657"
+      ]
+    },
+    {
+      "Name": "Clothing hands",
+      "Types": [
+        "Clothing"
+      ],
+      "Slots": [
+        "Hands",
+        "Forearms 34"
+      ],
+      "Materials": [],
+      "ExcludeSlots": [],
+      "Addons": [],
+      "ExcludeAddons": [],
+      "Keywords": [
+        "Skyrim.esm|10CD13"
+      ]
+    },
+    {
+      "Name": "Clothing feet",
+      "Types": [
+        "Clothing"
+      ],
+      "Slots": [
+        "Feet",
+        "Calves 38"
+      ],
+      "Materials": [],
+      "ExcludeSlots": [],
+      "Addons": [],
+      "ExcludeAddons": [],
+      "Keywords": [
+        "Skyrim.esm|10CD12"
+      ]
+    },
+    {
+      "Name": "Clothing neck",
+      "Types": [
+        "Clothing"
+      ],
+      "Slots": [
+        "Neck 45",
+        "Amulet",
+        "Chest 46"
+      ],
+      "Materials": [],
+      "ExcludeSlots": [],
+      "Addons": [],
+      "ExcludeAddons": [],
+      "Keywords": [
+        "Skyrim.esm|10CD0A"
+      ]
+    },
+    {
+      "Name": "Clothing circlet",
+      "Types": [
+        "Clothing"
+      ],
+      "Slots": [
+        "Circlet",
+        "Ears 43",
+        "Face 55"
+      ],
+      "Materials": [],
+      "ExcludeSlots": [],
+      "Addons": [],
+      "ExcludeAddons": [
+        "Headwear"
+      ],
+      "Keywords": [
+        "Skyrim.esm|10CD08"
+      ]
+    },
+    {
+      "Name": "Clothing ring",
+      "Types": [
+        "Clothing"
+      ],
+      "Slots": [
+        "Ring",
+        "Slot 51",
+        "Chest 56"
+      ],
+      "Materials": [],
+      "ExcludeSlots": [],
+      "Addons": [],
+      "ExcludeAddons": [],
+      "Keywords": [
+        "Skyrim.esm|10CD09"
+      ]
+    }
+  ]
+}
