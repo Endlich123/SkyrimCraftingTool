@@ -1,0 +1,157 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:model="clr-namespace:SkyrimCraftingTool.Model">
+
+    <!-- WHAT A LEVELED LIST DOES, and what that means for one object in it.
+         Hosted by a LeveledListEditorVM, and shown in TWO places: the leveled-list window, where it
+         has always been, and the contents pane of the Container/LeveledList tab, which is where
+         someone reads a list without having come through an item. Shared the way the container
+         placement panel is - one host, one piece of markup, no second copy to drift.
+
+         THE TWO HALVES BELONG NEXT TO EACH OTHER. Left: properties of the whole list, which change
+         the odds for every mod feeding it. Right: what those odds actually are, recomputed on every
+         change. The calculator sits here rather than in the dry-run on the user's own reasoning: by
+         the time it shows up in the dry-run it is too late. -->
+    <DataTemplate x:Key="LeveledListPropertiesPanel">
+        <Grid Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <GroupBox Grid.Column="0" Style="{StaticResource DarkGroupBoxStyle}" Padding="10">
+                <GroupBox.Header>
+                    <TextBlock Text="This list" Style="{StaticResource TitelStyle}"/>
+                </GroupBox.Header>
+
+                <StackPanel>
+                    <TextBlock Text="{Binding EntryCountSummary}"
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               FontSize="11" Margin="0,0,0,8"/>
+
+                    <!-- chanceNone: how often the list hands out nothing at all. -->
+                    <TextBlock Text="Chance of nothing" Style="{StaticResource ItemLabelStyle}"/>
+                    <Grid Margin="0,2,0,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Slider Grid.Column="0" Minimum="0" Maximum="100"
+                                Value="{Binding ChanceNoneDouble, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                SmallChange="1" LargeChange="5" TickFrequency="1"
+                                VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Text="{Binding ChanceNone, UpdateSourceTrigger=PropertyChanged}"
+                                 model:NumericTextBoxBehavior.Mode="Integer"
+                                 Width="46" Margin="8,0,4,0"
+                                 Style="{StaticResource ItemTextBoxStyle}"/>
+                        <TextBlock Grid.Column="2" Text="%" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource ColorTextTertiary}"/>
+                    </Grid>
+                    <TextBlock Text="{Binding ChanceSummary}"
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               TextWrapping="Wrap" FontSize="11" Margin="0,0,0,10"/>
+
+                    <!-- 223 lists take their chance from a global variable instead of the number
+                         above - mostly gates that a quest or a skill level opens. Shown, not
+                         editable: pointing a list at a different global couples it to unrelated game
+                         state, and SkyPatcher can set one but never remove it. Only appears for the
+                         lists it actually applies to. -->
+                    <TextBlock Text="{Binding GlobalSummary}"
+                               Foreground="{DynamicResource ColorWarning}"
+                               TextWrapping="Wrap" FontSize="11" Margin="0,0,0,10"
+                               Visibility="{Binding HasGoverningGlobal, Converter={StaticResource BoolToVis}}"/>
+
+                    <!-- One dropdown rather than checkboxes, and that is not a simplification:
+                         SkyPatcher can only set one flag operation at a time, and ships a combined
+                         "for level and each item" precisely because two operations cannot be
+                         issued. Checkboxes would offer states the patch cannot write. -->
+                    <TextBlock Text="How the list calculates" Style="{StaticResource ItemLabelStyle}"/>
+                    <ComboBox ItemsSource="{Binding FlagOptions}"
+                              SelectedItem="{Binding SelectedFlagOption, Mode=TwoWay}"
+                              DisplayMemberPath="Label"
+                              Style="{StaticResource ItemComboBoxStyle}"
+                              Margin="0,2,0,4"/>
+                    <TextBlock Text="{Binding LevelEffectHint}"
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               TextWrapping="Wrap" FontSize="11" Margin="0,0,0,8"/>
+
+                    <TextBlock Text="{Binding SpecialLootWarning}"
+                               Foreground="{DynamicResource ColorWarning}"
+                               TextWrapping="Wrap" FontSize="11" Margin="0,0,0,8"
+                               Visibility="{Binding TouchesSpecialLoot, Converter={StaticResource BoolToVis}}"/>
+
+                    <DockPanel LastChildFill="True">
+                        <Button DockPanel.Dock="Right" Content="Reset list" Width="90"
+                                Command="{Binding ResetListPropertiesCommand}"
+                                Style="{StaticResource StandardButtonStyle}"
+                                ToolTip="Put chance and calculation back to what your load order has."/>
+                        <TextBlock Text="{Binding ListEditSummary}"
+                                   Foreground="{DynamicResource ColorTextSecondary}"
+                                   TextWrapping="Wrap" FontSize="11" VerticalAlignment="Center"
+                                   Margin="0,0,8,0"/>
+                    </DockPanel>
+                </StackPanel>
+            </GroupBox>
+
+            <GroupBox Grid.Column="2" Style="{StaticResource DarkGroupBoxStyle}" Padding="10">
+                <GroupBox.Header>
+                    <TextBlock Text="Chance calculator" Style="{StaticResource TitelStyle}"/>
+                </GroupBox.Header>
+
+                <StackPanel>
+
+                <!-- What it is waiting for, where the empty box used to be. -->
+                <TextBlock Text="{Binding CalculatorWaitingText}"
+                           Visibility="{Binding IsWaitingForSubject, Converter={StaticResource BoolToVis}}"
+                           Foreground="{DynamicResource ColorTextTertiary}"
+                           TextWrapping="Wrap" FontSize="11"/>
+
+                <StackPanel Visibility="{Binding CanCalculate, Converter={StaticResource BoolToVis}}">
+                    <!-- The item is named in "Your placement" below, not here: this panel answers a
+                         question about that placement, and naming the item twice on one screen makes
+                         the two blocks look like they are about different things. -->
+
+                    <!-- The player level is an input, not a detail: the same placement is worth 7.5%
+                         at level 1 and 3.75% at level 60, because more entries qualify as you rise. -->
+                    <TextBlock Text="At player level" Style="{StaticResource ItemLabelStyle}"/>
+                    <Grid Margin="0,2,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Slider Grid.Column="0" Minimum="1" Maximum="100"
+                                Value="{Binding PlayerLevelDouble, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                SmallChange="1" LargeChange="5" TickFrequency="1"
+                                VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="1" Text="{Binding PlayerLevel}" MinWidth="28"
+                                   Margin="8,0,0,0" VerticalAlignment="Center"/>
+                    </Grid>
+
+                    <TextBlock Text="{Binding ChanceBeforeText}"
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               TextWrapping="Wrap" Margin="0,0,0,4"/>
+
+                    <TextBlock Text="{Binding ChanceAfterText}"
+                               Foreground="{DynamicResource ColorAccentLight}"
+                               FontSize="15" FontWeight="Bold"
+                               TextWrapping="Wrap" Margin="0,0,0,4"/>
+
+                    <TextBlock Text="{Binding ExpectedCountText}"
+                               Foreground="{DynamicResource ColorTextSecondary}"
+                               TextWrapping="Wrap" FontSize="11" Margin="0,0,0,10"/>
+
+                    <TextBlock Text="{Binding CalculatorCaveat}"
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               TextWrapping="Wrap" FontSize="11" FontStyle="Italic"/>
+                </StackPanel>
+
+                </StackPanel>
+            </GroupBox>
+        </Grid>
+    </DataTemplate>
+
+</ResourceDictionary>

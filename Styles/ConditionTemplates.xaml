@@ -1,0 +1,212 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:local="clr-namespace:SkyrimCraftingTool.ViewModel">
+
+    <!-- The "Target" cell of a condition row, one template per condition type.
+         Implicit (DataType, no x:Key), so a ContentControl bound to the condition itself picks the
+         right one.
+
+         These used to be copied into six places - twice in MainContentView, twice in
+         MultiSelectDetailView, once each in PresetMultiSelectView and PresetsConfigView. Every new
+         editable condition type therefore cost six edits, and the copies had already drifted apart:
+         two of them were missing the dead-reference border, and the two preset copies still had the
+         old editable level field. Adding a type is now one edit here.
+
+         All of them read their list from the nearest ancestor ItemsControl's DataContext, which is
+         the condition list's owner - ItemNodeVM, MultiSelectDetailVM or PresetRecipeVM. Those three
+         deliberately expose the same property names (FilteredCraftingPerks, FilteredQuests) so one
+         template fits all three. -->
+
+    <!-- THE WHOLE CONDITION ROW, keyed, as opposed to the per-type Target cells below.
+         Type | Target | Value | Run On | Remove, plus the read-only overlay.
+
+         The same row is written out inline four more times (twice in MainContentView, twice in
+         MultiSelectDetailView) and in two preset variants. This keyed copy exists so the Breakdown
+         section did not become a seventh: it binds its Remove to `RemoveConditionCommand` on the
+         ItemsControl's DataContext, a name BreakdownRecipeVM exposes and ItemNodeVM already has as
+         an alias, so the inline copies could migrate onto it later without changing their owners.
+         Not done in the same breath on purpose - those sections work, and this one had no visual
+         test to catch a regression. -->
+    <DataTemplate x:Key="ConditionRowTemplate">
+        <Grid Margin="0,5">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="200"/>   <!-- Type -->
+                <ColumnDefinition Width="*"/>     <!-- Target -->
+                <ColumnDefinition Width="*"/>     <!-- Value -->
+                <ColumnDefinition Width="200"/>   <!-- Run On -->
+                <ColumnDefinition Width="Auto"/>  <!-- Remove -->
+            </Grid.ColumnDefinitions>
+
+            <DockPanel Grid.Column="0" VerticalAlignment="Center">
+                <TextBlock Text="Type:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center"/>
+                <ComboBox ItemsSource="{Binding ConditionTypes}"
+                          SelectedItem="{Binding Type, Mode=TwoWay}"
+                          Style="{StaticResource ItemComboBoxStyle}"/>
+            </DockPanel>
+
+            <DockPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="Target:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center"/>
+                <!-- Picks one of the implicit per-type templates below. -->
+                <ContentControl Content="{Binding}"/>
+            </DockPanel>
+
+            <DockPanel Grid.Column="2" VerticalAlignment="Center">
+                <TextBlock Text="Operator:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center"/>
+                <ComboBox ItemsSource="{Binding CompareSymbols}" SelectedItem="{Binding CompareSymbol}" Width="52" Margin="0,0,8,5" VerticalAlignment="Stretch"
+                          Style="{StaticResource CompactComboBoxStyle}" ToolTip="How the value is compared. Shows what the patch writes - for a new condition the usual one for its type."/>
+                <TextBlock Text="Value:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center"/>
+                <TextBox Width="80" HorizontalAlignment="Left" Text="{Binding ComparisonValue}" Style="{StaticResource ItemTextBoxStyle}"/>
+            </DockPanel>
+
+            <DockPanel Grid.Column="3" VerticalAlignment="Center">
+                <TextBlock Text="Run On:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center"/>
+                <CheckBox DockPanel.Dock="Right" Content="OR" IsChecked="{Binding IsOr}" Margin="6,0,0,5" VerticalAlignment="Center" VerticalContentAlignment="Center"
+                          Style="{StaticResource ItemCheckBoxStyle}" ToolTip="Either this OR the next condition must be true. Unticked, all conditions must be true."/>
+                <ComboBox ItemsSource="{Binding RunOnOptions}"
+                          SelectedItem="{Binding RunOn}"
+                          Style="{StaticResource ItemComboBoxStyle}"/>
+            </DockPanel>
+
+            <Button Grid.Column="4"
+                    Command="{Binding DataContext.RemoveConditionCommand,
+                              RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                    CommandParameter="{Binding}"
+                    ToolTip="Remove Condition"
+                    Style="{StaticResource RemoveButtonStyle}"/>
+
+            <!-- Read-only overlay for a preserved but non-editable condition type. Content is set
+                 by a DataTrigger and left null otherwise - NOT a Visibility toggle on a filled
+                 element: null content means the template is never instantiated for an ordinary
+                 condition, so its bindings cannot be evaluated against a view model that has none
+                 of them. That was 12 binding errors per editable row. -->
+            <ContentControl Grid.Column="0" Grid.ColumnSpan="5" Panel.ZIndex="10">
+                <ContentControl.Style>
+                    <Style TargetType="ContentControl">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Type}" Value="ReadOnly">
+                                <Setter Property="Content" Value="{Binding}"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ContentControl.Style>
+            </ContentControl>
+        </Grid>
+    </DataTemplate>
+
+    <!-- HasPerk -->
+    <DataTemplate DataType="{x:Type local:PerkConditionViewModel}">
+        <ComboBox ItemsSource="{Binding DataContext.FilteredCraftingPerks,
+                                        RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                  SelectedItem="{Binding SelectedPerk}"
+                  IsSynchronizedWithCurrentItem="False"
+                  BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
+                  IsEditable="True"
+                  Text="{Binding PerkSearchText}"
+                  Style="{StaticResource ItemComboBoxStyle}"/>
+    </DataTemplate>
+
+    <!-- GetIsSex -->
+    <DataTemplate DataType="{x:Type local:SexConditionViewModel}">
+        <ComboBox SelectedItem="{Binding TargetGender}"
+                  ItemsSource="{Binding Genders}"
+                  Style="{StaticResource ItemComboBoxStyle}"/>
+    </DataTemplate>
+
+    <!-- GetActorValue -->
+    <DataTemplate DataType="{x:Type local:ActorValueConditionViewModel}">
+        <ComboBox SelectedItem="{Binding SelectedSkill}"
+                  ItemsSource="{Binding ActorValueWhitelist}"
+                  Style="{StaticResource ItemComboBoxStyle}"/>
+    </DataTemplate>
+
+    <!-- GetLevel: no real "Target" for this condition type (it only compares the player's level) -
+         RequiredLevel IS ComparisonValue (see LevelConditionViewModel, where one is a straight
+         alias of the other), so it is edited via the "Value" column instead. Styled as a visibly
+         muted/disabled-looking box (not a plain TextBlock - that read as blank/broken instead of
+         "intentionally not editable here"; not a normal or IsReadOnly TextBox either - both looked
+         just like a live input field) so it still reads as a field at a glance, just a disabled
+         one. Keeps the column instead of hiding it, so Type/Target/Value/RunOn stay aligned across
+         every condition type in the list.
+
+         The two preset views used to put an editable TextBox here, which meant the Target and the
+         Value column edited the same number side by side. -->
+    <DataTemplate DataType="{x:Type local:LevelConditionViewModel}">
+        <Border Background="{DynamicResource ColorBackgroundControl}"
+                BorderBrush="{DynamicResource ColorDivider}"
+                BorderThickness="1"
+                Padding="4"
+                Margin="0,0,5,5"
+                Opacity="0.5"
+                ToolTip="Edit via the Value field - Target isn't used for this condition type.">
+            <TextBlock Text="{Binding RequiredLevel}"
+                       Foreground="{DynamicResource ColorTextMuted}"
+                       FontSize="11"/>
+        </Border>
+    </DataTemplate>
+
+    <!-- A condition type the tool preserves verbatim but cannot edit (GetItemCount,
+         EPTemperingItemIsEnchanted, GetGlobalValue, ...). Before these were scanned they were simply
+         discarded, which cost 69% of all COBJ conditions. Now they are kept, so the row has to show
+         something - and must not offer the normal editors, which have no way to represent the
+         parameter.
+         Covers the whole row rather than hiding each control separately; ReadOnlyConditionViewModel
+         pins Type as well, so keyboard focus on a covered picker still cannot change anything.
+
+         As a template, not a Border sitting in every row: it used to be copied into all four
+         condition rows and shown via a DataTrigger, which meant its bindings (Explanation,
+         FunctionName, TargetDisplay, ValueDisplay - all of them only on ReadOnlyConditionViewModel)
+         were evaluated against every ORDINARY condition too, and failed. Collapsed or not, WPF still
+         resolves them: 12 binding errors per editable row, drowning out real ones. A template is
+         only instantiated for the type it belongs to, so the bindings cannot miss. -->
+    <DataTemplate DataType="{x:Type local:ReadOnlyConditionViewModel}">
+        <Border Background="{DynamicResource ColorBackgroundControl}"
+                BorderBrush="{DynamicResource ColorDivider}"
+                BorderThickness="1" Padding="6,4"
+                ToolTip="{Binding Explanation}">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Locked:" FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource ColorTextMuted}"/>
+                <TextBlock Text="{Binding FunctionName}" Margin="6,0,0,0"
+                           FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding TargetDisplay}" Margin="10,0,0,0"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource ColorTextMuted}"/>
+                <TextBlock Text="{Binding ValueDisplay}" Margin="10,0,0,0"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource ColorTextMuted}"/>
+                <TextBlock Text="(preserved, not editable)" Margin="14,0,0,0"
+                           FontStyle="Italic" VerticalAlignment="Center"
+                           Foreground="{DynamicResource ColorTextMuted}"/>
+            </StackPanel>
+        </Border>
+    </DataTemplate>
+
+    <!-- GetStageDone -->
+    <DataTemplate DataType="{x:Type local:QuestStageConditionViewModel}">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="80"/>
+            </Grid.ColumnDefinitions>
+
+            <ComboBox Grid.Column="0"
+                      ItemsSource="{Binding DataContext.FilteredQuests,
+                                            RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                      SelectedItem="{Binding SelectedQuest}"
+                      IsSynchronizedWithCurrentItem="False"
+                      BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
+                      Style="{StaticResource ItemComboBoxStyle}"/>
+
+            <ComboBox Grid.Column="1"
+                      IsEditable="True"
+                      IsSynchronizedWithCurrentItem="False"
+                      ItemsSource="{Binding AvailableStages}"
+                      Text="{Binding Stage, UpdateSourceTrigger=LostFocus}"
+                      ToolTip="Stages defined by the selected quest — or type one."
+                      Style="{StaticResource CompactComboBoxStyle}"
+                      Margin="0,0,5,5"/>
+        </Grid>
+    </DataTemplate>
+
+</ResourceDictionary>

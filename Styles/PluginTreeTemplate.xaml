@@ -1,0 +1,71 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:vm="clr-namespace:SkyrimCraftingTool.ViewModel"
+                    xmlns:model="clr-namespace:SkyrimCraftingTool.Model">
+
+    <!-- The tree on the left of every sub-tab of the Container/LeveledList tab: a plugin, and the
+         rows it defines.
+
+         SHARED, because there were two of these and they were the same eighty lines of markup with
+         two handler names and one leaf swapped. What a sub-tab genuinely owns is what a LEAF looks
+         like, and that stays in its own view as an implicit template keyed on its row type - the
+         plugin level below has no ItemTemplate for exactly that reason.
+
+         The condition templates are this codebase's standing reminder of what the other way costs:
+         six copies, of which two had quietly lost the dead-reference border. -->
+
+    <!-- The plugin row. Implicit, so a TreeView bound to PluginGroupNodeVM nodes picks it up. -->
+    <HierarchicalDataTemplate DataType="{x:Type vm:PluginGroupNodeVM}" ItemsSource="{Binding Rows}">
+        <StackPanel Orientation="Horizontal">
+            <TextBlock Text="{Binding PluginName}"
+                       FontWeight="Bold"
+                       Foreground="{DynamicResource ColorTreeRoot}"
+                       TextTrimming="CharacterEllipsis"/>
+            <TextBlock Text="{Binding Rows.Count, StringFormat=({0})}"
+                       Foreground="{DynamicResource ColorTextTertiary}"
+                       FontSize="10"
+                       VerticalAlignment="Center"
+                       Margin="5,0,0,0"/>
+        </StackPanel>
+
+        <!-- The LEAF level's containers. IsRow is what gives those rows Ctrl/Shift; the plugin rows
+             above keep ordinary single-select behaviour, which is what makes a click on one of them
+             mean "show me this one thing". -->
+        <HierarchicalDataTemplate.ItemContainerStyle>
+            <Style TargetType="TreeViewItem">
+                <Setter Property="Padding" Value="2"/>
+                <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                <Setter Property="model:MultiSelectTreeBehavior.IsRow" Value="True"/>
+            </Style>
+        </HierarchicalDataTemplate.ItemContainerStyle>
+    </HierarchicalDataTemplate>
+
+    <!-- The tree itself. Keyed rather than implicit: this is the one TreeView shape in the tool that
+         works this way, and the item and NPC trees must keep their own. -->
+    <Style x:Key="PluginTreeStyle" TargetType="TreeView">
+        <Setter Property="Background" Value="{DynamicResource ColorBackgroundControl}"/>
+        <Setter Property="Foreground" Value="{DynamicResource ColorTextPrimary}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource ColorBorder}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+        <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True"/>
+        <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling"/>
+        <Setter Property="model:MultiSelectTreeBehavior.Enabled" Value="True"/>
+
+        <!-- Root level only, which is the level that HAS an IsExpanded. Binding it here and not for
+             the leaves keeps the search's auto-expand working without a failing binding on every
+             row below. -->
+        <Setter Property="ItemContainerStyle">
+            <Setter.Value>
+                <Style TargetType="TreeViewItem">
+                    <Setter Property="Padding" Value="2"/>
+                    <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                    <Setter Property="VerticalContentAlignment" Value="Center"/>
+                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                </Style>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>
