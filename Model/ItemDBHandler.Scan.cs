@@ -1,0 +1,2613 @@
+using System;
+using DynamicData;
+using Microsoft.Data.Sqlite;
+using Mutagen.Bethesda;
+using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Skyrim;
+using System.Globalization;
+using SkyrimCraftingTool.Services;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace SkyrimCraftingTool.Model
+{
+    // Scan half of ItemDBHandler: PutIntoDataBank (parallel parse -> sequential write), the per-plugin Mutagen parse, the Parsed* row carriers and the column/param arrays + batch-insert helpers they feed.
+    // Split out of ItemDBHandler.cs purely for navigability - no logic changed.
+    public partial class ItemDBHandler
+    {
+        // ============================
+        //        DB ERSTELLEN
+        // ============================
+
+        public void PutIntoDataBank(List<PluginInfo> allgamePathfromDB)
+        {
+            // One clock through the phases below, each written to Logs\perf.log at its boundary
+            // (docs/Performance-Plan.md, P-P0). "Scan: item database" in that log was a single 28 s
+            // block on a 1.800-plugin list; these lines say which part of it the time goes to.
+            var phase = PerfClock.StartNew();
+
+            Directory.CreateDirectory(ItemFolder);
+
+            using var connection = new SqliteConnection($"Data Source={ItemdbPath}");
+            connection.Open();
+
+            using (var pragma = connection.CreateCommand())
+            {
+                pragma.CommandText = "PRAGMA journal_mode=WAL;";
+                pragma.ExecuteNonQuery();
+            }
+
+            EnsureSchema(connection);
+            CreateTables(connection);
+
+            // Which COBJ/Enchantment records has the user hand-edited Conditions/Effects/
+            // WornRestrictionKeywords for? Unlike Armor/Weapon/COBJ/Enchantment's own fields (which
+            // have IsEdited* shadow columns on the SAME row), these three child tables have no
+            // shadow-column mechanism — a user edit is a full replace of the base child rows. So the
+            // only way to protect a hand-edited child set from being silently overwritten by this scan
+            // is a flag on the PARENT row, checked before we touch its children below.
+            var conditionsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM COBJ WHERE ConditionsEdited = 1;");
+            var effectsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM Enchantments WHERE EffectsEdited = 1;");
+            // The same guard for the Spells tab (docs/Spells-Plan.md).
+            var spellEffectsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM Spells WHERE EffectsEdited = 1;");
+            // Same protection for the NPC child lists: a rescan refreshes the record, never the
+            // faction or skill list the user has taken over.
+            var npcFactionsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM Npc WHERE FactionsEdited = 1;");
+            var npcSkillsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM Npc WHERE SkillsEdited = 1;");
+            // The three N-P3 lists share one flag: they are edited together on one screen, and a
+            // flag each would be three columns that are always set at the same time.
+            var npcSpellsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM Npc WHERE ListsEdited = 1;");
+            var npcPerksEditedKeys = npcSpellsEditedKeys;
+            var npcItemsEditedKeys = npcSpellsEditedKeys;
+            // E3: FLST content-edit protection is per-list now (WornRestrictionListState), not per
+            // enchantment. The legacy Enchantments.KeywordsEdited term is unioned in so a DB not yet
+            // migrated by RepairBlankWornRestrictionEdits still protects a hand-edited list.
+            var listContentEditedKeys = ReadFlaggedKeys(connection,
+                @"SELECT ListKey FROM WornRestrictionListState WHERE IsEdited = 1
+                  UNION
+                  SELECT WornRestrictionListKey FROM Enchantments
+                  WHERE KeywordsEdited = 1 AND WornRestrictionListKey IS NOT NULL AND WornRestrictionListKey <> '';");
+
+            using var insertArmor = PrepareUpsert(connection, "Armor", ArmorColumnNames, ArmorParamNames);
+            using var insertWeapon = PrepareUpsert(connection, "Weapons", WeaponColumnNames, WeaponParamNames);
+            using var insertWorldItem = PrepareUpsert(connection, "WorldItem", WorldItemColumnNames, WorldItemParamNames);
+            using var insertArmorAddon = PrepareUpsert(connection, "ArmorAddon", ArmorAddonColumnNames, ArmorAddonParamNames);
+            using var insertArmorArmature = PrepareInsert(connection, "ArmorArmature", ArmorArmatureColumnNames, ArmorArmatureParamNames);
+            using var insertMeshRef = PrepareInsert(connection, "MeshRef", MeshRefColumnNames, MeshRefParamNames);
+            using var insertCOBJ = PrepareUpsert(connection, "COBJ", CobjColumnNames, CobjParamNames);
+            using var insertCOBJCondition = PrepareInsert(connection, "COBJ_Conditions", CobjConditionColumnNames, CobjConditionParamNames);
+            using var insertEnch = PrepareUpsert(connection, "Enchantments", EnchantmentColumnNames, EnchantmentParamNames);
+            using var insertEnchEff = PrepareInsert(connection, "EnchantmentEffects", EnchantmentEffectColumnNames, EnchantmentEffectParamNames);
+            using var insertWRK = PrepareInsert(connection, "WornRestrictionKeywords", WornRestrictionKeywordColumnNames, WornRestrictionKeywordParamNames);
+            using var insertContainer = PrepareUpsert(connection, "Container", ContainerColumnNames, ContainerParamNames);
+            using var insertContainerLVLI = PrepareInsert(connection, "ContainerLVLI", ContainerLvliColumnNames, ContainerLvliParamNames);
+            using var insertContainerEntry = PrepareInsert(connection, "ContainerEntry", ContainerEntryColumnNames, ContainerEntryParamNames);
+            using var insertMagicEffects = PrepareUpsert(connection, "MagicEffects", MagicEffectColumnNames, MagicEffectParamNames);
+            using var insertGlobals = PrepareUpsert(connection, "Globals", GlobalColumnNames, GlobalParamNames);
+            using var insertLeveledList = PrepareUpsert(connection, "LeveledList", LeveledListColumnNames, LeveledListParamNames);
+            using var insertLeveledListEntry = PrepareInsert(connection, "LeveledListEntry", LeveledListEntryColumnNames, LeveledListEntryParamNames);
+            using var insertLeveledListLost = PrepareInsert(connection, "LeveledListLostEntry", LeveledListLostColumnNames, LeveledListLostParamNames);
+            using var insertLeveledNpc = PrepareUpsert(connection, "LeveledNpc", LeveledNpcColumnNames, LeveledNpcParamNames);
+            using var insertLeveledNpcEntry = PrepareInsert(connection, "LeveledNpcEntry", LeveledNpcEntryColumnNames, LeveledNpcEntryParamNames);
+            using var insertNpc = PrepareUpsert(connection, "Npc", NpcColumnNames, NpcParamNames);
+            using var insertNpcFaction = PrepareInsert(connection, "NpcFactions", NpcFactionColumnNames, NpcFactionParamNames);
+            using var insertNpcSkill = PrepareInsert(connection, "NpcSkills", NpcSkillColumnNames, NpcSkillParamNames);
+            using var insertNpcSpell = PrepareInsert(connection, "NpcSpells", NpcSpellColumnNames, NpcSpellParamNames);
+            using var insertNpcPerk = PrepareInsert(connection, "NpcPerks", NpcPerkColumnNames, NpcPerkParamNames);
+            using var insertNpcItem = PrepareInsert(connection, "NpcItems", NpcItemColumnNames, NpcItemParamNames);
+            using var insertSpells = PrepareUpsert(connection, "Spells", SpellColumnNames, SpellParamNames);
+            using var insertSpellEff = PrepareInsert(connection, "SpellEffects", SpellEffectColumnNames, SpellEffectParamNames);
+            using var insertShoutWord = PrepareInsert(connection, "ShoutWords", ShoutWordColumnNames, ShoutWordParamNames);
+            using var insertShouts = PrepareUpsert(connection, "Shouts", NamedCatalogueColumnNames, NamedCatalogueParamNames);
+            using var insertLeveledSpells = PrepareUpsert(connection, "LeveledSpells", PlainCatalogueColumnNames, PlainCatalogueParamNames);
+            using var insertPerkCatalogue = PrepareUpsert(connection, "NpcPerkCatalogue", NamedCatalogueColumnNames, NamedCatalogueParamNames);
+            using var insertFactions = PrepareUpsert(connection, "Factions", NamedCatalogueColumnNames, NamedCatalogueParamNames);
+            using var insertClasses = PrepareUpsert(connection, "Classes", ClassColumnNames, ClassParamNames);
+            using var insertClassSkills = PrepareInsert(connection, "ClassSkillWeights", ClassSkillColumnNames, ClassSkillParamNames);
+            using var insertRaces = PrepareUpsert(connection, "Races", RaceColumnNames, RaceParamNames);
+            using var insertRaceBoosts = PrepareInsert(connection, "RaceSkillBoosts", RaceBoostColumnNames, RaceBoostParamNames);
+            using var insertOutfits = PrepareUpsert(connection, "Outfits", PlainCatalogueColumnNames, PlainCatalogueParamNames);
+            using var insertVoiceTypes = PrepareUpsert(connection, "VoiceTypes", PlainCatalogueColumnNames, PlainCatalogueParamNames);
+            using var insertCombatStyles = PrepareUpsert(connection, "CombatStyles", PlainCatalogueColumnNames, PlainCatalogueParamNames);
+
+            // Multi-row "batch" counterparts of the commands above. At the row counts a full scan
+            // produces (100k+), one ExecuteNonQuery() per row was the dominant cost (~140k round
+            // trips). These insert RowsPerBatch(...) rows per statement instead - sized per table to
+            // about 40 parameters, see RowsPerBatch - and the tail that doesn't fill a full batch falls
+            // back to the single-row commands above.
+            using var insertArmorBatch = PrepareUpsertBatch(connection, "Armor", ArmorColumnNames, ArmorParamNames, RowsPerBatch(ArmorParamNames));
+            using var insertWeaponBatch = PrepareUpsertBatch(connection, "Weapons", WeaponColumnNames, WeaponParamNames, RowsPerBatch(WeaponParamNames));
+            using var insertWorldItemBatch = PrepareUpsertBatch(connection, "WorldItem", WorldItemColumnNames, WorldItemParamNames, RowsPerBatch(WorldItemParamNames));
+            using var insertArmorAddonBatch = PrepareUpsertBatch(connection, "ArmorAddon", ArmorAddonColumnNames, ArmorAddonParamNames, RowsPerBatch(ArmorAddonParamNames));
+            using var insertArmorArmatureBatch = PrepareInsertBatch(connection, "ArmorArmature", ArmorArmatureColumnNames, ArmorArmatureParamNames, RowsPerBatch(ArmorArmatureParamNames));
+            using var insertMeshRefBatch = PrepareInsertBatch(connection, "MeshRef", MeshRefColumnNames, MeshRefParamNames, RowsPerBatch(MeshRefParamNames));
+            using var insertCOBJBatch = PrepareUpsertBatch(connection, "COBJ", CobjColumnNames, CobjParamNames, RowsPerBatch(CobjParamNames));
+            using var insertCOBJConditionBatch = PrepareInsertBatch(connection, "COBJ_Conditions", CobjConditionColumnNames, CobjConditionParamNames, RowsPerBatch(CobjConditionParamNames));
+            using var insertEnchBatch = PrepareUpsertBatch(connection, "Enchantments", EnchantmentColumnNames, EnchantmentParamNames, RowsPerBatch(EnchantmentParamNames));
+            using var insertEnchEffBatch = PrepareInsertBatch(connection, "EnchantmentEffects", EnchantmentEffectColumnNames, EnchantmentEffectParamNames, RowsPerBatch(EnchantmentEffectParamNames));
+            using var insertWRKBatch = PrepareInsertBatch(connection, "WornRestrictionKeywords", WornRestrictionKeywordColumnNames, WornRestrictionKeywordParamNames, RowsPerBatch(WornRestrictionKeywordParamNames));
+            using var insertContainerBatch = PrepareUpsertBatch(connection, "Container", ContainerColumnNames, ContainerParamNames, RowsPerBatch(ContainerParamNames));
+            using var insertContainerLVLIBatch = PrepareInsertBatch(connection, "ContainerLVLI", ContainerLvliColumnNames, ContainerLvliParamNames, RowsPerBatch(ContainerLvliParamNames));
+            using var insertContainerEntryBatch = PrepareInsertBatch(connection, "ContainerEntry", ContainerEntryColumnNames, ContainerEntryParamNames, RowsPerBatch(ContainerEntryParamNames));
+            using var insertMagicEffectsBatch = PrepareUpsertBatch(connection, "MagicEffects", MagicEffectColumnNames, MagicEffectParamNames, RowsPerBatch(MagicEffectParamNames));
+            using var insertGlobalsBatch = PrepareUpsertBatch(connection, "Globals", GlobalColumnNames, GlobalParamNames, RowsPerBatch(GlobalParamNames));
+            using var insertLeveledListBatch = PrepareUpsertBatch(connection, "LeveledList", LeveledListColumnNames, LeveledListParamNames, RowsPerBatch(LeveledListParamNames));
+            using var insertLeveledListEntryBatch = PrepareInsertBatch(connection, "LeveledListEntry", LeveledListEntryColumnNames, LeveledListEntryParamNames, RowsPerBatch(LeveledListEntryParamNames));
+            using var insertLeveledListLostBatch = PrepareInsertBatch(connection, "LeveledListLostEntry", LeveledListLostColumnNames, LeveledListLostParamNames, RowsPerBatch(LeveledListLostParamNames));
+            using var insertLeveledNpcBatch = PrepareUpsertBatch(connection, "LeveledNpc", LeveledNpcColumnNames, LeveledNpcParamNames, RowsPerBatch(LeveledNpcParamNames));
+            using var insertLeveledNpcEntryBatch = PrepareInsertBatch(connection, "LeveledNpcEntry", LeveledNpcEntryColumnNames, LeveledNpcEntryParamNames, RowsPerBatch(LeveledNpcEntryParamNames));
+            using var insertNpcBatch = PrepareUpsertBatch(connection, "Npc", NpcColumnNames, NpcParamNames, RowsPerBatch(NpcParamNames));
+            using var insertNpcFactionBatch = PrepareInsertBatch(connection, "NpcFactions", NpcFactionColumnNames, NpcFactionParamNames, RowsPerBatch(NpcFactionParamNames));
+            using var insertNpcSkillBatch = PrepareInsertBatch(connection, "NpcSkills", NpcSkillColumnNames, NpcSkillParamNames, RowsPerBatch(NpcSkillParamNames));
+            using var insertNpcSpellBatch = PrepareInsertBatch(connection, "NpcSpells", NpcSpellColumnNames, NpcSpellParamNames, RowsPerBatch(NpcSpellParamNames));
+            using var insertNpcPerkBatch = PrepareInsertBatch(connection, "NpcPerks", NpcPerkColumnNames, NpcPerkParamNames, RowsPerBatch(NpcPerkParamNames));
+            using var insertNpcItemBatch = PrepareInsertBatch(connection, "NpcItems", NpcItemColumnNames, NpcItemParamNames, RowsPerBatch(NpcItemParamNames));
+            using var insertSpellsBatch = PrepareUpsertBatch(connection, "Spells", SpellColumnNames, SpellParamNames, RowsPerBatch(SpellParamNames));
+            using var insertSpellEffBatch = PrepareInsertBatch(connection, "SpellEffects", SpellEffectColumnNames, SpellEffectParamNames, RowsPerBatch(SpellEffectParamNames));
+            using var insertShoutWordBatch = PrepareInsertBatch(connection, "ShoutWords", ShoutWordColumnNames, ShoutWordParamNames, RowsPerBatch(ShoutWordParamNames));
+            using var insertShoutsBatch = PrepareUpsertBatch(connection, "Shouts", NamedCatalogueColumnNames, NamedCatalogueParamNames, RowsPerBatch(NamedCatalogueParamNames));
+            using var insertLeveledSpellsBatch = PrepareUpsertBatch(connection, "LeveledSpells", PlainCatalogueColumnNames, PlainCatalogueParamNames, RowsPerBatch(PlainCatalogueParamNames));
+            using var insertPerkCatalogueBatch = PrepareUpsertBatch(connection, "NpcPerkCatalogue", NamedCatalogueColumnNames, NamedCatalogueParamNames, RowsPerBatch(NamedCatalogueParamNames));
+            using var insertFactionsBatch = PrepareUpsertBatch(connection, "Factions", NamedCatalogueColumnNames, NamedCatalogueParamNames, RowsPerBatch(NamedCatalogueParamNames));
+            using var insertClassesBatch = PrepareUpsertBatch(connection, "Classes", ClassColumnNames, ClassParamNames, RowsPerBatch(ClassParamNames));
+            using var insertClassSkillsBatch = PrepareInsertBatch(connection, "ClassSkillWeights", ClassSkillColumnNames, ClassSkillParamNames, RowsPerBatch(ClassSkillParamNames));
+            using var insertRacesBatch = PrepareUpsertBatch(connection, "Races", RaceColumnNames, RaceParamNames, RowsPerBatch(RaceParamNames));
+            using var insertRaceBoostsBatch = PrepareInsertBatch(connection, "RaceSkillBoosts", RaceBoostColumnNames, RaceBoostParamNames, RowsPerBatch(RaceBoostParamNames));
+            using var insertOutfitsBatch = PrepareUpsertBatch(connection, "Outfits", PlainCatalogueColumnNames, PlainCatalogueParamNames, RowsPerBatch(PlainCatalogueParamNames));
+            using var insertVoiceTypesBatch = PrepareUpsertBatch(connection, "VoiceTypes", PlainCatalogueColumnNames, PlainCatalogueParamNames, RowsPerBatch(PlainCatalogueParamNames));
+            using var insertCombatStylesBatch = PrepareUpsertBatch(connection, "CombatStyles", PlainCatalogueColumnNames, PlainCatalogueParamNames, RowsPerBatch(PlainCatalogueParamNames));
+
+            using var transaction = connection.BeginTransaction();
+            insertArmor.Transaction = transaction;
+            insertWeapon.Transaction = transaction;
+            insertWorldItem.Transaction = transaction;
+            insertArmorAddon.Transaction = transaction;
+            insertArmorArmature.Transaction = transaction;
+            insertMeshRef.Transaction = transaction;
+            insertCOBJ.Transaction = transaction;
+            insertCOBJCondition.Transaction = transaction;
+            insertEnch.Transaction = transaction;
+            insertEnchEff.Transaction = transaction;
+            insertWRK.Transaction = transaction;
+            insertContainer.Transaction = transaction;
+            insertContainerLVLI.Transaction = transaction;
+            insertContainerEntry.Transaction = transaction;
+            insertMagicEffects.Transaction = transaction;
+            insertGlobals.Transaction = transaction;
+            insertLeveledList.Transaction = transaction;
+            insertLeveledListEntry.Transaction = transaction;
+            insertLeveledListLost.Transaction = transaction;
+            insertLeveledNpc.Transaction = transaction;
+            insertLeveledNpcEntry.Transaction = transaction;
+            insertNpc.Transaction = transaction;
+            insertNpcFaction.Transaction = transaction;
+            insertNpcSkill.Transaction = transaction;
+            insertNpcSpell.Transaction = transaction;
+            insertNpcPerk.Transaction = transaction;
+            insertNpcItem.Transaction = transaction;
+            insertSpells.Transaction = transaction;
+            insertSpellEff.Transaction = transaction;
+            insertShoutWord.Transaction = transaction;
+            insertShouts.Transaction = transaction;
+            insertLeveledSpells.Transaction = transaction;
+            insertPerkCatalogue.Transaction = transaction;
+            insertFactions.Transaction = transaction;
+            insertClasses.Transaction = transaction;
+            insertClassSkills.Transaction = transaction;
+            insertRaces.Transaction = transaction;
+            insertRaceBoosts.Transaction = transaction;
+            insertOutfits.Transaction = transaction;
+            insertVoiceTypes.Transaction = transaction;
+            insertCombatStyles.Transaction = transaction;
+            insertArmorBatch.Transaction = transaction;
+            insertWeaponBatch.Transaction = transaction;
+            insertWorldItemBatch.Transaction = transaction;
+            insertArmorAddonBatch.Transaction = transaction;
+            insertArmorArmatureBatch.Transaction = transaction;
+            insertMeshRefBatch.Transaction = transaction;
+            insertCOBJBatch.Transaction = transaction;
+            insertCOBJConditionBatch.Transaction = transaction;
+            insertEnchBatch.Transaction = transaction;
+            insertEnchEffBatch.Transaction = transaction;
+            insertWRKBatch.Transaction = transaction;
+            insertContainerBatch.Transaction = transaction;
+            insertContainerLVLIBatch.Transaction = transaction;
+            insertContainerEntryBatch.Transaction = transaction;
+            insertMagicEffectsBatch.Transaction = transaction;
+            insertGlobalsBatch.Transaction = transaction;
+            insertLeveledListBatch.Transaction = transaction;
+            insertLeveledListEntryBatch.Transaction = transaction;
+            insertLeveledListLostBatch.Transaction = transaction;
+            insertLeveledNpcBatch.Transaction = transaction;
+            insertLeveledNpcEntryBatch.Transaction = transaction;
+            insertNpcBatch.Transaction = transaction;
+            insertNpcFactionBatch.Transaction = transaction;
+            insertNpcSkillBatch.Transaction = transaction;
+            insertNpcSpellBatch.Transaction = transaction;
+            insertNpcPerkBatch.Transaction = transaction;
+            insertNpcItemBatch.Transaction = transaction;
+            insertSpellsBatch.Transaction = transaction;
+            insertSpellEffBatch.Transaction = transaction;
+            insertShoutWordBatch.Transaction = transaction;
+            insertShoutsBatch.Transaction = transaction;
+            insertLeveledSpellsBatch.Transaction = transaction;
+            insertPerkCatalogueBatch.Transaction = transaction;
+            insertFactionsBatch.Transaction = transaction;
+            insertClassesBatch.Transaction = transaction;
+            insertClassSkillsBatch.Transaction = transaction;
+            insertRacesBatch.Transaction = transaction;
+            insertRaceBoostsBatch.Transaction = transaction;
+            insertOutfitsBatch.Transaction = transaction;
+            insertVoiceTypesBatch.Transaction = transaction;
+            insertCombatStylesBatch.Transaction = transaction;
+
+            // Parse phase runs in parallel across plugins (CPU-bound, no DB access); a second,
+            // strictly sequential phase then does all SQLite writes (one connection/transaction).
+            //
+            // Results go into an array indexed by plugin position, not a ConcurrentBag: with
+            // "INSERT OR REPLACE", the last write for a given key wins, so override precedence
+            // between plugins depends on write order matching allgamePathfromDB's load order
+            // exactly. Parallel.For writes each result into its own reserved slot, preserving that
+            // order regardless of thread scheduling.
+            _formIDDB.EnsureCacheLoaded();
+
+            var pluginFiles = allgamePathfromDB
+                .SelectMany(plugin => plugin.FullPaths.Select(fullPath => (plugin.FileName, fullPath)))
+                .ToList();
+
+            PerfLog.Record("Scan, item DB: prepare (schema, statements, FormID cache)", phase);
+
+            BusyService.SetMessage($"Scanning: reading {pluginFiles.Count:N0} plugin files…");
+            var parseSw = PerfClock.StartNew();
+            var parsedPlugins = new ParsedPluginData[pluginFiles.Count];
+            Parallel.For(0, pluginFiles.Count, i =>
+            {
+                parsedPlugins[i] = ParsePluginForItemDB(pluginFiles[i].FileName, pluginFiles[i].fullPath);
+            });
+            parseSw.Stop();
+
+            int armorCount = 0, weaponCount = 0, cobjCount = 0, condCount = 0, enchCount = 0, effCount = 0, containerCount = 0, lvliCount = 0, mgefCount = 0;
+            foreach (var p in parsedPlugins)
+            {
+                armorCount += p.ArmorRows.Count;
+                weaponCount += p.WeaponRows.Count;
+                cobjCount += p.Cobjs.Count;
+                condCount += p.Cobjs.Sum(c => c.ConditionRows.Count);
+                enchCount += p.Enchantments.Count;
+                effCount += p.Enchantments.Sum(e => e.EffectRows.Count);
+                containerCount += p.Containers.Count;
+                lvliCount += p.Containers.Sum(c => c.LvliRows.Count);
+                mgefCount += p.MagicEffectRows.Count;
+            }
+            Debug.WriteLine($"[ItemDB] Parse phase: {parseSw.ElapsedMilliseconds} ms ({pluginFiles.Count} plugins, " +
+                $"Armor={armorCount} Weapon={weaponCount} COBJ={cobjCount} COBJCond={condCount} " +
+                $"Ench={enchCount} EnchEff={effCount} Container={containerCount} LVLI={lvliCount} MGEF={mgefCount})");
+            PerfLog.Record("Scan, item DB: read all plugin files (parallel)", parseSw,
+                $"{pluginFiles.Count} files, {armorCount} armor, {weaponCount} weapons, {cobjCount} recipes, {containerCount} containers");
+            phase.Restart();
+
+            // --- Flatten: gather every row across all plugins per table before writing ---
+            // parsedPlugins is index-ordered (see above), so this walks plugins in exactly
+            // allgamePathfromDB's given order — matching the original single-threaded loop's write
+            // order, which is what "INSERT OR REPLACE" override resolution (last write for a given
+            // key wins) depends on for records overridden by more than one plugin.
+            //
+            // COBJ/Enchantment/Container each own a set of child rows (Conditions/Effects+
+            // WornRestrictionKeywords/LVLI). A Bethesda plugin override replaces a record as a whole
+            // — including its child rows — not incrementally, so when more than one plugin touches
+            // the same parent key, only the LAST plugin's full child set should survive. Naively
+            // AddRange-ing every plugin's child rows here doesn't do that: for COBJ_Conditions (no
+            // matching unique constraint on its columns, only a meaningless autoincrement Id) it
+            // straight up duplicates every earlier plugin's conditions alongside the new ones; for
+            // the other three tables (which do have a composite key matching child identity) it
+            // still leaves rows behind that a later plugin's version had actually removed, since nothing
+            // ever deletes a child row that simply stops reappearing. So COBJ/Enchantment/Container are
+            // reduced to "last plugin per parent key" first, and only that plugin's child rows are used.
+            var allArmor = new List<object[]>();
+            var allWeapon = new List<object[]>();
+            var allWorldItems = new List<object[]>();
+            var allMagicEffects = new List<object[]>();
+            var allGlobals = new List<object[]>();
+            var allArmorAddons = new List<object[]>();
+
+            // OrdinalIgnoreCase, not the default: a key is "Plugin|FormID", and the plugin name can
+            // reach us in two casings (a mod's master list may lowercase a name the file itself
+            // capitalises). Every Key column is declared COLLATE NOCASE, so to the database those two
+            // spellings are ONE record - but an ordinal dictionary kept them apart and let BOTH
+            // plugins' child rows through, and the child tables' composite keys are NOCASE too. That
+            // is the "UNIQUE constraint failed: WornRestrictionKeywords.ListKey, ..." a 1300-mod load
+            // order hit on the first scan. latestNpcByKey below always did this; the rest do now.
+            // Same winner rule, same casing rule, for the two mesh child sets. An override replaces a
+            // record's armature list and its model paths wholesale, so only the last plugin that
+            // defines the parent may contribute rows - see the block comment above.
+            var latestArmatureByKey = new Dictionary<string, ParsedArmature>(StringComparer.OrdinalIgnoreCase);
+            var latestMeshOwnerByKey = new Dictionary<string, ParsedMeshOwner>(StringComparer.OrdinalIgnoreCase);
+            var latestCobjByKey = new Dictionary<string, ParsedCobj>(StringComparer.OrdinalIgnoreCase);
+            var latestEnchantmentByKey = new Dictionary<string, ParsedEnchantment>(StringComparer.OrdinalIgnoreCase);
+            var latestContainerByKey = new Dictionary<string, ParsedContainer>(StringComparer.OrdinalIgnoreCase);
+            var latestLeveledListByKey = new Dictionary<string, ParsedLeveledList>(StringComparer.OrdinalIgnoreCase);
+            var latestLeveledNpcByKey = new Dictionary<string, ParsedLeveledList>(StringComparer.OrdinalIgnoreCase);
+            var listVersionPlugins = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var parsed in parsedPlugins)
+            {
+                allArmor.AddRange(parsed.ArmorRows);
+                allWeapon.AddRange(parsed.WeaponRows);
+                allWorldItems.AddRange(parsed.WorldItemRows);
+                allMagicEffects.AddRange(parsed.MagicEffectRows);
+                allGlobals.AddRange(parsed.GlobalRows);
+                allArmorAddons.AddRange(parsed.ArmorAddonRows);
+
+                foreach (var armature in parsed.Armatures)
+                    latestArmatureByKey[armature.ArmorKey] = armature;
+
+                foreach (var owner in parsed.MeshOwners)
+                    latestMeshOwnerByKey[owner.RecordKey] = owner;
+
+                foreach (var cobj in parsed.Cobjs)
+                    latestCobjByKey[(string)cobj.Values[0]] = cobj;
+
+                foreach (var ench in parsed.Enchantments)
+                    latestEnchantmentByKey[(string)ench.Values[0]] = ench;
+
+                foreach (var container in parsed.Containers)
+                    latestContainerByKey[(string)container.Values[0]] = container;
+
+                foreach (var list in parsed.LeveledLists)
+                {
+                    string listKey = (string)list.Values[0];
+                    latestLeveledListByKey[listKey] = list;
+
+                    // Every plugin that defines this list, in load order, winner included. The
+                    // lost-entry pass below needs the ORDER to answer "who dropped it": that is the
+                    // version right after the last one that still carried the entry, and nothing
+                    // else in the scan remembers what came after what.
+                    if (!listVersionPlugins.TryGetValue(listKey, out var versions))
+                        listVersionPlugins[listKey] = versions = new List<string>();
+                    versions.Add(parsed.PluginName);
+                }
+
+                // Same winner rule as every other record: the last active plugin that defines the key
+                // owns it. An LVLN has no lost-entry pass - that exists for the item lists, where the
+                // tool offers to put dropped entries back.
+                foreach (var list in parsed.LeveledNpcs)
+                    latestLeveledNpcByKey[(string)list.Values[0]] = list;
+            }
+
+            // What the overrides threw away.
+            //
+            // The loop above keeps one version per list - the last one in load order, which is the
+            // one the game uses. Every earlier version has just been walked past and dropped, and
+            // any item that only existed in one of those is now gone from the game with nothing
+            // recording that it was ever there. See LeveledListLostEntry's schema comment for why
+            // this is reported rather than repaired.
+            //
+            // Second pass rather than collecting during the first: the winner is only known once
+            // every plugin has been seen, and parsedPlugins is already in memory, so walking it
+            // again costs nothing and saves holding every version of every list.
+            var lostEntriesByList = new Dictionary<string, Dictionary<string, object[]>>(StringComparer.OrdinalIgnoreCase);
+            var winnerRefsByList = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var parsed in parsedPlugins)
+            {
+                foreach (var list in parsed.LeveledLists)
+                {
+                    string listKey = (string)list.Values[0];
+                    if (!latestLeveledListByKey.TryGetValue(listKey, out var winner) || ReferenceEquals(winner, list))
+                        continue;   // this plugin IS the winner - nothing of its own was lost
+
+                    if (!winnerRefsByList.TryGetValue(listKey, out var winnerRefs))
+                    {
+                        winnerRefs = new HashSet<string>(
+                            winner.EntryRows.Select(r => (string)r[2]), StringComparer.OrdinalIgnoreCase);
+                        winnerRefsByList[listKey] = winnerRefs;
+                    }
+
+                    foreach (var row in list.EntryRows)
+                    {
+                        string reference = (string)row[2];
+                        if (winnerRefs.Contains(reference))
+                            continue;   // still in the list, possibly at another level - not lost
+
+                        if (!lostEntriesByList.TryGetValue(listKey, out var lost))
+                            lostEntriesByList[listKey] = lost = new Dictionary<string, object[]>(StringComparer.OrdinalIgnoreCase);
+
+                        // Later plugin wins the description: if two overrides both carried the item,
+                        // the values from the one closest to the winner are the most relevant ones.
+                        //
+                        // Where those versions DISAGREE about level or count, that is a guess and
+                        // the row is flagged as one. Putting such an entry back restores one of
+                        // several states it genuinely had, and the window says so rather than
+                        // presenting the pick as a reading - see LeveledListLostEntry's schema
+                        // comment. Sticky: once ambiguous, always ambiguous, however many further
+                        // versions agree afterwards.
+                        bool seenBefore = lost.TryGetValue(reference, out var previous);
+
+                        bool ambiguous = seenBefore
+                                         && (!Equals(previous[2], row[3])
+                                             || !Equals(previous[3], row[4])
+                                             || Convert.ToInt32(previous[5]) == 1);
+
+                        // AddedBy is the mirror image of LostFrom and keeps the FIRST plugin, where
+                        // LostFrom keeps the last. The winner never carries the entry (that is what
+                        // makes it lost), so the first version seen here is genuinely the one that
+                        // introduced it.
+                        object addedBy = seenBefore ? previous[6] : parsed.PluginName;
+
+                        lost[reference] = new object[]
+                        {
+                            listKey, reference, row[3], row[4], parsed.PluginName, ambiguous ? 1 : 0,
+                            addedBy, "",   // DroppedBy is filled in below, once the order is known
+                        };
+                    }
+                }
+            }
+
+            // Who dropped it: the version right AFTER the last one that still had the entry.
+            //
+            // Only resolvable once the pass above has finished, because LostFrom is not final until
+            // then - every further version that still carried the entry moves it along. Walking the
+            // recorded version order of the list and stepping one past LostFrom is the whole answer.
+            //
+            // The step always exists: LostFrom is by definition not the winner (the winner has no
+            // such entry), and the winner is the last element - so there is always something after
+            // it. The empty fallback is for a load order that changed under us mid-scan, not for a
+            // case this logic expects.
+            foreach (var (listKey, lost) in lostEntriesByList)
+            {
+                if (!listVersionPlugins.TryGetValue(listKey, out var versions)) continue;
+
+                foreach (var row in lost.Values)
+                    row[7] = ResolveDroppedBy(versions, (string)row[4]);
+            }
+
+            // Records whose ConditionsEdited/EffectsEdited/KeywordsEdited flag is set keep their
+            // existing child rows untouched — excluded from both the rewrite-key lists (used for the
+            // DELETE below) and the flattened row lists (so nothing gets added back either).
+            var allCobj = new List<object[]>();
+            var allCobjConditions = new List<object[]>();
+            var cobjConditionRewriteKeys = new List<string>();
+            foreach (var kv in latestCobjByKey)
+            {
+                allCobj.Add(kv.Value.Values);
+                if (conditionsEditedKeys.Contains(kv.Key))
+                    continue;
+                cobjConditionRewriteKeys.Add(kv.Key);
+                allCobjConditions.AddRange(kv.Value.ConditionRows);
+            }
+
+            var allEnchantments = new List<object[]>();
+            var allEnchantmentEffects = new List<object[]>();
+            var latestEffectRow = new Dictionary<(string EnchantmentKey, string MagicEffectKey), object[]>(NoCaseKeyPair.Instance);
+            var enchantmentEffectRewriteKeys = new List<string>();
+            foreach (var kv in latestEnchantmentByKey)
+            {
+                allEnchantments.Add(kv.Value.Values);
+
+                if (!effectsEditedKeys.Contains(kv.Key))
+                {
+                    enchantmentEffectRewriteKeys.Add(kv.Key);
+                    // A single enchantment record's own Effects list can legitimately reference the
+                    // same base MagicEffect more than once (e.g. two entries with different
+                    // magnitude/duration) — this table has PRIMARY KEY(EnchantmentKey, MagicEffectKey),
+                    // which can't represent that distinction. Dedupe here (last entry in the record's
+                    // own list wins), matching what the previous INSERT OR REPLACE write path did
+                    // silently instead of the plain INSERT crashing on the collision.
+                    foreach (var row in kv.Value.EffectRows)
+                        latestEffectRow[((string)row[0], (string)row[1])] = row;
+                }
+            }
+            allEnchantmentEffects.AddRange(latestEffectRow.Values);
+
+            // WornRestrictionKeywords rows for EVERY FLST (E3 — was previously only enchant-referenced
+            // lists, populated inside the enchant loop). Last plugin per list key wins its whole
+            // member set. A list the user has hand-edited (WornRestrictionListState.IsEdited=1, or the
+            // legacy per-enchant flag) is skipped entirely so the scan never clobbers it.
+            var allWornRestrictionKeywords = new List<object[]>();
+            var wornRestrictionListKeysToRewrite = new List<string>();
+            var latestFormListByKey = new Dictionary<string, ParsedFormList>(StringComparer.OrdinalIgnoreCase);
+            foreach (var parsed in parsedPlugins)
+                foreach (var fl in parsed.FormLists)
+                    latestFormListByKey[fl.ListKey] = fl;
+            foreach (var kv in latestFormListByKey)
+            {
+                if (string.IsNullOrEmpty(kv.Key) || listContentEditedKeys.Contains(kv.Key))
+                    continue;
+                wornRestrictionListKeysToRewrite.Add(kv.Key);
+                // FLSTs can legally list the same member twice; PRIMARY KEY(ListKey, KeywordKey)
+                // can't. Keep first occurrence (matches the old INSERT-OR-REPLACE-silently behaviour).
+                // Case-insensitively, because that key column is COLLATE NOCASE - two spellings of the
+                // same member key are one row to SQLite, and an ordinal set let both of them through.
+                var seenMembers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var row in kv.Value.MemberRows)
+                    if (seenMembers.Add((string)row[1]))
+                        allWornRestrictionKeywords.Add(row);
+            }
+
+            var allContainers = new List<object[]>();
+            var allContainerLvli = new List<object[]>();
+            var latestLvliRow = new Dictionary<(string ContainerKey, string LvliKey), object[]>(NoCaseKeyPair.Instance);
+            foreach (var container in latestContainerByKey.Values)
+            {
+                allContainers.Add(container.Values);
+                // Same rationale as EnchantmentEffects above — ContainerLVLI has
+                // PRIMARY KEY(ContainerKey, LVLiKey), but a container's own item list can list the same
+                // leveled item more than once (e.g. duplicate entries from a patch).
+                foreach (var row in container.LvliRows)
+                    latestLvliRow[((string)row[0], (string)row[1])] = row;
+            }
+            allContainerLvli.AddRange(latestLvliRow.Values);
+
+            // No dedupe here, unlike ContainerLVLI above: a container listing the same thing twice is
+            // data, and Ordinal keeps the rows apart.
+            var allContainerEntries = new List<object[]>();
+            foreach (var container in latestContainerByKey.Values)
+                allContainerEntries.AddRange(container.EntryRows);
+
+            // Leveled lists: parent row plus its entries, taken only from the winning plugin's
+            // version. No per-key dedupe of the entries, unlike ContainerLVLI above - here a repeated
+            // reference is real data, and Ordinal keeps the rows apart.
+            var allLeveledLists = new List<object[]>();
+            var allLeveledListEntries = new List<object[]>();
+            var allLeveledNpcs = new List<object[]>();
+            var allLeveledNpcEntries = new List<object[]>();
+            foreach (var list in latestLeveledListByKey.Values)
+            {
+                allLeveledLists.Add(list.Values);
+                allLeveledListEntries.AddRange(list.EntryRows);
+            }
+
+            foreach (var list in latestLeveledNpcByKey.Values)
+            {
+                allLeveledNpcs.Add(list.Values);
+                allLeveledNpcEntries.AddRange(list.EntryRows);
+            }
+
+            // NPCs (Prio 8 / N-P1). Winner-per-key like every other parent table, and the children
+            // come only from that winner: a later plugin that dropped a faction must not leave the
+            // earlier plugin's row behind.
+            //
+            // Child rows are skipped for any NPC whose list the user has edited, the same protection
+            // COBJ conditions and enchantment effects have - a rescan may refresh the record, never
+            // the user's own list.
+            var latestNpcByKey = new Dictionary<string, ParsedNpc>(StringComparer.OrdinalIgnoreCase);
+            foreach (var parsed in parsedPlugins)
+                foreach (var npc in parsed.Npcs)
+                    latestNpcByKey[(string)npc.Values[0]] = npc;
+
+            var allNpcs = new List<object[]>();
+            var allNpcFactions = new List<object[]>();
+            var allNpcSkills = new List<object[]>();
+            var npcFactionRewriteKeys = new List<string>();
+            var npcSkillRewriteKeys = new List<string>();
+
+            foreach (var kv in latestNpcByKey)
+            {
+                allNpcs.Add(kv.Value.Values);
+
+                if (!npcFactionsEditedKeys.Contains(kv.Key))
+                {
+                    npcFactionRewriteKeys.Add(kv.Key);
+                    allNpcFactions.AddRange(kv.Value.FactionRows);
+                }
+
+                if (!npcSkillsEditedKeys.Contains(kv.Key))
+                {
+                    npcSkillRewriteKeys.Add(kv.Key);
+                    allNpcSkills.AddRange(kv.Value.SkillRows);
+                }
+            }
+
+            // The catalogues are pure reference data with no per-plugin identity to preserve, so the
+            // last plugin defining a key simply wins - the same rule the record tables use.
+            List<object[]> Deduped(Func<ParsedPluginData, List<object[]>> pick)
+            {
+                var latest = new Dictionary<string, object[]>(StringComparer.OrdinalIgnoreCase);
+                foreach (var parsed in parsedPlugins)
+                    foreach (var row in pick(parsed))
+                        latest[(string)row[0]] = row;
+                return latest.Values.ToList();
+            }
+
+            // Child rows follow their parent's winner. A class overridden by a later plugin brings
+            // its own skill list, and keeping the earlier plugin's rows alongside it would leave a
+            // class weighted for skills its winning version never names - the same rule the leveled
+            // lists and COBJ conditions follow, one level down.
+            List<object[]> DedupedChildren(Func<ParsedPluginData, List<object[]>> pick)
+            {
+                var byParent = new Dictionary<string, List<object[]>>(StringComparer.OrdinalIgnoreCase);
+                foreach (var parsed in parsedPlugins)
+                    foreach (var group in pick(parsed).GroupBy(r => (string)r[0], StringComparer.OrdinalIgnoreCase))
+                        byParent[group.Key] = group.ToList();
+
+                return byParent.Values.SelectMany(rows => rows).ToList();
+            }
+
+            var allFactions = Deduped(p => p.FactionRows);
+            var allClasses = Deduped(p => p.ClassRows);
+            var allClassSkillWeights = DedupedChildren(p => p.ClassSkillWeightRows);
+            var allRaces = Deduped(p => p.RaceRows);
+            var allRaceSkillBoosts = DedupedChildren(p => p.RaceSkillBoostRows);
+            var allOutfits = Deduped(p => p.OutfitRows);
+            var allVoiceTypes = Deduped(p => p.VoiceTypeRows);
+            var allCombatStyles = Deduped(p => p.CombatStyleRows);
+
+            var allSpellCatalogue = Deduped(p => p.SpellCatalogueRows);
+
+            // A spell's effect rows follow the winning record, and a spell whose effects the user has
+            // taken over keeps them: the scan refreshes the record, never an edit. Same two rules as
+            // EnchantmentEffects, for the same reason.
+            //
+            // The inner dedupe is not optional either. One SPEL's own effect list may name the same
+            // base MagicEffect twice with different values - PRIMARY KEY(SpellKey, MagicEffectKey)
+            // cannot hold both, and a plain INSERT would crash on the collision rather than keep one.
+            // How many were lost is counted per spell at parse time (DroppedEffectRows).
+            var allSpellEffects = new List<object[]>();
+            var spellEffectRewriteKeys = new List<string>();
+            {
+                var winners = new HashSet<string>(
+                    allSpellCatalogue.Select(r => (string)r[0]), StringComparer.OrdinalIgnoreCase);
+
+                var latestSpellEffectRow =
+                    new Dictionary<(string SpellKey, string MagicEffectKey), object[]>(NoCaseKeyPair.Instance);
+
+                foreach (var row in DedupedChildren(p => p.SpellEffectRows))
+                {
+                    string spellKey = (string)row[0];
+                    if (!winners.Contains(spellKey) || spellEffectsEditedKeys.Contains(spellKey)) continue;
+
+                    latestSpellEffectRow[(spellKey, (string)row[1])] = row;
+                }
+
+                allSpellEffects.AddRange(latestSpellEffectRow.Values);
+                spellEffectRewriteKeys.AddRange(
+                    allSpellCatalogue.Select(r => (string)r[0])
+                                     .Where(k => !spellEffectsEditedKeys.Contains(k)));
+            }
+
+            var allShoutCatalogue = Deduped(p => p.ShoutCatalogueRows);
+
+            // Which spell each word of a shout casts, following the winning SHOU. Read-only, for the
+            // Spells tab's labels - every shout is rewritten, nothing here is ever edited.
+            var allShoutWords = DedupedChildren(p => p.ShoutWordRows);
+            var allLeveledSpellCatalogue = Deduped(p => p.LeveledSpellCatalogueRows);
+            var allPerkCatalogue = Deduped(p => p.PerkCatalogueRows);
+
+            // WHICH of the three a spell entry is can only be decided here, with every plugin's
+            // records in hand: the NPC record keeps spells, shouts and leveled spells in one list and
+            // the link carries nothing but a FormKey. SkyPatcher has three separate operations for
+            // them, so an entry whose kind is unknown would be unpatchable - it stays blank rather
+            // than being guessed into the wrong one.
+            var spellKinds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in allSpellCatalogue) spellKinds[(string)row[0]] = "spell";
+            foreach (var row in allShoutCatalogue) spellKinds[(string)row[0]] = "shout";
+            foreach (var row in allLeveledSpellCatalogue) spellKinds[(string)row[0]] = "levspell";
+
+            var allNpcSpells = new List<object[]>();
+            var allNpcPerks = new List<object[]>();
+            var allNpcItems = new List<object[]>();
+            var npcSpellRewriteKeys = new List<string>();
+            var npcPerkRewriteKeys = new List<string>();
+            var npcItemRewriteKeys = new List<string>();
+
+            foreach (var kv in latestNpcByKey)
+            {
+                if (!npcSpellsEditedKeys.Contains(kv.Key))
+                {
+                    npcSpellRewriteKeys.Add(kv.Key);
+                    foreach (var row in kv.Value.SpellRows)
+                    {
+                        row[2] = spellKinds.GetValueOrDefault((string)row[1], "");
+                        allNpcSpells.Add(row);
+                    }
+                }
+
+                if (!npcPerksEditedKeys.Contains(kv.Key))
+                {
+                    npcPerkRewriteKeys.Add(kv.Key);
+                    allNpcPerks.AddRange(kv.Value.PerkRows);
+                }
+
+                if (!npcItemsEditedKeys.Contains(kv.Key))
+                {
+                    npcItemRewriteKeys.Add(kv.Key);
+                    allNpcItems.AddRange(kv.Value.ItemRows);
+                }
+            }
+
+            PerfLog.Record("Scan, item DB: merge in memory (winners, lost entries)", phase);
+            phase.Restart();
+
+            // --- Write phase: strictly sequential — do not parallelize SQLite writes ---
+            BusyService.SetMessage("Scanning: writing the item database…");
+            var writeSw = Stopwatch.StartNew();
+
+            // Child tables: delete existing rows for the parent keys we're about to rewrite, then
+            // insert the freshly parsed set. Necessary because COBJ_Conditions has no unique
+            // constraint to upsert against, and even for the two tables that do (EnchantmentEffects,
+            // WornRestrictionKeywords) an upsert alone would never remove a row a later plugin's
+            // version had actually dropped. Keys protected by an *Edited flag were already excluded
+            // above, so their rows are never deleted or reinserted here.
+            DeleteChildRowsForKeys(connection, transaction, "COBJ_Conditions", "COBJKey", cobjConditionRewriteKeys);
+            DeleteChildRowsForKeys(connection, transaction, "EnchantmentEffects", "EnchantmentKey", enchantmentEffectRewriteKeys);
+            DeleteChildRowsForKeys(connection, transaction, "SpellEffects", "SpellKey", spellEffectRewriteKeys);
+            DeleteChildRowsForKeys(connection, transaction, "ShoutWords", "ShoutKey",
+                allShoutCatalogue.Select(r => (string)r[0]).ToList());
+            DeleteChildRowsForKeys(connection, transaction, "WornRestrictionKeywords", "ListKey", wornRestrictionListKeysToRewrite.Distinct().ToList());
+            // Container has no *Edited protection flag (it's a pure reference table), so every
+            // scanned container's LVLI rows are simply cleared and rewritten each scan — otherwise a
+            // rescan's insert collides with the previous scan's still-present rows for the same
+            // (ContainerKey, LVLiKey), and a removed item would linger as a stale row.
+            DeleteChildRowsForKeys(connection, transaction, "ContainerLVLI", "ContainerKey", latestContainerByKey.Keys.ToList());
+            // Same reasoning for a leveled list: its entries are positional and have no identity, so
+            // the only correct refresh is "drop this list's rows, insert the ones just parsed".
+            // Without the delete, a rescan collides on (ListKey, Ordinal) and an entry the winning
+            // plugin had removed would survive as a stale row.
+            DeleteChildRowsForKeys(connection, transaction, "ContainerEntry", "ContainerKey", latestContainerByKey.Keys.ToList());
+            DeleteChildRowsForKeys(connection, transaction, "LeveledListEntry", "ListKey", latestLeveledListByKey.Keys.ToList());
+            // Same rewrite discipline as the entries above: this is scanned data, so the scan owns
+            // it outright. Cleared for every list this scan saw, then refilled - a list whose
+            // conflict was resolved by removing a mod must not keep reporting a loss.
+            DeleteChildRowsForKeys(connection, transaction, "LeveledListLostEntry", "ListKey", latestLeveledListByKey.Keys.ToList());
+            DeleteChildRowsForKeys(connection, transaction, "LeveledNpcEntry", "ListKey", latestLeveledNpcByKey.Keys.ToList());
+            // Same rule for the NPC child lists: they have no identity of their own, so the only
+            // correct refresh is "drop this NPC.s rows, insert the ones just parsed". Keys protected
+            // by FactionsEdited/SkillsEdited were excluded above and are never touched here.
+            // Rewritten wholesale per parent, like every other child table here.
+            DeleteChildRowsForKeys(connection, transaction, "ClassSkillWeights", "ClassKey",
+                allClasses.Select(r => (string)r[0]).ToList());
+            DeleteChildRowsForKeys(connection, transaction, "RaceSkillBoosts", "RaceKey",
+                allRaces.Select(r => (string)r[0]).ToList());
+            DeleteChildRowsForKeys(connection, transaction, "NpcFactions", "NpcKey", npcFactionRewriteKeys);
+            DeleteChildRowsForKeys(connection, transaction, "NpcSkills", "NpcKey", npcSkillRewriteKeys);
+            DeleteChildRowsForKeys(connection, transaction, "NpcSpells", "NpcKey", npcSpellRewriteKeys);
+            DeleteChildRowsForKeys(connection, transaction, "NpcPerks", "NpcKey", npcPerkRewriteKeys);
+            DeleteChildRowsForKeys(connection, transaction, "NpcItems", "NpcKey", npcItemRewriteKeys);
+
+            // Mesh child sets. Same rewrite discipline as every other child table: cleared for every
+            // parent this scan saw, then refilled, so a record that stopped naming a mesh stops
+            // having a row for it. The Mesh table itself is NOT cleared - see its schema comment.
+            DeleteChildRowsForKeys(connection, transaction, "ArmorArmature", "ArmorKey", latestArmatureByKey.Keys.ToList());
+            DeleteChildRowsForKeys(connection, transaction, "MeshRef", "RecordKey", latestMeshOwnerByKey.Keys.ToList());
+            PerfLog.Record("Scan, item DB: delete the child rows about to be rewritten", phase);
+            phase.Restart();
+
+
+            ExecuteRowsBatched(insertArmor, insertArmorBatch, ArmorParamNames, allArmor, RowsPerBatch(ArmorParamNames));
+            ExecuteRowsBatched(insertArmorAddon, insertArmorAddonBatch, ArmorAddonParamNames, allArmorAddons, RowsPerBatch(ArmorAddonParamNames));
+            ExecuteRowsBatched(insertArmorArmature, insertArmorArmatureBatch, ArmorArmatureParamNames,
+                latestArmatureByKey.Values.SelectMany(a => a.LinkRows).ToList(), RowsPerBatch(ArmorArmatureParamNames));
+
+            // Paths -> Mesh rows -> MeshRef rows. Has to run inside the transaction and after the
+            // DELETE above, and it is the one block here that reads the database back (it needs the
+            // MeshIds it just minted), which is why it is a method rather than another one-liner.
+            var meshStats = WriteMeshIndex(connection, transaction, latestMeshOwnerByKey.Values,
+                                           insertMeshRef, insertMeshRefBatch);
+            BusyService.SetMessage("Scanning: writing the item database…");   // back from the mesh step
+            ExecuteRowsBatched(insertWeapon, insertWeaponBatch, WeaponParamNames, allWeapon, RowsPerBatch(WeaponParamNames));
+            ExecuteRowsBatched(insertWorldItem, insertWorldItemBatch, WorldItemParamNames, allWorldItems, RowsPerBatch(WorldItemParamNames));
+            ExecuteRowsBatched(insertCOBJ, insertCOBJBatch, CobjParamNames, allCobj, RowsPerBatch(CobjParamNames));
+            ExecuteRowsBatched(insertCOBJCondition, insertCOBJConditionBatch, CobjConditionParamNames, allCobjConditions, RowsPerBatch(CobjConditionParamNames));
+            ExecuteRowsBatched(insertWRK, insertWRKBatch, WornRestrictionKeywordParamNames, allWornRestrictionKeywords, RowsPerBatch(WornRestrictionKeywordParamNames));
+            ExecuteRowsBatched(insertEnch, insertEnchBatch, EnchantmentParamNames, allEnchantments, RowsPerBatch(EnchantmentParamNames));
+            ExecuteRowsBatched(insertEnchEff, insertEnchEffBatch, EnchantmentEffectParamNames, allEnchantmentEffects, RowsPerBatch(EnchantmentEffectParamNames));
+            ExecuteRowsBatched(insertContainer, insertContainerBatch, ContainerParamNames, allContainers, RowsPerBatch(ContainerParamNames));
+            ExecuteRowsBatched(insertContainerLVLI, insertContainerLVLIBatch, ContainerLvliParamNames, allContainerLvli, RowsPerBatch(ContainerLvliParamNames));
+            ExecuteRowsBatched(insertContainerEntry, insertContainerEntryBatch, ContainerEntryParamNames, allContainerEntries, RowsPerBatch(ContainerEntryParamNames));
+            ExecuteRowsBatched(insertMagicEffects, insertMagicEffectsBatch, MagicEffectParamNames, allMagicEffects, RowsPerBatch(MagicEffectParamNames));
+            ExecuteRowsBatched(insertGlobals, insertGlobalsBatch, GlobalParamNames, allGlobals, RowsPerBatch(GlobalParamNames));
+            ExecuteRowsBatched(insertLeveledList, insertLeveledListBatch, LeveledListParamNames, allLeveledLists, RowsPerBatch(LeveledListParamNames));
+            ExecuteRowsBatched(insertLeveledListEntry, insertLeveledListEntryBatch, LeveledListEntryParamNames, allLeveledListEntries, RowsPerBatch(LeveledListEntryParamNames));
+            ExecuteRowsBatched(insertLeveledNpc, insertLeveledNpcBatch, LeveledNpcParamNames, allLeveledNpcs, RowsPerBatch(LeveledNpcParamNames));
+            ExecuteRowsBatched(insertLeveledNpcEntry, insertLeveledNpcEntryBatch, LeveledNpcEntryParamNames, allLeveledNpcEntries, RowsPerBatch(LeveledNpcEntryParamNames));
+            ExecuteRowsBatched(insertLeveledListLost, insertLeveledListLostBatch, LeveledListLostParamNames,
+                lostEntriesByList.Values.SelectMany(v => v.Values).ToList(), RowsPerBatch(LeveledListLostParamNames));
+            ExecuteRowsBatched(insertNpc, insertNpcBatch, NpcParamNames, allNpcs, RowsPerBatch(NpcParamNames));
+            ExecuteRowsBatched(insertNpcFaction, insertNpcFactionBatch, NpcFactionParamNames, allNpcFactions, RowsPerBatch(NpcFactionParamNames));
+            ExecuteRowsBatched(insertNpcSkill, insertNpcSkillBatch, NpcSkillParamNames, allNpcSkills, RowsPerBatch(NpcSkillParamNames));
+            ExecuteRowsBatched(insertNpcSpell, insertNpcSpellBatch, NpcSpellParamNames, allNpcSpells, RowsPerBatch(NpcSpellParamNames));
+            ExecuteRowsBatched(insertNpcPerk, insertNpcPerkBatch, NpcPerkParamNames, allNpcPerks, RowsPerBatch(NpcPerkParamNames));
+            ExecuteRowsBatched(insertNpcItem, insertNpcItemBatch, NpcItemParamNames, allNpcItems, RowsPerBatch(NpcItemParamNames));
+            ExecuteRowsBatched(insertSpells, insertSpellsBatch, SpellParamNames, allSpellCatalogue, RowsPerBatch(SpellParamNames));
+            ExecuteRowsBatched(insertSpellEff, insertSpellEffBatch, SpellEffectParamNames, allSpellEffects, RowsPerBatch(SpellEffectParamNames));
+            ExecuteRowsBatched(insertShoutWord, insertShoutWordBatch, ShoutWordParamNames, allShoutWords, RowsPerBatch(ShoutWordParamNames));
+            ExecuteRowsBatched(insertShouts, insertShoutsBatch, NamedCatalogueParamNames, allShoutCatalogue, RowsPerBatch(NamedCatalogueParamNames));
+            ExecuteRowsBatched(insertLeveledSpells, insertLeveledSpellsBatch, PlainCatalogueParamNames, allLeveledSpellCatalogue, RowsPerBatch(PlainCatalogueParamNames));
+            ExecuteRowsBatched(insertPerkCatalogue, insertPerkCatalogueBatch, NamedCatalogueParamNames, allPerkCatalogue, RowsPerBatch(NamedCatalogueParamNames));
+            ExecuteRowsBatched(insertFactions, insertFactionsBatch, NamedCatalogueParamNames, allFactions, RowsPerBatch(NamedCatalogueParamNames));
+            ExecuteRowsBatched(insertClasses, insertClassesBatch, ClassParamNames, allClasses, RowsPerBatch(ClassParamNames));
+            ExecuteRowsBatched(insertClassSkills, insertClassSkillsBatch, ClassSkillParamNames, allClassSkillWeights, RowsPerBatch(ClassSkillParamNames));
+            ExecuteRowsBatched(insertRaces, insertRacesBatch, RaceParamNames, allRaces, RowsPerBatch(RaceParamNames));
+            ExecuteRowsBatched(insertRaceBoosts, insertRaceBoostsBatch, RaceBoostParamNames, allRaceSkillBoosts, RowsPerBatch(RaceBoostParamNames));
+            ExecuteRowsBatched(insertOutfits, insertOutfitsBatch, PlainCatalogueParamNames, allOutfits, RowsPerBatch(PlainCatalogueParamNames));
+            ExecuteRowsBatched(insertVoiceTypes, insertVoiceTypesBatch, PlainCatalogueParamNames, allVoiceTypes, RowsPerBatch(PlainCatalogueParamNames));
+            ExecuteRowsBatched(insertCombatStyles, insertCombatStylesBatch, PlainCatalogueParamNames, allCombatStyles, RowsPerBatch(PlainCatalogueParamNames));
+
+            PerfLog.Record("Scan, item DB: insert all rows (mesh index included)", phase);
+            PerfLog.Record("Scan, item DB: of which the mesh index", TimeSpan.FromMilliseconds(meshStats.IndexMs), meshStats.ToString());
+            phase.Restart();
+
+            // Parent tables: anything not touched by this scan is no longer defined by any currently
+            // active plugin — mark it inactive (hidden from Load*) instead of deleting, so its
+            // IsEdited*/Original data survives in case the plugin comes back. COBJ additionally
+            // excludes Original=0 (user-created recipes, which never appear in a scan's key-set by
+            // definition — without this exemption every user recipe would be marked inactive on every
+            // single scan, since nothing ever "scans" them).
+            MarkInactiveExcept(connection, transaction, "Armor", "Key", allArmor.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "Weapons", "Key", allWeapon.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "WorldItem", "Key", allWorldItems.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "ArmorAddon", "Key", allArmorAddons.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "COBJ", "Key", latestCobjByKey.Keys, extraWhere: "Original = 1");
+            // Original = 1 only: a user-created enchantment exists in no plugin, so a scan must
+            // never retire it. Same guard as COBJ above.
+            MarkInactiveExcept(connection, transaction, "Enchantments", "Key", latestEnchantmentByKey.Keys, extraWhere: "Original = 1");
+            MarkInactiveExcept(connection, transaction, "Container", "ContainerKey", latestContainerByKey.Keys);
+            MarkInactiveExcept(connection, transaction, "MagicEffects", "Key", allMagicEffects.Select(r => (string)r[0]));
+            // real load order (a mod.s master list may lowercase a name the file itself capitalises).
+            // Measured: exactly one NPC was written and immediately marked inactive again by this.
+            MarkInactiveExcept(connection, transaction, "Npc", "Key", allNpcs.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "Factions", "Key", allFactions.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "Classes", "Key", allClasses.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "Races", "Key", allRaces.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "Outfits", "Key", allOutfits.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "VoiceTypes", "Key", allVoiceTypes.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "CombatStyles", "Key", allCombatStyles.Select(r => (string)r[0]));
+            // Original = 1 only. A spell the user created in the tool exists in no plugin, so it is
+            // never "seen" by a scan - without this it would go inactive on the very next one.
+            MarkInactiveExcept(connection, transaction, "Spells", "Key",
+                               allSpellCatalogue.Select(r => (string)r[0]), extraWhere: "Original = 1");
+            MarkInactiveExcept(connection, transaction, "Shouts", "Key", allShoutCatalogue.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "LeveledSpells", "Key", allLeveledSpellCatalogue.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "NpcPerkCatalogue", "Key", allPerkCatalogue.Select(r => (string)r[0]));
+            MarkInactiveExcept(connection, transaction, "Globals", "Key", allGlobals.Select(r => (string)r[0]));
+            // Original = 1 only, like COBJ and Enchantments above: a list the user created exists in
+            // no plugin, so no scan will ever "see" it, and without this guard every rescan would
+            // switch it off (docs/LeveledList-Create-Plan.md, L-P1).
+            MarkInactiveExcept(connection, transaction, "LeveledList", "Key", latestLeveledListByKey.Keys, extraWhere: "Original = 1");
+            MarkInactiveExcept(connection, transaction, "LeveledNpc", "Key", latestLeveledNpcByKey.Keys);
+
+            PerfLog.Record("Scan, item DB: mark records no plugin defines any more inactive", phase);
+
+            writeSw.Stop();
+            Debug.WriteLine($"[ItemDB] Write phase: {writeSw.ElapsedMilliseconds} ms");
+            Debug.WriteLine($"[ItemDB] Mesh index: {meshStats}");
+
+            BusyService.SetMessage("Scanning: saving the item database…");
+            var commitSw = PerfClock.StartNew();
+            transaction.Commit();
+            commitSw.Stop();
+            Debug.WriteLine($"[ItemDB] Commit: {commitSw.ElapsedMilliseconds} ms");
+            PerfLog.Record("Scan, item DB: commit", commitSw);
+
+            InvalidateCache();
+        }
+
+        // StringComparer.OrdinalIgnoreCase for a two-string key. Every composite-key child table in
+        // the schema declares BOTH key columns COLLATE NOCASE, so a dictionary that decides "same
+        // row?" for one of them has to answer the question the same way SQLite will - an ordinal
+        // one says "two rows", the INSERT says "UNIQUE constraint failed", and the scan is over.
+        private sealed class NoCaseKeyPair : IEqualityComparer<(string, string)>
+        {
+            public static readonly NoCaseKeyPair Instance = new();
+
+            public bool Equals((string, string) x, (string, string) y) =>
+                string.Equals(x.Item1, y.Item1, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(x.Item2, y.Item2, StringComparison.OrdinalIgnoreCase);
+
+            public int GetHashCode((string, string) obj) => HashCode.Combine(
+                obj.Item1 is null ? 0 : StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Item1),
+                obj.Item2 is null ? 0 : StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Item2));
+        }
+
+        private static HashSet<string> ReadFlaggedKeys(SqliteConnection connection, string sql)
+        {
+            var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = sql;
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+                keys.Add(reader.GetString(0));
+            return keys;
+        }
+
+        // Creates a fresh TEMP TABLE holding `keys` (one column, "Key") and returns its name. Batches
+        // the inserts (same reasoning as RowsPerBatch elsewhere in this file — one row per statement was
+        // the original scan's dominant cost) so this stays fast even for tens of thousands of keys.
+        // Caller is responsible for dropping the returned table when done with it.
+        private static string PopulateKeyTempTable(SqliteConnection connection, SqliteTransaction transaction, string tempTableName, IReadOnlyList<string> keys)
+        {
+            using (var createCmd = connection.CreateCommand())
+            {
+                createCmd.Transaction = transaction;
+                // COLLATE NOCASE, because every Key column this table is compared against is NOCASE.
+                // Without it the comparison in MarkInactiveExcept runs BINARY (SQLite takes the left
+                // operand's collation, which is this column's) and a key that differs only in casing
+                // silently fails to match - which deactivates a record the scan had just written.
+                createCmd.CommandText = $"CREATE TEMP TABLE {tempTableName} (Key TEXT PRIMARY KEY COLLATE NOCASE);";
+                createCmd.ExecuteNonQuery();
+            }
+
+            const int chunkSize = 400;
+            for (int i = 0; i < keys.Count; i += chunkSize)
+            {
+                int count = Math.Min(chunkSize, keys.Count - i);
+                var placeholders = string.Join(", ", Enumerable.Range(0, count).Select(r => $"(@k{r})"));
+
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = transaction;
+                cmd.CommandText = $"INSERT OR IGNORE INTO {tempTableName} (Key) VALUES {placeholders};";
+                for (int r = 0; r < count; r++)
+                    cmd.Parameters.AddWithValue($"@k{r}", keys[i + r]);
+                cmd.ExecuteNonQuery();
+            }
+
+            return tempTableName;
+        }
+
+        // What the mesh half of a scan found. Kept as a value so the scan can log it and a test can
+        // assert on it without reading the database back.
+        internal sealed record MeshIndexStats(
+            int DistinctPaths, int Loose, int Archive, int Unresolved, int Refs, long IndexMs)
+        {
+            public override string ToString() =>
+                $"{DistinctPaths:N0} distinct paths from {Refs:N0} refs - " +
+                $"loose {Loose:N0}, archive {Archive:N0}, UNRESOLVED {Unresolved:N0} " +
+                $"(index built in {IndexMs} ms)";
+        }
+
+        // Turns the parsed (record, slot, path) triples into Mesh + MeshRef rows.
+        //
+        // THE DEDUPE IS THE POINT. Measured over 124 plugins: 25.055 references name 4.460 distinct
+        // paths, so the Mesh table is 5,6x smaller than the reference list - and stage 2 will parse
+        // each NIF once instead of once per armor that wears it.
+        //
+        // Order matters and is not interchangeable:
+        //   1. collect the distinct paths, so each is resolved and written exactly once
+        //   2. UPSERT them, which mints a MeshId for a new path and REFRESHES source for a known one
+        //   3. read the ids back, because a path already present kept the id it had - that stability
+        //      is the whole reason stage 2 can cache geometry against a MeshId
+        //   4. write the references
+        //
+        // A failure here must not cost the scan. The mesh index is an extra; armor, weapons, recipes
+        // and NPCs are the tool's job, and an unreadable BSA or a vanished mod folder is not a reason
+        // to lose them. So the locator is built defensively and this returns zeroed stats rather than
+        // throwing.
+        private static MeshIndexStats WriteMeshIndex(
+            SqliteConnection connection, SqliteTransaction transaction,
+            IEnumerable<ParsedMeshOwner> owners,
+            SqliteCommand insertMeshRef, SqliteCommand insertMeshRefBatch)
+        {
+            var ownerList = owners.ToList();
+            int refCount = ownerList.Sum(o => o.Refs.Count);
+
+            var distinctPaths = ownerList
+                .SelectMany(o => o.Refs.Select(r => r.PathNorm))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (distinctPaths.Count == 0)
+                return new MeshIndexStats(0, 0, 0, 0, refCount, 0);
+
+            BusyService.SetMessage($"Scanning: indexing {distinctPaths.Count:N0} meshes…");
+            var indexSw = Stopwatch.StartNew();
+            Services.MeshLocator locator;
+            try
+            {
+                locator = Services.MeshLocator.Build();
+            }
+            catch (Exception ex)
+            {
+                // Every path then resolves to Unresolved, which the report shows as such. That is a
+                // better outcome than no mesh rows at all: the record -> path half is still correct
+                // and useful, only the "where does it live" half is missing.
+                AppLogger.LogError("Mesh index: locator could not be built", ex);
+                locator = Services.MeshLocator.Empty;
+            }
+            indexSw.Stop();
+
+            int loose = 0, archive = 0, unresolved = 0;
+
+            // ON CONFLICT(PathNorm), not the usual PrepareUpsert: that helper takes columnNames[0] as
+            // the conflict target, and here that is MeshId - the surrogate key, which never conflicts.
+            // PathNorm is the real identity of a mesh row.
+            using (var upsertMesh = connection.CreateCommand())
+            {
+                upsertMesh.Transaction = transaction;
+                upsertMesh.CommandText =
+                    "INSERT INTO Mesh (PathNorm, SourceKind, SourceRef) VALUES (@path, @kind, @ref) " +
+                    "ON CONFLICT(PathNorm) DO UPDATE SET SourceKind = excluded.SourceKind, SourceRef = excluded.SourceRef;";
+                var pPath = upsertMesh.Parameters.Add(new SqliteParameter("@path", DBNull.Value));
+                var pKind = upsertMesh.Parameters.Add(new SqliteParameter("@kind", DBNull.Value));
+                var pRef = upsertMesh.Parameters.Add(new SqliteParameter("@ref", DBNull.Value));
+
+                foreach (var path in distinctPaths)
+                {
+                    var source = locator.Resolve(path);
+                    switch (source.Kind)
+                    {
+                        case Services.MeshSourceKind.Loose: loose++; break;
+                        case Services.MeshSourceKind.Archive: archive++; break;
+                        default: unresolved++; break;
+                    }
+
+                    pPath.Value = path;
+                    pKind.Value = (int)source.Kind;
+                    pRef.Value = source.Reference;
+                    upsertMesh.ExecuteNonQuery();
+                }
+            }
+
+            // Read back rather than relying on last_insert_rowid(): a path that was already in the
+            // table kept its original id, and that is exactly the case the conflict clause handles.
+            var idByPath = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+            using (var read = connection.CreateCommand())
+            {
+                read.Transaction = transaction;
+                read.CommandText = "SELECT MeshId, PathNorm FROM Mesh;";
+                using var reader = read.ExecuteReader();
+                while (reader.Read())
+                    idByPath[reader.GetString(1)] = reader.GetInt64(0);
+            }
+
+            var refRows = new List<object[]>(refCount);
+            foreach (var owner in ownerList)
+                foreach (var (slot, pathNorm) in owner.Refs)
+                    if (idByPath.TryGetValue(pathNorm, out var meshId))
+                        refRows.Add(new object[] { owner.RecordKey, slot, meshId });
+
+            ExecuteRowsBatched(insertMeshRef, insertMeshRefBatch, MeshRefParamNames, refRows, RowsPerBatch(MeshRefParamNames));
+
+            return new MeshIndexStats(distinctPaths.Count, loose, archive, unresolved,
+                                      refRows.Count, indexSw.ElapsedMilliseconds);
+        }
+
+        private static void DeleteChildRowsForKeys(SqliteConnection connection, SqliteTransaction transaction, string table, string parentKeyColumn, IReadOnlyList<string> keys)
+        {
+            if (keys.Count == 0) return;
+
+            var tempTable = PopulateKeyTempTable(connection, transaction, "_DeleteKeys", keys);
+            try
+            {
+                using var deleteCmd = connection.CreateCommand();
+                deleteCmd.Transaction = transaction;
+                deleteCmd.CommandText = $"DELETE FROM {table} WHERE {parentKeyColumn} IN (SELECT Key FROM {tempTable});";
+                deleteCmd.ExecuteNonQuery();
+            }
+            finally
+            {
+                using var dropCmd = connection.CreateCommand();
+                dropCmd.Transaction = transaction;
+                dropCmd.CommandText = $"DROP TABLE {tempTable};";
+                dropCmd.ExecuteNonQuery();
+            }
+        }
+
+        // Marks rows in `table` inactive when their key wasn't among `scannedKeys` — i.e. no currently
+        // active plugin defines/touches them anymore, whether because the whole plugin was removed or
+        // just that one record was dropped from an updated version of it. Verified against a real
+        // SQLite instance before wiring in (temp table + NOT EXISTS, not a giant IN-list, to stay fast
+        // at the tens-of-thousands-of-keys scale this app's scans run at).
+        // internal for the regression test: the casing rule below is invisible in the SQL and cost a
+        // record that had just been written (see ScanKeyCasingTests).
+        internal static void MarkInactiveExcept(SqliteConnection connection, SqliteTransaction transaction, string table, string keyColumn, IEnumerable<string> scannedKeys, string extraWhere = null)
+        {
+            var keys = scannedKeys.Distinct().ToList();
+            var tempTable = PopulateKeyTempTable(connection, transaction, "_ActiveKeys", keys);
+            try
+            {
+                var where = $"Active = 1 AND NOT EXISTS (SELECT 1 FROM {tempTable} WHERE {tempTable}.Key = {table}.{keyColumn})";
+                if (!string.IsNullOrEmpty(extraWhere))
+                    where += $" AND {extraWhere}";
+
+                using var updateCmd = connection.CreateCommand();
+                updateCmd.Transaction = transaction;
+                updateCmd.CommandText = $"UPDATE {table} SET Active = 0 WHERE {where};";
+                updateCmd.ExecuteNonQuery();
+            }
+            finally
+            {
+                using var dropCmd = connection.CreateCommand();
+                dropCmd.Transaction = transaction;
+                dropCmd.CommandText = $"DROP TABLE {tempTable};";
+                dropCmd.ExecuteNonQuery();
+            }
+        }
+
+        private sealed class ParsedPluginData
+        {
+            // Which file these rows came from. Needed for the lost-entry pass, which has to say
+            // WHERE an entry was last seen - and to tell a plugin.s own version of a list from the
+            // one that won.
+            public string PluginName = "";
+
+            public List<object[]> ArmorRows = new();
+            public List<object[]> WeaponRows = new();
+            public List<object[]> WorldItemRows = new();
+            public List<ParsedCobj> Cobjs = new();
+            public List<ParsedEnchantment> Enchantments = new();
+            public List<ParsedContainer> Containers = new();
+            public List<object[]> MagicEffectRows = new();
+            public List<object[]> GlobalRows = new();
+            public List<ParsedFormList> FormLists = new();
+            public List<ParsedLeveledList> LeveledLists = new();
+
+            // LVLN. Same shape as an LVLI list - a header row plus positional entries - so it reuses
+            // ParsedLeveledList rather than carrying a second class that differs in nothing.
+            public List<ParsedLeveledList> LeveledNpcs = new();
+
+            // NPCs and the reference catalogues they point at (Prio 8 / N-P1).
+            public List<ParsedNpc> Npcs = new();
+            public List<object[]> FactionRows = new();
+            public List<object[]> ClassRows = new();
+            public List<object[]> ClassSkillWeightRows = new();
+            public List<object[]> RaceRows = new();
+            public List<object[]> RaceSkillBoostRows = new();
+            public List<object[]> OutfitRows = new();
+            public List<object[]> VoiceTypeRows = new();
+            public List<object[]> CombatStyleRows = new();
+            public List<object[]> SpellCatalogueRows = new();
+
+            // One row per effect entry of a spell, and per word of a shout. Child rows keyed on the
+            // parent in column 0, so DedupedChildren can follow the winning record.
+            public List<object[]> SpellEffectRows = new();
+            public List<object[]> ShoutWordRows = new();
+            public List<object[]> ShoutCatalogueRows = new();
+            public List<object[]> LeveledSpellCatalogueRows = new();
+            public List<object[]> PerkCatalogueRows = new();
+
+            // Mesh index (render stage 1). ARMA is scanned as a record in its own right because it,
+            // not ARMO, is what carries a model path.
+            public List<object[]> ArmorAddonRows = new();
+            public List<ParsedArmature> Armatures = new();
+            public List<ParsedMeshOwner> MeshOwners = new();
+
+        }
+
+        // An armor's Armature list. A parent/child carrier like ParsedContainer, for the same reason:
+        // an override replaces the whole list, so only the winning plugin's version may contribute
+        // links - otherwise an armor that LOST an addon keeps it forever.
+        private sealed class ParsedArmature
+        {
+            public string ArmorKey = "";
+            public List<object[]> LinkRows = new();   // { ArmorKey, Ordinal, AddonKey }
+        }
+
+        // Every model path one record names, by slot. Carries the PATH, not a MeshId: ids are handed
+        // out in the write phase, after every plugin's paths have been deduplicated against each
+        // other - there is nothing to number while a single plugin is being parsed.
+        //
+        // Also a parent/child carrier, and the "lost" case is real: an override that drops a female
+        // world model must not leave the earlier plugin's row behind.
+        private sealed class ParsedMeshOwner
+        {
+            public string RecordKey = "";
+            public List<(string Slot, string PathNorm)> Refs = new();
+        }
+
+        // E3: every FLST in the plugin (not just enchant-referenced ones) and its members. Feeds the
+        // WornRestrictionKeywords table, which E3 treats as a general "FLST contents" table.
+        private sealed class ParsedFormList
+        {
+            public string ListKey;
+            public List<object[]> MemberRows = new();   // { ListKey, MemberKey }
+        }
+
+        private sealed class ParsedCobj
+        {
+            public object[] Values;
+            public List<object[]> ConditionRows = new();
+        }
+
+        private sealed class ParsedEnchantment
+        {
+            public object[] Values;
+            public List<object[]> EffectRows = new();
+        }
+
+        private sealed class ParsedContainer
+        {
+            public object[] Values;
+            public List<object[]> LvliRows = new();
+            public List<object[]> EntryRows = new();   // every entry, not just the leveled lists
+        }
+
+        // A leveled list plus its entries. Same parent/child shape as ParsedContainer, and for the
+        // same reason: only the winning plugin's version of a list may contribute entries, or a
+        // later plugin that REMOVED an entry would leave the earlier one behind forever.
+        // The two stats a record does not have to name. A class that leaves a weight out is not
+        // saying "zero" so much as "nothing here", but the calculation divides by the SUM of the
+        // three - so a missing one has to count as 0 rather than propagate a null through it.
+        private static int StatWeight(System.Collections.Generic.IReadOnlyDictionary<BasicStat, byte>? weights, BasicStat stat)
+            => weights != null && weights.TryGetValue(stat, out var value) ? value : 0;
+
+        private static float Starting(IRaceGetter race, BasicStat stat)
+            => race.Starting != null && race.Starting.TryGetValue(stat, out var value) ? value : 0f;
+
+        private sealed class ParsedNpc
+        {
+            public object[] Values;
+            public List<object[]> FactionRows = new();
+            public List<object[]> SkillRows = new();
+            public List<object[]> SpellRows = new();
+            public List<object[]> PerkRows = new();
+            public List<object[]> ItemRows = new();
+        }
+
+        private sealed class ParsedLeveledList
+        {
+            public object[] Values;
+            public List<object[]> EntryRows = new();
+        }
+
+        private static readonly string[] ArmorParamNames =
+            { "@key", "@editorID", "@name", "@weight", "@val", "@armorRating", "@slotMask", "@armorType", "@keywords", "@objectEffect", "@enchantAmount" };
+        private static readonly string[] WeaponParamNames =
+            { "@key", "@editorID", "@name", "@weight", "@val", "@dmg", "@speed", "@reach", "@stagger", "@keywords", "@objectEffect", "@enchantAmount", "@critDamage", "@critPercentMult" };
+        private static readonly string[] WorldItemParamNames =
+            { "@key", "@editorID", "@name", "@kind" };
+        private static readonly string[] ArmorAddonParamNames = { "@key", "@editorID" };
+        private static readonly string[] ArmorArmatureParamNames = { "@armorKey", "@ordinal", "@addonKey" };
+        private static readonly string[] MeshRefParamNames = { "@recordKey", "@slot", "@meshId" };
+        private static readonly string[] CobjParamNames =
+            { "@key", "@name", "@createdItem", "@createdCount", "@workbench", "@ingredients" };
+        private static readonly string[] CobjConditionParamNames =
+            { "@cobjKey", "@extra", "@runOn", "@type", "@target", "@value", "@op", "@flags" };
+        private static readonly string[] EnchantmentParamNames =
+            { "@key", "@editorID", "@name", "@cast", "@target", "@cost", "@wrestr", "@baseEnch",
+              "@enchType", "@flags", "@chargeTime", "@enchAmount" };
+        private static readonly string[] EnchantmentEffectParamNames =
+            { "@ench", "@mgef", "@editorID", "@name", "@mag", "@dur", "@area" };
+        private static readonly string[] WornRestrictionKeywordParamNames = { "@list", "@kw" };
+        private static readonly string[] ContainerParamNames = { "@key", "@name" };
+        private static readonly string[] ContainerLvliParamNames = { "@containerKey", "@lvliKey", "@lvliName" };
+        private static readonly string[] ContainerEntryParamNames = { "@containerKey", "@ordinal", "@reference", "@count" };
+        private static readonly string[] LeveledListParamNames = { "@key", "@editorID", "@chanceNone", "@flags", "@globalKey" };
+        private static readonly string[] LeveledNpcParamNames = { "@key", "@editorID" };
+        private static readonly string[] LeveledNpcEntryParamNames = { "@listKey", "@ordinal", "@reference", "@level", "@count" };
+        private static readonly string[] LeveledListEntryParamNames = { "@listKey", "@ordinal", "@reference", "@level", "@count" };
+        private static readonly string[] LeveledListLostParamNames = { "@listKey", "@reference", "@level", "@count", "@lostFrom", "@ambiguous", "@addedBy", "@droppedBy" };
+
+        private static readonly string[] NpcParamNames =
+        {
+            "@key", "@editorID", "@name", "@shortName", "@classKey", "@raceKey",
+            "@usesMult", "@level", "@levelMult", "@calcMin", "@calcMax",
+            "@health", "@magicka", "@stamina", "@healthOff", "@magickaOff", "@staminaOff",
+            "@flags", "@templateFlags", "@templateKey",
+            "@voice", "@outfit", "@sleepOutfit", "@deathItem", "@skin", "@combatStyle", "@crimeFaction",
+            "@weight", "@height",
+            "@aggression", "@confidence", "@assistance", "@morality", "@mood", "@energy",
+            "@keywords",
+        };
+
+        private static readonly string[] NpcColumnNames =
+        {
+            "Key", "EditorID", "Name", "ShortName", "ClassKey", "RaceKey",
+            "UsesPcLevelMult", "Level", "LevelMult", "CalcMinLevel", "CalcMaxLevel",
+            "Health", "Magicka", "Stamina", "HealthOffset", "MagickaOffset", "StaminaOffset",
+            "Flags", "TemplateFlags", "TemplateKey",
+            "VoiceKey", "DefaultOutfitKey", "SleepOutfitKey", "DeathItemKey", "SkinKey", "CombatStyleKey", "CrimeFactionKey",
+            "Weight", "Height",
+            "Aggression", "Confidence", "Assistance", "Morality", "Mood", "EnergyLevel",
+            "Keywords",
+        };
+
+        private static readonly string[] NpcFactionParamNames = { "@npcKey", "@factionKey", "@rank" };
+        private static readonly string[] NpcFactionColumnNames = { "NpcKey", "FactionKey", "Rank" };
+
+        private static readonly string[] NpcSkillParamNames = { "@npcKey", "@skill", "@value", "@offset" };
+        private static readonly string[] NpcSpellParamNames = { "@npcKey", "@spellKey", "@kind" };
+        private static readonly string[] NpcSpellColumnNames = { "NpcKey", "SpellKey", "Kind" };
+        private static readonly string[] NpcPerkParamNames = { "@npcKey", "@perkKey", "@rank" };
+        private static readonly string[] NpcPerkColumnNames = { "NpcKey", "PerkKey", "Rank" };
+        private static readonly string[] NpcItemParamNames = { "@npcKey", "@itemKey", "@count" };
+        private static readonly string[] NpcItemColumnNames = { "NpcKey", "ItemKey", "Count" };
+        private static readonly string[] NpcSkillColumnNames = { "NpcKey", "Skill", "Value", "Offset" };
+        private static readonly string[] NamedCatalogueParamNames = { "@key", "@editorID", "@name" };
+        private static readonly string[] NamedCatalogueColumnNames = { "Key", "EditorID", "Name" };
+        private static readonly string[] PlainCatalogueParamNames = { "@key", "@editorID" };
+        private static readonly string[] PlainCatalogueColumnNames = { "Key", "EditorID" };
+
+        // Classes and races outgrew the shared catalogue shape when their AutoCalc numbers were
+        // added - they are no longer just "key, editorID, name".
+        private static readonly string[] ClassParamNames = { "@key", "@editorID", "@name", "@hw", "@mw", "@sw" };
+        private static readonly string[] ClassColumnNames = { "Key", "EditorID", "Name", "HealthWeight", "MagickaWeight", "StaminaWeight" };
+        private static readonly string[] RaceParamNames = { "@key", "@editorID", "@name", "@sh", "@sm", "@ss" };
+        private static readonly string[] RaceColumnNames = { "Key", "EditorID", "Name", "StartingHealth", "StartingMagicka", "StartingStamina" };
+        private static readonly string[] ClassSkillParamNames = { "@classKey", "@skill", "@weight" };
+        private static readonly string[] ClassSkillColumnNames = { "ClassKey", "Skill", "Weight" };
+        private static readonly string[] RaceBoostParamNames = { "@raceKey", "@skill", "@boost" };
+        private static readonly string[] RaceBoostColumnNames = { "RaceKey", "Skill", "Boost" };
+
+        private static readonly string[] MagicEffectParamNames =
+            { "@key", "@editorID", "@name", "@hasMag", "@hasDur", "@hasAre", "@castType", "@targetType",
+              "@school", "@skillLevel", "@baseCost" };
+        private static readonly string[] GlobalParamNames = { "@key", "@editorID", "@value" };
+
+        // Real table column names, in the same order as the matching *ParamNames array above.
+        // Several of the single-row PrepareInsertX commands bind a parameter name that doesn't match
+        // its column name (e.g. column "Value" <- @val, "BodySlotMask" <- @slotMask) — PrepareBatchInsert
+        // needs the actual column names for its generated INSERT column list; deriving them from the
+        // param names (stripping "@") is wrong wherever they differ and was the cause of the
+        // "table Armor has no column named val" crash.
+        internal static readonly string[] ArmorColumnNames =
+            { "Key", "EditorID", "Name", "Weight", "Value", "ArmorRating", "BodySlotMask", "ArmorType", "Keywords", "ObjectEffectKey", "EnchantAmount" };
+        internal static readonly string[] WeaponColumnNames =
+            { "Key", "EditorID", "Name", "Weight", "Value", "Damage", "Speed", "Reach", "Stagger", "Keywords", "ObjectEffectKey", "EnchantAmount", "CritDamage", "CritPercentMult" };
+        internal static readonly string[] WorldItemColumnNames =
+            { "Key", "EditorID", "Name", "Kind" };
+        internal static readonly string[] ArmorAddonColumnNames = { "Key", "EditorID" };
+        private static readonly string[] ArmorArmatureColumnNames = { "ArmorKey", "Ordinal", "AddonKey" };
+        private static readonly string[] MeshRefColumnNames = { "RecordKey", "Slot", "MeshId" };
+        internal static readonly string[] CobjColumnNames =
+            { "Key", "Name", "CreatedItem", "CreatedObjectCount", "WorkbenchKeyword", "Ingredients" };
+        private static readonly string[] CobjConditionColumnNames =
+            { "COBJKey", "Extra", "RunOn", "ConditionType", "Target", "Value", "CompareOperator", "Flags" };
+        internal static readonly string[] EnchantmentColumnNames =
+            { "Key", "EditorID", "Name", "CastType", "TargetType", "EnchantmentCost", "WornRestrictionListKey", "BaseEnchantmentKey",
+              "EnchantType", "Flags", "ChargeTime", "EnchantmentAmount" };
+        private static readonly string[] EnchantmentEffectColumnNames =
+            { "EnchantmentKey", "MagicEffectKey", "EditorID", "Name", "Magnitude", "Duration", "Area" };
+
+        // The Spells tab's own columns (docs/Spells-Plan.md). Only the SCANNED half - the shadow
+        // columns and Original are written by the editor, never by the scan, so an upsert through
+        // these names refreshes a record without touching a single user edit.
+        internal static readonly string[] SpellParamNames =
+            { "@key", "@editorID", "@name", "@spellType", "@cast", "@target", "@equip", "@baseCost",
+              "@chargeTime", "@castDuration", "@range", "@description", "@halfCostPerk",
+              "@flags", "@keywords", "@dropped" };
+        internal static readonly string[] SpellColumnNames =
+            { "Key", "EditorID", "Name", "SpellType", "CastType", "TargetType", "EquipType", "BaseCost",
+              "ChargeTime", "CastDuration", "SpellRange", "Description", "HalfCostPerkKey",
+              "Flags", "Keywords", "DroppedEffectRows" };
+
+        private static readonly string[] SpellEffectParamNames =
+            { "@spell", "@mgef", "@editorID", "@name", "@mag", "@dur", "@area" };
+        private static readonly string[] SpellEffectColumnNames =
+            { "SpellKey", "MagicEffectKey", "EditorID", "Name", "Magnitude", "Duration", "Area" };
+
+        private static readonly string[] ShoutWordParamNames = { "@shout", "@ordinal", "@spell" };
+        private static readonly string[] ShoutWordColumnNames = { "ShoutKey", "Ordinal", "SpellKey" };
+        private static readonly string[] WornRestrictionKeywordColumnNames = { "ListKey", "KeywordKey" };
+        internal static readonly string[] ContainerColumnNames = { "ContainerKey", "Name" };
+        private static readonly string[] ContainerLvliColumnNames = { "ContainerKey", "LVLiKey", "LVLiName" };
+        private static readonly string[] ContainerEntryColumnNames = { "ContainerKey", "Ordinal", "Reference", "Count" };
+        private static readonly string[] LeveledListColumnNames = { "Key", "EditorID", "ChanceNone", "Flags", "GlobalKey" };
+        private static readonly string[] LeveledNpcColumnNames = { "Key", "EditorID" };
+        private static readonly string[] LeveledNpcEntryColumnNames = { "ListKey", "Ordinal", "Reference", "Level", "Count" };
+        private static readonly string[] LeveledListEntryColumnNames = { "ListKey", "Ordinal", "Reference", "Level", "Count" };
+        // The plugin that dropped an entry: the version of the list right AFTER the last one that
+        // still carried it. Static and taking the version order, so the one piece of reasoning in
+        // this feature can be tested without a load order behind it - the rest of the lost-entry
+        // pass needs real plugin files and cannot be.
+        //
+        // FindLastIndex, not FindIndex: should a plugin ever define the same list twice, the
+        // occurrence nearest the winner is the one LostFrom refers to.
+        //
+        // Returns empty when there is nothing after it. By the logic of the pass that cannot happen
+        // - LostFrom is never the winner, and the winner is last - so an empty answer means the
+        // inputs disagree, and saying nothing beats naming the wrong plugin.
+        internal static string ResolveDroppedBy(IReadOnlyList<string> versionsInLoadOrder, string lostFrom)
+        {
+            if (versionsInLoadOrder == null || string.IsNullOrEmpty(lostFrom)) return "";
+
+            for (int i = versionsInLoadOrder.Count - 1; i >= 0; i--)
+            {
+                if (!string.Equals(versionsInLoadOrder[i], lostFrom, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                return i + 1 < versionsInLoadOrder.Count ? versionsInLoadOrder[i + 1] : "";
+            }
+
+            return "";
+        }
+
+        private static readonly string[] LeveledListLostColumnNames = { "ListKey", "Reference", "Level", "Count", "LostFrom", "Ambiguous", "AddedBy", "DroppedBy" };
+        internal static readonly string[] MagicEffectColumnNames =
+            { "Key", "EditorID", "Name", "HasMagnitude", "HasDuration", "HasArea", "CastType", "TargetType",
+              "MagicSkill", "MinimumSkillLevel", "BaseCost" };
+        private static readonly string[] GlobalColumnNames = { "Key", "EditorID", "Value" };
+
+        private static void ApplyRowAndExecute(SqliteCommand cmd, string[] paramNames, object[] values)
+        {
+            for (int i = 0; i < paramNames.Length; i++)
+                cmd.Parameters[paramNames[i]].Value = values[i] ?? DBNull.Value;
+            cmd.ExecuteNonQuery();
+        }
+
+        // Rows per batch statement, PER TABLE: as many rows as fit into about TargetParamsPerBatch
+        // bound parameters (docs/Performance-Plan.md, P-P6b).
+        //
+        // It used to be a flat 90 rows for every table, on the idea that fewer, bigger statements are
+        // always cheaper. Measured, that only holds up to a point: when Microsoft.Data.Sqlite executes a
+        // statement it binds every parameter by NAME, and that lookup inside SQLite walks the statement's
+        // parameter list - so each parameter costs more the more parameters the statement has. At 90
+        // rows the Npc table (36 columns) carried 3.240 parameters and cost 234 us per row; one row per
+        // statement, 36 parameters, cost 7.7 us. A narrow table (NpcSkills, 4 columns) was best at
+        // ~10 rows / 40 parameters, 1.4 us per row against 3.8 at 90 rows. The sweet spot sits at
+        // roughly 40 parameters whatever the width, so that is what this aims for.
+        //
+        // The ceiling stays MaxRowsPerBatch: a one-column table would otherwise get 40 rows, which is
+        // fine, but nothing should ever approach SQLite's ~500-row limit for a multi-row VALUES list.
+        internal const int TargetParamsPerBatch = 40;
+        internal const int MaxRowsPerBatch = 90;
+
+        internal static int RowsPerBatch(string[] paramNames)
+            => Math.Clamp(TargetParamsPerBatch / Math.Max(1, paramNames.Length), 1, MaxRowsPerBatch);
+
+        // Plain multi-row INSERT (no OR REPLACE / no ON CONFLICT) for the 4 child tables
+        // (COBJ_Conditions/EnchantmentEffects/WornRestrictionKeywords/ContainerLVLI). PutIntoDataBank
+        // always DELETEs the parent keys it's about to rewrite children for first (see
+        // DeleteChildRowsForKeys), so a plain insert never conflicts — and if it somehow did, that
+        // would mean a real bug, which a plain INSERT surfaces as an error instead of silently
+        // replacing/duplicating rows the way "OR REPLACE" used to.
+        internal static SqliteCommand PrepareInsertBatch(SqliteConnection connection, string table, string[] columnNames, string[] paramNames, int batchSize)
+        {
+            var columns = string.Join(", ", columnNames);
+
+            var rowGroups = new string[batchSize];
+            for (int r = 0; r < batchSize; r++)
+                rowGroups[r] = "(" + string.Join(", ", paramNames.Select(p => $"{p}_{r}")) + ")";
+
+            var cmd = connection.CreateCommand();
+            cmd.CommandText = $"INSERT INTO {table} ({columns}) VALUES {string.Join(", ", rowGroups)}";
+
+            for (int r = 0; r < batchSize; r++)
+                foreach (var p in paramNames)
+                    cmd.Parameters.Add(new SqliteParameter($"{p}_{r}", DBNull.Value));
+
+            return cmd;
+        }
+
+        // Multi-row UPSERT for the 6 "parent" tables (Armor/Weapons/COBJ/Enchantments/Container/
+        // MagicEffects) — columnNames/paramNames only ever list the scanned base columns (never
+        // IsEdited*/Original/*Edited), so the ON CONFLICT DO UPDATE clause built from them can never
+        // touch those columns. That's the whole point: a rescan updates the plugin-derived data and
+        // flips Active back to 1, but never overwrites a user's manual edits. columnNames[0] is always
+        // that table's natural key (Key, or ContainerKey for Container) and is used as the conflict
+        // target. Verified against a real SQLite instance (3.49.1, same as this app) before wiring in.
+        internal static SqliteCommand PrepareUpsertBatch(SqliteConnection connection, string table, string[] columnNames, string[] paramNames, int batchSize)
+        {
+            var columns = string.Join(", ", columnNames) + ", Active";
+            var updateSet = string.Join(", ", columnNames.Skip(1).Select(c => $"{c} = excluded.{c}")) + ", Active = 1";
+
+            var rowGroups = new string[batchSize];
+            for (int r = 0; r < batchSize; r++)
+                rowGroups[r] = "(" + string.Join(", ", paramNames.Select(p => $"{p}_{r}")) + ", 1)";
+
+            var cmd = connection.CreateCommand();
+            cmd.CommandText =
+                $"INSERT INTO {table} ({columns}) VALUES {string.Join(", ", rowGroups)} " +
+                $"ON CONFLICT({columnNames[0]}) DO UPDATE SET {updateSet}";
+
+            for (int r = 0; r < batchSize; r++)
+                foreach (var p in paramNames)
+                    cmd.Parameters.Add(new SqliteParameter($"{p}_{r}", DBNull.Value));
+
+            return cmd;
+        }
+
+        // Writes `rows` using `batchCmd` (batchSize rows per ExecuteNonQuery) for as many full
+        // batches as fit, then falls back to `singleCmd` (the plain one-row-per-call command) for
+        // the remainder — avoids re-preparing a differently-sized batch statement for the tail.
+        internal static void ExecuteRowsBatched(SqliteCommand singleCmd, SqliteCommand batchCmd, string[] paramNames, List<object[]> rows, int batchSize)
+        {
+            // Per table, for Logs\perf.log (docs/Performance-Plan.md, P-P6): "insert all rows" was 15.6 s
+            // of a 22 s scan on a 1.800-plugin list, and every table goes through here. The name comes
+            // from the prepared statement, so no call site had to change.
+            using var timing = PerfLog.Measure($"Scan, item DB: insert {TableOf(singleCmd)}");
+            timing.Detail = $"{rows.Count:N0} rows";
+
+            // BY POSITION, NOT BY NAME (P-P6a). Parameters["name_row"] searches the whole parameter list
+            // in Microsoft.Data.Sqlite, and a batch holds rows x columns of them - so setting every value
+            // by name cost time growing with the SQUARE of the columns. Measured with the package this
+            // app uses: 27 us per row at 11 columns, 144 us at 36 (the Npc table), against well under
+            // a microsecond by position. On a 1.800-plugin list that was most of a 15 s write phase.
+            //
+            // The position is r * columns + c because PrepareInsertBatch / PrepareUpsertBatch add the
+            // parameters exactly in that order. Checked once per table rather than trusted: a value
+            // landing in the wrong column would be a silent data error, far worse than a slow scan. If
+            // the layout ever stops matching, this falls back to the old lookup and says so.
+            bool byPosition = ParameterLayoutMatches(batchCmd, paramNames, batchSize);
+            if (!byPosition)
+                AppLogger.LogWarning(
+                    $"Scan: the batch statement for {TableOf(singleCmd)} does not lay out its parameters " +
+                    "row by row, column by column - falling back to setting them by name (slower, same result).");
+
+            int columns = paramNames.Length;
+            int i = 0;
+            for (; i + batchSize <= rows.Count; i += batchSize)
+            {
+                for (int r = 0; r < batchSize; r++)
+                {
+                    var row = rows[i + r];
+                    for (int c = 0; c < columns; c++)
+                    {
+                        var parameter = byPosition
+                            ? batchCmd.Parameters[r * columns + c]
+                            : batchCmd.Parameters[$"{paramNames[c]}_{r}"];
+                        parameter.Value = row[c] ?? DBNull.Value;
+                    }
+                }
+                batchCmd.ExecuteNonQuery();
+            }
+
+            // The tail (fewer rows than one batch) still goes one row at a time through the single
+            // statement: at most batchSize - 1 rows per table, with a list no longer than the columns.
+            for (; i < rows.Count; i++)
+                ApplyRowAndExecute(singleCmd, paramNames, rows[i]);
+        }
+
+        // Does parameter number r * columns + c carry the name "{column c}_{r}", for every r and c?
+        // The promise the by-position path above relies on, checked in full - a few thousand string
+        // comparisons per table, against the hundreds of thousands of rows it then speeds up.
+        internal static bool ParameterLayoutMatches(SqliteCommand batchCmd, string[] paramNames, int batchSize)
+        {
+            if (batchCmd.Parameters.Count != batchSize * paramNames.Length) return false;
+
+            for (int r = 0; r < batchSize; r++)
+                for (int c = 0; c < paramNames.Length; c++)
+                    if (!string.Equals(batchCmd.Parameters[r * paramNames.Length + c].ParameterName,
+                                       $"{paramNames[c]}_{r}", StringComparison.Ordinal))
+                        return false;
+
+            return true;
+        }
+
+        // "INSERT [OR REPLACE] INTO Npc (...)" -> "Npc". Only for the timing line above - an unexpected
+        // statement shape gives "?" rather than an exception in the middle of a scan.
+        internal static string TableOf(SqliteCommand cmd)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(
+                cmd.CommandText ?? "", @"INSERT\s+(?:OR\s+\w+\s+)?INTO\s+(\w+)",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            return m.Success ? m.Groups[1].Value : "?";
+        }
+
+        // An unset link is an empty string, never the text form of FormKey.Null. That distinction was
+        // paid for once already: an FLST-less enchantment stored "Null|000000", ~1100 records ended
+        // up sharing that value, and editing one of them touched them all.
+        private static string LinkKey(FormKey formKey) =>
+            formKey.IsNull ? "" : KeyFactory.BuildMasterKey(formKey);
+
+        // One model path, normalised, or nothing. An absent slot is silent on purpose: most records
+        // fill some of their slots and not others, so "no path here" is data, not a problem, and a
+        // warning per empty slot would bury the 32 paths that genuinely resolve to nothing.
+        private static void AddMeshRef(ParsedMeshOwner owner, string slot, string? givenPath)
+        {
+            var norm = Services.MeshPath.Normalize(givenPath);
+            if (norm != null) owner.Refs.Add((slot, norm));
+        }
+
+        // Pure parsing — no DB access — so this is safe to call concurrently from Parallel.ForEach.
+        // Mirrors the original single-threaded loop body exactly, just capturing values into rows
+        // instead of writing straight to a shared SqliteCommand's parameters.
+        private ParsedPluginData ParsePluginForItemDB(string pluginName, string fullPath)
+        {
+            var result = new ParsedPluginData { PluginName = pluginName };
+            var mod = SkyrimMod.CreateFromBinaryOverlay(
+                fullPath, SkyrimRelease.SkyrimSE, Services.PluginReadParams.ForScan());
+
+            // ARMOR ADDONS (ARMA) — the record that actually holds a model path.
+            //
+            // Scanned as its own table rather than folded into Armor, because the relation is
+            // many-to-many in BOTH directions: one armor names several addons (702 vanilla armors
+            // do), and one addon is named by several armors. A path column on Armor could represent
+            // neither.
+            //
+            // The four slots are the two Mutagen gendered pairs. A record may fill any subset -
+            // measured on vanilla, all 766 addons carry a world model but only 185 carry a
+            // first-person one, so an absent slot is the normal case and simply writes no row.
+            foreach (var addon in mod.ArmorAddons.Records)
+            {
+                string addonKey = KeyFactory.BuildMasterKey(addon.FormKey);
+
+                result.ArmorAddonRows.Add(new object[]
+                {
+                    addonKey,
+                    addon.EditorID ?? "",
+                });
+
+                // Added even when it ends up EMPTY. That is not a waste: the write phase reduces these
+                // to "last plugin per record", and an override that REMOVED a model has to be able to
+                // win with nothing - skipping an empty one would leave the earlier plugin's row in
+                // place forever, which is the stale-child bug the COBJ/Container blocks below already
+                // document.
+                var owner = new ParsedMeshOwner { RecordKey = addonKey };
+                AddMeshRef(owner, "WorldMale", addon.WorldModel?.Male?.File.GivenPath);
+                AddMeshRef(owner, "WorldFemale", addon.WorldModel?.Female?.File.GivenPath);
+                AddMeshRef(owner, "FirstMale", addon.FirstPersonModel?.Male?.File.GivenPath);
+                AddMeshRef(owner, "FirstFemale", addon.FirstPersonModel?.Female?.File.GivenPath);
+                result.MeshOwners.Add(owner);
+            }
+
+            // ARMOR
+            foreach (var armor in mod.Armors.Records)
+            {
+                string key = KeyFactory.BuildMasterKey(armor.FormKey);
+
+                // BodySlotMask (bitmask) — direct typed access, no reflection
+                uint slotMask = (uint)(armor.BodyTemplate?.FirstPersonFlags ?? 0);
+
+                // BOD2 ArmorType - the actual Light/Heavy/Clothing switch. NOT the ArmorLight
+                // keyword, which only drives perks, material and vendors: an item with every armor
+                // keyword stays clothing (no armor rating shown, cannot be tempered) until this is
+                // set. Empty when a record has no BOD2 at all; no vanilla ARMO does, but mods vary.
+                string armorType = armor.BodyTemplate?.ArmorType.ToString() ?? "";
+
+                var kw = (armor.Keywords?
+                    .Select(k =>
+                    {
+                        var fk = k.FormKey;
+                        return $"{fk.ModKey.FileName}|{fk.IDString()}";
+                    })
+                    ?? Enumerable.Empty<string>())
+                    .ToList();
+
+                // Override-order trace, disabled — re-enable (and adjust the keyword suffixes) if a
+                // similar load-order investigation is needed again.
+                //if (kw.Any(k => k.EndsWith("6BBD9", StringComparison.OrdinalIgnoreCase)
+                //              || k.EndsWith("6BBE6", StringComparison.OrdinalIgnoreCase)))
+                //{
+                //    Debug.WriteLine($"[TRACE Armor] plugin={pluginName} key={key} editorID={armor.EditorID} keywords={string.Join(",", kw)}");
+                //}
+
+                result.ArmorRows.Add(new object[]
+                {
+                    key,
+                    armor.EditorID ?? "",
+                    armor.Name?.ToString() ?? "",
+                    (float?)armor.Weight ?? 0f,
+                    (int?)armor.Value ?? 0,
+                    (float?)armor.ArmorRating ?? 0f,
+                    (long)slotMask,
+                    armorType,
+                    string.Join(",", kw),
+                    // Which enchantment the record wears. Empty rather than a null key when it has
+                    // none: "no enchantment" is a value the editor has to be able to show and set.
+                    armor.ObjectEffect.FormKey.IsNull ? "" : KeyFactory.BuildMasterKey(armor.ObjectEffect.FormKey),
+                    // EAMT: the record's own charge pool, needed for a maximum charge alongside the
+                    // enchantment link. Absent on every unenchanted record, which reads as 0.
+                    (int)(armor.EnchantmentAmount ?? 0)
+                });
+
+                // The armature links, in order. Ordinal is the list position and nothing else - it
+                // carries no meaning beyond keeping two links to the same addon apart. Added even
+                // when empty, for the same reason as the mesh owners (see the ARMA block above).
+                var armature = new ParsedArmature { ArmorKey = key };
+                for (int i = 0; i < (armor.Armature?.Count ?? 0); i++)
+                {
+                    var linked = LinkKey(armor.Armature![i].FormKey);
+                    if (linked.Length == 0) continue;
+                    armature.LinkRows.Add(new object[] { key, i, linked });
+                }
+                result.Armatures.Add(armature);
+
+                // ARMO's own MOD2 — the ground model, what the item looks like lying in a chest. Not
+                // the worn mesh and not a substitute for one: 2.612 of 2.762 vanilla armors have it,
+                // and it is the only mesh an armor carries directly.
+                var groundOwner = new ParsedMeshOwner { RecordKey = key };
+                AddMeshRef(groundOwner, "GroundMale", armor.WorldModel?.Male?.Model?.File.GivenPath);
+                AddMeshRef(groundOwner, "GroundFemale", armor.WorldModel?.Female?.Model?.File.GivenPath);
+                result.MeshOwners.Add(groundOwner);
+            }
+
+            // WEAPONS
+            foreach (var weap in mod.Weapons.Records)
+            {
+                string key = KeyFactory.BuildMasterKey(weap.FormKey);
+
+                var kw = weap.Keywords?
+                    .Select(k =>
+                    {
+                        var fk = k.FormKey;
+                        return $"{fk.ModKey.FileName}|{fk.IDString()}";
+                    })
+                    ?? Enumerable.Empty<string>();
+
+                result.WeaponRows.Add(new object[]
+                {
+                    key,
+                    weap.EditorID ?? "",
+                    weap.Name?.ToString() ?? "",
+                    (weap.BasicStats?.Weight) ?? 0f,
+                    (int?)weap.BasicStats?.Value ?? 0,
+                    weap.BasicStats?.Damage ?? 0,
+                    weap.Data?.Speed ?? 0f,
+                    weap.Data?.Reach ?? 0f,
+                    weap.Data?.Stagger ?? 0f,
+                    string.Join(",", kw),
+                    weap.ObjectEffect.FormKey.IsNull ? "" : KeyFactory.BuildMasterKey(weap.ObjectEffect.FormKey),
+                    // See the armor block above.
+                    (int)(weap.EnchantmentAmount ?? 0),
+                    // Checked against Skyrim.esm 2026-10-23: every weapon has CRDT, Iron Sword 3,
+                    // Daedric Sword 7 - Mutagen reads it as the game does.
+                    (int)(weap.Critical?.Damage ?? 0),
+                    weap.Critical?.PercentMult ?? 0f
+                });
+
+                // The easy case: WEAP carries its own MODL, no addon hop. 2.466 of 2.484 vanilla
+                // weapons have one. Scope is the crossbow sight, a second mesh on the same record.
+                var weapOwner = new ParsedMeshOwner { RecordKey = key };
+                AddMeshRef(weapOwner, "Model", weap.Model?.File.GivenPath);
+                AddMeshRef(weapOwner, "Scope", weap.ScopeModel?.File.GivenPath);
+                result.MeshOwners.Add(weapOwner);
+            }
+
+            // PLACEABLE RECORDS: books, scrolls, misc, soul gems, ammo, food, ingredients, keys.
+            //
+            // Key and name only - these carry nothing else the tool understands, and the single
+            // field the user can edit (the placement) is not scanned at all. One loop per Mutagen
+            // collection because that is how Mutagen exposes them; one ROW SHAPE for all of them,
+            // because WorldItem is one table with a Kind column.
+            void AddWorldItems<T>(IEnumerable<T> records, string kind)
+                where T : Mutagen.Bethesda.Skyrim.ISkyrimMajorRecordGetter
+            {
+                foreach (var rec in records)
+                {
+                    result.WorldItemRows.Add(new object[]
+                    {
+                        KeyFactory.BuildMasterKey(rec.FormKey),
+                        rec.EditorID ?? "",
+                        (rec as Mutagen.Bethesda.Plugins.Aspects.ITranslatedNamedGetter)?.Name?.ToString() ?? "",
+                        kind,
+                    });
+                }
+            }
+
+            AddWorldItems(mod.Books.Records, "Book");
+            AddWorldItems(mod.Scrolls.Records, "Scroll");
+            AddWorldItems(mod.MiscItems.Records, "Misc");
+            AddWorldItems(mod.SoulGems.Records, "SoulGem");
+            AddWorldItems(mod.Ammunitions.Records, "Ammo");
+            AddWorldItems(mod.Ingestibles.Records, "Food");
+            AddWorldItems(mod.Ingredients.Records, "Ingredient");
+            AddWorldItems(mod.Keys.Records, "Key");
+
+            // COBJ
+            foreach (var cobj in mod.ConstructibleObjects.Records)
+            {
+                string key = KeyFactory.BuildMasterKey(cobj.FormKey);
+                string createdKey = KeyFactory.BuildMasterKey(cobj.CreatedObject.FormKey);
+
+                string workbench = "";
+                if (cobj.WorkbenchKeyword != null)
+                {
+                    var fk = cobj.WorkbenchKeyword.FormKey;
+                    workbench = $"{fk.ModKey.FileName}|{fk.IDString()}";
+                }
+
+                var ingredients = cobj.Items?
+                    .Select(e =>
+                    {
+                        var fk = e.Item.Item.FormKey;
+                        return $"{fk.ModKey.FileName}|{fk.IDString()}*{e.Item.Count}";
+                    })
+                    ?? Enumerable.Empty<string>();
+
+                var parsedCobj = new ParsedCobj
+                {
+                    Values = new object[] { key, cobj.EditorID ?? "", createdKey, (int)(cobj.CreatedObjectCount ?? 1), workbench, string.Join(",", ingredients) }
+                };
+
+                // --------------------------------
+                // Conditions → COBJ_Conditions
+                // --------------------------------
+                foreach (var cond in cobj.Conditions)
+                {
+                    // ConditionFloat compares against a fixed float value, ConditionGlobal compares
+                    // against a Global. Both get produced by ESP/ESL/ESM files, so we need to read
+                    // both. When reading from plugin files, Mutagen returns overlay types (e.g.
+                    // ConditionFloatBinaryOverlay) that only implement the getter interfaces, not the
+                    // concrete classes. So match against the interfaces instead of against
+                    // ConditionFloat/ConditionGlobal.
+                    IConditionDataGetter data;
+                    string comparisonValue;
+
+                    if (cond is IConditionFloatGetter cf)
+                    {
+                        data = cf.Data;
+                        comparisonValue = cf.ComparisonValue.ToString(CultureInfo.InvariantCulture);
+                    }
+                    else if (cond is IConditionGlobalGetter cg)
+                    {
+                        data = cg.Data;
+                        var globalFk = cg.ComparisonValue.FormKey;
+                        comparisonValue = !globalFk.IsNull
+                            ? $"{globalFk.ModKey.FileName}|{globalFk.IDString()}"
+                            : "";
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"Unknown condition wrapper: {cond.GetType().Name}");
+                        continue;
+                    }
+
+                    // The comparison operator and the flags used to be guessed at ESP build time.
+                    // The OR flag has no safe default: rebuilding an OR-chained pair as AND turns
+                    // "either perk" into "both perks" and the recipe vanishes from the crafting menu.
+                    string op = cond.CompareOperator.ToString();
+                    string flags = cond.Flags == 0 ? "" : cond.Flags.ToString().Replace(" ", "");
+                    string runOn = data.RunOnType.ToString();
+                    string extra = "";
+
+                    // Single-FormLink parameter, shared by most of the types below.
+                    static string LinkKey<T>(IFormLinkOrIndexGetter<T> link)
+                        where T : class, Mutagen.Bethesda.Plugins.Records.IMajorRecordGetter
+                    {
+                        if (!link.UsesLink()) return "";
+                        var fk = link.Link.FormKey;
+                        return fk.IsNull ? "" : $"{fk.ModKey.FileName}|{fk.IDString()}";
+                    }
+
+                    void Add(string type, string target, string value) =>
+                        parsedCobj.ConditionRows.Add(new object[]
+                            { key, extra, runOn, type, target, value, op, flags });
+
+                    // ---- editable types (each has a ViewModel + XAML template) ----
+
+                    if (data is IHasPerkConditionDataGetter perkData)
+                    {
+                        Add("HasPerk", LinkKey(perkData.Perk), comparisonValue);
+                        continue;
+                    }
+
+                    if (data is IGetIsSexConditionDataGetter sexData)
+                    {
+                        Add("GetIsSex", sexData.MaleFemaleGender.ToString(), comparisonValue);
+                        continue;
+                    }
+
+                    if (data is IGetActorValueConditionDataGetter avData)
+                    {
+                        Add("GetActorValue", avData.ActorValue.ToString(), comparisonValue);
+                        continue;
+                    }
+
+                    if (data is IGetLevelConditionDataGetter)
+                    {
+                        Add("GetLevel", "", comparisonValue); // no Target
+                        continue;
+                    }
+
+                    if (data is IGetStageDoneConditionDataGetter stageData)
+                    {
+                        Add("GetStageDone", LinkKey(stageData.Quest), stageData.Stage.ToString());
+                        continue;
+                    }
+
+                    // ---- read-only types: stored and rebuilt verbatim, not editable ----
+                    //
+                    // These used to be dropped on the floor. Measured against the vanilla masters
+                    // that discarded 69% of all COBJ conditions, and left 556 recipes with none at
+                    // all - an override of one of those became craftable unconditionally.
+                    // EPTemperingItemIsEnchanted is the Arcane Blacksmith gate for tempering
+                    // enchanted gear and occurs 523 times on its own.
+
+                    if (data is IGetItemCountConditionDataGetter itemCount)
+                    {
+                        Add("GetItemCount", LinkKey(itemCount.ItemOrList), comparisonValue);
+                        continue;
+                    }
+
+                    if (data is IEPTemperingItemIsEnchantedConditionDataGetter)
+                    {
+                        Add("EPTemperingItemIsEnchanted", "", comparisonValue); // no parameter
+                        continue;
+                    }
+
+                    if (data is IGetGlobalValueConditionDataGetter globalValue)
+                    {
+                        Add("GetGlobalValue", LinkKey(globalValue.Global), comparisonValue);
+                        continue;
+                    }
+
+                    if (data is IHasSpellConditionDataGetter hasSpell)
+                    {
+                        Add("HasSpell", LinkKey(hasSpell.Spell), comparisonValue);
+                        continue;
+                    }
+
+                    if (data is IHasKeywordConditionDataGetter hasKeyword)
+                    {
+                        Add("HasKeyword", LinkKey(hasKeyword.Keyword), comparisonValue);
+                        continue;
+                    }
+
+                    if (data is IGetQuestCompletedConditionDataGetter questDone)
+                    {
+                        Add("GetQuestCompleted", LinkKey(questDone.Quest), comparisonValue);
+                        continue;
+                    }
+
+                    if (data is IGetInCurrentLocConditionDataGetter inLoc)
+                    {
+                        Add("GetInCurrentLoc", LinkKey(inLoc.Location), comparisonValue);
+                        continue;
+                    }
+
+                    if (data is IGetVMQuestVariableConditionDataGetter vmVar)
+                    {
+                        extra = vmVar.VariableName ?? "";
+                        Add("GetVMQuestVariable", LinkKey(vmVar.Quest), comparisonValue);
+                        continue;
+                    }
+
+                    // ---- anything else ----
+                    //
+                    // Recorded rather than silently discarded, so the UI can show that the recipe
+                    // has conditions the tool doesn't understand and CobjEspBuilder knows never to
+                    // rewrite this recipe's condition list. Only the function name survives.
+                    var fn = data.GetType().Name
+                        .Replace("ConditionDataBinaryOverlay", "")
+                        .Replace("ConditionData", "");
+                    Add(ConditionCatalog.UnsupportedPrefix + fn, "", comparisonValue);
+                }
+
+                result.Cobjs.Add(parsedCobj);
+            }
+
+            // ENCHANTMENTS
+            foreach (var ench in mod.ObjectEffects.Records)
+            {
+                // Master-correct, like every other record key in this scan (see the FLST block
+                // below for the same rule spelled out). It used to be the name of the plugin
+                // being READ, and an override therefore produced a SECOND row instead of
+                // replacing the record: measured against the real load order, 117 enchantments
+                // and 542 magic effects existed two or three times over, and the copies
+                // disagreed - USSEP adds the BaseEnchantment link that Bethesda left off the
+                // Articulation tiers, so the same enchantment showed a base on one row and none
+                // on the other. Reported by the user as "die Kinder werden nicht als Kinder
+                // erkannt". Every LINK into this table was master-keyed all along
+                // (Armor.ObjectEffectKey, BaseEnchantmentKey, EnchantmentEffects.MagicEffectKey),
+                // so only the row keys were out of step.
+                string enchKey = KeyFactory.BuildMasterKey(ench.FormKey);
+                var parsedEnch = new ParsedEnchantment();
+
+                // WornRestrictions (FLST). The FormLink is non-null even when it points at nothing —
+                // guard on FormKey.IsNull or every FLST-less enchantment gets listKey "Null|000000"
+                // (a value ~1100 of them then share, so one keyword edit mass-marks them all).
+                // E3: only the *pointer* is recorded here; the list's member rows come from the
+                // dedicated FLST loop below (all FLSTs, not just enchant-referenced ones).
+                string listKey = "";
+                if (ench.WornRestrictions != null && !ench.WornRestrictions.FormKey.IsNull)
+                {
+                    var fk = ench.WornRestrictions.FormKey;
+                    listKey = $"{fk.ModKey.FileName}|{fk.IDString()}";
+                }
+
+                // BaseEnchantment (ENCH the ObjectEffect inherits from — set on magnitude/duration
+                // tier variants). Same non-null-FormLink caveat as WornRestrictions: guard on
+                // FormKey.IsNull. Read-only — a tag only, never a shadow column.
+                string baseEnchKey = "";
+                if (ench.BaseEnchantment != null && !ench.BaseEnchantment.FormKey.IsNull)
+                {
+                    var bfk = ench.BaseEnchantment.FormKey;
+                    baseEnchKey = $"{bfk.ModKey.FileName}|{bfk.IDString()}";
+                }
+
+                parsedEnch.Values = new object[]
+                {
+                    enchKey,
+                    ench.EditorID ?? "",
+                    ench.Name?.ToString() ?? "",
+                    ench.CastType.ToString(),
+                    ench.TargetType.ToString(),
+                    (float)ench.EnchantmentCost,
+                    listKey,
+                    baseEnchKey,
+                    ench.EnchantType.ToString(),
+                    // The raw dword, not the enum's ToString - see the Enchantments schema comment.
+                    (int)ench.Flags,
+                    ench.ChargeTime,
+                    ench.EnchantmentAmount
+                };
+
+                // Effects
+                foreach (var eff in ench.Effects)
+                {
+                    var fk = eff.BaseEffect.FormKey;
+                    string mgefKey = $"{fk.ModKey.FileName}|{fk.IDString()}";
+
+                    string editorid = "";
+                    string name = "";
+
+                    // MagicEffect
+                    if (mod.MagicEffects.TryGetValue(fk, out var magicEffect))
+                    {
+                        editorid = magicEffect.EditorID ?? "";
+                        name = magicEffect.Name?.ToString() ?? "";
+                    }
+
+                    parsedEnch.EffectRows.Add(new object[]
+                    {
+                        enchKey, mgefKey, editorid, name,
+                        eff.Data?.Magnitude ?? 0,
+                        eff.Data?.Duration ?? 0,
+                        eff.Data?.Area ?? 0
+                    });
+                }
+
+                result.Enchantments.Add(parsedEnch);
+            }
+
+            // FORMLISTS — every FLST defined or overridden in this plugin, with its members. The
+            // key is master-correct (fl.FormKey.ModKey), so a Skyrim.esm FLST overridden in a patch
+            // produces rows under the Skyrim.esm key from whichever plugin last defines it; the
+            // write phase keeps the last (winning) plugin's member set per list key.
+            foreach (var fl in mod.FormLists.Records)
+            {
+                string flKey = $"{fl.FormKey.ModKey.FileName}|{fl.FormKey.IDString()}";
+                var pf = new ParsedFormList { ListKey = flKey };
+                foreach (var entry in fl.Items)
+                {
+                    var mfk = entry.FormKey;
+                    pf.MemberRows.Add(new object[] { flKey, $"{mfk.ModKey.FileName}|{mfk.IDString()}" });
+                }
+                result.FormLists.Add(pf);
+            }
+
+            // CONTAINER + LVLI
+            foreach (var container in mod.Containers.Records)
+            {
+                string containerKey = KeyFactory.BuildMasterKey(container.FormKey);
+                var parsedContainer = new ParsedContainer
+                {
+                    Values = new object[] { containerKey, container.EditorID ?? "" }
+                };
+
+                // LVLI inside Container
+                if (container.Items != null)
+                {
+                    int ordinal = 0;
+                    foreach (var entry in container.Items)
+                    {
+                        var fk = entry.Item.Item.FormKey;
+                        string refKey = KeyFactory.BuildMasterKey(fk);
+
+                        // Every entry, whatever it points at. Only about a quarter of a container's
+                        // entries are leveled lists; the rest are items, and those are exactly what
+                        // "where does this item already appear" has to be able to find.
+                        parsedContainer.EntryRows.Add(new object[]
+                        {
+                            containerKey, ordinal++, refKey, entry.Item.Count,
+                        });
+
+                        // Check whether the LVLI exists
+                        var lvliRecord = _formIDDB.GetByKey(refKey);
+                        if (lvliRecord != null && lvliRecord.Type == "LVLi")
+                        {
+                            parsedContainer.LvliRows.Add(new object[] { containerKey, refKey, lvliRecord.Name });
+                        }
+                    }
+                }
+
+                result.Containers.Add(parsedContainer);
+            }
+
+            // LEVELED LISTS (the lists themselves, with their contents)
+            //
+            // The Container block above only records WHICH leveled lists hang in a container. This
+            // records what is IN those lists - which is what answers "where does this item already
+            // appear" and "what is in this list" without opening xEdit.
+            //
+            // Entries are stored positionally: an entry has no identity of its own, and in the real
+            // load order 3,982 of them share (list, reference, level) with a sibling. Keying on the
+            // reference would merge those and silently change the odds the list rolls.
+            foreach (var list in mod.LeveledItems.Records)
+            {
+                string listKey = KeyFactory.BuildMasterKey(list.FormKey);
+
+                var parsedList = new ParsedLeveledList
+                {
+                    Values = new object[]
+                    {
+                        listKey,
+                        list.EditorID ?? "",
+                        // Stored as 0-100, which is what SkyPatcher's chanceNone= expects and what
+                        // xEdit shows. Mutagen's Noggog.Percent holds a 0-1 double, so a plain (int)
+                        // cast silently floors every list below 100% to zero - 512 lists in
+                        // Skyrim.esm have a chance-none, and only 61 survived that cast.
+                        (int)Math.Round(list.ChanceNone.Value * 100),
+                        // Flags as their names rather than a bit value: the patcher addresses them by
+                        // name too (calcForLevel, calcEachItem, ...), and a stored number would have
+                        // to be translated on both sides.
+                        list.Flags == 0 ? "" : list.Flags.ToString(),
+                        list.Global.FormKey.IsNull ? "" : KeyFactory.BuildMasterKey(list.Global.FormKey),
+                    },
+                };
+
+                if (list.Entries != null)
+                {
+                    int ordinal = 0;
+                    foreach (var entry in list.Entries)
+                    {
+                        var data = entry.Data;
+                        if (data == null) continue;   // an entry with no payload carries nothing to show
+
+                        parsedList.EntryRows.Add(new object[]
+                        {
+                            listKey,
+                            ordinal++,
+                            KeyFactory.BuildMasterKey(data.Reference.FormKey),
+                            (int)data.Level,
+                            (int)data.Count,
+                        });
+                    }
+                }
+
+                result.LeveledLists.Add(parsedList);
+            }
+
+            // LEVELLED CHARACTER LISTS (LVLN)
+            //
+            // Read for one reason: 1.650 NPCs take their stats from one of these rather than from a
+            // record, and until this was scanned the tool could only say "no single value" where it can
+            // now say "35 - 497, 12 candidates" (NPC-Gruppen-Plan.md section 2, case D).
+            //
+            // Only the key, the name and the entries. The LVLI block above carries chance-none, flags
+            // and a global because the container tab edits those; nothing edits an LVLN, so a column
+            // here would go stale unread.
+            foreach (var list in mod.LeveledNpcs.Records)
+            {
+                string listKey = KeyFactory.BuildMasterKey(list.FormKey);
+
+                var parsedList = new ParsedLeveledList
+                {
+                    Values = new object[] { listKey, list.EditorID ?? "" },
+                };
+
+                if (list.Entries != null)
+                {
+                    int ordinal = 0;
+                    foreach (var entry in list.Entries)
+                    {
+                        var data = entry.Data;
+                        if (data == null) continue;
+
+                        // The reference may be another LVLN rather than an NPC - these nest the same
+                        // way the item lists do. Stored as it stands; the reader follows it.
+                        parsedList.EntryRows.Add(new object[]
+                        {
+                            listKey,
+                            ordinal++,
+                            KeyFactory.BuildMasterKey(data.Reference.FormKey),
+                            (int)data.Level,
+                            (int)data.Count,
+                        });
+                    }
+                }
+
+                result.LeveledNpcs.Add(parsedList);
+            }
+
+            // GLOBALS
+            //
+            // Only interesting because a leveled list can take its chance-none from one instead of
+            // from a fixed number: 223 lists in the real load order do, across 125 different globals,
+            // and without a name they are unpickable and unreadable ("Skyrim.esm|0F258D" tells the
+            // user nothing).
+            //
+            // The VALUE is scanned too, and that matters for the calculator: a list with a global has
+            // no fixed chance at all, so the only honest number to compute with is what the global
+            // holds right now in the load order. It is a starting value - quests and scripts change
+            // it while playing - which is why the window says where the number came from.
+            //
+            // GLOB is one record with three payload shapes (float, int, short). Mutagen models them
+            // as separate types, so the value is read through the getter interfaces rather than a
+            // common property - there is none.
+            foreach (var glob in mod.Globals.Records)
+            {
+                float? value = glob switch
+                {
+                    IGlobalFloatGetter f => f.Data,
+                    IGlobalIntGetter i => i.Data,
+                    IGlobalShortGetter s => s.Data,
+                    _ => null,
+                };
+
+                result.GlobalRows.Add(new object[]
+                {
+                    KeyFactory.BuildMasterKey(glob.FormKey),
+                    glob.EditorID ?? "",
+                    // NULL rather than 0 for a shape this scan does not know: 0 is a legitimate
+                    // chance ("always rolls something") and must not be invented.
+                    value.HasValue ? (object)(double)value.Value : DBNull.Value,
+                });
+            }
+
+            // MAGIC EFFECTS
+            foreach (var mgef in mod.MagicEffects.Records)
+            {
+                // Master-correct — same fix and the same reason as the enchantment key above.
+                string mgefKey = KeyFactory.BuildMasterKey(mgef.FormKey);
+
+                bool hasMagnitude = !mgef.Flags.HasFlag(MagicEffect.Flag.NoMagnitude);
+                bool hasDuration = !mgef.Flags.HasFlag(MagicEffect.Flag.NoDuration);
+                int hasArea = (mgef.TargetType == TargetType.Aimed || mgef.TargetType == TargetType.TargetLocation) ? 1 : 0;
+
+                result.MagicEffectRows.Add(new object[]
+                {
+                    mgefKey,
+                    mgef.EditorID ?? "",
+                    mgef.Name?.ToString() ?? "",
+                    hasMagnitude ? 1 : 0,
+                    hasDuration ? 1 : 0,
+                    hasArea,
+                    mgef.CastType.ToString(),
+                    mgef.TargetType.ToString(),
+
+                    // The magic SCHOOL, and the skill tier that goes with it. A SPELL HAS NEITHER -
+                    // Spell carries no school property at all; the game files a spell under the
+                    // school of its costliest effect. "None" is a real answer (script effects,
+                    // abilities, diseases), not missing data.
+                    mgef.MagicSkill.ToString(),
+
+                    // 0 / 25 / 50 / 75 / 100 - Novice .. Master. The number the record holds.
+                    (int)mgef.MinimumSkillLevel,
+
+                    // What makes one effect of a spell "costlier" than another, and so decides the
+                    // spell's school. See SpellCategory.
+                    (double)mgef.BaseCost
+                });
+            }
+
+            // NPCs (Prio 8 / N-P1, docs/NPC-Plan.md)
+            //
+            // Read, not edited: this fills the base columns only, the shadow columns are the user's.
+            // Everything with a SkyPatcher operation is stored the way the patch string wants it -
+            // the AI values as their tokens, the skills under their token names - so nothing further
+            // down the chain has to translate.
+            foreach (var npc in mod.Npcs.Records)
+            {
+                string npcKey = KeyFactory.BuildMasterKey(npc.FormKey);
+                var cfg = npc.Configuration;
+
+                // The record stores EITHER a fixed level OR a multiplier of the player's, as two
+                // different types. Which one it is matters more than the number: a "level 1" NPC
+                // that is really a multiplier reads as harmless and is not.
+                bool usesMult = cfg.Level is IPcLevelMultGetter;
+                int level = cfg.Level is INpcLevelGetter fixedLevel ? fixedLevel.Level : 0;
+                float levelMult = cfg.Level is IPcLevelMultGetter mult ? mult.LevelMult : 0f;
+
+                var skills = npc.PlayerSkills;
+                var ai = npc.AIData;
+
+                result.Npcs.Add(new ParsedNpc
+                {
+                    Values = new object[]
+                    {
+                        npcKey,
+                        npc.EditorID ?? "",
+                        npc.Name?.ToString() ?? "",
+                        npc.ShortName?.ToString() ?? "",
+                        LinkKey(npc.Class.FormKey),
+                        LinkKey(npc.Race.FormKey),
+
+                        usesMult ? 1 : 0,
+                        level,
+                        (double)levelMult,
+                        (int)cfg.CalcMinLevel,
+                        (int)cfg.CalcMaxLevel,
+
+                        (int)(skills?.Health ?? 0),
+                        (int)(skills?.Magicka ?? 0),
+                        (int)(skills?.Stamina ?? 0),
+                        (int)cfg.HealthOffset,
+                        (int)cfg.MagickaOffset,
+                        (int)cfg.StaminaOffset,
+
+                        (long)(uint)cfg.Flags,
+                        (long)(uint)cfg.TemplateFlags,
+                        LinkKey(npc.Template.FormKey),
+
+                        LinkKey(npc.Voice.FormKey),
+                        LinkKey(npc.DefaultOutfit.FormKey),
+                        LinkKey(npc.SleepingOutfit.FormKey),
+                        LinkKey(npc.DeathItem.FormKey),
+                        LinkKey(npc.WornArmor.FormKey),
+                        LinkKey(npc.CombatStyle.FormKey),
+                        LinkKey(npc.CrimeFaction.FormKey),
+
+                        (double)npc.Weight,
+                        (double)npc.Height,
+
+                        // The record field the layout calls Responsibility IS the morality setting -
+                        // its values are AnyCrime/ViolenceAgainstEnemies/PropertyCrimeOnly/NoCrime,
+                        // which is exactly what setMorality takes. There is no second, numeric one.
+                        ai == null ? "" : NpcAiTokens.Token(ai.Aggression),
+                        ai == null ? "" : NpcAiTokens.Token(ai.Confidence),
+                        ai == null ? "" : NpcAiTokens.Token(ai.Assistance),
+                        ai == null ? "" : NpcAiTokens.Token(ai.Responsibility),
+                        ai == null ? "" : NpcAiTokens.Token(ai.Mood),
+                        (int)(ai?.EnergyLevel ?? 0),
+
+                        string.Join(",", (npc.Keywords ?? Array.Empty<IFormLinkGetter<IKeywordGetter>>())
+                            .Select(k => KeyFactory.BuildMasterKey(k.FormKey))),
+                    },
+                });
+
+                var parsedNpc = result.Npcs[^1];
+
+                // A membership is faction plus rank. Deduplicated on the key, because the table has
+                // PRIMARY KEY(NpcKey, FactionKey) and a record that listed one twice would collide -
+                // measured, none does, but a plain INSERT would crash rather than shrug.
+                var seenFactions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var rank in npc.Factions)
+                {
+                    string factionKey = LinkKey(rank.Faction.FormKey);
+                    if (string.IsNullOrEmpty(factionKey) || !seenFactions.Add(factionKey)) continue;
+
+                    parsedNpc.FactionRows.Add(new object[] { npcKey, factionKey, (int)rank.Rank });
+                }
+
+                // Only the skills the record actually carries. The editor fills in the missing ones
+                // itself so the 18 rows always read in the same order - that belongs on the screen,
+                // not in the database, where it would be 118.000 rows of mostly zero.
+                if (skills != null)
+                {
+                    foreach (var pair in skills.SkillValues)
+                    {
+                        string token = NpcSkillNames.Token(pair.Key);
+                        if (string.IsNullOrEmpty(token)) continue;
+
+                        skills.SkillOffsets.TryGetValue(pair.Key, out byte offset);
+                        parsedNpc.SkillRows.Add(new object[] { npcKey, token, (int)pair.Value, (int)offset });
+                    }
+                }
+                // Spells, shouts and leveled spells all live in ActorEffect. Which of the three a
+                // given entry is cannot be told from the link - it carries a FormKey and nothing
+                // else - so the kind is left blank here and filled in during the write phase, once
+                // every plugin's SPEL/SHOU/LVSP records have been collected.
+                //
+                // Deduped like the factions above: an ActorEffect list may name the same spell twice
+                // (a patch merging two lists is the usual way it happens), and PRIMARY KEY(NpcKey,
+                // SpellKey) cannot hold that twice. Without this the whole scan died on
+                // "UNIQUE constraint failed: NpcSpells.NpcKey, NpcSpells.SpellKey".
+                var seenSpells = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var spell in npc.ActorEffect ?? Array.Empty<IFormLinkGetter<ISpellRecordGetter>>())
+                {
+                    string spellKey = LinkKey(spell.FormKey);
+                    if (spellKey.Length == 0 || !seenSpells.Add(spellKey)) continue;
+
+                    parsedNpc.SpellRows.Add(new object[] { npcKey, spellKey, "" });
+                }
+
+                // The record carries a rank per perk; perksToAdd takes only the perk, so the rank is
+                // scanned for the screen and never patched. Same first-occurrence-wins dedupe as the
+                // spells above, for the same reason: PRIMARY KEY(NpcKey, PerkKey) allows one row.
+                var seenPerks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var perk in npc.Perks ?? Array.Empty<IPerkPlacementGetter>())
+                {
+                    string perkKey = LinkKey(perk.Perk.FormKey);
+                    if (perkKey.Length == 0 || !seenPerks.Add(perkKey)) continue;
+
+                    parsedNpc.PerkRows.Add(new object[] { npcKey, perkKey, (int)perk.Rank });
+                }
+
+                // Inventory. Counts are summed per item rather than kept as separate rows: the two
+                // operations address an item by its key, so two rows for one key could not be
+                // patched apart, and the sum is what the NPC actually ends up carrying.
+                //
+                // A negative count is real data (it means a leveled-item multiplier in some
+                // records), so it is summed rather than clamped.
+                var itemCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                foreach (var entry in npc.Items ?? Array.Empty<IContainerEntryGetter>())
+                {
+                    string itemKey = LinkKey(entry.Item?.Item.FormKey ?? default);
+                    if (itemKey.Length == 0) continue;
+
+                    itemCounts[itemKey] = itemCounts.GetValueOrDefault(itemKey) + (entry.Item?.Count ?? 0);
+                }
+
+                foreach (var pair in itemCounts)
+                    parsedNpc.ItemRows.Add(new object[] { npcKey, pair.Key, pair.Value });
+
+            }
+
+            // The reference catalogues. Cheap to read (1.458 factions, 180 classes, 335 races, 687
+            // outfits, 186 voice types, 270 combat styles in the real load order) and the editor
+            // cannot name anything an NPC points at without them.
+            foreach (var faction in mod.Factions.Records)
+                result.FactionRows.Add(new object[]
+                { KeyFactory.BuildMasterKey(faction.FormKey), faction.EditorID ?? "", faction.Name?.ToString() ?? "" });
+
+            // Classes and races are read for their NUMBERS, not just their names.
+            //
+            // They are the two inputs of the engine's own stat calculation, which 67,5 % of NPCs
+            // are subject to (AutoCalcStats). For those the stored Health/Magicka/Stamina is dead
+            // data - measured in game, a record saying 35 Health showed 300 - so anything that
+            // wants to state a true value has to be able to redo that calculation.
+            foreach (var cls in mod.Classes.Records)
+            {
+                string classKey = KeyFactory.BuildMasterKey(cls.FormKey);
+
+                result.ClassRows.Add(new object[]
+                {
+                    classKey,
+                    cls.EditorID ?? "",
+                    cls.Name?.ToString() ?? "",
+                    StatWeight(cls.StatWeights, BasicStat.Health),
+                    StatWeight(cls.StatWeights, BasicStat.Magicka),
+                    StatWeight(cls.StatWeights, BasicStat.Stamina),
+                });
+
+                if (cls.SkillWeights != null)
+                    foreach (var pair in cls.SkillWeights)
+                        result.ClassSkillWeightRows.Add(new object[] { classKey, pair.Key.ToString(), (int)pair.Value });
+            }
+
+            foreach (var race in mod.Races.Records)
+            {
+                string raceKey = KeyFactory.BuildMasterKey(race.FormKey);
+
+                result.RaceRows.Add(new object[]
+                {
+                    raceKey,
+                    race.EditorID ?? "",
+                    race.Name?.ToString() ?? "",
+                    Starting(race, BasicStat.Health),
+                    Starting(race, BasicStat.Magicka),
+                    Starting(race, BasicStat.Stamina),
+                });
+
+                // Seven fixed slots in the record rather than a list, most of them empty. A boost of
+                // 0 carries no information and is skipped, so a race with two bonuses stores two
+                // rows instead of seven. Nothing stops a record from naming the same skill in two
+                // slots, and PRIMARY KEY(RaceKey, Skill) holds one - first slot wins.
+                var seenBoosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var boost in new[]
+                         {
+                             race.SkillBoost0, race.SkillBoost1, race.SkillBoost2, race.SkillBoost3,
+                             race.SkillBoost4, race.SkillBoost5, race.SkillBoost6,
+                         })
+                {
+                    if (boost == null || boost.Boost == 0) continue;
+                    string skill = boost.Skill.ToString();
+                    if (!seenBoosts.Add(skill)) continue;
+                    result.RaceSkillBoostRows.Add(new object[] { raceKey, skill, (int)boost.Boost });
+                }
+            }
+
+            foreach (var outfit in mod.Outfits.Records)
+                result.OutfitRows.Add(new object[]
+                { KeyFactory.BuildMasterKey(outfit.FormKey), outfit.EditorID ?? "" });
+
+            foreach (var voice in mod.VoiceTypes.Records)
+                result.VoiceTypeRows.Add(new object[]
+                { KeyFactory.BuildMasterKey(voice.FormKey), voice.EditorID ?? "" });
+
+            foreach (var style in mod.CombatStyles.Records)
+                result.CombatStyleRows.Add(new object[]
+                { KeyFactory.BuildMasterKey(style.FormKey), style.EditorID ?? "" });
+
+            // SPELLS - the NPC spell lists' name catalogue AND the Spells tab's record, one row each
+            // (docs/Spells-Plan.md). Master-keyed like every other record key: an override has to
+            // REPLACE the record, not sit beside it.
+            foreach (var spell in mod.Spells.Records)
+            {
+                string spellKey = KeyFactory.BuildMasterKey(spell.FormKey);
+
+                // The FormLink is non-null even when it points at nothing, so the guard is on
+                // FormKey.IsNull - without it every spell without a perk shares "Null|000000".
+                string halfCostPerk = spell.HalfCostPerk != null && !spell.HalfCostPerk.FormKey.IsNull
+                    ? KeyFactory.BuildMasterKey(spell.HalfCostPerk.FormKey)
+                    : "";
+
+                string equipType = spell.EquipmentType != null && !spell.EquipmentType.FormKey.IsNull
+                    ? KeyFactory.BuildMasterKey(spell.EquipmentType.FormKey)
+                    : "";
+
+                var keywords = new List<string>();
+                foreach (var kw in spell.Keywords ?? Enumerable.Empty<IFormLinkGetter<IKeywordGetter>>())
+                    if (!kw.FormKey.IsNull)
+                        keywords.Add(KeyFactory.BuildMasterKey(kw.FormKey));
+
+                // How many effect entries SpellEffects will not be able to hold. Counted HERE,
+                // because the duplicates are gone by the time anything reads the table.
+                int droppedEffectRows = spell.Effects.Count
+                    - spell.Effects.Select(e => e.BaseEffect.FormKey).Distinct().Count();
+
+                result.SpellCatalogueRows.Add(new object[]
+                {
+                    spellKey,
+                    spell.EditorID ?? "",
+                    spell.Name?.ToString() ?? "",
+                    spell.Type.ToString(),
+                    spell.CastType.ToString(),
+                    spell.TargetType.ToString(),
+                    equipType,
+                    (int)spell.BaseCost,
+                    spell.ChargeTime,
+                    spell.CastDuration,
+                    spell.Range,
+                    spell.Description?.ToString() ?? "",
+                    halfCostPerk,
+
+                    // The raw dword - see Services/SpellFlags.cs on why the names are no good.
+                    (int)spell.Flags,
+                    string.Join(",", keywords),
+                    droppedEffectRows,
+                });
+
+                foreach (var eff in spell.Effects)
+                {
+                    var fk = eff.BaseEffect.FormKey;
+                    string mgefKey = KeyFactory.BuildMasterKey(fk);
+
+                    string editorId = "";
+                    string name = "";
+                    if (mod.MagicEffects.TryGetValue(fk, out var magicEffect))
+                    {
+                        editorId = magicEffect.EditorID ?? "";
+                        name = magicEffect.Name?.ToString() ?? "";
+                    }
+
+                    result.SpellEffectRows.Add(new object[]
+                    {
+                        spellKey, mgefKey, editorId, name,
+                        eff.Data?.Magnitude ?? 0,
+                        eff.Data?.Duration ?? 0,
+                        eff.Data?.Area ?? 0,
+                    });
+                }
+            }
+
+            foreach (var shout in mod.Shouts.Records)
+            {
+                string shoutKey = KeyFactory.BuildMasterKey(shout.FormKey);
+
+                result.ShoutCatalogueRows.Add(new object[]
+                { shoutKey, shout.EditorID ?? "", shout.Name?.ToString() ?? "" });
+
+                // Word 1..3 in the order the shout lists them, which is the order the game unlocks.
+                int ordinal = 1;
+                foreach (var word in shout.WordsOfPower ?? Enumerable.Empty<IShoutWordGetter>())
+                {
+                    if (word.Spell != null && !word.Spell.FormKey.IsNull)
+                        result.ShoutWordRows.Add(new object[]
+                        { shoutKey, ordinal, KeyFactory.BuildMasterKey(word.Spell.FormKey) });
+                    ordinal++;
+                }
+            }
+
+            foreach (var lvsp in mod.LeveledSpells.Records)
+                result.LeveledSpellCatalogueRows.Add(new object[]
+                { KeyFactory.BuildMasterKey(lvsp.FormKey), lvsp.EditorID ?? "" });
+
+            foreach (var perk in mod.Perks.Records)
+                result.PerkCatalogueRows.Add(new object[]
+                { KeyFactory.BuildMasterKey(perk.FormKey), perk.EditorID ?? "", perk.Name?.ToString() ?? "" });
+
+
+            return result;
+        }
+        public struct ParsedIngredient
+        {
+            public string Plugin;
+            public string FormID;
+            public int Count;
+        }
+        public static ParsedIngredient ParseIngredient(string raw)
+        {
+            // raw = "Skyrim.esm|05ACE5*2"
+
+            var parts = raw.Split('*');
+            string key = parts[0];          // "Skyrim.esm|05ACE5"
+            int count = parts.Length > 1 ? int.Parse(parts[1]) : 1;
+
+            var keyParts = key.Split('|');
+            string plugin = keyParts[0];
+            string formID = keyParts[1];
+
+            return new ParsedIngredient
+            {
+                Plugin = plugin,
+                FormID = formID,
+                Count = count
+            };
+        }
+    }
+}

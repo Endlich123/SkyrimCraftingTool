@@ -1,0 +1,111 @@
+using System.Collections.Generic;
+
+namespace SkyrimCraftingTool.Model
+{
+    // One Preset, persisted as a single JSON file (Output/Presets/<SanitizedPresetName>.json).
+    // Holds every Armor-Slot- and Weapon-Type-specific config that makes up the preset.
+    public class PresetFile
+    {
+        // Bumped whenever the on-disk shape changes in a way a different build must notice.
+        // A file written before versioning has no field -> deserializes to 0 -> PresetFileStore
+        // normalizes that to 1. No migration logic exists yet; this is groundwork.
+        public const int CurrentSchemaVersion = 1;
+
+        public int SchemaVersion { get; set; } = CurrentSchemaVersion;
+
+        public string PresetName { get; set; } = "";
+
+        // NodeKey = ArmorSlotMask bit index as string ("0".."31"), matches SlotVM.Bit.
+        public List<PresetSlotConfig> ArmorSlots { get; set; } = new();
+
+        // NodeKey = the WeapType keyword's own key ("Plugin|FormID").
+        public List<PresetSlotConfig> WeaponTypes { get; set; } = new();
+
+        // WPF's ComboBoxItem (like TreeViewItem) falls back to ToString() for its UI-Automation Name
+        // when no other name source is available (e.g. the ConfigPresets picker in the item detail
+        // view uses DisplayMemberPath for the visual text, which doesn't feed the automation name).
+        public override string ToString() => PresetName;
+    }
+
+    // One Armor-Slot- or Weapon-Type-node's configuration within a Preset. ArmorRating is only
+    // meaningful for ArmorSlots entries; Damage/Speed/Reach/Stagger only for WeaponTypes entries.
+    public class PresetSlotConfig
+    {
+        public string NodeKey { get; set; } = "";
+
+        public FieldValue<double> Weight { get; set; } = new();
+        public FieldValue<int> Value { get; set; } = new();
+        public FieldValue<double> ArmorRating { get; set; } = new();
+        public FieldValue<int> Damage { get; set; } = new();
+        public FieldValue<double> Speed { get; set; } = new();
+        public FieldValue<double> Reach { get; set; } = new();
+        public FieldValue<double> Stagger { get; set; } = new();
+
+        // Plugin|FormID list.
+        public FieldValue<List<string>> Keywords { get; set; } = new() { Value = new() };
+
+        public RecipeConfig CraftRecipe { get; set; } = new();
+        public RecipeConfig TemperRecipe { get; set; } = new();
+
+        // Breakdown: the same RecipeConfig shape, read the other way round.
+        //
+        // Its "Ingredients" list holds what the recipe PRODUCES, capped at one entry - a COBJ
+        // creates one KIND of object - and WorkbenchKey picks between the smelter and the tanning
+        // rack. Reusing RecipeConfig rather than inventing a third class is what makes this purely
+        // additive: a preset file written before this existed deserializes with every FieldValue's
+        // Enabled at false, so Apply touches nothing. No migration, no SchemaVersion bump.
+        public RecipeConfig BreakdownRecipe { get; set; } = new();
+
+        // Same serialized format as Armor/Weapons.ContainerString (built/parsed via
+        // ContainerSelectionVM.BuildString/LoadFromString, see ContainerStringBuilder/Parser).
+        public FieldValue<string> Container { get; set; } = new() { Value = "{}" };
+
+        // WHICH enchantment the matching items get, as Plugin|FormID - empty means "none".
+        //
+        // Deliberately here and NOT in the multi-select bulk editor (user, 2026-09-16): patching ten
+        // items rarely means giving them all the same enchantment, but a preset for legendary
+        // end-game items is exactly the case where that sameness is the point.
+        public FieldValue<string> Enchantment { get; set; } = new() { Value = "" };
+
+        // HOW MUCH charge (EAMT) those items get - the item's own field, not the enchantment's,
+        // and the other half of the same thing: an item that carries an enchantment with no
+        // charge has no maximum and cannot be recharged (see ItemNodeVM.EnchantAmount).
+        //
+        // Its own FieldValue rather than a number hung off Enchantment: a preset for end-game
+        // gear may well want to raise the charge pool of items that keep whatever enchantment
+        // they already have, and the reverse - assign an effect, leave the charge alone.
+        //
+        // Additive like the field above it: a preset written before this existed deserializes
+        // with Enabled == false, so Apply ignores it. No migration, no SchemaVersion bump.
+        public FieldValue<int> EnchantmentAmount { get; set; } = new();
+    }
+
+    // Wraps a preset field together with its "Include"-checkbox state. Apply only touches
+    // fields where Enabled == true; everything else on the target item is left untouched.
+    public class FieldValue<T>
+    {
+        public bool Enabled { get; set; }
+        public T Value { get; set; }
+    }
+
+    public class RecipeConfig
+    {
+        public FieldValue<string> WorkbenchKey { get; set; } = new() { Value = "" };
+        public FieldValue<List<IngredientEntry>> Ingredients { get; set; } = new() { Value = new() };
+        public FieldValue<List<ConditionEntry>> Conditions { get; set; } = new() { Value = new() };
+    }
+
+    public class IngredientEntry
+    {
+        public string Key { get; set; } = "";
+        public int Count { get; set; }
+    }
+
+    public class ConditionEntry
+    {
+        public string ConditionType { get; set; } = "";
+        public string Target { get; set; } = "";
+        public string Value { get; set; } = "";
+        public string RunOn { get; set; } = "";
+    }
+}
