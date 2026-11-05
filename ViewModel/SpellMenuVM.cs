@@ -496,6 +496,7 @@ namespace SkyrimCraftingTool.ViewModel
             OnPropertyChanged(nameof(UserSpellType));
             OnPropertyChanged(nameof(UserTargetType));
             OnPropertyChanged(nameof(UserDescription));
+            RaiseDeliveryWarning();
             RaiseTreeEditedFlags();
         }
 
@@ -569,6 +570,7 @@ namespace SkyrimCraftingTool.ViewModel
             OnPropertyChanged(nameof(SelectedFlagNames));
             OnPropertyChanged(nameof(UnnamedFlagBits));
             OnPropertyChanged(nameof(HasUnnamedFlagBits));
+            RaiseDeliveryWarning();
         }
 
         // ===================================================================
@@ -622,6 +624,8 @@ namespace SkyrimCraftingTool.ViewModel
             var pick = _selectedMagicEffectToAdd;
             if (spell == null || pick == null) return;
 
+            bool firstOfOwnSpell = spell.IsUserCreated && spell.Effects.Count == 0;
+
             // Magnitude, duration and area start at 0. The patch writes the new entry as
             // mgefsToAdd, and Reset takes it away again.
             spell.Effects.Add(new SpellEffectRecord
@@ -637,6 +641,8 @@ namespace SkyrimCraftingTool.ViewModel
 
             BuildEffectRows();
 
+            if (firstOfOwnSpell) AdoptDeliveryFrom(spell, pick);
+
             // Cleared so the next add starts from an empty box rather than from the row just used -
             // which cannot be added again anyway, since the picker now hides it.
             SelectedMagicEffectToAdd = null;
@@ -644,6 +650,36 @@ namespace SkyrimCraftingTool.ViewModel
 
             RaiseTreeEditedFlags();
         });
+
+        // The first effect decides how an own spell is delivered, as on a new enchantment
+        // (EnchantmentMenuVM.AddEffectCommand). Unlike there it overwrites: both boxes are open from
+        // the start, so a value may already be set, and it is a guess made before the effect was known.
+        private void AdoptDeliveryFrom(SpellRecord spell, MagicEffectsRecords effect)
+        {
+            bool cast = !string.IsNullOrEmpty(effect.CastType) && effect.CastType != spell.CastType;
+            bool target = !string.IsNullOrEmpty(effect.TargetType) && effect.TargetType != spell.TargetType;
+            if (!cast && !target) return;
+
+            if (cast) spell.CastType = effect.CastType;     // raises FieldChanged, which saves
+            if (target) UserTargetType = effect.TargetType;
+
+            IssueHub.Current.Report(new AppIssue(
+                AppIssueSeverity.Info,
+                $"{spell.EditorID} is now {spell.CastType}/{spell.TargetType} — taken from its first effect.",
+                Category: "spell"));
+        }
+
+        // Shown in the detail panel; see SpellDelivery for why it only warns.
+        public string EffectDeliveryWarning => SpellDelivery.Warning(
+            _selectedSpell?.CastType, _selectedSpell?.TargetType, EffectVMs.Select(row => row.Catalogue));
+
+        public bool HasEffectDeliveryWarning => EffectDeliveryWarning.Length > 0;
+
+        private void RaiseDeliveryWarning()
+        {
+            OnPropertyChanged(nameof(EffectDeliveryWarning));
+            OnPropertyChanged(nameof(HasEffectDeliveryWarning));
+        }
 
         public ICommand RemoveEffectCommand => new RelayCommand<SpellEffectVM>(row =>
         {
@@ -710,6 +746,7 @@ namespace SkyrimCraftingTool.ViewModel
             OnPropertyChanged(nameof(SelectedEffectsEdited));
             OnPropertyChanged(nameof(FilteredMagicEffects));
             OnPropertyChanged(nameof(CanAddEffect));
+            RaiseDeliveryWarning();
         }
 
         // Saves the whole list, because that is the unit the database writes.

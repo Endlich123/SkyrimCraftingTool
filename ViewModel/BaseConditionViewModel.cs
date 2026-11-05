@@ -12,12 +12,18 @@ namespace SkyrimCraftingTool.ViewModel
         GetActorValue,
         GetLevel,
         GetStageDone,
+        GetItemCount,
+        EPTemperingItemIsEnchanted,
+        GetStage,
 
         // Scanned and written back verbatim, but NOT editable - see ReadOnlyConditionViewModel.
         // Excluded from the ConditionTypes picker below: turning one into an editable type would
         // throw away a parameter the tool cannot re-create.
         ReadOnly
     }
+
+    // Where a row sits in its OR group (see BaseConditionViewModel.HasOrFlag). Alone = not in one.
+    public enum ConditionGroupPosition { Alone, First, Middle, Last }
 
     public abstract class BaseConditionViewModel : ViewModelBase
     {
@@ -60,10 +66,18 @@ namespace SkyrimCraftingTool.ViewModel
             set
             {
                 if (SetProperty(ref _storedFlags, value ?? ""))
+                {
                     OnPropertyChanged(nameof(IsOr));
+                    OnPropertyChanged(nameof(HasOrFlag));
+                }
             }
         }
         private string _storedFlags = "";
+
+        // The reference a RunOn = Reference condition runs on (PlayerRef almost always). Not
+        // editable; carried so a save writes it back. ToRecord drops it once RunOn is no longer
+        // Reference, so picking Subject or Target cannot leave a stale one behind.
+        public string StoredRunOnRef { get; set; } = "";
 
         // ---- The operator and the OR flag in the editor ----
 
@@ -78,6 +92,7 @@ namespace SkyrimCraftingTool.ViewModel
         // What the ESP builder writes when no operator is stored (CobjEspBuilder.BuildCondition) -
         // shown instead of an empty box, so a new or old-scan condition reads as what it does.
         private string DefaultOperator => Type is CustomConditionType.GetActorValue or CustomConditionType.GetLevel
+                                                  or CustomConditionType.GetItemCount or CustomConditionType.GetStage
             ? "GreaterThanOrEqualTo"
             : "EqualTo";
 
@@ -108,6 +123,56 @@ namespace SkyrimCraftingTool.ViewModel
                 if (value) flags.Insert(0, "OR");
                 StoredFlags = string.Join(",", flags);
             }
+        }
+
+        // ---- OR groups (presentation only) ----
+        //
+        // Skyrim reads a condition's OR flag as "this OR the NEXT one"; runs of OR rows form a
+        // group, and the groups are ANDed: A[OR], B, C is (A or B) and C. The row view draws that
+        // as a bar over each group with "OR"/"AND" between rows. ConditionGroups.Apply computes it
+        // for the whole list - a row cannot know it alone. None of these reach the record.
+
+        // The OR flag as stored, for every kind of row (a read-only row keeps its flags raw).
+        public virtual bool HasOrFlag => IsOr;
+
+        // Drops the OR flag. Used when the row after it is deleted - see ConditionGroups.Remove.
+        public virtual void ClearOrFlag() => IsOr = false;
+
+        // Read-only rows are deletable too, except a placeholder from a scan that did not store
+        // its position - see ReadOnlyConditionViewModel.
+        public virtual bool CanRemove => true;
+
+        // Whether the row's own OR checkbox (in the RunOn column) is shown. A read-only row brings its
+        // own, drawn by its overlay at the same spot - the row's box is hidden (not collapsed, so the
+        // RunOn picker does not slide into its place) or it would show through.
+        public virtual bool HasEditableOrBox => true;
+
+        // Shown on the remove button, also while it is disabled - a greyed button with no reason
+        // was the first report of that state (2026-10-24).
+        public virtual string RemoveToolTip => "Remove Condition";
+
+        private ConditionGroupPosition _groupPosition;
+        public ConditionGroupPosition GroupPosition
+        {
+            get => _groupPosition;
+            set => SetProperty(ref _groupPosition, value);
+        }
+
+        // Shown above the row: "OR" when the row before it has the flag, "AND" otherwise, "" for
+        // the first row.
+        private string _connector = "";
+        public string Connector
+        {
+            get => _connector;
+            set => SetProperty(ref _connector, value ?? "");
+        }
+
+        // The last row has the OR flag: there is no next condition for it to pair with.
+        private bool _isDanglingOr;
+        public bool IsDanglingOr
+        {
+            get => _isDanglingOr;
+            set => SetProperty(ref _isDanglingOr, value);
         }
 
         private List<string> FlagList() =>

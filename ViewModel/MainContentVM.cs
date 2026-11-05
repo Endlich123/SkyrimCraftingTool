@@ -7,7 +7,6 @@ using SkyrimCraftingTool.Services.SavePipline;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
-using SkyrimCraftingTool.Services;
 
 namespace SkyrimCraftingTool.ViewModel
 {
@@ -202,6 +201,9 @@ namespace SkyrimCraftingTool.ViewModel
                 LoadSelectedItemDetails(item);
             }
 
+            // A variant shows its template's slots; the template may have changed since it was loaded.
+            if (value) item.RefreshInheritedSlots();
+
             OnPropertyChanged(nameof(IsMultiSelectActive));
         }
 
@@ -275,9 +277,15 @@ namespace SkyrimCraftingTool.ViewModel
             private set
             {
                 if (SetProperty(ref _editedItemCount, value))
+                {
                     RaiseTreeEditedFlags();
+                    OnPropertyChanged(nameof(HasEditedItems));
+                }
             }
         }
+
+        // "Reset all items" is greyed out without one.
+        public bool HasEditedItems => _editedItemCount > 0;
 
         // Called by ItemNodeVM the first time an item picks up a live edit.
         internal void NotifyItemBecameEdited()
@@ -310,6 +318,7 @@ namespace SkyrimCraftingTool.ViewModel
             // both trees) recompute their dot over all their items - most of why the same patch took
             // 404 s in the app and 127 s without a window (2026-10-22).
             if (_bulkDepth > 0) { _treeFlagsPending = true; return; }
+            _multiSelectVM?.RaiseHasEditedInSelection();
             foreach (var plugin in ModItemsTree)
             {
                 plugin.RaiseHasEditedItems();
@@ -321,6 +330,236 @@ namespace SkyrimCraftingTool.ViewModel
                 plugin.RaiseHasEditedItems();
                 foreach (var cat in plugin.Categories) cat.RaiseHasEditedItems();
             }
+        }
+
+        // The scanned armor behind a key, or null. Keys can reach here in either casing (see the
+        // COLLATE NOCASE note on Key) - the exact lookup first, the slow one only as a fallback.
+        internal ArmorRecord? FindArmorRecord(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key)) return null;
+            if (ArmorCache.TryGetValue(key, out var rec)) return rec;
+            // The other casing: a case-blind index, built on the first miss. It was a linear search over
+            // every armor - and the dry run misses here once per weapon child (FindTemplateLink asks
+            // armor first), ~12,000 times over ~20,000 records (2026-10-30).
+            if (_armorNoCase == null || _armorNoCaseCount != ArmorCache.Count)
+            {
+                _armorNoCase = NoCaseIndex(ArmorCache);
+                _armorNoCaseCount = ArmorCache.Count;
+            }
+            return _armorNoCase.TryGetValue(key, out rec) ? rec : null;
+        }
+
+        // Slots and template of an armor for ArmorTemplateSlots - the cache, which holds the saved
+        // edits (a linear FindItemNode per variant would cost seconds in a dry run over 6 000 of them),
+        // overlaid with slot changes not saved yet: the cache only follows on the debounced autosave,
+        // and a variant opened right after its template was changed showed the old slots.
+        internal (uint Mask, string TemplateKey)? ArmorSlotsOf(string key)
+        {
+            if (FindArmorRecord(key) is not { } rec) return null;
+            return (_liveSlotMasks.TryGetValue(key, out var live) ? live : rec.BodySlotMask, rec.TemplateKey ?? "");
+        }
+
+        private readonly Dictionary<string, uint> _liveSlotMasks = new(StringComparer.OrdinalIgnoreCase);
+
+        // From ItemNodeVM.BodySlotMask on every user-side change (edit, preset, reset).
+        // Only a value the cache does not have yet is kept - building the tree sets every armor's
+        // slots once, and those need no overlay.
+        internal void NoteSlotMask(string key, uint mask)
+        {
+            if (string.IsNullOrWhiteSpace(key)) return;
+            if (FindArmorRecord(key) is { } rec && rec.BodySlotMask == mask) _liveSlotMasks.Remove(key);
+            else _liveSlotMasks[key] = mask;
+        }
+
+        // The other direction of "Template:": every armor made from this one - the "Variants" list on
+        // a plain piece, like the variants of a base enchantment. Built once per cache load: the
+        // template is a scanned value, nothing in the tool changes it.
+        // Armor (TNAM) and weapons (CNAM) alike - a template is always of its own record type, so one
+        // lookup over both caches cannot mix them up.
+        public sealed record TemplateLink(string Key, string EditorID, string Name);
+
+        private ILookup<string, TemplateLink>? _variantsByTemplate;
+
+        internal IReadOnlyList<TemplateLink> GetTemplateVariants(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key)) return Array.Empty<TemplateLink>();
+            _variantsByTemplate ??= ArmorCache.Values
+                .Where(r => !string.IsNullOrWhiteSpace(r.TemplateKey))
+                .Select(r => (r.TemplateKey, Link: new TemplateLink(r.Key, r.EditorID, r.Name)))
+                .Concat(WeaponCache.Values
+                    .Where(r => !string.IsNullOrWhiteSpace(r.TemplateKey))
+                    .Select(r => (r.TemplateKey, Link: new TemplateLink(r.Key, r.EditorID, r.Name))))
+                .ToLookup(x => x.TemplateKey, x => x.Link, StringComparer.OrdinalIgnoreCase);
+            return _variantsByTemplate[key].ToList();
+        }
+
+        // Kinder-Patcher (docs/Plan_Aktuell/KinderPatcher-Plan.md): who follows which template, per
+        // record type. Built once per cache load, like the variants above.
+        private Services.TemplateChildren.TemplateFamilies? _armorFamilies;
+        private Services.TemplateChildren.TemplateFamilies? _weaponFamilies;
+
+        internal Services.TemplateChildren.TemplateFamilies ArmorFamilies =>
+            _armorFamilies ??= new(ArmorCache.Values.Select(r => (r.Key, (string?)r.TemplateKey)));
+
+        internal Services.TemplateChildren.TemplateFamilies WeaponFamilies =>
+            _weaponFamilies ??= new(WeaponCache.Values.Select(r => (r.Key, (string?)r.TemplateKey)));
+
+        internal Services.TemplateChildren.TemplateFamilies FamiliesOf(ItemNodeVM item) =>
+            item.IsWeapon ? WeaponFamilies : ArmorFamilies;
+
+        // The children's extras (ChildInheritance table), read once and kept in step with every write.
+        private Dictionary<string, Services.TemplateChildren.ChildExtras>? _childExtras;
+
+        private static string ItemDbPath => Path.Combine(GlobalState.Tool.InputFolder, "Item", "item.db");
+
+        private Dictionary<string, Services.TemplateChildren.ChildExtras> ChildExtrasMap =>
+            _childExtras ??= new Services.TemplateChildren.ChildExtrasStore(ItemDbPath).LoadAll();
+
+        internal Services.TemplateChildren.ChildExtras ChildExtrasOf(string key) =>
+            ChildExtrasMap.TryGetValue(key, out var x) ? x : Services.TemplateChildren.ChildExtras.None;
+
+        internal void SaveChildExtras(IReadOnlyCollection<Services.TemplateChildren.ChildExtras> rows)
+        {
+            if (rows.Count == 0) return;
+            new Services.TemplateChildren.ChildExtrasStore(ItemDbPath).Save(rows);
+            foreach (var x in rows)
+            {
+                if (x.IsNone) ChildExtrasMap.Remove(x.Key);
+                else ChildExtrasMap[x.Key] = x;
+            }
+        }
+
+        internal void DeleteChildExtras(IReadOnlyCollection<string> keys)
+        {
+            if (keys.Count == 0) return;
+            new Services.TemplateChildren.ChildExtrasStore(ItemDbPath).Delete(keys);
+            foreach (var k in keys) ChildExtrasMap.Remove(k);
+        }
+
+        internal void DropChildExtrasOfFamily(ItemNodeVM item)
+        {
+            if (!item.IsArmor && !item.IsWeapon) return;
+            var keys = FamiliesOf(item).ChildrenOf(item.Key).Append(item.Key)
+                .Where(k => ChildExtrasMap.ContainsKey(k)).ToList();
+            DeleteChildExtras(keys);
+        }
+
+        internal void DeleteAllChildExtras()
+        {
+            new Services.TemplateChildren.ChildExtrasStore(ItemDbPath).DeleteAll();
+            ChildExtrasMap.Clear();
+        }
+
+        // The scanned armor or weapon behind a template key, or null.
+        internal TemplateLink? FindTemplateLink(string key)
+        {
+            if (FindArmorRecord(key) is { } a) return new TemplateLink(a.Key, a.EditorID, a.Name);
+            if (FindWeaponRecord(key) is { } w) return new TemplateLink(w.Key, w.EditorID, w.Name);
+            return null;
+        }
+
+        internal WeaponRecord? FindWeaponRecord(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key)) return null;
+            if (WeaponCache.TryGetValue(key, out var rec)) return rec;
+            if (_weaponNoCase == null || _weaponNoCaseCount != WeaponCache.Count)   // see FindArmorRecord
+            {
+                _weaponNoCase = NoCaseIndex(WeaponCache);
+                _weaponNoCaseCount = WeaponCache.Count;
+            }
+            return _weaponNoCase.TryGetValue(key, out rec) ? rec : null;
+        }
+
+        // Dropped with the caches (ApplyCacheSnapshot), and built again when the count moved (a cache
+        // filled by hand, the tests). The first record per key wins, as the linear search before it did.
+        private Dictionary<string, ArmorRecord>? _armorNoCase;
+        private Dictionary<string, WeaponRecord>? _weaponNoCase;
+        private int _armorNoCaseCount, _weaponNoCaseCount;
+
+        private static Dictionary<string, T> NoCaseIndex<T>(Dictionary<string, T> cache)
+        {
+            var index = new Dictionary<string, T>(cache.Count, StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in cache) index.TryAdd(kv.Key, kv.Value);
+            return index;
+        }
+
+        // The load order plus the plugins the records are keyed to but the load order never names -
+        // almost all Creation Club masters: the game loads them through Skyrim.ccc, plugins.txt does not
+        // list them, and their records reach the scan through mods that override them. The
+        // Enchantments and Spells trees always showed them; the item tree dropped them, so a preset
+        // never touched the 290 CC armors of a real modlist (2026-10-25). Same place as there: right
+        // after the vanilla masters (PluginTreeOrder).
+        //
+        // A NEW list for the caches and the tree only. ActivePlugins stays the load order: the scan
+        // and the patch read its file paths, and these plugins have none here.
+        //
+        // No risk of reviving a removed plugin: a scan sets every record that no loaded plugin
+        // provides any more to Active = 0, and the caches only ever read active records.
+        //
+        // Since 2026-10-27 the scan reads Skyrim.ccc (Services/CreationClubPlugins), so after a
+        // rescan the load order names the Creation Club plugins itself and this adds nothing. It
+        // stays for a database scanned before that.
+        internal List<PluginInfo> WithUnlistedPlugins(List<PluginInfo> loadOrder)
+        {
+            var known = new HashSet<string>(loadOrder.Select(p => p.FileName), StringComparer.OrdinalIgnoreCase);
+            var missing = (_itemService.GetRecordPluginNames() ?? Array.Empty<string>())
+                .Where(n => !string.IsNullOrWhiteSpace(n) && !known.Contains(n))
+                .GroupBy(n => n, StringComparer.OrdinalIgnoreCase)   // keys come in two casings
+                .Select(g => g.First())
+                .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (missing.Count == 0) return loadOrder;
+
+            var rank = PluginTreeOrder.Ranker(loadOrder);
+            var unknownRank = rank("\u0001 not a plugin");
+            int insertAt = loadOrder.TakeWhile(p => rank(p.FileName) < unknownRank).Count();
+
+            var result = loadOrder.ToList();
+            result.InsertRange(insertAt, missing.Select(n => new PluginInfo { FileName = n }));
+            Log($"Item tree: {missing.Count} plugin(s) not in the load order but with records (Creation Club masters): {string.Join(", ", missing)}");
+            return result;
+        }
+
+        internal ItemNodeVM? FindItemNode(string key) =>
+            string.IsNullOrWhiteSpace(key) ? null
+            : GetAllItemNodes().FirstOrDefault(i => string.Equals(i.Key, key, StringComparison.OrdinalIgnoreCase));
+
+        // "Open template" on an enchanted armor: select the plain piece in the tree and show it. The
+        // search box and "only edited" are cleared when they would hide it - the same trade as
+        // "Open base" in the Enchantments tab, which clears its filters for the same reason.
+        internal void NavigateToItem(string key)
+        {
+            var target = FindItemNode(key);
+            if (target == null) return;
+
+            if (!GetFlatItemNodes().Contains(target))
+            {
+                _treeSearchText = string.Empty;
+                OnPropertyChanged(nameof(TreeSearchText));
+                _showOnlyEditedItems = false;
+                OnPropertyChanged(nameof(ShowOnlyEditedItems));
+                ApplyFilter(string.Empty);
+            }
+
+            foreach (var plugin in FilteredTree)
+                foreach (var cat in plugin.Categories)
+                    if (cat.Items.Contains(target))
+                    {
+                        plugin.IsExpanded = true;
+                        cat.IsExpanded = true;
+                    }
+
+            ClearMultiSelection();
+            HandleItemNodeClick(target, ctrl: false, shift: false);
+        }
+
+        // Every item node by key, for a run that looks up thousands (FindItemNode is a linear search).
+        internal Dictionary<string, ItemNodeVM> ItemNodesByKey()
+        {
+            var map = new Dictionary<string, ItemNodeVM>(StringComparer.OrdinalIgnoreCase);
+            foreach (var item in GetAllItemNodes())
+                if (!string.IsNullOrWhiteSpace(item.Key)) map.TryAdd(item.Key, item);
+            return map;
         }
 
         private IEnumerable<ItemNodeVM> GetAllItemNodes()
@@ -745,6 +984,7 @@ namespace SkyrimCraftingTool.ViewModel
 
             var options = BuildPatchOptions(dryRun: true);
             PatchGenReport report;
+            using var busy = BusyService.Show("Preview patch: building every rule…");
             try
             {
                 var svc = new PatchGeneratorService(references: References);
@@ -752,6 +992,7 @@ namespace SkyrimCraftingTool.ViewModel
             }
             catch (Exception ex)
             {
+                busy.Dispose();
                 AppLogger.LogError("MainContentVM.PreviewPatchAsync failed", ex);
                 System.Windows.MessageBox.Show($"Patch preview failed:{Environment.NewLine}{ex.Message}",
                     "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
@@ -760,24 +1001,21 @@ namespace SkyrimCraftingTool.ViewModel
 
             if (!report.AnythingGenerated)
             {
+                busy.Dispose();
                 System.Windows.MessageBox.Show(
                     "No edited armor, weapon, recipe or enchantment found - a patch would produce nothing.",
                     "Preview Patch", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
                 return;
             }
 
+            BusyService.SetMessage("Preview patch: writing the report…");
             Services.PatchGen.PatchReportText.SaveLastRun(report, options.OutputRoot);
+            var text = Services.PatchGen.PatchReportText.Render(report, options.OutputRoot, forFile: false);
+            busy.Dispose();
 
-            var msg = new System.Text.StringBuilder();
-            msg.Append(Services.PatchGen.PatchReportText.Render(report, options.OutputRoot, forFile: false));
-            if (report.Warnings.Count > 0)
-            {
-                msg.AppendLine();
-                msg.AppendLine($"Full preview saved to {Services.PatchGen.PatchReportText.LastPreviewPath}");
-            }
-
-            System.Windows.MessageBox.Show(msg.ToString(), "Preview Patch",
-                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            View.PatchReportWindow.Show("Preview Patch",
+                $"Preview - nothing was written. {report.Warnings.Count} warning(s).",
+                text, reportFile: Services.PatchGen.PatchReportText.LastPreviewPath);
         }
 
         private async Task GeneratePatchAsync()
@@ -786,6 +1024,9 @@ namespace SkyrimCraftingTool.ViewModel
 
             var options = BuildPatchOptions(dryRun: false);
             PatchGenReport report;
+            // Off the UI thread, so the overlay's bar and seconds keep moving: on 10,000+ edits the
+            // run takes a while and used to look like a hang (2026-10-26).
+            using var busy = BusyService.Show("Generating patch…");
             try
             {
                 var svc = new PatchGeneratorService(references: References);
@@ -793,6 +1034,7 @@ namespace SkyrimCraftingTool.ViewModel
             }
             catch (Exception ex)
             {
+                busy.Dispose();
                 AppLogger.LogError("MainContentVM.GeneratePatchAsync failed", ex);
                 System.Windows.MessageBox.Show($"Patch generation failed:{Environment.NewLine}{ex.Message}",
                     "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
@@ -801,35 +1043,23 @@ namespace SkyrimCraftingTool.ViewModel
 
             if (!report.AnythingGenerated)
             {
+                busy.Dispose();
                 System.Windows.MessageBox.Show("No edited armor, weapon, recipe or enchantment found - nothing to patch.",
                     "Generate Patch", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
                 return;
             }
 
             // Keep a copy on disk before showing the dialog: the ACTION NEEDED / NOTE blocks and the
-            // full warning list are the most useful part of a bug report, and a message box the user
-            // has already clicked away is not recoverable. Picked up by DiagnosticsReport.
+            // full warning list are the most useful part of a bug report, and a window the user has
+            // already closed is not recoverable. Picked up by DiagnosticsReport.
+            BusyService.SetMessage("Generating patch: writing the report…");
             Services.PatchGen.PatchReportText.SaveLastRun(report, options.OutputRoot);
+            var text = Services.PatchGen.PatchReportText.Render(report, options.OutputRoot, forFile: false);
+            busy.Dispose();
 
-            var msg = new System.Text.StringBuilder();
-            msg.Append(Services.PatchGen.PatchReportText.Render(report, options.OutputRoot, forFile: false));
-            msg.AppendLine();
-            msg.Append("Open the output folder?");
-
-            var choice = System.Windows.MessageBox.Show(msg.ToString(), "Patch generated",
-                System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Information);
-
-            if (choice == System.Windows.MessageBoxResult.Yes)
-            {
-                try
-                {
-                    Process.Start(new ProcessStartInfo("explorer.exe", $"\"{options.OutputRoot}\"") { UseShellExecute = true });
-                }
-                catch (Exception ex)
-                {
-                    AppLogger.LogError("Opening the patch output folder failed", ex);
-                }
-            }
+            View.PatchReportWindow.Show("Patch generated",
+                $"Patch written to {options.OutputRoot}. {report.Warnings.Count} warning(s).",
+                text, outputFolder: options.OutputRoot, reportFile: Services.PatchGen.PatchReportText.LastRunPath);
         }
 
         private static string MakeRelative(string root, string path)
@@ -855,11 +1085,12 @@ namespace SkyrimCraftingTool.ViewModel
 
                 activePlugins.Add(new PluginInfo { FileName = KeyFactory.UserPluginName });
                 ActivePlugins = activePlugins;
+                var treePlugins = WithUnlistedPlugins(activePlugins);
 
                 var sw = PerfClock.StartNew();
                 await Task.Run(() =>
                 {
-                    var snapshot = _cacheManager.BuildCachesFromDB(activePlugins);
+                    var snapshot = _cacheManager.BuildCachesFromDB(treePlugins);
                     ApplyCacheSnapshot(snapshot);
                     _keywordService.InitializeFrom(snapshot.Keywords);
                 });
@@ -867,7 +1098,7 @@ namespace SkyrimCraftingTool.ViewModel
                 PerfLog.Record("Startup: read the database into the caches", sw);
 
                 sw.Restart();
-                await BuildTreeFromCacheAsync(activePlugins);
+                await BuildTreeFromCacheAsync(treePlugins);
                 Log($"BuildTreeFromCacheAsync DONE in {sw.ElapsedMilliseconds} ms");
                 PerfLog.Record("Startup: build the item tree", sw);
 
@@ -918,7 +1149,10 @@ namespace SkyrimCraftingTool.ViewModel
             // the scan CHANGED for a saved edit, which is a different and sharper question: a group
             // reaches NPCs by predicate, so a mod install can put 17 records nobody saw inside a change
             // that was made for 54.
-            System.Collections.Generic.IReadOnlyList<string>? GroupDrift = null);
+            System.Collections.Generic.IReadOnlyList<string>? GroupDrift = null,
+            // Plugin files found in more than one place and the copy the scan read (FileDBHandler).
+            // Was only in error.log; here so a wrong copy can be noticed without opening the log.
+            System.Collections.Generic.IReadOnlyList<Services.PluginPathConflict>? PathConflicts = null);
 
         internal static ScanReport BuildScanReport(
             HashSet<string> before, HashSet<string> after, List<EditedItemDto> editedBefore,
@@ -962,7 +1196,45 @@ namespace SkyrimCraftingTool.ViewModel
                 sb.AppendLine("   report marks them as unchecked.");
             }
 
+            AppendPathConflicts(sb, r.PathConflicts);
+
             return sb.ToString();
+        }
+
+        // How many doubtful path conflicts the report names one by one; the rest are counted.
+        internal const int PathConflictLinesShown = 10;
+
+        // The fallback rules of PluginPathPicker: the scan read SOME copy, but no rule said which one
+        // the game loads. Only these are named - the rest is routine on MO2 (every vanilla master and
+        // Creation Club file also sits in the game folder, 96 on the setup they were found on) and
+        // would put the same lines into every scan report. The whole list is in error.log.
+        internal static bool IsDoubtfulPathConflict(Services.PluginPathConflict c)
+            => c.Reason.Contains("path order used", StringComparison.OrdinalIgnoreCase)
+            || c.Reason.Contains("check the setup", StringComparison.OrdinalIgnoreCase);
+
+        private static void AppendPathConflicts(System.Text.StringBuilder sb,
+            System.Collections.Generic.IReadOnlyList<Services.PluginPathConflict>? conflicts)
+        {
+            if (conflicts is not { Count: > 0 }) return;
+
+            var doubtful = conflicts
+                .Where(IsDoubtfulPathConflict)
+                .OrderBy(c => c.FileName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            sb.AppendLine();
+            if (doubtful.Count == 0)
+            {
+                sb.AppendLine($"Plugin files found more than once: {conflicts.Count} - the copy your mod manager loads was read each time.");
+                return;
+            }
+
+            sb.AppendLine($"⚠ Plugin files found more than once: {conflicts.Count} - for {doubtful.Count} no rule decided which copy the game loads:");
+            foreach (var c in doubtful.Take(PathConflictLinesShown))
+                sb.AppendLine($"   {c.FileName}: {c.Reason}");
+            if (doubtful.Count > PathConflictLinesShown)
+                sb.AppendLine($"   ... and {doubtful.Count - PathConflictLinesShown} more.");
+            sb.AppendLine("   The full list with paths is in Logs\\error.log.");
         }
 
         // The group half of the report (G6). Separate from BuildScanReport because it reads a different
@@ -1106,6 +1378,7 @@ namespace SkyrimCraftingTool.ViewModel
             var busy = BusyService.Show("Scanning: saving pending edits…");
 
             List<PluginInfo> activePlugins = null;
+            List<PluginInfo> treePlugins = null;
             ScanReport? report = null;
 
             try
@@ -1166,10 +1439,11 @@ namespace SkyrimCraftingTool.ViewModel
                     // files), but cache/tree building needs to know about it so user-created COBJ
                     // recipes stay visible after a rescan.
                     activePlugins.Add(new PluginInfo { FileName = KeyFactory.UserPluginName });
+                    treePlugins = WithUnlistedPlugins(activePlugins);
 
                     step.Restart();
                     BusyService.SetMessage("Scanning: loading the results…");
-                    var snapshot = _cacheManager.BuildCachesFromDB(activePlugins);
+                    var snapshot = _cacheManager.BuildCachesFromDB(treePlugins);
                     Log($"  [scan] BuildCachesFromDB: {step.ElapsedMilliseconds} ms");
                     PerfLog.Record("Scan: read the database into the caches", step);
 
@@ -1195,6 +1469,10 @@ namespace SkyrimCraftingTool.ViewModel
 
                         if (groupDrift.Count > 0)
                             report = report with { GroupDrift = groupDrift };
+
+                        var pathConflicts = FileService.LastPathConflicts;
+                        if (pathConflicts is { Count: > 0 })
+                            report = report with { PathConflicts = pathConflicts };
                     }
                     catch (Exception reportEx)
                     {
@@ -1206,7 +1484,7 @@ namespace SkyrimCraftingTool.ViewModel
 
                 sw.Restart();
                 BusyService.SetMessage("Scanning: rebuilding the item tree…");
-                await BuildTreeFromCacheAsync(activePlugins);
+                await BuildTreeFromCacheAsync(treePlugins ?? activePlugins);
                 Log($"Tree rebuild DONE in {sw.ElapsedMilliseconds} ms");
                 PerfLog.Record("Scan: rebuild the item tree", sw);
 
@@ -1480,20 +1758,29 @@ namespace SkyrimCraftingTool.ViewModel
             var tHydrate = new System.Diagnostics.Stopwatch();
             var tReset = new System.Diagnostics.Stopwatch();
             var tRelease = new System.Diagnostics.Stopwatch();
-            using (BeginBulk())
+            // Overlay OUTSIDE the bulk scope: closing the bulk rebuilds the tree, and that has to happen
+            // under the overlay - inside, the overlay closed first and the tree caught up on screen
+            // afterwards, which looked like a hang (2026-10-26).
             using (Services.BusyService.Show("Reset all items…", blocksUiThread: true))
             {
-                for (int i = 0; i < candidates.Count; i++)
+                using (BeginBulk())
                 {
-                    if (i % 25 == 0) Services.BusyService.SetMessage($"Reset all items: {i + 1:N0} / {candidates.Count:N0}");
-                    // Hydrate first: a never-clicked item has no recipe VMs or original snapshot, and its
-                    // persisted edits would be skipped (same rule as the plugin reset).
-                    var item = candidates[i];
-                    bool wasLoaded = item.HasLoadedDetails;
-                    tHydrate.Start(); EnsureItemHydrated(item, lean: true); tHydrate.Stop();
-                    tReset.Start(); if (item.ResetAllChanges()) reset++; tReset.Stop();
-                    tRelease.Start(); if (!wasLoaded) ReleaseItemDetails(item); tRelease.Stop();   // keeps an item on screen hydrated
+                    for (int i = 0; i < candidates.Count; i++)
+                    {
+                        if (i % 25 == 0) Services.BusyService.SetMessage($"Reset all items: {i + 1:N0} / {candidates.Count:N0}");
+                        // Hydrate first: a never-clicked item has no recipe VMs or original snapshot, and its
+                        // persisted edits would be skipped (same rule as the plugin reset).
+                        var item = candidates[i];
+                        bool wasLoaded = item.HasLoadedDetails;
+                        tHydrate.Start(); EnsureItemHydrated(item, lean: true); tHydrate.Stop();
+                        tReset.Start(); if (item.ResetAllChanges()) reset++; tReset.Stop();
+                        tRelease.Start(); if (!wasLoaded) ReleaseItemDetails(item); tRelease.Stop();   // keeps an item on screen hydrated
+                    }
                 }
+                // Children's extras sit on items that need not be edited themselves (Kinder-Patcher):
+                // a reset of the whole tree takes them all.
+                if (!filtered) DeleteAllChildExtras();
+                await Services.BusyService.UntilDrawnAsync();
             }
             PerfLog.Record("Reset all items", total,
                 $"{candidates.Count} item(s), {reset} reverted; hydrate {tHydrate.ElapsedMilliseconds} ms, reset {tReset.ElapsedMilliseconds} ms, release {tRelease.ElapsedMilliseconds} ms");
@@ -1605,6 +1892,13 @@ namespace SkyrimCraftingTool.ViewModel
             WeaponCache.Clear();
             RecipeCacheByCreatedItem.Clear();
             COBJConditionCache.Clear();
+            _variantsByTemplate = null;
+            _armorFamilies = null;
+            _weaponFamilies = null;
+            _armorNoCase = null;
+            _weaponNoCase = null;
+            _childExtras = null;
+            _liveSlotMasks.Clear();   // the new snapshot carries every saved edit
 
             foreach (var kv in snapshot.Armor)
                 ArmorCache[kv.Key] = kv.Value;
@@ -1659,6 +1953,9 @@ namespace SkyrimCraftingTool.ViewModel
 
             AllContainers = snapshot.Containers?.OrderBy(c => c.Name).ToList()
                 ?? new List<ContainerRecord>();
+
+            // Before any item is built below: ConditionMapper resolves GetItemCount targets against it.
+            ConditionItemCatalog.Set(snapshot.ConditionItems ?? new List<FormIDRecord>());
 
             // Own lists hung into a real container sit among that container's lists - see
             // UserLeveledListStore.MergeOwnListsIntoContainers. Before the rows below are built from it.
@@ -1917,7 +2214,12 @@ namespace SkyrimCraftingTool.ViewModel
                 if (o._filterPending)
                 {
                     o._filterPending = false;
-                    o.ApplyFilterDebounced(o._treeSearchText);
+                    // Right away on the UI thread, not debounced: the caller's loading overlay is still
+                    // up here, and a filter that ran 120 ms later rebuilt the tree after it was gone -
+                    // the run looked finished and then the window hung (2026-10-26).
+                    var dispatcher = System.Windows.Application.Current?.Dispatcher;
+                    if (dispatcher != null && dispatcher.CheckAccess()) o.ApplyFilter(o._treeSearchText);
+                    else o.ApplyFilterDebounced(o._treeSearchText);
                 }
             }
         }
@@ -2432,6 +2734,7 @@ namespace SkyrimCraftingTool.ViewModel
                 _cacheManager.UpdateArmorValue(item.Key, original.Value);
                 _cacheManager.UpdateArmorRating(item.Key, original.ArmorRating);
                 _cacheManager.UpdateArmorBodySlotMask(item.Key, original.BodySlotMask);
+                _liveSlotMasks.Remove(item.Key);   // the cache is right again; the variants read it
                 _cacheManager.UpdateArmorKeywords(item.Key, original.Keywords);
                 _cacheManager.UpdateArmorArmorType(item.Key, original.ArmorType);
                 _cacheManager.UpdateArmorContainerString(item.Key, original.ContainerString);

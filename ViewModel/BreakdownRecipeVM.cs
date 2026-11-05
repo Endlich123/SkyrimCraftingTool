@@ -184,7 +184,7 @@ namespace SkyrimCraftingTool.ViewModel
                 .ToList();
 
         private static string SerializeCondition(COBJConditionRecord c) =>
-            $"{c.ConditionType}|{c.Target}|{c.Value}|{c.Extra}|{c.RunOn}|{c.CompareOperator}|{c.Flags}";
+            $"{c.ConditionType}|{c.Target}|{c.Value}|{c.Extra}|{c.RunOn}|{c.RunOnRef}|{c.CompareOperator}|{c.Flags}";
 
         // Order-insensitive, like the crafting side: the add/remove buttons only append and remove,
         // there is no reordering UI, so a different order is not a real edit.
@@ -338,7 +338,7 @@ namespace SkyrimCraftingTool.ViewModel
             {
                 if (condition == null) return;
                 condition.PropertyChanged -= OnConditionChanged;
-                Conditions.Remove(condition);
+                ConditionGroups.Remove(Conditions, condition);   // keeps the OR groups around it intact
                 NotifyConditionsChanged();
             });
 

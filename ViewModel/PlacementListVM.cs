@@ -213,6 +213,7 @@ namespace SkyrimCraftingTool.ViewModel
             foreach (var row in _rowVMs.Where(r => string.Equals(r.Key, placeable.Key, StringComparison.OrdinalIgnoreCase)))
                 row.IsEdited = true;
             OnPropertyChanged(nameof(EditedCountText));
+            OnPropertyChanged(nameof(CanResetPlacement));
         }
 
         public string EditedCountText
@@ -246,7 +247,8 @@ namespace SkyrimCraftingTool.ViewModel
             (IsBulk ? PickedRows.Select(r => r.Row) : _selectedPlaceable == null ? Enumerable.Empty<IPlaceable>() : new[] { _selectedPlaceable })
                 .ToList();
 
-        public bool CanResetPlacement => IsBulk ? PickedRows.Count > 0 : _selectedPlaceable != null;
+        // Something to reset = at least one target is edited (the set RefreshEdited/MarkEdited keep).
+        public bool CanResetPlacement => ResetTargets().Any(t => _edited.Contains(t.Key));
 
         public RelayCommand ResetPlacementCommand { get; }
 

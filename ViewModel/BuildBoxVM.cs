@@ -230,8 +230,8 @@ namespace SkyrimCraftingTool.ViewModel
             };
             if (!string.Equals(item.ArmorType, result.ArmorType, StringComparison.OrdinalIgnoreCase))
                 parts.Add($"Type {item.ArmorType} → {result.ArmorType}");
-            if (item.BodySlotMask != result.BodySlotMask)
-                parts.Add($"Slots {ModularPrefill.DescribeBits(item.BodySlotMask)} → {ModularPrefill.DescribeBits(result.BodySlotMask)}");
+            if (item.EffectiveBodySlotMask != result.BodySlotMask)
+                parts.Add($"Slots {ModularPrefill.DescribeBits(item.EffectiveBodySlotMask)} → {ModularPrefill.DescribeBits(result.BodySlotMask)}");
 
             var names = NameMap(_main.AllAvailableKeywords);
             string Kw(string k) => names.TryGetValue(k, out var n) ? n : k;
@@ -303,6 +303,7 @@ namespace SkyrimCraftingTool.ViewModel
                 ? "No change - the items already looked like this."
                 : $"Applied to {report.Changed} of {report.Items} item(s).";
             if (report.SkippedNoName > 0) Status += $" {report.SkippedNoName} skipped (no name).";
+            Status += report.ChildText;
 
             // The single item's own values just changed: show the box against them.
             if (IsSingle) Preview = SinglePreview();

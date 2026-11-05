@@ -1,4 +1,5 @@
 using SkyrimCraftingTool.Model;
+using SkyrimCraftingTool.Services;
 using SkyrimCraftingTool.Services.ModularPresets;
 using System;
 using System.Collections.Generic;
@@ -110,7 +111,7 @@ namespace SkyrimCraftingTool.ViewModel
                 OnPropertyChanged(nameof(ShowArmor));
                 OnPropertyChanged(nameof(ShowSlots));
                 OnPropertyChanged(nameof(CatalogPath));
-                Build();
+                QueueRebuild($"Preset dry run: computing the {Kind} cards…");
             }
         }
         public bool ShowArmor { get => !_showWeapons; set => ShowWeapons = !value; }
@@ -154,8 +155,7 @@ namespace SkyrimCraftingTool.ViewModel
             var cards = VisibleCards().ToList();
             if (cards.Count == 0) return;
             int itemCount = cards.Sum(c => c.Items.Count);
-            int choices = cards.Count(c => c.HasOwnChoice || !c.IsIncluded)
-                        + cards.Sum(c => c.Items.Count(i => i.HasOwnChoice || !i.IsIncluded));
+            int choices = ChoicesToReset(cards);
             if (choices == 0)
             {
                 MessageBox.Show("Nothing to reset - every card shown is switched on and set to (auto).", "Reset all", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -169,8 +169,16 @@ namespace SkyrimCraftingTool.ViewModel
             if (answer != MessageBoxResult.Yes) return;
 
             Selection.Reset(cards.Select(c => c.Name), cards.SelectMany(c => c.Items).Select(i => i.Key));
-            Build();
+            QueueRebuild($"Preset dry run: computing the {Kind} cards…");
         });
+
+        // What "Reset all" would put back: an own combination or a switched-off card, among those shown.
+        private static int ChoicesToReset(IReadOnlyCollection<DryRunPluginCardVM> cards)
+            => cards.Count(c => c.HasOwnChoice || !c.IsIncluded)
+             + cards.Sum(c => c.Items.Count(i => i.HasOwnChoice || !i.IsIncluded));
+
+        // Greys "Reset all" out. Raised by UpdateSummary, which every choice, switch and filter runs through.
+        public bool HasChoicesToReset => ChoicesToReset(VisibleCards().ToList()) > 0;
 
         public RelayCommand ExpandAllCommand => new(() => { foreach (var c in VisibleCards()) c.IsExpanded = true; });
         public RelayCommand CollapseAllCommand => new(() => { foreach (var c in VisibleCards()) c.IsExpanded = false; });
@@ -182,7 +190,7 @@ namespace SkyrimCraftingTool.ViewModel
             View.ModularCatalogWindow.Show(Application.Current?.Windows.OfType<View.ModularDryRunWindow>().FirstOrDefault(), _main, ShowWeapons);
             if (ShowWeapons) _weaponCatalog = ReadWeaponCatalog(ModularCatalogStore.WeaponsRoot, out _weaponProblem);
             else _catalog = ReadCatalog(ModularCatalogStore.ArmorRoot, out _armorProblem);
-            Build();
+            QueueRebuild($"Preset dry run: computing the {Kind} cards…");
         });
 
         public ModularDryRunVM(MainContentVM main)
@@ -272,8 +280,13 @@ namespace SkyrimCraftingTool.ViewModel
             {
                 PluginCards.Clear();
                 Summary = ShowWeapons ? _weaponProblem : _armorProblem;
+                OnPropertyChanged(nameof(HasChoicesToReset));
                 return;
             }
+
+            var total = PerfClock.StartNew();
+            _rowClock.Reset();
+            _nodesByKey = null;   // the tree may have moved since the last build (Apply)
 
             // Open cards stay open across a recompute (Apply, edited building blocks).
             var expanded = new HashSet<string>(PluginCards.Where(c => c.IsExpanded).Select(c => c.Name), StringComparer.OrdinalIgnoreCase);
@@ -305,6 +318,10 @@ namespace SkyrimCraftingTool.ViewModel
             OnPropertyChanged(nameof(AddonOptions));
 
             // GroupBy keeps the order of first appearance - the tree's, which is the load order.
+            // NOT under PluginCardsView.DeferRefresh: a ListCollectionView throws on every change to
+            // its source while deferred (crashed the window on open, 2026-10-30). Each card is still
+            // filtered out as it comes in (no visible items until RefreshFilters), which is cheap.
+            int itemCount = 0;
             foreach (var g in VisibleItems(_main, ShowWeapons).GroupBy(x => x.Plugin, StringComparer.OrdinalIgnoreCase))
             {
                 var card = new DryRunPluginCardVM(this, g.Key, g.Select(x => x.Item).ToList())
@@ -314,8 +331,37 @@ namespace SkyrimCraftingTool.ViewModel
                 };
                 foreach (var i in card.Items) i.IsExpanded = itemCardsOpen.Contains(i.Key);
                 PluginCards.Add(card);
+                itemCount += card.Items.Count;
             }
+            long cardsMs = total.ElapsedMilliseconds;
             RefreshFilters();
+            PerfLog.Record($"Preset dry run: build the {Kind} cards", total,
+                $"{itemCount} item(s) in {PluginCards.Count} plugin(s); rows {_rowClock.ElapsedMilliseconds} ms, cards {cardsMs} ms in all, filter {total.ElapsedMilliseconds - cardsMs} ms");
+        }
+
+        // How long the rows took, summed over every card of one Build (perf.log).
+        private readonly System.Diagnostics.Stopwatch _rowClock = new();
+
+        // Every item node by key, for the template lookups of thousands of rows - FindItemNode walks
+        // the whole tree each time (2026-10-30). Built on the first row of a Build.
+        private Dictionary<string, ItemNodeVM>? _nodesByKey;
+        private Dictionary<string, ItemNodeVM> NodesByKey => _nodesByKey ??= _main.ItemNodesByKey();
+
+        // A rebuild from a click (the armor/weapon switch, Reset all, edited blocks), under the loading
+        // overlay. Queued, not run in place: the switch calls in from a binding, and the overlay waits
+        // for its window with a nested message loop - not something to start inside a binding update.
+        // Without a dispatcher (tests) it builds right away, as before.
+        private void QueueRebuild(string message)
+        {
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null) { Build(); return; }
+            dispatcher.BeginInvoke(new Action(async () =>
+            {
+                using var busy = BusyService.Show(message, blocksUiThread: true);
+                PerfLog.UntilRendered($"Preset dry run: show the {Kind} cards");
+                Build();
+                await BusyService.UntilDrawnAsync();
+            }));
         }
 
         internal PatchPluginSelection Selection => _showWeapons ? _weaponSelection : _armorSelection;
@@ -325,9 +371,14 @@ namespace SkyrimCraftingTool.ViewModel
         {
             Func<ModularSelection, ModularSelection> pluginStage = detected => Selection.PluginChoice(plugin)?.Resolve(detected) ?? detected;
             Func<ModularSelection, ModularSelection> itemStage = withPlugin => Selection.ItemChoice(item.Key)?.Resolve(withPlugin) ?? withPlugin;
-            return ShowWeapons
-                ? BuildWeaponRow(_weaponCatalog!, item, plugin, _main, _keywordNames, _materialNames, _weaponMaterialKeywords, pluginStage, itemStage)
-                : BuildRow(_catalog!, item, plugin, _main, _keywordNames, _materialNames, _materialKeywords, pluginStage, itemStage);
+            _rowClock.Start();
+            try
+            {
+                return ShowWeapons
+                    ? BuildWeaponRow(_weaponCatalog!, item, plugin, _main, _keywordNames, _materialNames, _weaponMaterialKeywords, pluginStage, itemStage, NodesByKey)
+                    : BuildRow(_catalog!, item, plugin, _main, _keywordNames, _materialNames, _materialKeywords, pluginStage, itemStage, NodesByKey);
+            }
+            finally { _rowClock.Stop(); }
         }
 
         internal bool ItemVisible(DryRunItemCardVM item)
@@ -364,6 +415,7 @@ namespace SkyrimCraftingTool.ViewModel
 
         private void UpdateSummary()
         {
+            OnPropertyChanged(nameof(HasChoicesToReset));
             int items = PluginCards.Sum(c => c.Items.Count);
             if (items == 0)
             {
@@ -393,16 +445,23 @@ namespace SkyrimCraftingTool.ViewModel
             var nodes = targets.Select(t => t.Row.Node).ToList();
             var selection = Selection;
             ModularSelection Resolve(ItemNodeVM item, ModularSelection detected) => selection.Resolve(pluginOf[item], item.Key, detected);
+
+            // One overlay over the patch AND the cards rebuilt afterwards: Build() recomputes every
+            // card and used to run after the patch's own overlay had closed (2026-10-26).
+            using var busy = BusyService.Show("Preset patch…", blocksUiThread: true);
             var report = ShowWeapons
                 ? await WeaponPresetApplier.ApplyAsync(_main, _weaponCatalog!, nodes, Resolve)
                 : await ModularPresetApplier.ApplyAsync(_main, _catalog!, nodes, Resolve);
+            BusyService.SetMessage("Preset patch: updating the cards…");
             Build();
-            Summary = $"Applied: {report.Changed} of {report.Items} item(s) changed{(report.SkippedNoName > 0 ? $", {report.SkippedNoName} skipped (no name)" : "")}. The cards now show the state after the patch.";
+            await BusyService.UntilDrawnAsync();
+            Summary = $"Applied: {report.Changed} of {report.Items} item(s) changed{(report.SkippedNoName > 0 ? $", {report.SkippedNoName} skipped (no name)" : "")}.{report.ChildText} The cards now show the state after the patch.";
         }
 
         private static ModularDryRunRow BuildRow(ModularCatalog catalog, ItemNodeVM item, string plugin, MainContentVM main,
             Dictionary<string, string> keywordNames, Dictionary<string, string> materialNames, HashSet<string> materialKeywords,
-            Func<ModularSelection, ModularSelection> pluginStage, Func<ModularSelection, ModularSelection> itemStage)
+            Func<ModularSelection, ModularSelection> pluginStage, Func<ModularSelection, ModularSelection> itemStage,
+            IReadOnlyDictionary<string, ItemNodeVM>? nodesByKey = null)
         {
             if (ModularPresetApplier.IsSkipped(item))
                 return new ModularDryRunRow
@@ -424,6 +483,16 @@ namespace SkyrimCraftingTool.ViewModel
             var auto = pluginStage(prefill.Selection);     // what "(auto)" gives on the item card
             var selection = itemStage(auto);
             var result = ModularPresetEngine.Compute(catalog, selection, state, materialKeywords);
+            ModularPresetApplier.TakeTemplateValues(main, catalog, item, selection, result, materialKeywords, nodesByKey);
+
+            // A template child (Kinder-Patcher): its slots, type and keywords are its template's - the
+            // patch writes them from there, so the card shows no change of its own for them.
+            if (main.ArmorFamilies.RootOf(item.Key) is { } template)
+            {
+                result.Keywords = state.Keywords.ToList();
+                result.ArmorType = state.ArmorType;
+                result.Warnings.Add($"Template child: slots, type and keywords follow {TemplateName(main, template)} - the patch writes them from there.");
+            }
 
             var before = new HashSet<string>(state.Keywords, StringComparer.OrdinalIgnoreCase);
             var after = new HashSet<string>(result.Keywords, StringComparer.OrdinalIgnoreCase);
@@ -487,7 +556,8 @@ namespace SkyrimCraftingTool.ViewModel
         // has its rating, and no slots.
         private static ModularDryRunRow BuildWeaponRow(WeaponCatalog catalog, ItemNodeVM item, string plugin, MainContentVM main,
             Dictionary<string, string> keywordNames, Dictionary<string, string> materialNames, HashSet<string> materialKeywords,
-            Func<ModularSelection, ModularSelection> pluginStage, Func<ModularSelection, ModularSelection> itemStage)
+            Func<ModularSelection, ModularSelection> pluginStage, Func<ModularSelection, ModularSelection> itemStage,
+            IReadOnlyDictionary<string, ItemNodeVM>? nodesByKey = null)
         {
             if (ModularPresetApplier.IsSkipped(item))
                 return new ModularDryRunRow
@@ -505,6 +575,14 @@ namespace SkyrimCraftingTool.ViewModel
             var auto = pluginStage(prefill.Selection);
             var selection = itemStage(auto);
             var result = WeaponPresetEngine.Compute(catalog, selection, state, materialKeywords);
+            WeaponPresetApplier.TakeTemplateValues(main, catalog, item, selection, result, materialKeywords, nodesByKey);
+
+            // See BuildRow: a template child's keywords are its template's.
+            if (main.WeaponFamilies.RootOf(item.Key) is { } template)
+            {
+                result.Keywords = state.Keywords.ToList();
+                result.Warnings.Add($"Template child: keywords follow {TemplateName(main, template)} - the patch writes them from there.");
+            }
 
             var before = new HashSet<string>(state.Keywords, StringComparer.OrdinalIgnoreCase);
             var after = new HashSet<string>(result.Keywords, StringComparer.OrdinalIgnoreCase);
@@ -564,6 +642,9 @@ namespace SkyrimCraftingTool.ViewModel
                 AutoMaterial = auto.MaterialName,
             };
         }
+
+        private static string TemplateName(MainContentVM main, string key)
+            => main.FindTemplateLink(key) is { } t && !string.IsNullOrWhiteSpace(t.Name) ? t.Name : key;
 
         private static bool Differs(double before, double? after, double tolerance)
             => after != null && Math.Abs(after.Value - before) > tolerance;

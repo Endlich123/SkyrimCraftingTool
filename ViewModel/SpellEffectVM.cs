@@ -45,6 +45,8 @@ namespace SkyrimCraftingTool.ViewModel
 
         private MagicEffectsRecords _catalogue;
 
+        internal MagicEffectsRecords Catalogue => _catalogue;
+
         internal void AttachCatalogue(MagicEffectsRecords entry)
         {
             _catalogue = entry;

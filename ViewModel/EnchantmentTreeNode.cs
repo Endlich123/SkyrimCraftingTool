@@ -80,9 +80,25 @@ namespace SkyrimCraftingTool.ViewModel
             if (Menu != null) await Menu.ImportPluginEnchantmentsAsync(DisplayName);
         });
 
+        // The two Reset buttons are greyed out without something to reset. Raised by
+        // EnchantmentMenuVM.RaisePluginResetFlags.
+        public bool HasEditedEnchantments => Menu?.PluginHasEditedEnchantments(DisplayName) == true;
+        public bool UsesEditedWornRestrictionList => Menu?.PluginUsesEditedWornRestrictionList(DisplayName) == true;
+
+        internal void RaiseResetFlags()
+        {
+            OnPropertyChanged(nameof(HasEditedEnchantments));
+            OnPropertyChanged(nameof(UsesEditedWornRestrictionList));
+        }
+
         public ICommand ResetPluginCommand => new RelayCommand(async () =>
         {
             if (Menu != null) await Menu.ResetPluginEnchantmentsAsync(DisplayName);
+        });
+
+        public ICommand ResetPluginWornRestrictionListsCommand => new RelayCommand(async () =>
+        {
+            if (Menu != null) await Menu.ResetPluginWornRestrictionListsAsync(DisplayName);
         });
 
         // Delete is offered only where there is something of the user's to delete - the same rule

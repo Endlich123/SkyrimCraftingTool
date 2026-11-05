@@ -149,6 +149,8 @@ namespace SkyrimCraftingTool.ViewModel
         public RecipeEditVM Breakdown { get; }
         public RecordPickerVM KeywordPicker { get; }
         public RelayCommand ClearKeywordCommand { get; }
+        public RecordPickerVM RequiredKeywordPicker { get; }
+        public RelayCommand ClearRequiredKeywordCommand { get; }
 
         // One row per weapon class: every class the catalog uses, plus any this material lists.
         public ObservableCollection<WeaponClassRowVM> Classes { get; } = new();
@@ -177,6 +179,9 @@ namespace SkyrimCraftingTool.ViewModel
                 "What breaking the weapon down PRODUCES. Only the first entry with an amount above 0 is used.", breakdown: true);
             KeywordPicker = new RecordPickerVM(owner.AllKeywords, r => MaterialKeyword = r.Key);
             ClearKeywordCommand = new RelayCommand(() => MaterialKeyword = "");
+            model.RequiredKeyword ??= "";
+            RequiredKeywordPicker = new RecordPickerVM(owner.AllKeywords, r => RequiredKeyword = r.Key);
+            ClearRequiredKeywordCommand = new RelayCommand(() => RequiredKeyword = "");
 
             foreach (var c in owner.WeaponClasses.Concat(model.Classes.Keys).Distinct(StringComparer.OrdinalIgnoreCase))
                 Classes.Add(new WeaponClassRowVM(model, c, owner.MarkDirty));
@@ -231,6 +236,24 @@ namespace SkyrimCraftingTool.ViewModel
         public string MaterialKeywordDisplay => Model.MaterialKeyword.Length == 0
             ? "(none)"
             : $"{_owner.KeywordName(Model.MaterialKeyword)}  ({Model.MaterialKeyword})";
+
+        // See WeaponMaterialModule.RequiredKeyword.
+        public string RequiredKeyword
+        {
+            get => Model.RequiredKeyword;
+            set
+            {
+                if (Model.RequiredKeyword == value) return;
+                Model.RequiredKeyword = value ?? "";
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(RequiredKeywordDisplay));
+                _owner.MarkDirty();
+            }
+        }
+
+        public string RequiredKeywordDisplay => string.IsNullOrEmpty(Model.RequiredKeyword)
+            ? "(none)"
+            : $"{_owner.KeywordName(Model.RequiredKeyword)}  ({Model.RequiredKeyword})";
 
         public string NamePatterns
         {

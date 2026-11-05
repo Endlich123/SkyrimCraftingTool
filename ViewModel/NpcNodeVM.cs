@@ -62,6 +62,11 @@ namespace SkyrimCraftingTool.ViewModel
 
         public string Key => _record.Key;
         public string EditorID => _record.EditorID;
+
+        // Shown under the EditorID only when an override renamed it: SkyPatcher's EditorID filters
+        // match this original name, so it explains why a group rule names the NPC separately.
+        public string OriginalEditorIdLabel => "Original: " + _record.OriginalEditorID;
+        public bool IsEditorIdRenamed => _record.IsEditorIdRenamed;
         public string Name => _record.Name;
         public string ShortName => _record.ShortName;
         // WHAT THE SCREEN CALLS "edited": does this record actually differ from what the scan read.

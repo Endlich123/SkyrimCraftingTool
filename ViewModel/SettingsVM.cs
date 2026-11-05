@@ -87,6 +87,48 @@ namespace SkyrimCraftingTool.ViewModel
 
         public ICommand ShowLostListsCommand => _content.ShowLostListsCommand;
 
+        // --- Template children (Kinder-Patcher, K5) ---
+
+        // Edits template children carry in the fields they now take from their template - made before
+        // the Kinder-Patcher and ignored by the patch since. Cleared on request, counted first.
+        public ICommand CleanUpChildEditsCommand => new RelayCommand(async () =>
+        {
+            var dbPath = Path.Combine(Model.GlobalState.Tool.InputFolder, "Item", "item.db");
+            if (!File.Exists(dbPath)) return;
+            await _content.FlushPendingSavesAsync();
+
+            // The extras first: a child's own addons (a master robe's x512) lived in the numbers this
+            // clears, so they are computed from its detected addons before anything is removed.
+            List<Services.TemplateChildren.ChildExtras> extras;
+            using (Services.BusyService.Show("Template children: reading their addons…", blocksUiThread: true))
+                extras = Services.ModularPresets.ChildExtrasRefresh.All(_content);
+            var changedExtras = extras.Where(x => !_content.ChildExtrasOf(x.Key).SameAs(x)).ToList();
+
+            var count = Services.TemplateChildren.ChildEditCleanup.Run(dbPath, apply: false);
+            if (count.Total == 0 && changedExtras.Count == 0)
+            {
+                System.Windows.MessageBox.Show("Nothing to do: no template child carries edits in the fields it takes from its template, and their addons are up to date.",
+                    "Template children", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                return;
+            }
+            var answer = System.Windows.MessageBox.Show(
+                $"{changedExtras.Count:N0} template children get their own addons recorded (e.g. Master Robes: value x512 on top of the plain robe).\n\n"
+                + $"{count.Armor:N0} armor and {count.Weapons:N0} weapon template children carry edits in fields they take from their template "
+                + "(slots, type, keywords; the numbers of enchanted ones). The patch ignores them already - they are cleared.\n\n"
+                + "Name, enchantment, recipes and placements stay. This cannot be undone. Continue?",
+                "Template children", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question);
+            if (answer != System.Windows.MessageBoxResult.Yes) return;
+
+            using (Services.BusyService.Show("Template children: clearing inherited edits…", blocksUiThread: false))
+            {
+                _content.SaveChildExtras(changedExtras);
+                Services.TemplateChildren.ChildEditCleanup.Run(dbPath, apply: true);
+                await _content.RefreshFromDatabaseAsync();
+            }
+            System.Windows.MessageBox.Show($"Recorded the addons of {changedExtras.Count:N0} and cleared the inherited edits of {count.Total:N0} template children.",
+                "Template children", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+        });
+
         // --- Export / import of every tab at once ---
 
         // The tabs' own Export / Import, all at once - see AllTabsImportExportVM.

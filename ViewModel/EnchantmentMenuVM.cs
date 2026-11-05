@@ -298,6 +298,27 @@ namespace SkyrimCraftingTool.ViewModel
                 ? n
                 : listKey;
 
+        // Every FLST whose keyword CONTENTS were edited (WornRestrictionListState). Such an edit marks
+        // the list, not the enchantments pointing at it (E3), so "Only edited" asks this set as well -
+        // otherwise a changed list could not be found from the tree at all. Replaced, never mutated:
+        // the tree filter reads it on a background thread.
+        private HashSet<string> _editedWornRestrictionLists = new(StringComparer.OrdinalIgnoreCase);
+
+        // Edited for "Only edited": its own fields/effects/list assignment, or the list it uses.
+        internal static bool CountsAsEdited(EnchantmentRecord ench, IReadOnlySet<string> editedLists)
+            => ench != null
+               && (ench.IsEdited
+                   || (!KeyFactory.IsUnsetKey(ench.WornRestrictionListKey) && editedLists.Contains(ench.WornRestrictionListKey)));
+
+        // The edited lists these enchantments use, once each - what "Reset all Worn-Restriction-Lists"
+        // on a plugin reverts. Split out so it can be tested; the command is wrapped in MessageBoxes.
+        internal static List<string> EditedListsUsedBy(IEnumerable<EnchantmentRecord> enchantments, IReadOnlySet<string> editedLists)
+            => (enchantments ?? Enumerable.Empty<EnchantmentRecord>())
+                .Where(e => e != null && !KeyFactory.IsUnsetKey(e.WornRestrictionListKey) && editedLists.Contains(e.WornRestrictionListKey))
+                .Select(e => e.WornRestrictionListKey)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
         private void RefreshWornRestrictionListChoices()
         {
             var nameByKey = _keywordService.GlobalKeywords
@@ -311,7 +332,14 @@ namespace SkyrimCraftingTool.ViewModel
             WornRestrictionListChoices.Clear();
             WornRestrictionListChoices.Add(NoneChoice);
 
-            foreach (var (listKey, memberKeys, isUserEdited) in _enchantmentService.GetKnownWornRestrictionLists()
+            var knownLists = _enchantmentService.GetKnownWornRestrictionLists();
+            _editedWornRestrictionLists = knownLists
+                .Where(t => t.IsEdited)
+                .Select(t => t.ListKey)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            RaisePluginResetFlags();
+
+            foreach (var (listKey, memberKeys, isUserEdited) in knownLists
                          .OrderBy(t => FlstDisplay(t.ListKey), StringComparer.OrdinalIgnoreCase))
             {
                 bool isCurrent = string.Equals(listKey, currentKey, StringComparison.OrdinalIgnoreCase);
@@ -822,6 +850,10 @@ namespace SkyrimCraftingTool.ViewModel
             OnPropertyChanged(nameof(KeywordItems));
             RefreshEnchantmentSnapshot();   // recomputes _originalWornRestrictionKeywords + list state
             RefreshWornRestrictionListChoices();   // member count / preview changed (already on the UI thread)
+
+            // The list is no longer edited, so "Only edited" may have to drop this row.
+            if (_showOnlyEditedEnchantments)
+                ApplyEnchantmentFilterDebounced(_enchantmentTreeSearchText);
         });
 
         public WornRestrictionListChoice SelectedWornRestrictionListChoice
@@ -1545,6 +1577,12 @@ namespace SkyrimCraftingTool.ViewModel
             // enchantment(s) pointing at it — so no MarkSelectedEnchantmentEdited() here. The detail
             // view still shows it as a resettable change via IsWornRestrictionKeywordsChanged.
             _wornRestrictionListEdited = true;   // optimistic — the debounced save below sets it in the DB
+            if (!_editedWornRestrictionLists.Contains(ench.WornRestrictionListKey))
+            {
+                _editedWornRestrictionLists = new HashSet<string>(_editedWornRestrictionLists, StringComparer.OrdinalIgnoreCase)
+                    { ench.WornRestrictionListKey };
+                RaisePluginResetFlags();
+            }
             OnPropertyChanged(nameof(IsWornRestrictionKeywordsChanged));
             OnPropertyChanged(nameof(HasWornRestrictionChanges));
             OnPropertyChanged(nameof(HasEnchantmentChanges));
@@ -1652,6 +1690,7 @@ namespace SkyrimCraftingTool.ViewModel
         {
             foreach (var root in TreeItems) Raise(root);
             foreach (var root in EnchantementFilteredTree) Raise(root);
+            RaisePluginResetFlags();
 
             static void Raise(EnchantmentTreeNode node)
             {
@@ -1707,6 +1746,7 @@ namespace SkyrimCraftingTool.ViewModel
         {
             bool onlyEdited = _showOnlyEditedEnchantments;
             bool onlyBase = _showOnlyBaseEnchantments;
+            var editedLists = _editedWornRestrictionLists;
             bool searching = !string.IsNullOrWhiteSpace(search);
 
             if (!searching && !onlyEdited && !onlyBase)
@@ -1719,7 +1759,7 @@ namespace SkyrimCraftingTool.ViewModel
             {
                 token.ThrowIfCancellationRequested();
 
-                var filtered = FilterPluginNode(pluginNode, lower, onlyEdited, onlyBase);
+                var filtered = FilterPluginNode(pluginNode, lower, onlyEdited, onlyBase, editedLists);
                 if (filtered != null)
                     result.Add(filtered);
             }
@@ -1728,7 +1768,7 @@ namespace SkyrimCraftingTool.ViewModel
         }
 
 
-        private EnchantmentTreeNode FilterPluginNode(EnchantmentTreeNode root, string search, bool onlyEdited, bool onlyBase)
+        private EnchantmentTreeNode FilterPluginNode(EnchantmentTreeNode root, string search, bool onlyEdited, bool onlyBase, IReadOnlySet<string> editedLists)
         {
             bool searching = search.Length > 0;
 
@@ -1739,7 +1779,7 @@ namespace SkyrimCraftingTool.ViewModel
             // Leaf: gate on edited / base-only state first, then on the search text.
             if (root is EnchantmentLeafNode leaf)
             {
-                if (onlyEdited && !leaf.Enchantment.IsEdited)
+                if (onlyEdited && !CountsAsEdited(leaf.Enchantment, editedLists))
                     return null;
                 if (onlyBase && leaf.Enchantment.IsDerived)
                     return null;
@@ -1754,7 +1794,7 @@ namespace SkyrimCraftingTool.ViewModel
             // Folder / plugin node.
             foreach (var child in root.Children)
             {
-                var filteredChild = FilterPluginNode(child, search, onlyEdited, onlyBase);
+                var filteredChild = FilterPluginNode(child, search, onlyEdited, onlyBase, editedLists);
                 if (filteredChild != null)
                     newRoot.Children.Add(filteredChild);
             }
@@ -1995,7 +2035,7 @@ namespace SkyrimCraftingTool.ViewModel
                             "they are NOT deleted; use Delete for that.";
 
             question += $"{Environment.NewLine}{Environment.NewLine}This covers the whole plugin, regardless of any active tree filter, and cannot be undone." +
-                        $"{Environment.NewLine}{Environment.NewLine}Worn-restriction LIST contents are shared between enchantments and are not touched here - use \"Reset list\" for those.";
+                        $"{Environment.NewLine}{Environment.NewLine}Worn-restriction LIST contents are shared between enchantments and are not touched here - use \"Reset all Worn-Restriction-Lists\" for those.";
 
             var answer = System.Windows.MessageBox.Show(
                 question, "Reset plugin",
@@ -2013,6 +2053,54 @@ namespace SkyrimCraftingTool.ViewModel
             System.Windows.MessageBox.Show(
                 $"{edited.Count} enchantment(s) in '{plugin}' reset.",
                 "Reset plugin", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+        }
+
+        // Reverts the keyword CONTENTS of every edited worn-restriction list this plugin's enchantments
+        // use - the list-side half of the plugin reset, which "Reset all Enchantments" leaves alone.
+        // Which list an enchantment points at is the enchantment's own edit and stays with that button.
+        // A list is shared: the reset reaches every enchantment using it, in any plugin, and the
+        // confirmation says how many.
+        internal async Task ResetPluginWornRestrictionListsAsync(string plugin)
+        {
+            await FlushPendingSavesAsync();
+
+            // Read fresh, not from the cached set: the save just flushed may have marked a list.
+            var edited = _enchantmentService.GetKnownWornRestrictionLists()
+                .Where(t => t.IsEdited)
+                .Select(t => t.ListKey)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var lists = EditedListsUsedBy(EnchantmentsOf(plugin), edited);
+
+            if (lists.Count == 0)
+            {
+                System.Windows.MessageBox.Show($"No enchantment in '{plugin}' uses an edited worn-restriction list.",
+                    "Reset worn-restriction lists", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            int users = lists.Sum(_enchantmentService.CountEnchantmentsUsingWornRestrictionList);
+
+            var question =
+                $"Revert the keyword contents of {lists.Count} worn-restriction list(s) used by enchantments in '{plugin}' " +
+                "back to their scanned state?" +
+                $"{Environment.NewLine}{Environment.NewLine}The lists are shared: {users} enchantment(s) across all plugins use them, " +
+                "and every one of them gets the reverted list." +
+                $"{Environment.NewLine}{Environment.NewLine}Which list an enchantment points at is not touched - that is part of \"Reset all Enchantments\". " +
+                "This covers the whole plugin, regardless of any active tree filter, and cannot be undone.";
+
+            var answer = System.Windows.MessageBox.Show(
+                question, "Reset worn-restriction lists",
+                System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+            if (answer != System.Windows.MessageBoxResult.Yes) return;
+
+            foreach (var list in lists)
+                _enchantmentService.ResetWornRestrictionKeywords(list);
+
+            RefreshData(_activePlugins);
+
+            System.Windows.MessageBox.Show(
+                $"{lists.Count} worn-restriction list(s) reset.",
+                "Reset worn-restriction lists", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
         }
 
         // Deletes every enchantment of this plugin that the user created. Only ever offered where
@@ -2068,6 +2156,21 @@ namespace SkyrimCraftingTool.ViewModel
 
         internal bool PluginHasUserCreatedEnchantments(string plugin)
             => EnchantmentsOf(plugin).Any(e => e.IsUserCreated);
+
+        // What the plugin row's two Reset buttons would find - the same reads the commands start with,
+        // off the unfiltered tree, so a filtered copy of the row answers for the whole plugin.
+        internal bool PluginHasEditedEnchantments(string plugin)
+            => EnchantmentsOf(plugin).Any(e => e.IsEdited);
+
+        internal bool PluginUsesEditedWornRestrictionList(string plugin)
+            => EditedListsUsedBy(EnchantmentsOf(plugin), _editedWornRestrictionLists).Count > 0;
+
+        // Both trees, as in RaiseTreeEditedFlags. Only the plugin rows carry the buttons.
+        private void RaisePluginResetFlags()
+        {
+            foreach (var node in TreeItems.Concat(EnchantementFilteredTree).OfType<EnchantmentPluginNode>())
+                node.RaiseResetFlags();
+        }
 
         // Off the UNFILTERED tree on purpose - see the scope note above.
         private IEnumerable<EnchantmentRecord> EnchantmentsOf(string plugin)

@@ -312,6 +312,40 @@ namespace SkyrimCraftingTool.ViewModel
             Main.RegisterNewRecipe(rec);
         }
 
+        // The vanilla gate every temper recipe carries (5,537 of 5,840 on the real modlist):
+        // "item is not enchanted, OR the player has Arcane Blacksmith". Without it an enchanted item
+        // - including one the user just gave an enchantment here - can be tempered by anyone.
+        //
+        // Only when the recipe has neither half yet. If it already holds HasPerk Arcane Blacksmith,
+        // adding the pair in front would AND that perk onto every item, enchanted or not.
+        // The item carries an enchantment, but its temper recipe has neither half of the gate. 303 of
+        // the 5,840 temper recipes on the real modlist have none - harmless while the item was plain,
+        // not once the user enchants it. Only reported, never added: it would change another mod's
+        // recipe without being asked.
+        public bool TemperRecipeLacksArcaneBlacksmithGate =>
+            !string.IsNullOrWhiteSpace(ObjectEffectKey)
+            && HasTemperRecipe
+            && ArcaneBlacksmithGate(
+                    TemperConditions.Select(vm => ConditionMapper.ToRecord(vm, "")), "").Count > 0;
+
+        internal static List<COBJConditionRecord> ArcaneBlacksmithGate(
+            IEnumerable<COBJConditionRecord> existing, string cobjKey)
+        {
+            bool hasGate = existing.Any(c =>
+                c.ConditionType == "EPTemperingItemIsEnchanted"
+                || (c.ConditionType == "HasPerk"
+                    && string.Equals(c.Target, TemperEnchantedConditionViewModel.ArcaneBlacksmithKey, StringComparison.OrdinalIgnoreCase)));
+            if (hasGate) return new List<COBJConditionRecord>();
+
+            return new List<COBJConditionRecord>
+            {
+                new() { COBJKey = cobjKey, ConditionType = "EPTemperingItemIsEnchanted", Target = "", Value = "1",
+                        RunOn = "Subject", CompareOperator = "NotEqualTo", Flags = "OR" },
+                new() { COBJKey = cobjKey, ConditionType = "HasPerk", Target = TemperEnchantedConditionViewModel.ArcaneBlacksmithKey,
+                        Value = "1", RunOn = "Subject", CompareOperator = "EqualTo", Flags = "" },
+            };
+        }
+
         public void CreateTemperRecipe()
         {
             var rec = Main?.ItemService.CreateNewCOBJRecordForItem(this, true);
@@ -330,6 +364,7 @@ namespace SkyrimCraftingTool.ViewModel
             var temperConditions = TemperConditions
                 .Where(ConditionMapper.HasUsableTarget)
                 .Select(vm => ConditionMapper.ToRecord(vm, rec.Key)).ToList();
+            temperConditions.InsertRange(0, ArcaneBlacksmithGate(temperConditions, rec.Key));
             if (temperConditions.Count > 0)
                 rec.Conditions = temperConditions;
 
@@ -671,7 +706,15 @@ namespace SkyrimCraftingTool.ViewModel
         private static bool IsConditionUiOnlyProperty(string propertyName) => propertyName is
             nameof(PerkConditionViewModel.PerkSearchText)
             or nameof(PerkConditionViewModel.SelectedPerk)
-            or nameof(QuestStageConditionViewModel.SelectedQuest);
+            or nameof(QuestStageConditionViewModel.SelectedQuest)
+            or nameof(ItemCountConditionViewModel.SearchText)
+            or nameof(ItemCountConditionViewModel.SelectedItem)
+            or nameof(ItemCountConditionViewModel.Matches)
+            or nameof(QuestCurrentStageConditionViewModel.StagesHint)
+            // OR-group drawing, recomputed whenever the list or a flag changes (ConditionGroups.Apply).
+            or nameof(BaseConditionViewModel.GroupPosition)
+            or nameof(BaseConditionViewModel.Connector)
+            or nameof(BaseConditionViewModel.IsDanglingOr);
 
         private void OnConditionPropertyChanged(object sender, PropertyChangedEventArgs e)
         {
@@ -750,6 +793,9 @@ namespace SkyrimCraftingTool.ViewModel
             CustomConditionType.GetActorValue => new ActorValueConditionViewModel(),
             CustomConditionType.GetLevel => new LevelConditionViewModel(),
             CustomConditionType.GetStageDone => new QuestStageConditionViewModel(),
+            CustomConditionType.GetItemCount => new ItemCountConditionViewModel(),
+            CustomConditionType.EPTemperingItemIsEnchanted => new TemperEnchantedConditionViewModel(),
+            CustomConditionType.GetStage => new QuestCurrentStageConditionViewModel(),
             _ => new PerkConditionViewModel()
         };
 
@@ -985,9 +1031,8 @@ namespace SkyrimCraftingTool.ViewModel
 
         // Drives both the placeholder line and the add button's enabled state. A separate property
         // rather than an inverting converter, which this project does not have - and the button
-        // binds IsEnabled rather than relying on CanExecute, because RelayCommand here never
-        // raises CanExecuteChanged, so a command-based state would stick at whatever it was when
-        // the row was first drawn.
+        // binds IsEnabled rather than relying on CanExecute: CanExecute is only asked again after
+        // input (CommandManager.RequerySuggested), a property raises the change the moment it happens.
         public bool BreakdownRecipeAbsent => BreakdownRecipe == null;
 
         // How many further breakdown recipes exist behind the one on screen. Shown in the header so
@@ -1199,6 +1244,8 @@ namespace SkyrimCraftingTool.ViewModel
             {
                 if (SetProperty(ref _bodySlotMask, value))
                 {
+                    // Its variants read it from here until the autosave has put it in the cache.
+                    if (!IsLoading && IsArmor) Main?.NoteSlotMask(Key, value);
                     SyncDataToGui();
                     NotifyFieldChanged(nameof(BodySlotMask));
                     OnPropertyChanged(nameof(IsBodySlotMaskChanged));
@@ -1277,7 +1324,12 @@ namespace SkyrimCraftingTool.ViewModel
 
                     if (!changed) return;
 
-                    if (!IsLoading) NotifyFieldChanged(nameof(ObjectEffectKey));
+                    if (!IsLoading)
+                    {
+                        NotifyFieldChanged(nameof(ObjectEffectKey));
+                        // An enchantment can open the temper recipe to everyone - see ReportRecipeIssues.
+                        ReportRecipeIssues();
+                    }
 
                     OnPropertyChanged(nameof(SelectedEnchantment));
                     OnPropertyChanged(nameof(IsObjectEffectChanged));
@@ -1285,6 +1337,8 @@ namespace SkyrimCraftingTool.ViewModel
                     // The jump button lives or dies with this value: "(no enchantment)" has nothing
                     // to jump to, and neither has a key whose plugin left the load order.
                     OnPropertyChanged(nameof(CanJumpToEnchantment));
+                    // Enchanted or not decides whether a template child takes its numbers (K4).
+                    if (HasTemplate) RaiseChildPatcher();
                 }
                 finally
                 {
@@ -1468,6 +1522,240 @@ namespace SkyrimCraftingTool.ViewModel
 
         public ICommand JumpToEnchantmentCommand => new RelayCommand(
             () => Main?.RequestEnchantmentJump(ObjectEffectKey));
+
+        // --- Template (armor TNAM, weapon CNAM): the plain piece an enchanted variant was made from ---
+        // The item counterpart of an enchantment's "Base:" line and its "Open base" button. Scanned
+        // only, never edited, so it has no original/edited pair and no reset.
+        private string _templateKey = "";
+        public string TemplateKey
+        {
+            get => _templateKey;
+            private set
+            {
+                if (SetProperty(ref _templateKey, value ?? ""))
+                {
+                    OnPropertyChanged(nameof(HasTemplate));
+                    OnPropertyChanged(nameof(TemplateDisplay));
+                    OnPropertyChanged(nameof(CanOpenTemplate));
+                    OnPropertyChanged(nameof(ShowLineageRow));
+                    OnPropertyChanged(nameof(LineageLabel));
+                    OnPropertyChanged(nameof(SlotsInherited));
+                    OnPropertyChanged(nameof(SlotsEditable));
+                    OnPropertyChanged(nameof(SlotsInheritedNote));
+                    RaiseChildPatcher();
+                    SyncDataToGui();
+                }
+            }
+        }
+
+        public bool HasTemplate => !string.IsNullOrWhiteSpace(TemplateKey);
+
+        // The game takes an armor's body slots from its template (Services/ArmorTemplateSlots). So a
+        // variant SHOWS the template's slots, is classified by them (presets), and its own slot chips
+        // are locked: a change there would end up in the patch and be ignored in game. BodySlotMask
+        // itself stays the record's own value - it is what the patch is diffed against.
+        public uint? InheritedSlotMask => IsArmor && HasTemplate && Main != null
+            ? ArmorTemplateSlots.Inherited(TemplateKey, Main.ArmorSlotsOf, out _)
+            : null;
+
+        // When it is shown: the template may have been edited since this variant was loaded.
+        public void RefreshInheritedSlots()
+        {
+            if (!HasTemplate) return;
+            RaiseChildPatcher();
+            if (!IsArmor) return;
+            OnPropertyChanged(nameof(SlotsInherited));
+            OnPropertyChanged(nameof(SlotsEditable));
+            OnPropertyChanged(nameof(SlotsInheritedNote));
+            SyncDataToGui();
+        }
+
+        public bool SlotsInherited => InheritedSlotMask != null;
+        public bool SlotsEditable => !SlotsInherited;
+        public uint EffectiveBodySlotMask => InheritedSlotMask ?? BodySlotMask;
+
+        public string SlotsInheritedNote
+        {
+            get
+            {
+                if (!IsArmor || !HasTemplate || Main == null) return "";
+                if (ArmorTemplateSlots.Inherited(TemplateKey, Main.ArmorSlotsOf, out var root) == null) return "";
+                var rec = Main.FindArmorRecord(root);
+                var from = rec == null ? root : rec.EditorID;
+                var own = InheritedSlotMask != BodySlotMask
+                    ? $" Its own record says {Services.ModularPresets.ModularPrefill.DescribeBits(BodySlotMask)} - the game does not use that."
+                    : "";
+                return $"Slots come from the template {from} - the game uses the template's slots. Change them there.{own}";
+            }
+        }
+
+        // --- Kinder-Patcher (docs/Plan_Aktuell/KinderPatcher-Plan.md, K4) ---
+        // A template child follows its template: the game copies slots, type and keywords from it on
+        // load, and the patch writes the template's changes into the child - an enchanted child's
+        // numbers too (TemplateInheritance). Those editors are locked: an edit there would be ignored
+        // by the patch. Name, enchantment, recipes and placements stay the child's own.
+        public string? TemplateRootKey =>
+            (IsArmor || IsWeapon) && HasTemplate && Main != null ? Main.FamiliesOf(this).RootOf(Key) : null;
+
+        public bool IsTemplateChild => TemplateRootKey != null;
+
+        private string OwnEnchantment => HasLoadedDetails
+            ? ObjectEffectKey ?? ""
+            : IsWeapon
+                ? Main?.FindWeaponRecord(Key)?.ObjectEffectKey ?? ""
+                : Main?.FindArmorRecord(Key)?.ObjectEffectKey ?? "";
+
+        public bool InheritsValues => IsTemplateChild && Main != null
+            && Services.TemplateChildren.TemplateInheritance.ValuesFollow(OwnEnchantment, Main.ChildExtrasOf(Key));
+
+        public bool ValuesEditable => !InheritsValues;
+        public bool KeywordsEditable => !IsTemplateChild;
+        public bool TypeEditable => !IsTemplateChild;
+
+        // An unenchanted child still gets its numbers (and recipes) from the standard build box.
+        public bool ShowBuildBox => !InheritsValues;
+
+        public string KeywordsInheritedNote => IsTemplateChild
+            ? "Keywords come from the template - the game uses the template's keywords and the patch writes the template's changes here. Change them there."
+            : "";
+
+        // The Kinder-Patcher box above the details: what this child takes from where, and what it
+        // holds in game (template's saved state times its own addons).
+        public string ChildPatcherSummary
+        {
+            get
+            {
+                var root = TemplateRootKey;
+                if (root == null || Main == null) return "";
+                var x = Main.ChildExtrasOf(Key);
+                var link = Main.FindTemplateLink(root);
+                var from = link == null ? root : $"{link.EditorID} | {link.Name}";
+                bool values = InheritsValues;
+
+                var lines = new List<string>
+                {
+                    $"Follows its template {from}.",
+                    IsWeapon
+                        ? $"Keywords{(values ? " and numbers" : "")} come from it - the patch writes the template's changes into this item."
+                        : $"Slots, type and keywords{(values ? " and the numbers" : "")} come from it - the patch writes the template's changes into this item.",
+                };
+                if (!values)
+                    lines.Add(string.IsNullOrWhiteSpace(OwnEnchantment)
+                        ? "Not enchanted: its numbers are its own (standard build box below)."
+                        : "Keeps its own numbers (addon).");
+                if (x.Addons.Length > 0)
+                    lines.Add($"Own addons: {x.Addons}{Factors(x)}.");
+                if (x.LeaveUntouched)
+                    lines.Add("Left untouched (addon): the patch writes nothing from the template.");
+                else if (x.KeepKeywords)
+                    lines.Add("Keeps the template's original keywords (addon).");
+
+                var inGame = InGame(root, x, values);
+                if (inGame.Length > 0) lines.Add("In game: " + inGame);
+                return string.Join(Environment.NewLine, lines);
+            }
+        }
+
+        private string InGame(string root, Services.TemplateChildren.ChildExtras x, bool values)
+        {
+            static string N(double v, string f) => v.ToString(f, System.Globalization.CultureInfo.InvariantCulture);
+            if (IsWeapon)
+            {
+                if (Main!.FindWeaponRecord(root) is not { } t) return "";
+                if (!values) return $"value {N(Value, "0")} · weight {N(Weight, "0.##")} (own)";
+                return $"damage {N(Math.Round(t.Damage * x.DamageFactor, MidpointRounding.AwayFromZero), "0")}"
+                     + $" · value {N(Math.Round(t.Value * x.ValueFactor, MidpointRounding.AwayFromZero), "0")}"
+                     + $" · weight {N(Math.Round(t.Weight * x.WeightFactor, 2), "0.##")}"
+                     + $" · speed {N(t.Speed, "0.##")} · reach {N(t.Reach, "0.##")}";
+            }
+            if (Main!.FindArmorRecord(root) is not { } a) return "";
+            var type = a.ArmorType switch { "HeavyArmor" => "Heavy", "LightArmor" => "Light", "Clothing" => "Clothing", var s => s };
+            if (!values) return type;
+            return $"{type} · armor {N(Math.Round(a.ArmorRating * x.ArmorRatingFactor, 2), "0.##")}"
+                 + $" · weight {N(Math.Round(a.Weight * x.WeightFactor, 2), "0.##")}"
+                 + $" · value {N(Math.Round(a.Value * x.ValueFactor), "0")}";
+        }
+
+        private static string Factors(Services.TemplateChildren.ChildExtras x)
+        {
+            var f = new List<string>();
+            static string N(double v) => v.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+            if (x.ArmorRatingFactor != 1) f.Add($"armor ×{N(x.ArmorRatingFactor)}");
+            if (x.DamageFactor != 1) f.Add($"damage ×{N(x.DamageFactor)}");
+            if (x.ValueFactor != 1) f.Add($"value ×{N(x.ValueFactor)}");
+            if (x.WeightFactor != 1) f.Add($"weight ×{N(x.WeightFactor)}");
+            return f.Count == 0 ? "" : " (" + string.Join(", ", f) + ")";
+        }
+
+        private void RaiseChildPatcher()
+        {
+            OnPropertyChanged(nameof(TemplateRootKey));
+            OnPropertyChanged(nameof(IsTemplateChild));
+            OnPropertyChanged(nameof(InheritsValues));
+            OnPropertyChanged(nameof(ValuesEditable));
+            OnPropertyChanged(nameof(KeywordsEditable));
+            OnPropertyChanged(nameof(TypeEditable));
+            OnPropertyChanged(nameof(ShowBuildBox));
+            OnPropertyChanged(nameof(KeywordsInheritedNote));
+            OnPropertyChanged(nameof(ChildPatcherSummary));
+        }
+
+        // "EditorID | Name" like the enchantment picker; the bare key when the template is not scanned.
+        // Read-only - the TextBox binds it OneWay (a TwoWay binding on a getter-only property throws).
+        public string TemplateDisplay
+        {
+            get
+            {
+                var rec = Main?.FindTemplateLink(TemplateKey);
+                return rec == null ? TemplateKey : $"{rec.EditorID} | {rec.Name}";
+            }
+        }
+
+        // Greyed out when the template is not in the scanned load order - the line still tells the
+        // truth, there is just nothing to jump to (same as "Open base" on enchantments).
+        public bool CanOpenTemplate => HasTemplate && Main?.FindTemplateLink(TemplateKey) != null;
+
+        public ICommand OpenTemplateCommand => new RelayCommand(() => Main?.NavigateToItem(TemplateKey));
+
+        // The way down: the enchanted variants made from this armor. The counterpart of "Variants"
+        // on a base enchantment - a plain Elven Shield lists its 30-odd "...of the Gladiator" pieces,
+        // most of which share no search term with it (Thaumaturgy names them MAG_Ench...).
+        private IReadOnlyList<MainContentVM.TemplateLink> Variants =>
+            Main != null ? Main.GetTemplateVariants(Key) : Array.Empty<MainContentVM.TemplateLink>();
+
+        public bool HasVariants => Variants.Count > 0;
+
+        public string VariantsLabel => $"Variants ({Variants.Count})  ▾";
+
+        // The row shows when the armor has a template, variants, or both.
+        public bool ShowLineageRow => HasTemplate || HasVariants;
+
+        public string LineageLabel => HasTemplate ? "Template:" : "Variants:";
+
+        public sealed class VariantLinkVM
+        {
+            public string Key { get; init; } = "";
+            public string Label { get; init; } = "";
+        }
+
+        public IReadOnlyList<VariantLinkVM> VariantLinks => Variants
+            .OrderBy(v => v.EditorID, StringComparer.OrdinalIgnoreCase)
+            .Select(v => new VariantLinkVM { Key = v.Key, Label = $"{v.EditorID} | {v.Name}" })
+            .ToList();
+
+        private bool _isVariantListOpen;
+        public bool IsVariantListOpen
+        {
+            get => _isVariantListOpen;
+            set => SetProperty(ref _isVariantListOpen, value);
+        }
+
+        public ICommand OpenVariantCommand => new RelayCommand<string>(key =>
+        {
+            if (string.IsNullOrEmpty(key)) return;
+            IsVariantListOpen = false;
+            Main?.NavigateToItem(key);
+        });
 
         // Keeps ArmorType in step when the user picks an armour-class keyword. This runs as a
         // normal, visible edit - the dropdown moves, the changed-marker lights up, reset undoes it -
@@ -1939,7 +2227,7 @@ namespace SkyrimCraftingTool.ViewModel
         }
 
         private static string SerializeCondition(COBJConditionRecord c) =>
-            $"{c.ConditionType}|{c.Target}|{c.Value}|{c.Extra}|{c.RunOn}|{c.CompareOperator}|{c.Flags}";
+            $"{c.ConditionType}|{c.Target}|{c.Value}|{c.Extra}|{c.RunOn}|{c.RunOnRef}|{c.CompareOperator}|{c.Flags}";
 
         private List<string> CurrentCraftingConditionKeys =>
             CraftingConditions.Select(vm => SerializeCondition(ConditionMapper.ToRecord(vm, ""))).ToList();
@@ -2024,6 +2312,8 @@ namespace SkyrimCraftingTool.ViewModel
                 {
                     PerkConditionViewModel p => p.IsDeadReference,
                     QuestStageConditionViewModel q => q.IsDeadReference,
+                    ItemCountConditionViewModel i => i.IsDeadReference,
+                    QuestCurrentStageConditionViewModel s => s.IsDeadReference,
                     _ => false,
                 };
                 if (!dead) return;
@@ -2049,6 +2339,11 @@ namespace SkyrimCraftingTool.ViewModel
             if (TemperRecipeMissingIngredients)
                 IssueHub.Current.Report(new AppIssue(AppIssueSeverity.Warning,
                     $"{EditorID}: temper recipe has no ingredients.", Category: category));
+            if (TemperRecipeLacksArcaneBlacksmithGate)
+                IssueHub.Current.Report(new AppIssue(AppIssueSeverity.Warning,
+                    $"{EditorID}: enchanted, but its temper recipe has no Arcane Blacksmith gate - anyone can improve it. " +
+                    "Add 'EPTemperingItemIsEnchanted != 1 (OR)' followed by 'HasPerk ArcaneBlacksmith'.",
+                    Category: category));
         }
 
         // Guard on HasCraftingChanges/HasTemperChanges - the same property the Reset button's
@@ -2113,6 +2408,10 @@ namespace SkyrimCraftingTool.ViewModel
             // Over a copy, because resetting a tool-created recipe removes it from the collection.
             foreach (var row in BreakdownRecipes.ToList())
                 if (row.HasChanges || stale) Main?.ResetBreakdownRecipeEdits(this, row);
+
+            // The preset output of the family goes with it: this item's own extras and, for a template,
+            // its children's (Kinder-Patcher) - or the patch would keep multiplying the scanned numbers.
+            Main?.DropChildExtrasOfFamily(this);
 
             RefreshEditedState();
             return true;
@@ -2185,6 +2484,7 @@ namespace SkyrimCraftingTool.ViewModel
             ArmorType = rec.ArmorType ?? "";
             ObjectEffectKey = rec.ObjectEffectKey ?? "";
             EnchantAmount = rec.EnchantAmount;
+            TemplateKey = rec.TemplateKey ?? "";
 
             ContainerString = rec.ContainerString ?? "{}";
             ContainerSelection.LoadFromString(ContainerString);
@@ -2203,6 +2503,7 @@ namespace SkyrimCraftingTool.ViewModel
             CritPercentMult = rec.CritPercentMult;
             ObjectEffectKey = rec.ObjectEffectKey ?? "";
             EnchantAmount = rec.EnchantAmount;
+            TemplateKey = rec.TemplateKey ?? "";
 
             ContainerString = rec.ContainerString ?? "{}";
             ContainerSelection.LoadFromString(ContainerString);
@@ -2224,6 +2525,14 @@ namespace SkyrimCraftingTool.ViewModel
         {
             if (_isSyncingSlots) return;
 
+            // A variant's chips show its template's slots and do not edit (see InheritedSlotMask);
+            // a click that got through anyway is put back.
+            if (SlotsInherited)
+            {
+                SyncDataToGui();
+                return;
+            }
+
             uint mask = 0;
 
             foreach (var opt in SlotOptions)
@@ -2239,9 +2548,10 @@ namespace SkyrimCraftingTool.ViewModel
         {
             _isSyncingSlots = true;
 
+            var shown = EffectiveBodySlotMask;
             foreach (var opt in SlotOptions)
             {
-                opt.SetSelectedSilent((BodySlotMask & opt.Flag) != 0);
+                opt.SetSelectedSilent((shown & opt.Flag) != 0);
             }
 
             _isSyncingSlots = false;
@@ -2439,7 +2749,7 @@ namespace SkyrimCraftingTool.ViewModel
         private void RemoveCraftingCondition(BaseConditionViewModel condition)
         {
             if (condition == null) return;
-            CraftingConditions.Remove(condition);
+            ConditionGroups.Remove(CraftingConditions, condition);   // keeps the OR groups around it intact
             NotifyFieldChanged(nameof(CraftingConditions));
         }
 
@@ -2453,7 +2763,7 @@ namespace SkyrimCraftingTool.ViewModel
         private void RemoveTemperCondition(BaseConditionViewModel condition)
         {
             if (condition == null) return;
-            TemperConditions.Remove(condition);
+            ConditionGroups.Remove(TemperConditions, condition);
             NotifyFieldChanged(nameof(TemperConditions));
         }
 

@@ -45,6 +45,8 @@ namespace SkyrimCraftingTool.ViewModel
             SeedCommand = new RelayCommand(Seed);
             NewGroupCommand = new RelayCommand(NewGroup);
             DeleteGroupCommand = new RelayCommand(DeleteGroup, () => SelectedGroup?.Group != null);
+            // The button binds IsEnabled to HasValuesToReset (raised by Persist and the selection).
+            ResetValuesCommand = new RelayCommand(ConfirmAndResetValues);
             ToggleMembersCommand = new RelayCommand(() => ShowMembers = !ShowMembers);
             ConfirmCommand = new RelayCommand(Confirm, () => SelectedGroup?.Group != null);
 
@@ -77,6 +79,7 @@ namespace SkyrimCraftingTool.ViewModel
         public ICommand SeedCommand { get; }
         public ICommand NewGroupCommand { get; }
         public ICommand DeleteGroupCommand { get; }
+        public ICommand ResetValuesCommand { get; }
         public ICommand ToggleMembersCommand { get; }
         public ICommand ConfirmCommand { get; }
 
@@ -225,6 +228,7 @@ namespace SkyrimCraftingTool.ViewModel
 
                 ShowMembers = false;
                 RefreshDetail();
+                OnPropertyChanged(nameof(HasValuesToReset));
             }
         }
 
@@ -615,6 +619,50 @@ namespace SkyrimCraftingTool.ViewModel
                 .ToList());
         }
 
+        // What the group DOES to its members - the attribute and skill values and the added perks -
+        // goes back to nothing, so the patch writes no rule for it. Who belongs to it stays: the filter,
+        // the hand corrections and the confirmed snapshot define the group, and an automatic group
+        // would otherwise need re-seeding to get its members back. Deleting the whole group is the
+        // button next to this one.
+        public bool HasValuesToReset => _selectedGroup?.Group is { } g && (g.Values.Count > 0 || g.Lists.Count > 0);
+
+        private void ConfirmAndResetValues()
+        {
+            var group = _selectedGroup?.Group;
+            if (group == null) return;
+
+            if (!HasValuesToReset)
+            {
+                System.Windows.MessageBox.Show($"'{group.Name}' sets no values and adds no perks - nothing to reset.",
+                    "Reset values", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            // The editor only adds perks, but an import can bring other list kinds along - and they go too.
+            int perks = group.Lists.Count(l => string.Equals(l.Kind, PerkKind, StringComparison.OrdinalIgnoreCase));
+            string lists = perks == group.Lists.Count ? $"{perks} perk(s)" : $"{group.Lists.Count} list entr(ies), {perks} of them perks";
+            var answer = System.Windows.MessageBox.Show(
+                $"Remove every value from '{group.Name}'? {group.Values.Count} value(s) and {lists} go; " +
+                "the filter, the hand corrections and the confirmed members stay as they are.",
+                "Reset values", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+            if (answer != System.Windows.MessageBoxResult.Yes) return;
+
+            ResetValues();
+        }
+
+        // The dialog-free core, for the tests.
+        public void ResetValues()
+        {
+            var group = _selectedGroup?.Group;
+            if (group == null || !HasValuesToReset) return;
+
+            group.Values.Clear();
+            group.Lists.Clear();
+            Persist(group);
+
+            RefreshDetailBody();
+        }
+
         // Section 8: the snapshot is what the user has CONFIRMED this group contains, and the rescan diff
         // reports every difference from it by name. Until then the group counts as unchecked - which is
         // why this is a button and not something that happens on every resolve. A snapshot that refreshed
@@ -683,6 +731,8 @@ namespace SkyrimCraftingTool.ViewModel
 
         private void Persist(NpcGroup group)
         {
+            // Every change to a group goes through here - the one place the Reset button learns of it.
+            OnPropertyChanged(nameof(HasValuesToReset));
             if (_store == null) return;
             _store.Save(group);
         }
@@ -775,13 +825,25 @@ namespace SkyrimCraftingTool.ViewModel
             Label = label;
             _spread = spread;
 
+            // Level takes no random: "level=" is a single number, and a level span already means
+            // "scales with the player".
+            bool isLevel = string.Equals(field, "level", StringComparison.OrdinalIgnoreCase);
+
+            MaxValue = isLevel ? 1000 : 100000;
+
             Kinds = singleValueOnly
                 ? new[] { NpcGroupValueKind.Direct }
-                : new[]
-                {
-                    NpcGroupValueKind.Direct, NpcGroupValueKind.Span,
-                    NpcGroupValueKind.Mult, NpcGroupValueKind.Calc,
-                };
+                : isLevel
+                    ? new[]
+                    {
+                        NpcGroupValueKind.Direct, NpcGroupValueKind.Span,
+                        NpcGroupValueKind.Mult, NpcGroupValueKind.Calc,
+                    }
+                    : new[]
+                    {
+                        NpcGroupValueKind.Direct, NpcGroupValueKind.Span, NpcGroupValueKind.Random,
+                        NpcGroupValueKind.Follow, NpcGroupValueKind.Mult, NpcGroupValueKind.Calc,
+                    };
 
             _kind = singleValueOnly ? NpcGroupValueKind.Direct : stored?.Kind ?? NpcGroupValueKind.Direct;
             _low = stored?.Low ?? "";
@@ -823,6 +885,9 @@ namespace SkyrimCraftingTool.ViewModel
 
         public IReadOnlyList<string> Kinds { get; }
 
+        // The ceiling of the input boxes: Level and the stats share one row template.
+        public double MaxValue { get; }
+
         private string _kind;
         public string Kind
         {
@@ -835,9 +900,11 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
-        // Only a span takes two numbers. The other three read one, and a second box would invite a
-        // value that is then silently dropped.
-        public bool WantsHigh => string.Equals(Kind, NpcGroupValueKind.Span, StringComparison.OrdinalIgnoreCase);
+        // Span, random and follow take two numbers (follow also one). The others read one, and a second
+        // box would invite a value that is then silently dropped.
+        public bool WantsHigh => string.Equals(Kind, NpcGroupValueKind.Span, StringComparison.OrdinalIgnoreCase)
+                                 || string.Equals(Kind, NpcGroupValueKind.Random, StringComparison.OrdinalIgnoreCase)
+                                 || string.Equals(Kind, NpcGroupValueKind.Follow, StringComparison.OrdinalIgnoreCase);
 
         private string _low;
         public string Low

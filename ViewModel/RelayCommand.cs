@@ -3,6 +3,12 @@ using System.Windows.Input;
 
 namespace SkyrimCraftingTool.ViewModel
 {
+    // CanExecuteChanged hangs on CommandManager.RequerySuggested: WPF asks every bound canExecute
+    // again after keyboard/mouse input and focus changes. A state that changes WITHOUT input (an
+    // async job finishing, a rebuild, an import) only shows on the next input - call
+    // RaiseCanExecuteChanged there, or bind IsEnabled to a property that raises PropertyChanged
+    // (what the Reset buttons do).
+
     // -----------------------------
     // Parameterloser RelayCommand
     // -----------------------------
@@ -21,7 +27,14 @@ namespace SkyrimCraftingTool.ViewModel
 
         public void Execute(object? parameter) => _execute();
 
-        public event EventHandler? CanExecuteChanged;
+        // Without a canExecute there is nothing to ask again - no subscription at all.
+        public event EventHandler? CanExecuteChanged
+        {
+            add { if (_canExecute != null) CommandManager.RequerySuggested += value; }
+            remove { if (_canExecute != null) CommandManager.RequerySuggested -= value; }
+        }
+
+        public void RaiseCanExecuteChanged() => CommandManager.InvalidateRequerySuggested();
     }
 
     // -----------------------------
@@ -54,6 +67,12 @@ namespace SkyrimCraftingTool.ViewModel
                 _execute(default);
         }
 
-        public event EventHandler? CanExecuteChanged;
+        public event EventHandler? CanExecuteChanged
+        {
+            add { if (_canExecute != null) CommandManager.RequerySuggested += value; }
+            remove { if (_canExecute != null) CommandManager.RequerySuggested -= value; }
+        }
+
+        public void RaiseCanExecuteChanged() => CommandManager.InvalidateRequerySuggested();
     }
 }

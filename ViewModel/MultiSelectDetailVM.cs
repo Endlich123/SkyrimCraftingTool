@@ -340,17 +340,17 @@ namespace SkyrimCraftingTool.ViewModel
             ResetSelectionCommand = new RelayCommand(async () => await ResetSelectionAsync());
 
             AddCraftingConditionCommand = new RelayCommand(() => CraftingConditionsTemplate.Add(new PerkConditionViewModel()));
-            RemoveCraftingConditionCommand = new RelayCommand<BaseConditionViewModel>(c => { if (c != null) CraftingConditionsTemplate.Remove(c); });
+            RemoveCraftingConditionCommand = new RelayCommand<BaseConditionViewModel>(c => { if (c != null) ConditionGroups.Remove(CraftingConditionsTemplate, c); });
             AddIngredientCommand = new RelayCommand(() => AddIngredientTemplateRow(CraftingIngredientsTemplate));
             RemoveIngredientCommand = new RelayCommand<IngredientEntryVM>(ing => { if (ing != null) CraftingIngredientsTemplate.Remove(ing); });
 
             AddTemperConditionCommand = new RelayCommand(() => TemperConditionsTemplate.Add(new PerkConditionViewModel()));
-            RemoveTemperConditionCommand = new RelayCommand<BaseConditionViewModel>(c => { if (c != null) TemperConditionsTemplate.Remove(c); });
+            RemoveTemperConditionCommand = new RelayCommand<BaseConditionViewModel>(c => { if (c != null) ConditionGroups.Remove(TemperConditionsTemplate, c); });
             AddTemperIngredientCommand = new RelayCommand(() => AddIngredientTemplateRow(TemperIngredientsTemplate));
             RemoveTemperIngredientCommand = new RelayCommand<IngredientEntryVM>(ing => { if (ing != null) TemperIngredientsTemplate.Remove(ing); });
 
             AddBreakdownConditionCommand = new RelayCommand(() => BreakdownConditionsTemplate.Add(new PerkConditionViewModel()));
-            RemoveBreakdownConditionCommand = new RelayCommand<BaseConditionViewModel>(c => { if (c != null) BreakdownConditionsTemplate.Remove(c); });
+            RemoveBreakdownConditionCommand = new RelayCommand<BaseConditionViewModel>(c => { if (c != null) ConditionGroups.Remove(BreakdownConditionsTemplate, c); });
             AddBreakdownOutputCommand = new RelayCommand(() =>
             {
                 if (!CanAddBreakdownOutput) return;
@@ -438,9 +438,8 @@ namespace SkyrimCraftingTool.ViewModel
         {
             if (condition == null) return;
 
-            if (CraftingConditionsTemplate.Remove(condition)) return;
-            if (TemperConditionsTemplate.Remove(condition)) return;
-            BreakdownConditionsTemplate.Remove(condition);
+            foreach (var list in new[] { CraftingConditionsTemplate, TemperConditionsTemplate, BreakdownConditionsTemplate })
+                if (list.Contains(condition)) { ConditionGroups.Remove(list, condition); return; }
         });
 
         private void SubscribeConditionTemplateEvents(ObservableCollection<BaseConditionViewModel> collection)
@@ -516,6 +515,9 @@ namespace SkyrimCraftingTool.ViewModel
             CustomConditionType.GetActorValue => new ActorValueConditionViewModel(),
             CustomConditionType.GetLevel => new LevelConditionViewModel(),
             CustomConditionType.GetStageDone => new QuestStageConditionViewModel(),
+            CustomConditionType.GetItemCount => new ItemCountConditionViewModel(),
+            CustomConditionType.EPTemperingItemIsEnchanted => new TemperEnchantedConditionViewModel(),
+            CustomConditionType.GetStage => new QuestCurrentStageConditionViewModel(),
             _ => new PerkConditionViewModel()
         };
 
@@ -572,6 +574,7 @@ namespace SkyrimCraftingTool.ViewModel
                 _keywordRowsView.Refresh();
                 RefreshNumericFieldRelevance();
                 RefreshBuildBox();
+                OnPropertyChanged(nameof(HasEditedInSelection));
             });
         }
 
@@ -1035,6 +1038,14 @@ namespace SkyrimCraftingTool.ViewModel
         // read false and real persisted edits would be skipped (same reason as in ApplyPresetAsync).
         // Hydrating only the flagged items keeps a big selection from loading hundreds of untouched
         // ones just to find nothing.
+        //
+        // The same pre-filter greys the button out (HasEditedInSelection). Raised when the selection
+        // settles and by MainContentVM.RaiseTreeEditedFlags whenever an item's edited state flips
+        // (in a bulk run once, at the end).
+        public bool HasEditedInSelection => SelectedItems.Any(i => i.IsEdited);
+
+        internal void RaiseHasEditedInSelection() => OnPropertyChanged(nameof(HasEditedInSelection));
+
         private async Task ResetSelectionAsync()
         {
             // See PluginNodeVM.ResetPluginCommand: a pending debounced save must land before the

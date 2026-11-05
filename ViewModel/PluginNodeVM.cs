@@ -38,7 +38,17 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
-        internal void RaiseHasEditedItems() => OnPropertyChanged(nameof(HasEditedItems));
+        // What "Reset edited" covers: the WHOLE plugin. The detail panel can show a filtered copy of
+        // this node (MainContentVM.FilterReference), whose categories hold only what the filter lets
+        // through - so the answer comes from the unfiltered tree, the one ResetPluginCommand reads.
+        public bool HasEditedItemsInPlugin
+            => (Main?.ModItemsTree.FirstOrDefault(p => p.PluginName == PluginName) ?? this).HasEditedItems;
+
+        internal void RaiseHasEditedItems()
+        {
+            OnPropertyChanged(nameof(HasEditedItems));
+            OnPropertyChanged(nameof(HasEditedItemsInPlugin));
+        }
 
         // --------------------
         // Build box — the modular building blocks applied to every armor item in this plugin.

@@ -216,7 +216,11 @@ namespace SkyrimCraftingTool.ViewModel
                 vm =>
                 {
                     _catalog.Addons.Remove(vm.Model);
-                    foreach (var a in _catalog.Addons) a.AlsoAddons?.RemoveAll(n => Same(n, vm.Name));
+                    foreach (var a in _catalog.Addons)
+                    {
+                        a.AlsoAddons?.RemoveAll(n => Same(n, vm.Name));
+                        a.RequiresAddons?.RemoveAll(n => Same(n, vm.Name));
+                    }
                     ForEachRule(r => { r.Addons.RemoveAll(n => Same(n, vm.Name)); r.ExcludeAddons.RemoveAll(n => Same(n, vm.Name)); });
                 },
                 MarkDirty);
@@ -386,8 +390,9 @@ namespace SkyrimCraftingTool.ViewModel
         {
             if (string.IsNullOrWhiteSpace(oldName) || Same(oldName, newName)) return;
             foreach (var a in _catalog.Addons)
-                for (int i = 0; i < a.AlsoAddons.Count; i++)
-                    if (Same(a.AlsoAddons[i], oldName)) a.AlsoAddons[i] = newName;
+                foreach (var list in new[] { a.AlsoAddons, a.RequiresAddons })
+                    for (int i = 0; i < list.Count; i++)
+                        if (Same(list[i], oldName)) list[i] = newName;
             ForEachRule(r =>
             {
                 foreach (var list in new[] { r.Addons, r.ExcludeAddons })
@@ -1093,6 +1098,9 @@ namespace SkyrimCraftingTool.ViewModel
         // "Also adds these addons" - every other addon, ticked or not.
         public ObservableCollection<NameChoiceVM> AlsoChoices { get; } = new();
 
+        // "Only together with these addons" - every other addon, ticked or not.
+        public ObservableCollection<NameChoiceVM> RequiresChoices { get; } = new();
+
         public void RefreshChoices()
         {
             SlotChoices.Clear();
@@ -1112,6 +1120,15 @@ namespace SkyrimCraftingTool.ViewModel
                     if (on) Model.AlsoAddons.Add(n);
                     _owner.MarkDirty();
                 }));
+
+            RequiresChoices.Clear();
+            foreach (var name in _owner.AddonNames.Where(n => !ModularCatalogEditorVM.Same(n, Model.Name)))
+                RequiresChoices.Add(new NameChoiceVM(name, Model.RequiresAddons.Any(s => ModularCatalogEditorVM.Same(s, name)), (n, on) =>
+                {
+                    Model.RequiresAddons.RemoveAll(s => ModularCatalogEditorVM.Same(s, n));
+                    if (on) Model.RequiresAddons.Add(n);
+                    _owner.MarkDirty();
+                }));
         }
 
         public AddonEditVM(ModularCatalogEditorVM owner, KeywordAddon model)
@@ -1125,6 +1142,7 @@ namespace SkyrimCraftingTool.ViewModel
             model.OnlyPlugins ??= new List<string>();
             model.ExcludePlugins ??= new List<string>();
             model.AlsoAddons ??= new List<string>();
+            model.RequiresAddons ??= new List<string>();
             OnlyPlugins = new PluginListVM(owner, model.OnlyPlugins, "Only from these plugins (empty = any):");
             ExcludePlugins = new PluginListVM(owner, model.ExcludePlugins, "Never from these plugins:");
             CraftAdditions = new AddedIngredientsVM(owner, model.CraftAdditions, "Adds to crafting");
