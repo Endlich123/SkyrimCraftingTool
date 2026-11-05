@@ -119,6 +119,9 @@ namespace SkyrimCraftingTool.Services.ModularPresets
                         continue;
                     if (a.ExcludePlugins is { Count: > 0 } && a.ExcludePlugins.Any(p => PluginMatches(plugin, p)))
                         continue;
+                    // Checked again on every pass, so the order of the addons in the catalog does not matter.
+                    if (a.RequiresAddons is { Count: > 0 } && !a.RequiresAddons.All(r => picked.Contains(r, StringComparer.OrdinalIgnoreCase)))
+                        continue;
 
                     string? source = null;
                     if (a.Keywords.Count > 0 && a.Keywords.All(carried.Contains))
@@ -139,7 +142,9 @@ namespace SkyrimCraftingTool.Services.ModularPresets
                         // on slot 45 - which it did for a day, when keywords did not count here
                         // (2026-10-21, 561 armor pieces got ArmorJewelry). To chain addons use
                         // AlsoAddons, not a shared keyword. A blacklist alone triggers nothing.
-                        if (a.OnlyPlugins is { Count: > 0 })
+                        if (a.RequiresAddons is { Count: > 0 })
+                            source = "with " + string.Join(" + ", a.RequiresAddons);
+                        else if (a.OnlyPlugins is { Count: > 0 })
                             source = "plugin";
                         else if (a.OnlySlots is { Count: > 0 })
                             source = "slot";

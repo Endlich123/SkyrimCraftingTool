@@ -85,7 +85,8 @@ namespace SkyrimCraftingTool.Services.ModularPresets
                 result.Notes.Add("No weapon type found (neither keyword, EditorID nor name) - the weapon is left as it is.");
 
             // Material: keyword first, then the name fallback, first in the list wins.
-            var byKeyword = catalog.Materials.FirstOrDefault(m => !string.IsNullOrWhiteSpace(m.MaterialKeyword) && keywords.Contains(m.MaterialKeyword));
+            var byKeyword = catalog.Materials.FirstOrDefault(m => !string.IsNullOrWhiteSpace(m.MaterialKeyword) && keywords.Contains(m.MaterialKeyword)
+                && (string.IsNullOrWhiteSpace(m.RequiredKeyword) || keywords.Contains(m.RequiredKeyword)));
             if (byKeyword != null)
             {
                 sel.MaterialName = byKeyword.Name;
@@ -228,17 +229,21 @@ namespace SkyrimCraftingTool.Services.ModularPresets
             // Damage, weight and value need a material: the type's base alone is the lowest tier, and
             // writing it onto a weapon of unknown material would downgrade it (the armor lesson,
             // 2026-10-22: the no-material fallback halved the armor rating of light mod armor).
+            //
+            // Never below 0: the bonuses are additive, and a light type with a negative material
+            // (Dagger 4 + Wood -5) went negative. Measured in the game 2026-10-29: SkyPatcher writes
+            // attackDamage=-1 as 65535, and a weight of -5.5 arrives as it is.
             if (material != null)
             {
                 if (ovr?.Damage is int d)
-                    result.Damage = (int)Math.Round(d * damageF, MidpointRounding.AwayFromZero);
+                    result.Damage = Math.Max(0, (int)Math.Round(d * damageF, MidpointRounding.AwayFromZero));
                 else if (type.BaseDamage is double baseDamage)
-                    result.Damage = (int)Math.Round((baseDamage + (bonus?.Damage ?? 0)) * damageF, MidpointRounding.AwayFromZero);
+                    result.Damage = Math.Max(0, (int)Math.Round((baseDamage + (bonus?.Damage ?? 0)) * damageF, MidpointRounding.AwayFromZero));
 
                 if (ovr?.Weight is double w)
-                    result.Weight = ModularPresetEngine.Step(w * weightF, type.WeightStep, 3);
+                    result.Weight = Math.Max(0, ModularPresetEngine.Step(w * weightF, type.WeightStep, 3));
                 else if (type.BaseWeight is double baseWeight)
-                    result.Weight = ModularPresetEngine.Step((baseWeight + (bonus?.Weight ?? 0)) * weightF, type.WeightStep, 3);
+                    result.Weight = Math.Max(0, ModularPresetEngine.Step((baseWeight + (bonus?.Weight ?? 0)) * weightF, type.WeightStep, 3));
 
                 if (ovr?.Value is int v)
                     result.Value = (int)Math.Round(v * valueF, MidpointRounding.AwayFromZero);

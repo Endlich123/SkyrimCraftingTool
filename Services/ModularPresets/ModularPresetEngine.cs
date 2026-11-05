@@ -15,9 +15,13 @@ namespace SkyrimCraftingTool.Services.ModularPresets
         public string Plugin { get; set; } = "";
         public string ArmorType { get; set; } = "";
         public uint BodySlotMask { get; set; }
+
+        // The slots are the template's (ArmorTemplateSlots): BodySlotMask holds them, the slot
+        // definitions are detected from them, and the result never changes them.
+        public bool SlotsInherited { get; set; }
         public List<string> Keywords { get; set; } = new();
 
-        // Has an enchantment (ObjectEffectKey). Such a piece gets no NEW craft or temper recipe:
+        // Has an enchantment) (ObjectEffectKey). Such a piece gets no NEW craft or temper recipe:
         // vanilla ships 2,240 enchanted armor variants and gives exactly one of them a recipe - they
         // are loot, and they temper through their template.
         public bool IsEnchanted { get; set; }
@@ -161,9 +165,12 @@ namespace SkyrimCraftingTool.Services.ModularPresets
             bool keepKeywords = addons.Any(a => a.KeepKeywords);
 
             // --- Slots ---
+            // A variant wears its template's slots in game; the definitions above were detected from them
+            // and still drive the values, but its slots are not the preset's to set.
             if (slots.Count == 0)
-            {
                 result.Warnings.Add("No slot definition - slots, values and recipes left as they are.");
+            if (item.SlotsInherited || slots.Count == 0)
+            {
                 result.BodySlotMask = item.BodySlotMask;
             }
             else

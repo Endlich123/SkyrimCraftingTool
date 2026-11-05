@@ -1,4 +1,5 @@
 using SkyrimCraftingTool.Model;
+using SkyrimCraftingTool.Services.TemplateChildren;
 using SkyrimCraftingTool.ViewModel;
 using System;
 using System.Collections.Generic;
@@ -13,6 +14,23 @@ namespace SkyrimCraftingTool.Services.ModularPresets
         public int Changed { get; set; }
         public int WithNotes { get; set; }
         public int SkippedNoName { get; set; }
+
+        // Kinder-Patcher (K3): templates the run patched because a chosen child follows them, and the
+        // children whose extras were refreshed - their template part is written by the patch itself.
+        public int TemplatesAdded { get; set; }
+        public int ChildrenFollowing { get; set; }
+
+        // " 3 template(s) added …, 120 template children follow their template." - empty when none.
+        public string ChildText
+        {
+            get
+            {
+                var parts = new List<string>();
+                if (TemplatesAdded > 0) parts.Add($"{TemplatesAdded} template(s) added because chosen children follow them");
+                if (ChildrenFollowing > 0) parts.Add($"{ChildrenFollowing} template children follow their template");
+                return parts.Count == 0 ? "" : " " + string.Join(", ", parts) + ".";
+            }
+        }
     }
 
     // What the build box chose, on top of (or instead of) what the pre-fill detected per item.
@@ -148,7 +166,8 @@ namespace SkyrimCraftingTool.Services.ModularPresets
 
             // After the keywords: selecting a class keyword can itself move ArmorType
             // (ItemNodeVM.ApplyArmorTypeFromKeyword) - the type module has the last word.
-            if (item.BodySlotMask != result.BodySlotMask)
+            // Never on a variant: its slots are its template's (the result carries those, not a change).
+            if (!item.SlotsInherited && item.BodySlotMask != result.BodySlotMask)
             {
                 item.BodySlotMask = result.BodySlotMask;
                 touched.Add(nameof(ItemNodeVM.BodySlotMask));
@@ -181,7 +200,8 @@ namespace SkyrimCraftingTool.Services.ModularPresets
                 Name = item.Name ?? "",
                 Plugin = PluginOf(item.Key),
                 ArmorType = item.ArmorType ?? "",
-                BodySlotMask = item.BodySlotMask,
+                BodySlotMask = item.EffectiveBodySlotMask,
+                SlotsInherited = item.SlotsInherited,
                 Keywords = keywords.ToList(),
                 EditorID = item.EditorID ?? "",
                 IsEnchanted = !string.IsNullOrWhiteSpace(item.HasLoadedDetails
@@ -190,12 +210,101 @@ namespace SkyrimCraftingTool.Services.ModularPresets
             };
         }
 
+        // DISPLAY ONLY since the Kinder-Patcher (2026-10-28): the dry run's card shows what the child
+        // will hold in game. The patch no longer writes these numbers into the child - it takes them
+        // from the template's saved state times the child's extras (TemplateInheritance,
+        // ChildExtrasCalculator - the same arithmetic).
+        //
+        // An armor made from a template (TNAM) - every enchanted variant of Thaumaturgy and vanilla -
+        // gets the template's armor rating, value and weight (user, 2026-10-25: "the same item plus a
+        // magic effect"). Its own type and keywords stay as computed - its slots are the template's
+        // anyway (ArmorTemplateSlots, StateOf) - and being enchanted it
+        // gets no new recipe anyway. Held back when the variant itself keeps its values (an addon
+        // with KeepValues or LeaveUntouched, e.g. the vanilla uniques) and when the template is not
+        // in the scan.
+        //
+        // The template is computed from its own detection, without the dry run's plugin or item
+        // choices: the template usually sits in another plugin than the variant (vanilla vs.
+        // Thaumaturgy), and the dry run only knows the choices of the items it lists.
+        public static void TakeTemplateValues(MainContentVM main, ModularCatalog catalog, ItemNodeVM item,
+            ModularSelection selection, ModularResult result, HashSet<string>? materialKeywords,
+            IReadOnlyDictionary<string, ItemNodeVM>? nodesByKey = null)
+        {
+            if (!item.IsArmor || string.IsNullOrWhiteSpace(item.TemplateKey)) return;
+            if (string.Equals(item.TemplateKey, item.Key, StringComparison.OrdinalIgnoreCase)) return;
+
+            // Only an ENCHANTED piece is "its template plus a magic effect". An unenchanted one with a
+            // template only borrows its model - WindhelmSSE's "Leather Hood" is built on the Thieves
+            // Guild Hood and took its value of 0 (2026-10-25). 18 such pieces in a real modlist; they
+            // are computed like any other item.
+            if (!StateOf(main, item).IsEnchanted) return;
+
+            var variantAddons = ModularPresetEngine.WithAlsoAddons(catalog, selection.AddonNames)
+                .Select(n => catalog.Addons.FirstOrDefault(a => string.Equals(a.Name, n, StringComparison.OrdinalIgnoreCase)))
+                .Where(a => a != null)
+                .Select(a => a!)
+                .ToList();
+            if (variantAddons.Any(a => a.KeepValues || a.LeaveUntouched)) return;
+
+            // A run over thousands of items hands in its index - FindItemNode is a linear search.
+            var node = nodesByKey != null
+                ? (nodesByKey.TryGetValue(item.TemplateKey, out var n) ? n : null)
+                : main.FindItemNode(item.TemplateKey);
+            var record = main.FindArmorRecord(item.TemplateKey);
+            if (node == null && record == null) return;
+
+            ModularResult? computed = null;
+            var templateAddons = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (node != null && !IsSkipped(node))
+            {
+                var state = StateOf(main, node);
+                var templateSelection = ModularPrefill.Prefill(catalog, state).Selection;
+                computed = ModularPresetEngine.Compute(catalog, templateSelection, state, materialKeywords);
+                // A template HELD by an addon (KeepValues / LeaveUntouched - the vanilla uniques:
+                // "TemplateClothesRobesMageMaster" is named "Master Robes" and keeps its 5 gold) took
+                // none of its addons, so the variant's all count. A template that merely has no
+                // material shares them all the same: a plugin tier on both a Glenmoril pistol and its
+                // "+1" must not count for the variant alone (2026-10-26).
+                var shared = ModularPresetEngine.WithAlsoAddons(catalog, templateSelection.AddonNames);
+                bool templateHeld = shared
+                    .Select(n => catalog.Addons.FirstOrDefault(a => string.Equals(a.Name, n, StringComparison.OrdinalIgnoreCase)))
+                    .Any(a => a != null && (a.KeepValues || a.LeaveUntouched));
+                if (!templateHeld)
+                    templateAddons.UnionWith(shared);
+            }
+
+            // Null from the engine = the template keeps its own value, so the variant takes that.
+            double armorRating = computed?.ArmorRating ?? node?.ArmorRating ?? record!.ArmorRating;
+            double value = computed?.Value ?? node?.Value ?? record!.Value;
+            double weight = computed?.Weight ?? node?.Weight ?? record!.Weight;
+
+            // What the variant has and its plain piece has not, on top (user, 2026-10-25: enchanted
+            // robes get a bonus): "Master Robes" (x512) picks an enchanted master robe by its name,
+            // while its template is the plain robe. An addon both share is in the template's numbers
+            // already and is not counted twice.
+            var extra = variantAddons.Where(a => !templateAddons.Contains(a.Name)).ToList();
+            foreach (var a in extra)
+            {
+                armorRating *= a.ArmorRatingFactor;
+                value *= a.ValueFactor;
+                weight *= a.WeightFactor;
+            }
+
+            result.ArmorRating = Math.Round(armorRating, 2);
+            result.Value = (int)Math.Round(value);
+            result.Weight = Math.Round(weight, 2);
+            var bonus = extra.Where(a => a.ArmorRatingFactor != 1 || a.ValueFactor != 1 || a.WeightFactor != 1).Select(a => a.Name).ToList();
+            result.Warnings.Add($"Values from the template armor {(node?.Name ?? record?.Name ?? item.TemplateKey)}"
+                + (bonus.Count > 0 ? $", times the variant's own addons ({string.Join(", ", bonus)})." : "."));
+        }
+
         public static Task<ModularPatchReport> ApplyAsync(MainContentVM main, ModularCatalog catalog, IReadOnlyList<ItemNodeVM> items,
             BuildChoice? choice = null)
             => ApplyAsync(main, catalog, items, choice == null ? null : (_, detected) => choice.Resolve(detected));
 
         // resolve: per item, from what the pre-fill detected to what is built (the dry run's plugin
-        // and item cards each add their own choice). Null = the detection as it is.
+        // and item cards each add their own choice). Null = the detection as it is. A template the run
+        // adds for its children (ChildScope) is built from its detection: the cards never showed it.
         public static async Task<ModularPatchReport> ApplyAsync(MainContentVM main, ModularCatalog catalog, IReadOnlyList<ItemNodeVM> items,
             Func<ItemNodeVM, ModularSelection, ModularSelection>? resolve)
         {
@@ -207,6 +316,11 @@ namespace SkyrimCraftingTool.Services.ModularPresets
             await main.FlushPendingSavesAsync();
             var materialKeywords = ModularPresetEngine.MaterialKeywordsOf(main.AllAvailableKeywords);
 
+            var families = main.ArmorFamilies;
+            var scope = ChildScope.Plan(main, items, i => i.IsArmor, families);
+            report.SkippedNoName = scope.SkippedNoName;
+            report.TemplatesAdded = scope.AddedTemplates.Count;
+
             // Where the time goes, per phase - written to perf.log at the end (2026-10-22: a patch over
             // a whole load order "took ages and crashed"; these tell the next run what is left).
             var total = PerfClock.StartNew();
@@ -217,13 +331,16 @@ namespace SkyrimCraftingTool.Services.ModularPresets
             var tRelease = new System.Diagnostics.Stopwatch();
             int writes = 0;
 
-            for (int i = 0; i < items.Count; i++)
+            ModularSelection SelectionOf(ItemNodeVM item, ModularSelection detected)
+                => scope.Requested.Contains(item.Key) ? resolve?.Invoke(item, detected) ?? detected : detected;
+
+            // The selection each computed item was built with - a child's extras compare against it.
+            var selections = new Dictionary<string, ModularSelection>(StringComparer.OrdinalIgnoreCase);
+            int steps = scope.Computed.Count + scope.Children.Count, step = 0;
+
+            async Task BuildAsync(ItemNodeVM item, ModularSelection selection, ModularItemState state, Action<ModularResult>? adjust)
             {
-                var item = items[i];
-                if (!item.IsArmor) continue;
-                if (IsSkipped(item)) { report.SkippedNoName++; continue; }
                 report.Items++;
-                if (i % 25 == 0) BusyService.SetMessage($"Preset patch: {i + 1:N0} / {items.Count:N0}");
 
                 // Recipes and the keyword checkboxes only exist on a loaded item - but a loaded item
                 // carries ~4,000 keyword VMs. One the patch loaded itself is released again below,
@@ -234,11 +351,9 @@ namespace SkyrimCraftingTool.Services.ModularPresets
                 tHydrate.Stop();
 
                 tCompute.Start();
-                var state = StateOf(main, item);
-                var prefill = ModularPrefill.Prefill(catalog, state);
-                var selection = resolve?.Invoke(item, prefill.Selection) ?? prefill.Selection;
                 var result = ModularPresetEngine.Compute(catalog, selection, state, materialKeywords);
-                if (prefill.Notes.Count + result.Warnings.Count > 0) report.WithNotes++;
+                adjust?.Invoke(result);
+                if (result.Warnings.Count > 0) report.WithNotes++;
                 tCompute.Stop();
 
                 tApply.Start();
@@ -258,10 +373,73 @@ namespace SkyrimCraftingTool.Services.ModularPresets
                 tRelease.Stop();
             }
 
+            foreach (var item in scope.Computed)
+            {
+                if (step++ % 25 == 0) BusyService.SetMessage($"Preset patch: {step:N0} / {steps:N0}");
+                var state = StateOf(main, item);
+                var prefill = ModularPrefill.Prefill(catalog, state);
+                var selection = SelectionOf(item, prefill.Selection);
+                selections[item.Key] = selection;
+                if (prefill.Notes.Count > 0) report.WithNotes++;
+                await BuildAsync(item, selection, state, null);
+            }
+
+            // Children: the extras for the patch, and for a chosen child its own fields (recipes of an
+            // unenchanted one, placements, enchantment) - never slots, type, keywords, nor the numbers
+            // it takes from its template (TemplateInheritance).
+            var extras = new List<ChildExtras>();
+            foreach (var child in scope.Children)
+            {
+                if (step++ % 25 == 0) BusyService.SetMessage($"Preset patch: {step:N0} / {steps:N0}");
+                var state = StateOf(main, child);
+                var prefill = ModularPrefill.Prefill(catalog, state);
+                var selection = SelectionOf(child, prefill.Selection);
+                var x = ChildExtrasCalculator.Compute(catalog.Addons, child.Key, selection,
+                    TemplateSelection(main, catalog, families.RootOf(child.Key), selections));
+                extras.Add(x);
+                report.ChildrenFollowing++;
+
+                if (!scope.Requested.Contains(child.Key)) continue;
+                bool valuesFollow = state.IsEnchanted && !x.KeepValues && !x.LeaveUntouched;
+                await BuildAsync(child, selection, state, result => KeepInherited(result, state, valuesFollow));
+            }
+            main.SaveChildExtras(extras);
+
             PerfLog.Record("Preset patch", total,
-                $"{report.Items} item(s), {report.Changed} changed, {writes} field write(s); hydrate {tHydrate.ElapsedMilliseconds} ms, compute {tCompute.ElapsedMilliseconds} ms, "
+                $"{report.Items} item(s), {report.Changed} changed, {writes} field write(s), {report.ChildrenFollowing} children; hydrate {tHydrate.ElapsedMilliseconds} ms, compute {tCompute.ElapsedMilliseconds} ms, "
                 + $"apply {tApply.ElapsedMilliseconds} ms, write {tPersist.ElapsedMilliseconds} ms, release {tRelease.ElapsedMilliseconds} ms");
+
+            // The tree catches up (filter, edited dots) while the overlay is still up - see BusyService.UntilDrawnAsync.
+            bulk.Dispose();
+            await BusyService.UntilDrawnAsync();
             return report;
+        }
+
+        // The template's selection for a child's extras: from this run, else its own detection;
+        // null when the template is not in the tree or has no name.
+        private static ModularSelection? TemplateSelection(MainContentVM main, ModularCatalog catalog, string? root,
+            Dictionary<string, ModularSelection> selections)
+        {
+            if (root == null) return null;
+            if (selections.TryGetValue(root, out var known)) return known;
+            var node = main.FindItemNode(root);
+            if (node == null || IsSkipped(node)) return null;
+            var detected = ModularPrefill.Prefill(catalog, StateOf(main, node)).Selection;
+            selections[root] = detected;
+            return detected;
+        }
+
+        // A child's result without what it inherits: its slots, type and keywords are the template's,
+        // and an enchanted one's numbers too (the patch writes them from the template).
+        public static void KeepInherited(ModularResult result, ModularItemState state, bool valuesFollow)
+        {
+            result.Keywords = state.Keywords.ToList();
+            result.ArmorType = state.ArmorType;
+            result.BodySlotMask = state.BodySlotMask;
+            if (!valuesFollow) return;
+            result.ArmorRating = null;
+            result.Value = null;
+            result.Weight = null;
         }
     }
 }
