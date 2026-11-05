@@ -58,6 +58,19 @@ namespace SkyrimCraftingTool.Services
             snapshot.MagicEffects = _itemService.SearchByType("MagicEffect").Cast<MagicEffectsRecords>().ToList();
             step.Dispose();
 
+            step = PerfLog.Measure("Caches: GetItemCount targets");
+            snapshot.ConditionItems = snapshot.Armor.Values
+                    .Select(a => ConditionItemCatalog.Entry(a.Key, a.Name, a.EditorID, "Armor"))
+                .Concat(snapshot.Weapons.Values
+                    .Select(w => ConditionItemCatalog.Entry(w.Key, w.Name, w.EditorID, "Weapon")))
+                .Concat(_itemService.LoadWorldItems()
+                    .Select(i => ConditionItemCatalog.Entry(i.Key, i.Name, i.EditorID, i.Kind)))
+                .Concat(_formIdService.SearchByType("FormList")
+                    .Select(l => ConditionItemCatalog.Entry(l.Key, "", l.Name, "FormList")))
+                .ToList();
+            step.Detail = $"{snapshot.ConditionItems.Count} records";
+            step.Dispose();
+
             // store snapshot for runtime updates
             _snapshot = snapshot;
             return snapshot;

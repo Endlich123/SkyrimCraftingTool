@@ -30,6 +30,7 @@ public static class ConditionMapper
                 Type = CustomConditionType.ReadOnly,
                 RunOnPlayer = rec.RunOn == "Subject",
                 RawRunOn = rec.RunOn ?? "",
+                RawRunOnRef = rec.RunOnRef ?? "",
                 RawConditionType = rec.ConditionType ?? "",
                 RawTarget = rec.Target ?? "",
                 RawValue = rec.Value ?? "",
@@ -46,6 +47,9 @@ public static class ConditionMapper
             "GetActorValue" => new ActorValueConditionViewModel(),
             "GetLevel" => new LevelConditionViewModel(),
             "GetStageDone" => new QuestStageConditionViewModel(),
+            "GetItemCount" => new ItemCountConditionViewModel(),
+            "EPTemperingItemIsEnchanted" => new TemperEnchantedConditionViewModel(),
+            "GetStage" => new QuestCurrentStageConditionViewModel(),
             _ => throw new InvalidOperationException("Unknown condition type: " + rec.ConditionType)
         };
 
@@ -57,12 +61,16 @@ public static class ConditionMapper
             "GetActorValue" => CustomConditionType.GetActorValue,
             "GetLevel" => CustomConditionType.GetLevel,
             "GetStageDone" => CustomConditionType.GetStageDone,
+            "GetItemCount" => CustomConditionType.GetItemCount,
+            "EPTemperingItemIsEnchanted" => CustomConditionType.EPTemperingItemIsEnchanted,
+            "GetStage" => CustomConditionType.GetStage,
             _ => throw new InvalidOperationException("Unknown condition type: " + rec.ConditionType)
         };
 
         vm.RunOn = rec.RunOn ?? "";
         vm.StoredCompareOperator = rec.CompareOperator ?? "";
         vm.StoredFlags = rec.Flags ?? "";
+        vm.StoredRunOnRef = rec.RunOnRef ?? "";
 
         // Fill VM-specific fields
         switch (vm)
@@ -88,12 +96,29 @@ public static class ConditionMapper
                 level.RequiredLevel = ParseFloat(rec.Value);
                 break;
 
+            case TemperEnchantedConditionViewModel enchanted:
+                enchanted.ComparisonValue = ParseFloat(rec.Value);
+                break;
+
             case QuestStageConditionViewModel stage:
                 var questFormKey = KeyFactory.ParseFormKey(rec.Target);
                 stage.QuestFormKey = questFormKey;
                 stage.SelectedQuest = allAvailableQuests?.FirstOrDefault(q =>
                     KeyFactory.ParseFormKey(q.Key) == questFormKey);
                 stage.Stage = ParseInt(rec.Value);
+                break;
+
+            case QuestCurrentStageConditionViewModel current:
+                current.QuestFormKey = KeyFactory.ParseFormKey(rec.Target);
+                current.SelectedQuest = allAvailableQuests?.FirstOrDefault(q =>
+                    KeyFactory.ParseFormKey(q.Key) == current.QuestFormKey);
+                current.ComparisonValue = ParseFloat(rec.Value);
+                break;
+
+            case ItemCountConditionViewModel itemCount:
+                itemCount.ItemFormKey = KeyFactory.ParseFormKey(rec.Target);
+                itemCount.SelectedItem = ConditionItemCatalog.Find(rec.Target);
+                itemCount.Count = ParseFloat(rec.Value);
                 break;
         }
 
@@ -117,6 +142,7 @@ public static class ConditionMapper
                 Value = ro.RawValue,
                 Extra = ro.RawExtra,
                 RunOn = ro.RawRunOn,
+                RunOnRef = ro.RawRunOnRef,
                 CompareOperator = ro.RawCompareOperator,
                 Flags = ro.RawFlags,
             };
@@ -129,6 +155,9 @@ public static class ConditionMapper
             CustomConditionType.GetActorValue => "GetActorValue",
             CustomConditionType.GetLevel => "GetLevel",
             CustomConditionType.GetStageDone => "GetStageDone",
+            CustomConditionType.GetItemCount => "GetItemCount",
+            CustomConditionType.EPTemperingItemIsEnchanted => "EPTemperingItemIsEnchanted",
+            CustomConditionType.GetStage => "GetStage",
             _ => throw new InvalidOperationException("Unknown condition type: " + vm.Type)
         };
 
@@ -137,6 +166,7 @@ public static class ConditionMapper
             COBJKey = cobjKey,
             ConditionType = conditionType,
             RunOn = vm.RunOn,
+            RunOnRef = vm.RunOn == "Reference" ? vm.StoredRunOnRef : "",
             CompareOperator = vm.StoredCompareOperator,
             Flags = vm.StoredFlags,
         };
@@ -167,9 +197,27 @@ public static class ConditionMapper
                 rec.Extra = "";
                 break;
 
+            case TemperEnchantedConditionViewModel enchanted:
+                rec.Target = "";   // no parameter: the item being tempered is implicit
+                rec.Value = enchanted.ComparisonValue.ToString(CultureInfo.InvariantCulture);
+                rec.Extra = "";
+                break;
+
             case QuestStageConditionViewModel stage:
                 rec.Target = KeyFactory.BuildMasterKey(stage.QuestFormKey);
                 rec.Value = stage.Stage.ToString(CultureInfo.InvariantCulture);
+                rec.Extra = "";
+                break;
+
+            case QuestCurrentStageConditionViewModel current:
+                rec.Target = KeyFactory.BuildMasterKey(current.QuestFormKey);
+                rec.Value = current.ComparisonValue.ToString(CultureInfo.InvariantCulture);
+                rec.Extra = "";
+                break;
+
+            case ItemCountConditionViewModel itemCount:
+                rec.Target = itemCount.ItemKey;
+                rec.Value = itemCount.Count.ToString(CultureInfo.InvariantCulture);
                 rec.Extra = "";
                 break;
         }
@@ -186,6 +234,8 @@ public static class ConditionMapper
     {
         PerkConditionViewModel p => !p.PerkFormKey.IsNull,
         QuestStageConditionViewModel q => !q.QuestFormKey.IsNull,
+        ItemCountConditionViewModel i => !i.ItemFormKey.IsNull,
+        QuestCurrentStageConditionViewModel s => !s.QuestFormKey.IsNull,
         _ => true,
     };
 

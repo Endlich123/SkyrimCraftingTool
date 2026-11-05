@@ -17,6 +17,19 @@ namespace SkyrimCraftingTool.Services
         // duplicated as a literal) so every call site that needs to add it to a plugin list agrees.
         public const string UserPluginName = "SkyrimCraftingTool.esp";
 
+        // Every plugin the patch generator writes starts with this: "SkyrimCraftingTool.esp" in the
+        // global split mode, "SkyrimCraftingTool - <Plugin>.esp" per source plugin
+        // (PatchGenOptions.EspNameFor).
+        public const string OwnOutputPrefix = "SkyrimCraftingTool";
+
+        // True for a plugin file the tool wrote itself. A scan must never read one: the generated ESPs
+        // sit in plugins.txt, so their new recipes came back as mod recipes and their overrides as the
+        // "original" of the record they patch. Measured 2026-10-29: 2.442 recipe copies in item.db, 757
+        // of them edited again by a preset, and 51 "SkyrimCraftingTool - SkyrimCraftingTool - X.esp".
+        public static bool IsOwnOutputPlugin(string? fileName)
+            => !string.IsNullOrWhiteSpace(fileName)
+               && fileName.StartsWith(OwnOutputPrefix, StringComparison.OrdinalIgnoreCase);
+
         // True for a key that names one of the user's OWN records - one the tool made, that exists in
         // no plugin until the generated ESP brings it into the game. Such a key is never the FormID
         // the record ends up with, so anything that writes it into a patch has to translate it first

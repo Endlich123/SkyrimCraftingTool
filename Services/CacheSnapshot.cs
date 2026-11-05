@@ -17,5 +17,8 @@ namespace SkyrimCraftingTool.Services
         public List<FormIDRecord> Quests { get; set; } = new();
         public List<ContainerRecord> Containers { get; set; } = new();
         public List<MagicEffectsRecords> MagicEffects { get; set; } = new();
+
+        // Targets for a GetItemCount condition - see ConditionItemCatalog.
+        public List<FormIDRecord> ConditionItems { get; set; } = new();
     }
 }

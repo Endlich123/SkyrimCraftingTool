@@ -11,7 +11,8 @@ namespace SkyrimCraftingTool.Services
     // MISSING PLUGINS are almost all Creation Club masters: the game loads them through Skyrim.ccc,
     // plugins.txt never names them, and records keyed to them still turn up through mods that
     // override them. They go straight after the five vanilla masters, which is where the game loads
-    // them - not at the top of the tree, ahead of Skyrim.esm.
+    // them - not at the top of the tree, ahead of Skyrim.esm. Since 2026-10-27 the load order itself
+    // carries them (Services/CreationClubPlugins); this rule is left for a database scanned before.
     public static class PluginTreeOrder
     {
         private static readonly string[] VanillaMasters =

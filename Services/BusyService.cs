@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using SkyrimCraftingTool.Model;
@@ -239,6 +240,17 @@ namespace SkyrimCraftingTool.Services
 
         // The current step, from any thread - the scan's steps run on a worker.
         public static void SetMessage(string message) => Instance.SetMessageCore(message);
+
+        // Awaited by a Show scope's owner right before it closes the overlay: returns once everything
+        // the work changed has been laid out and drawn (ContextIdle comes after Render). Without it the
+        // overlay closed first and the tree rebuilt on screen afterwards, which looked like a hang
+        // (preset patch, 2026-10-26). Returns at once without a UI dispatcher (tests).
+        public static async Task UntilDrawnAsync()
+        {
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null || !dispatcher.CheckAccess()) return;
+            await Dispatcher.Yield(DispatcherPriority.ContextIdle);
+        }
 
         internal IDisposable ShowCore(string message, bool blocksUiThread = false)
         {

@@ -28,8 +28,17 @@ namespace SkyrimCraftingTool.Services
     {
         private readonly List<NpcRecord> _npcs;
 
-        public NpcGroupResolver(IEnumerable<NpcRecord>? npcs)
-            => _npcs = npcs?.ToList() ?? new List<NpcRecord>();
+        // Read the EditorID axis the way SkyPatcher does: against the EditorID of the plugin that
+        // defines the NPC, not the override that renamed it (measured 2026-10-31). Only the rule
+        // builder asks for this, to know what its filter really reaches - membership stays on the
+        // name the user sees.
+        private readonly bool _asSkyPatcherSees;
+
+        public NpcGroupResolver(IEnumerable<NpcRecord>? npcs, bool asSkyPatcherSees = false)
+        {
+            _npcs = npcs?.ToList() ?? new List<NpcRecord>();
+            _asSkyPatcherSees = asSkyPatcherSees;
+        }
 
         public int NpcCount => _npcs.Count;
 
@@ -77,7 +86,7 @@ namespace SkyrimCraftingTool.Services
             {
                 foreach (var npc in _npcs)
                 {
-                    if (!Matches(npc, clauses)) continue;
+                    if (!Matches(npc, clauses, _asSkyPatcherSees)) continue;
                     predicateMatches++;
                     members[npc.Key] = npc;
                 }
@@ -225,29 +234,29 @@ namespace SkyrimCraftingTool.Services
         // filterByNpcs, filterByRaces and filterByKeywords "are not connected" to the other filters
         // (docs/NPC_Patcher.txt, first line). G5 has to check that the rule it writes expresses the
         // membership resolved here, and say so where it cannot.
-        private static bool Matches(NpcRecord npc, List<AxisClauses> clauses)
+        private static bool Matches(NpcRecord npc, List<AxisClauses> clauses, bool asSkyPatcherSees)
         {
             foreach (var axis in clauses)
             {
                 if (axis.Include.Count > 0)
                 {
                     bool ok = MultiValued(axis.Axis)
-                        ? axis.Include.All(v => MatchesValue(npc, axis.Axis, v))
-                        : axis.Include.Any(v => MatchesValue(npc, axis.Axis, v));
+                        ? axis.Include.All(v => MatchesValue(npc, axis.Axis, v, asSkyPatcherSees))
+                        : axis.Include.Any(v => MatchesValue(npc, axis.Axis, v, asSkyPatcherSees));
                     if (!ok) return false;
                 }
 
-                if (axis.IncludeOr.Count > 0 && !axis.IncludeOr.Any(v => MatchesValue(npc, axis.Axis, v)))
+                if (axis.IncludeOr.Count > 0 && !axis.IncludeOr.Any(v => MatchesValue(npc, axis.Axis, v, asSkyPatcherSees)))
                     return false;
 
-                if (axis.Exclude.Any(v => MatchesValue(npc, axis.Axis, v)))
+                if (axis.Exclude.Any(v => MatchesValue(npc, axis.Axis, v, asSkyPatcherSees)))
                     return false;
             }
 
             return true;
         }
 
-        private static bool MatchesValue(NpcRecord npc, string axis, string value) => axis.ToLowerInvariant() switch
+        private static bool MatchesValue(NpcRecord npc, string axis, string value, bool asSkyPatcherSees) => axis.ToLowerInvariant() switch
         {
             NpcGroupAxis.Class => SameKey(npc.ClassKey, value),
             NpcGroupAxis.Race => SameKey(npc.RaceKey, value),
@@ -259,7 +268,8 @@ namespace SkyrimCraftingTool.Services
             // extra 25 being Dragonborn.esm's DLC2EncBandit03*. A prefix reading here would put 54 on
             // screen for a rule that then reaches 79 - which is the plan's own EncBandit03 figure, and
             // why section 8's rescan diff is not optional.
-            NpcGroupAxis.EditorId => (npc.EditorID ?? "").Contains(value, StringComparison.OrdinalIgnoreCase),
+            NpcGroupAxis.EditorId => ((asSkyPatcherSees ? npc.SkyPatcherEditorID : npc.EditorID) ?? "")
+                .Contains(value, StringComparison.OrdinalIgnoreCase),
 
             NpcGroupAxis.Mod => string.Equals(PluginOf(npc.Key), value, StringComparison.OrdinalIgnoreCase),
             NpcGroupAxis.Flag => HasFlag(npc, value),

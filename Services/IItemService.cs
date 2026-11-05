@@ -23,6 +23,11 @@ namespace SkyrimCraftingTool.Services
         // instead of one search per plugin (P-P7). What the cache build uses.
         ItemsForCaches GetItemsForCaches(IEnumerable<string> pluginFileNames);
 
+        // The plugins the scanned armor, weapons and recipes are keyed to (the part before '|'),
+        // including ones the load order never names - Creation Club masters, loaded by the game
+        // through Skyrim.ccc, whose records reach the scan through mods that override them.
+        IReadOnlyCollection<string> GetRecordPluginNames();
+
         // Enchantments
         List<EnchantmentRecord> GetAllEnchantments();
 

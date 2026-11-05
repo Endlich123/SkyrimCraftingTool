@@ -7,20 +7,32 @@ namespace SkyrimCraftingTool.Services
     //
     // Three tiers, and the difference matters:
     //
-    //  Editable    - the 5 types with their own ViewModel and XAML template. Fully round-trips.
+    //  Editable    - the types with their own ViewModel and XAML template. Fully round-trips.
     //  ReadOnly    - scanned, stored and written back verbatim, but not editable in the UI. These
     //                exist because dropping them was destroying recipes: measured against the
-    //                vanilla masters, GetItemCount and EPTemperingItemIsEnchanted alone account for
-    //                1528 of the 1688 conditions the scan used to discard.
+    //                vanilla masters, GetItemCount (editable since C3) and EPTemperingItemIsEnchanted
+    //                alone account for 1528 of the 1688 conditions the scan used to discard.
     //  Unsupported - everything else. Only the function name survives (under UnsupportedPrefix), so
-    //                it can be counted and shown, never rebuilt. A recipe holding one of these must
-    //                never have its condition list rewritten - see CobjEspBuilder.
+    //                it can be counted and shown, never rebuilt. The row is a placeholder: when
+    //                CobjEspBuilder rewrites the list it puts the plugin's original back in its
+    //                place (docs/Conditions-Plan.md, C1).
     public static class ConditionCatalog
     {
+        // The five types the scan kept from the very start. Not "what is editable" any more (C3 added
+        // GetItemCount): the stale-scan check in CobjEspBuilder needs exactly the set an OLD scan
+        // stored, and that set does not grow.
+        public static readonly IReadOnlySet<string> Core = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "HasPerk", "GetIsSex", "GetActorValue", "GetLevel", "GetStageDone",
+        };
+
         // Editable in the recipe UI.
         public static readonly IReadOnlySet<string> Editable = new HashSet<string>(StringComparer.Ordinal)
         {
             "HasPerk", "GetIsSex", "GetActorValue", "GetLevel", "GetStageDone",
+            "GetItemCount",   // C3, docs/Conditions-Plan.md
+            "EPTemperingItemIsEnchanted",   // the Arcane Blacksmith gate, so new temper recipes can carry it
+            "GetStage",   // current quest stage vs. a value; 23 plugins on the real modlist
         };
 
         // Scanned and rebuilt faithfully, but read-only in the UI. Each takes either no parameter or
@@ -28,9 +40,12 @@ namespace SkyrimCraftingTool.Services
         // GetVMQuestVariable additionally uses Extra for its script variable name.
         public static readonly IReadOnlySet<string> ReadOnly = new HashSet<string>(StringComparer.Ordinal)
         {
-            "GetItemCount", "EPTemperingItemIsEnchanted", "GetGlobalValue", "HasSpell",
+            "GetGlobalValue", "HasSpell",
             "HasKeyword", "GetQuestCompleted", "GetInCurrentLoc", "GetVMQuestVariable",
         };
+
+        public static bool IsCore(string? conditionType) =>
+            conditionType != null && Core.Contains(conditionType);
 
         // ConditionType prefix for a function the scan could not map at all. The remainder of the
         // string is the raw Mutagen function name, kept so the UI and the report can name it.
@@ -45,6 +60,26 @@ namespace SkyrimCraftingTool.Services
 
         public static bool IsUnsupported(string? conditionType) =>
             conditionType != null && conditionType.StartsWith(UnsupportedPrefix, StringComparison.Ordinal);
+
+        // Mutagen's condition data class -> function name, the way the scan names an unsupported
+        // one: GetDeadCountConditionData and GetDeadCountConditionDataBinaryOverlay both give
+        // "GetDeadCount". CobjEspBuilder matches placeholders against originals through this, so
+        // the scan and the builder must never derive the name differently.
+        public static string FunctionNameOf(Type conditionDataType) =>
+            conditionDataType.Name
+                .Replace("ConditionDataBinaryOverlay", "")
+                .Replace("ConditionData", "");
+
+        // A "?" row's position in the record the scan read it from, kept in Extra (unused by these
+        // rows otherwise). Lets CobjEspBuilder find each placeholder's original even after other
+        // placeholders were deleted. Rows scanned before 2026-10-24 have none.
+        public static bool TryGetPlaceholderPosition(Model.COBJConditionRecord row, out int position)
+        {
+            position = -1;
+            return IsUnsupported(row.ConditionType)
+                && int.TryParse(row.Extra, System.Globalization.NumberStyles.None,
+                                System.Globalization.CultureInfo.InvariantCulture, out position);
+        }
 
         // "?GetInFaction" -> "GetInFaction"
         public static string FunctionName(string? conditionType) =>
