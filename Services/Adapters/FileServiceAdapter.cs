@@ -15,5 +15,7 @@ namespace SkyrimCraftingTool.Services.Adapters
         public void RefreshPluginDatabase() => _handler.RefreshPluginDatabase();
 
         public List<PluginInfo> GetActivePlugins() => _handler.GetActivePluginsInLoadOrder();
+
+        public IReadOnlyList<PluginPathConflict> LastPathConflicts => _handler.LastPathConflicts;
     }
 }

@@ -17,6 +17,8 @@ namespace SkyrimCraftingTool.Services.Adapters
 
         public void EnsureCacheLoaded() => _handler.EnsureCacheLoaded();
 
+        public IReadOnlyCollection<string> GetRecordPluginNames() => _handler.GetRecordPluginNames();
+
         public IEnumerable<ArmorRecord> GetArmorByPlugin(string pluginFileName) => _handler.GetArmorByPlugin(pluginFileName);
         public IEnumerable<WeaponRecord> GetWeaponsByPlugin(string pluginFileName) => _handler.GetWeaponsByPlugin(pluginFileName);
         public IEnumerable<COBJRecord> GetCOBJByPlugin(string pluginFileName) => _handler.GetCOBJByPlugin(pluginFileName);
