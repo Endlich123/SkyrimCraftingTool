@@ -29,10 +29,24 @@ namespace SkyrimCraftingTool.Services.SavePipline
         {
             var item = r.Item;
 
+            bool created = false;
             if (!item.HasTemperRecipe)
+            {
                 item.CreateTemperRecipe();
+                created = true;
+            }
 
             var rec = item.TemperRecipe.Record;
+
+            // A new recipe arrives with the Arcane Blacksmith gate (ItemNodeVM.ArcaneBlacksmithGate).
+            // Conditions only reach the DB when the conditions field is what is being saved, so when
+            // the recipe came into being through an ingredient or the workbench, write them here -
+            // otherwise the gate shows in the editor and is gone after a restart.
+            if (created && r.FieldName != nameof(ItemNodeVM.TemperConditions) && rec.Conditions.Count > 0)
+            {
+                _itemService.SaveCOBJConditions(rec.Key, rec.Conditions);
+                _cache.UpdateRecipeConditions(rec.Key, rec.Conditions);
+            }
 
             switch (r.FieldName)
             {
