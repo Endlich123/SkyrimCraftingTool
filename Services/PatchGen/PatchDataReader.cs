@@ -10,6 +10,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
 {
     public sealed record ArmorPatchPair(ArmorRecord Original, ArmorRecord Edited);
     public sealed record WeaponPatchPair(WeaponRecord Original, WeaponRecord Edited);
+    public sealed record ArmorPatchRow(ArmorPatchPair Pair, bool IsEdited);
+    public sealed record WeaponPatchRow(WeaponPatchPair Pair, bool IsEdited);
 
     // Reads item.db for edited ARMO/WEAP rows, returning the pristine scanned record alongside the
     // effective (shadow-applied) record so the rule builder can diff them. GetEditedItems only
@@ -71,8 +73,16 @@ namespace SkyrimCraftingTool.Services.PatchGen
         }
 
         public IReadOnlyList<ArmorPatchPair> ReadEditedArmor()
+            => ReadArmor(editedOnly: true).Select(r => r.Pair).ToList();
+
+        // Every active armor, edited or not - the Kinder-Patcher needs the templates and children that
+        // carry no edit of their own (TemplateInheritance). An unedited row gets Edited = Original: a
+        // leftover shadow on an IsEdited = 0 row is ignored, the same rule as below.
+        public IReadOnlyList<ArmorPatchRow> ReadAllArmor() => ReadArmor(editedOnly: false);
+
+        private List<ArmorPatchRow> ReadArmor(bool editedOnly)
         {
-            var pairs = new List<ArmorPatchPair>();
+            var pairs = new List<ArmorPatchRow>();
             using var conn = new SqliteConnection(_connString);
             conn.Open();
             using var cmd = conn.CreateCommand();
@@ -87,7 +97,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
                        ArmorType, IsEditedArmorType,
                        ContainerString, IsEditedContainerString,
                        ObjectEffectKey, IsEditedObjectEffectKey,
-                       EnchantAmount, IsEditedEnchantAmount
+                       EnchantAmount, IsEditedEnchantAmount,
+                       TemplateKey, IsEdited
                 FROM Armor
                 -- IsEdited, NOT ""LastChanged IS NOT NULL"": ResetArmorEdits clears the flag + every
                 -- shadow but deliberately leaves LastChanged set (it feeds the import conflict
@@ -95,13 +106,14 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 -- shadow-vs-base pick below matches LoadArmor's ""CASE WHEN IsEdited = 1 AND …"" —
                 -- a row with IsEdited = 0 and a leftover shadow would otherwise be patched with a
                 -- value the UI itself doesn't show. Same rule as ItemDBHandler.GetEditedItems.
-                WHERE IsEdited = 1 AND Active = 1";
+                WHERE " + (editedOnly ? "IsEdited = 1 AND " : "") + "Active = 1";
 
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
                 string key = r.GetString(0);
                 string editorId = Str(r, 1);
+                bool isEdited = !r.IsDBNull(23) && r.GetInt64(23) == 1;
 
                 var original = new ArmorRecord
                 {
@@ -117,7 +129,13 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     ContainerString = Str(r, 16),
                     ObjectEffectKey = Str(r, 18),
                     EnchantAmount = (int)Lng(r, 20),
+                    TemplateKey = Str(r, 22),
                 };
+                if (!isEdited)
+                {
+                    pairs.Add(new ArmorPatchRow(new ArmorPatchPair(original, CopyOf(original)), false));
+                    continue;
+                }
 
                 var edited = new ArmorRecord
                 {
@@ -139,16 +157,23 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     ObjectEffectKey = r.IsDBNull(19) ? original.ObjectEffectKey : r.GetString(19),
                     // 0 is a REAL value here too - an item taken back down to no charge.
                     EnchantAmount = r.IsDBNull(21) ? original.EnchantAmount : (int)Lng(r, 21),
+                    TemplateKey = original.TemplateKey,
                 };
 
-                pairs.Add(new ArmorPatchPair(original, edited));
+                pairs.Add(new ArmorPatchRow(new ArmorPatchPair(original, edited), true));
             }
             return pairs;
         }
 
         public IReadOnlyList<WeaponPatchPair> ReadEditedWeapons()
+            => ReadWeapons(editedOnly: true).Select(r => r.Pair).ToList();
+
+        // See ReadAllArmor.
+        public IReadOnlyList<WeaponPatchRow> ReadAllWeapons() => ReadWeapons(editedOnly: false);
+
+        private List<WeaponPatchRow> ReadWeapons(bool editedOnly)
         {
-            var pairs = new List<WeaponPatchPair>();
+            var pairs = new List<WeaponPatchRow>();
             using var conn = new SqliteConnection(_connString);
             conn.Open();
             using var cmd = conn.CreateCommand();
@@ -166,16 +191,18 @@ namespace SkyrimCraftingTool.Services.PatchGen
                        ObjectEffectKey, IsEditedObjectEffectKey,
                        EnchantAmount, IsEditedEnchantAmount,
                        CritDamage, IsEditedCritDamage,
-                       CritPercentMult, IsEditedCritPercentMult
+                       CritPercentMult, IsEditedCritPercentMult,
+                       TemplateKey, IsEdited
                 FROM Weapons
-                -- see ReadEditedArmor for why this is IsEdited and not LastChanged
-                WHERE IsEdited = 1 AND Active = 1";
+                -- see ReadArmor for why this is IsEdited and not LastChanged
+                WHERE " + (editedOnly ? "IsEdited = 1 AND " : "") + "Active = 1";
 
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
                 string key = r.GetString(0);
                 string editorId = Str(r, 1);
+                bool isEdited = !r.IsDBNull(29) && r.GetInt64(29) == 1;
 
                 var original = new WeaponRecord
                 {
@@ -194,7 +221,13 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     EnchantAmount = (int)Lng(r, 22),
                     CritDamage = (int)Lng(r, 24),
                     CritPercentMult = (float)Dbl(r, 26),
+                    TemplateKey = Str(r, 28),
                 };
+                if (!isEdited)
+                {
+                    pairs.Add(new WeaponPatchRow(new WeaponPatchPair(original, CopyOf(original)), false));
+                    continue;
+                }
 
                 var edited = new WeaponRecord
                 {
@@ -215,9 +248,10 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     EnchantAmount = r.IsDBNull(23) ? original.EnchantAmount : (int)Lng(r, 23),
                     CritDamage = r.IsDBNull(25) ? original.CritDamage : (int)Lng(r, 25),
                     CritPercentMult = r.IsDBNull(27) ? original.CritPercentMult : (float)Dbl(r, 27),
+                    TemplateKey = original.TemplateKey,
                 };
 
-                pairs.Add(new WeaponPatchPair(original, edited));
+                pairs.Add(new WeaponPatchRow(new WeaponPatchPair(original, edited), true));
             }
             return pairs;
         }
@@ -375,6 +409,24 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
             return names;
         }
+
+        // A field-by-field copy, so a rule pair never shares a keyword list with another record.
+        internal static ArmorRecord CopyOf(ArmorRecord r) => new()
+        {
+            Key = r.Key, EditorID = r.EditorID, Name = r.Name, Weight = r.Weight, Value = r.Value,
+            ArmorRating = r.ArmorRating, BodySlotMask = r.BodySlotMask, ArmorType = r.ArmorType,
+            ObjectEffectKey = r.ObjectEffectKey, EnchantAmount = r.EnchantAmount, TemplateKey = r.TemplateKey,
+            Keywords = r.Keywords.ToList(), ContainerString = r.ContainerString,
+        };
+
+        internal static WeaponRecord CopyOf(WeaponRecord r) => new()
+        {
+            Key = r.Key, EditorID = r.EditorID, Name = r.Name, Weight = r.Weight, Value = r.Value,
+            Damage = r.Damage, Speed = r.Speed, Reach = r.Reach, Stagger = r.Stagger,
+            CritDamage = r.CritDamage, CritPercentMult = r.CritPercentMult,
+            ObjectEffectKey = r.ObjectEffectKey, EnchantAmount = r.EnchantAmount, TemplateKey = r.TemplateKey,
+            Keywords = r.Keywords.ToList(), ContainerString = r.ContainerString,
+        };
 
         private static string Str(SqliteDataReader r, int i) => r.IsDBNull(i) ? "" : r.GetString(i);
 

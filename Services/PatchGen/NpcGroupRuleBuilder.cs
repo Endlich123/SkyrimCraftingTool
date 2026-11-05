@@ -86,13 +86,20 @@ namespace SkyrimCraftingTool.Services.PatchGen
             // ScalingCounterExclusions. Membership is unaffected: that is still group.Predicates alone.
             var ruleGroup = WithScalingCounterExclusions(group, allGroups, problems, members);
 
-            var clauses = BuildFilterClauses(ruleGroup, problems, out bool anyInexpressible);
+            // The reach is resolved as SkyPatcher sees the NPCs: its EditorID filters match the EditorID
+            // of the DEFINING plugin, and an override may have renamed it (measured 2026-10-31 - 43 of
+            // 113 renamed bandits were missed). Membership above stays on the name the user sees.
+            var reachResolver = new NpcGroupResolver(npcs, asSkyPatcherSees: true);
+
+            var clauses = BuildFilterClauses(ruleGroup, reachResolver, problems, out var ruleFilter, out bool anyInexpressible);
 
             // What those clauses alone would reach. Resolved through the same resolver the membership
-            // came from, so the comparison below is between two answers to the same question.
+            // came from, so the comparison below is between two answers to the same question - and
+            // with exactly the predicates the rule carries, one inclusion and the exclusions, where
+            // AND and SkyPatcher's OR give the same answer.
             var reach = clauses.Count == 0
                 ? new List<NpcRecord>()
-                : resolver.Resolve(Expressible(ruleGroup)).Members.ToList();
+                : reachResolver.Resolve(ruleFilter).Members.ToList();
 
             var memberKeys = members.Select(m => m.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var reachKeys = reach.Select(m => m.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -106,7 +113,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
                 problems.Add($"{tooMany.Count} NPC(s) named in filterByNpcsExcluded - the filter reaches " +
                              "them but the group does not" +
-                             (anyInexpressible ? ", because not every clause has a filter of its own" : "") +
+                             (anyInexpressible ? ", because not every clause can be written as a filter" : "") +
                              ". A mod added later is only covered after the next scan.");
             }
 
@@ -115,7 +122,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
                              "would produce a shorter rule.");
 
             // ---- the operations ---------------------------------------------------------------
-            var operations = BuildOperations(group, members, stats, problems);
+            var operations = BuildOperations(group, members, stats, problems, out var afterLevel);
 
             if (operations.Count == 0)
             {
@@ -134,13 +141,17 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     Comment = $"{group.Name} - {members.Count} NPC(s)",
                     FilePlugin = FileName,
                 });
+
+                AddAfterLevelRule(rules, clauses, afterLevel, group.Name);
             }
 
             // ---- section 5.1: the second rule -------------------------------------------------
             //
-            // Every filter of one rule is ANDed, so "this predicate OR these NPCs" cannot be said in
-            // one line. The NPCs the filter cannot reach - hand-added members, and everything else when
-            // there is no expressible predicate at all - get their own rule with the same payload.
+            // The NPCs the filter cannot reach - hand-added members, and everything else when there is
+            // no expressible predicate at all - get their own rule with the same payload. SkyPatcher
+            // joins different filters with OR (see BuildFilterClauses), so a filterByNpcs inside the
+            // rule above might do the same - but that one is not measured, and a rule of its own is
+            // certain.
             if (missed.Count > 0)
             {
                 rules.Add(new SkyPatcherRule
@@ -153,12 +164,39 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     FilePlugin = FileName,
                 });
 
+                AddAfterLevelRule(rules, new[] { "filterByNpcs=" + string.Join(",", missed.Select(n => Target(n.Key))) },
+                    afterLevel, group.Name);
+
                 if (clauses.Count > 0)
+                {
+                    int renamed = missed.Count(n => n.IsEditorIdRenamed);
                     problems.Add($"{missed.Count} NPC(s) need a second rule with the same values - " +
-                                 "one rule cannot say 'this predicate or these NPCs' (section 5.1)");
+                                 "the filter above cannot reach them" +
+                                 (renamed > 0
+                                     ? $" ({renamed} because an override renamed their EditorID, and SkyPatcher matches the original one)"
+                                     : ""));
+                }
             }
 
             return new NpcGroupRuleSet(rules, problems, members);
+        }
+
+        // The per-level values of a group that sets a fixed level, on a line of their own BEHIND the line
+        // with level=. changeStats reads the level from before level= of the same line, so on one line
+        // calc works on the old level. Measured 2026-11-04: level=10 and calcMagicka=200 on one line left
+        // all 237 NPCs of a level 1 group at Magicka 0; on two lines 396 of 396 NPCs got 1350.
+        private static void AddAfterLevelRule(
+            List<SkyPatcherRule> rules, IReadOnlyList<string> clauses, IReadOnlyList<string> afterLevel, string name)
+        {
+            if (afterLevel.Count == 0) return;
+
+            rules.Add(new SkyPatcherRule
+            {
+                FilterClauses = clauses,
+                Operations = afterLevel,
+                Comment = $"{name} - second line, values that must not share the line above",
+                FilePlugin = FileName,
+            });
         }
 
         // MEASURED IN GAME ON 2026-09-27, and documented nowhere: calcLevelMin and calcLevelMax are NOT
@@ -183,6 +221,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
             var uncounterable = scaling
                 .SelectMany(g => g.Predicates
                     .Where(p => !IsFlag(p)
+                        && !string.Equals(p.Axis, NpcGroupAxis.Gender, StringComparison.OrdinalIgnoreCase)
                         && (string.Equals(p.Mode, NpcGroupMode.Include, StringComparison.OrdinalIgnoreCase)
                             || string.Equals(p.Mode, NpcGroupMode.IncludeOr, StringComparison.OrdinalIgnoreCase))
                         && !Directives.ContainsKey(((p.Axis ?? "").ToLowerInvariant(), NpcGroupMode.Exclude)))
@@ -235,11 +274,37 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
         // ---- the filter clauses ------------------------------------------------------------------
 
+        // ONE INCLUSION FILTER PER RULE. Measured in game on 2026-10-31 (runtime dump, five test rules
+        // each marking its matches with its own skill value): SkyPatcher joins DIFFERENT filters of
+        // one rule with OR, not AND.
+        //
+        //   filterByEditorIdContains=OREO_EncBandit10                        192 of 192 expected
+        //   filterByClass=02F202                                             441 of 445
+        //   filterByEditorIdContains=OREO_EncBandit10:filterByProtected=false  24 386 - every unprotected NPC
+        //   filterByRaces=NordRace:filterByEditorIdContains=OREO_EncBandit10    3 960 - every Nord, plus the bandits
+        //   filterByRaces=NordRace:filterByClass=02F202                         4 224 - every Nord, plus the class
+        //
+        // Only the ...Excluded filters subtract (filterByNpcsExcluded and filterByEditorIdContainsExcluded
+        // measured). The docs hint at it in their first line - the filters "work independent from
+        // each other". The rules this wrote before reached about 23 800 NPCs outside their groups.
+        //
+        // So the rule carries the one inclusion that reaches fewest NPCs beside the exclusions, and every
+        // other inclusion and every flag (filterByEssential=false selects all non-essential NPCs - it
+        // does not narrow) is paid for by names, the way clauses with no filter already are.
         private static List<string> BuildFilterClauses(
-            NpcGroup group, List<string> problems, out bool anyInexpressible)
+            NpcGroup group, NpcGroupResolver resolver, List<string> problems,
+            out NpcGroup ruleFilter, out bool anyInexpressible)
         {
             var clauses = new List<string>();
+            ruleFilter = new NpcGroup { Name = group.Name };
             anyInexpressible = false;
+
+            var inclusions = new List<(string Text, List<NpcGroupPredicate> Clauses)>();
+            var exclusions = new List<(string Text, List<NpcGroupPredicate> Clauses)>();
+
+            // Keyed by directive: include and includeOr can share one (an axis an NPC holds once).
+            var byDirective = new Dictionary<string, List<NpcGroupPredicate>>();
+            var order = new List<string>();
 
             foreach (var pair in group.Predicates
                          .Where(p => !IsFlag(p))
@@ -252,9 +317,24 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     continue;
                 }
 
-                clauses.Add($"{directive}={string.Join(",", pair.Select(p => p.Value))}");
+                if (!byDirective.TryGetValue(directive, out var list))
+                {
+                    byDirective[directive] = list = new List<NpcGroupPredicate>();
+                    order.Add(directive);
+                }
+                list.AddRange(pair);
             }
 
+            foreach (var directive in order)
+            {
+                var predicates = byDirective[directive];
+                var text = $"{directive}={string.Join(",", predicates.Select(p => p.Value))}";
+                bool exclude = predicates.All(p => string.Equals(p.Mode, NpcGroupMode.Exclude, StringComparison.OrdinalIgnoreCase));
+
+                (exclude ? exclusions : inclusions).Add((text, predicates));
+            }
+
+            var flags = new List<(string Text, List<NpcGroupPredicate> Clauses)>();
             foreach (var flag in group.Predicates.Where(IsFlag))
             {
                 if (!FlagDirectives.TryGetValue(flag.Value ?? "", out var directive))
@@ -264,24 +344,70 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 }
 
                 bool wanted = !string.Equals(flag.Mode, NpcGroupMode.Exclude, StringComparison.OrdinalIgnoreCase);
-                clauses.Add($"{directive}={(wanted ? "true" : "false")}");
+                flags.Add(($"{directive}={(wanted ? "true" : "false")}", new List<NpcGroupPredicate> { flag }));
             }
 
+            // A flag is a selector too, so it can carry the rule - but only when nothing else can.
+            var candidates = inclusions.Count > 0 ? inclusions : flags;
+
+            // No inclusion at all: a rule of exclusions alone says nothing SkyPatcher documents, so
+            // there is no filter line - the members are named instead (the second rule).
+            if (candidates.Count == 0)
+            {
+                if (exclusions.Count > 0) anyInexpressible = true;
+                return clauses;
+            }
+
+            var exclusionPredicates = exclusions.SelectMany(e => e.Clauses).ToList();
+            var chosen = candidates
+                .Select(c =>
+                {
+                    var probe = new NpcGroup { Name = group.Name };
+                    probe.Predicates.AddRange(c.Clauses);
+                    probe.Predicates.AddRange(exclusionPredicates);
+                    return (Candidate: c, Probe: probe, Reach: resolver.Resolve(probe).Count);
+                })
+                .OrderBy(x => x.Reach)
+                .First();
+
+            foreach (var dropped in inclusions.Concat(flags).Where(c => !ReferenceEquals(c.Clauses, chosen.Candidate.Clauses)))
+            {
+                anyInexpressible = true;
+
+                // Flags, gender and mod narrow since SkyPatcher 8.0.1 (measured 2026-11-04). They stay out
+                // of the rule because 8.0.0 read a flag differently, and a name works on every version.
+                string axis = (dropped.Clauses[0].Axis ?? "").ToLowerInvariant();
+                bool wouldNarrow = axis is NpcGroupAxis.Flag or NpcGroupAxis.Gender or NpcGroupAxis.Mod;
+
+                problems.Add(wouldNarrow
+                    ? $"'{dropped.Text}' is not written as a filter - this rule filters by " +
+                      $"'{chosen.Candidate.Text}' and the difference is named, which works on every " +
+                      "SkyPatcher version"
+                    : $"'{dropped.Text}' is not written as a filter - SkyPatcher joins the filters " +
+                      $"of one rule with OR, so this rule filters by '{chosen.Candidate.Text}' alone " +
+                      "and the difference is named");
+            }
+
+            clauses.Add(chosen.Candidate.Text);
+            clauses.AddRange(exclusions.Select(e => e.Text));
+            ruleFilter = chosen.Probe;
             return clauses;
         }
 
-        // The group reduced to the clauses a rule can express - the predicate the RULE stands for, as
-        // opposed to the one the user wrote. Resolving this is what says how far the rule reaches.
         // THE FIX FOR THE BOUNDS THAT LEAKED, measured in game on 2026-09-27.
+        //
+        // Most likely the same OR as in BuildFilterClauses: the seeded groups carried flag filters
+        // (filterByEssential=false, filterByProtected=false), and each of those alone reached nearly
+        // every NPC - so the last rule's bounds landed on everybody. With one inclusion per rule the
+        // counter-exclusions should no longer be needed; they stay until a dump shows it, since an
+        // exclusion that bites nobody costs nothing.
         //
         // Two groups scaling with the player, "Draugr 02" bounded 6-8 and "Bandit 01" bounded 1-5, both
         // came out with whichever pair SkyPatcher read LAST - in one file or in two, it made no
         // difference. Adding the OTHER group's include terms to this rule's exclusion list fixed it.
         //
-        // Which says the bounds are not global after all: SkyPatcher appears to apply calcLevelMin/Max
-        // to every NPC it has already switched to PcLevelMult, honouring the rule's exclusion list but
-        // no longer its inclusion filter. So every scaling group has to say out loud that it does not
-        // mean the other scaling groups.
+        // The reading back then: SkyPatcher applies the bounds honouring the rule's exclusion list but
+        // not its inclusion filter - which is the OR above, seen through one field only.
         //
         // Only between groups that BOTH scale - a group with fixed levels never enters that pass - and
         // only on the three axes that have an exclusion directive. Race, mod and gender have none, and
@@ -316,7 +442,9 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
                     if (!Directives.ContainsKey((axis, NpcGroupMode.Exclude)))
                     {
-                        if (!IsFlag(clause))
+                        // Gender keeps the bounds apart: 19 and 730 NPCs of one class, each on its own
+                        // pair (measured 2026-11-04).
+                        if (!IsFlag(clause) && axis != NpcGroupAxis.Gender)
                             problems.Add($"'{other.Name}' also scales and selects by {axis}, which has no " +
                                          "exclusion filter - its level bounds may leak into this group. " +
                                          "Give both groups the same bounds to be safe.");
@@ -382,22 +510,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             && string.Equals(v.Kind, NpcGroupValueKind.Span, StringComparison.OrdinalIgnoreCase)
             && !string.IsNullOrWhiteSpace(v.Low) && !string.IsNullOrWhiteSpace(v.High));
 
-        private static NpcGroup Expressible(NpcGroup group)
-        {
-            var copy = new NpcGroup { Name = group.Name };
-
-            foreach (var clause in group.Predicates)
-            {
-                bool expressible = IsFlag(clause)
-                    ? FlagDirectives.ContainsKey(clause.Value ?? "")
-                    : TryDirective((clause.Axis ?? "").ToLowerInvariant(), clause.Mode ?? "", out _);
-
-                if (expressible) copy.Predicates.Add(clause);
-            }
-
-            return copy;
-        }
-
         private static bool IsFlag(NpcGroupPredicate p)
             => string.Equals(p.Axis, NpcGroupAxis.Flag, StringComparison.OrdinalIgnoreCase);
 
@@ -434,16 +546,17 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // ---- the operations (section 5.2) --------------------------------------------------------
 
         private static List<string> BuildOperations(
-            NpcGroup group, IReadOnlyList<NpcRecord> members, NpcStatResolver? stats, List<string> problems)
+            NpcGroup group, IReadOnlyList<NpcRecord> members, NpcStatResolver? stats, List<string> problems,
+            out List<string> afterLevel)
         {
             var operations = new List<string>();
+            afterLevel = new List<string>();
             var changeStats = new List<string>();
             var changeSkills = new List<string>();
             var bonuses = new List<string>();
 
-            // Computed BEFORE the loop, because it changes what each value means: a group that scales
-            // with the player has no level at patch time, so anything interpolated from a level is
-            // reported instead of written. See the two cases in the switch.
+            // Computed BEFORE the loop: a per-level value is refused on a group that scales, and the
+            // fallback level of setPcLevelMult=false must not reach a rule that switches the flag on.
             bool scales = group.Values.Any(v =>
                 string.Equals(v.Field, "level", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(v.Kind, NpcGroupValueKind.Span, StringComparison.OrdinalIgnoreCase)
@@ -451,6 +564,32 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
             bool anySpan = false;
             bool needsAutoCalcOff = false;
+
+            // A fixed level on this group. Spans stay on the first line, they are meant to read the level
+            // the members had. Calc values must see the new one, so they move behind it.
+            bool hasFixedLevel = group.Values.Any(v =>
+                string.Equals(v.Field, "level", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(v.Kind, NpcGroupValueKind.Direct, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(v.Low));
+
+            var behindFirstLine = new List<string>();
+
+            // FOLLOW: AutoCalc stays on, so the game keeps calculating these stats from the level the NPC
+            // has in game, and the value of the rule is added on top. The only form that grows with the
+            // player. Measured 2026-11-04 at levels 5 to 25: no value 67, 114, 160, 206, 253; health=300~500
+            // the same plus 304 at every level. levelRange, calc and AutoCalc off all stay constant.
+            bool follows = group.Values.Any(v =>
+                Stats.Contains((v.Field ?? "").Trim())
+                && string.Equals(v.Kind, NpcGroupValueKind.Follow, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(v.Low));
+
+            // levelRange belongs to the whole changeStats of its line, so a random value beside a span goes
+            // on a line of its own (measured 2026-11-04: 396 of 396 NPCs right on both). Computed before the
+            // loop: the order of the rows must not decide it. Members on one level give no range.
+            bool ruleHasLevelRange = !follows && LevelRange(group, members, stats) != null && group.Values.Any(v =>
+                Stats.Contains((v.Field ?? "").Trim())
+                && string.Equals(v.Kind, NpcGroupValueKind.Span, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(v.Low) && !string.IsNullOrWhiteSpace(v.High));
 
             foreach (var value in group.Values.OrderBy(v => v.Field, StringComparer.OrdinalIgnoreCase))
             {
@@ -476,7 +615,12 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 // (docs/NPC_Patcher.txt documents exactly "changeSkills=twohanded=45,onehanded=50").
                 if (NpcSkillNames.All.Contains(field, StringComparer.OrdinalIgnoreCase))
                 {
-                    AppendSkill(value, field, low, changeSkills, problems);
+                    if (follows)
+                        problems.Add($"skill '{field}' is not written - with follow the game keeps calculating " +
+                                     "the skills as well and would replace it");
+                    else
+                        AppendSkill(value, field, low, changeSkills, problems);
+
                     continue;
                 }
 
@@ -492,17 +636,17 @@ namespace SkyrimCraftingTool.Services.PatchGen
                         changeStats.Add($"{field}={low}");
                         break;
 
-                    // NOT WRITTEN AT ALL when the group scales with the player, and that is a decision
-                    // rather than a limitation: a span is interpolated from the NPC's level, SkyPatcher
-                    // computes it when the patch is applied, and a scaling NPC has no level yet at that
-                    // point. Writing "health=150~250" without a levelRange would put a half-instruction
-                    // in the INI; writing one from the scaling bounds would be a guess about what
-                    // SkyPatcher does with it. Neither is worth a silent wrong number.
-                    case NpcGroupValueKind.Span when scales:
-                        problems.Add($"'{field}' is a span, and this group scales with the player - a " +
-                                     "span is interpolated from the NPC's level, which a scaling NPC " +
-                                     "does not have when the patch is applied. Not written. Use a " +
-                                     "single value, or drop the level span.");
+                    // Also on a group that scales. changeStats reads the level the NPC has BEFORE level=
+                    // of the same line. Measured 2026-11-04 (SkyPatcher 8.0.1, 234 NPCs, levelRange=10~50,
+                    // health=150~250, beside setPcLevelMult=true and level=1000): all 196 NPCs on a fixed
+                    // level landed on the line, and all 234 scaled. The value is a fixed number per NPC.
+                    case NpcGroupValueKind.Span or NpcGroupValueKind.Mult or NpcGroupValueKind.Calc when follows:
+                        problems.Add($"'{field}' is set to {value.Kind}, which is not measured beside follow. " +
+                                     "Not written. Use follow, direct or random on this group.");
+                        break;
+
+                    case NpcGroupValueKind.Follow when low.Length > 0:
+                        changeStats.Add(high.Length > 0 ? $"{field}={low}~{high}" : $"{field}={low}");
                         break;
 
                     case NpcGroupValueKind.Span when low.Length > 0 && high.Length > 0:
@@ -511,19 +655,35 @@ namespace SkyrimCraftingTool.Services.PatchGen
                         needsAutoCalcOff = true;
                         break;
 
+                    case NpcGroupValueKind.Random when ruleHasLevelRange && low.Length > 0 && high.Length > 0:
+                        behindFirstLine.Add($"{field}={low}~{high}");
+                        break;
+
+                    // The same text as a span, but without levelRange: each NPC draws its own number,
+                    // so the level does not matter and a scaling group can use it too.
+                    case NpcGroupValueKind.Random when low.Length > 0 && high.Length > 0:
+                        changeStats.Add($"{field}={low}~{high}");
+                        break;
+
                     case NpcGroupValueKind.Mult when low.Length > 0:
                         changeStats.Add($"{field}Mult={low}");
                         break;
 
-                    // The one SkyPatcher warns about in so many words: "don.t use that on Leveled NPCs,
-                    // you have to disable PCLevelMult and set a level with it".
-                    case NpcGroupValueKind.Calc when scales:
-                        problems.Add($"'{field}' is a per-level value, and SkyPatcher documents that those " +
-                                     "must not be used on NPCs that scale with the player. Not written.");
+                    // What the docs warn about ("do not use the calc entries on NPCs with PCLevelMult"), and
+                    // it is about the MEMBERS, not the group. An NPC that scales stores a multiplier as its
+                    // level, and calc takes that for a level: measured 2026-11-04, Health up to 20 564. A
+                    // member on a fixed level is fine beside scaling (138 of 138 in range), because calc
+                    // reads the level from before the rule. A fixed level on the group switches the flag
+                    // off first, so that case is fine too.
+                    case NpcGroupValueKind.Calc when !hasFixedLevel && members.Any(m => m.UsesPcLevelMult):
+                        problems.Add($"'{field}' is a per-level value, and {members.Count(m => m.UsesPcLevelMult)} " +
+                                     "member(s) already scale with the player - their level is a multiplier, " +
+                                     "so the result would be far too high. Not written. Set a fixed level on " +
+                                     "this group, or take those NPCs out.");
                         break;
 
                     case NpcGroupValueKind.Calc when low.Length > 0:
-                        changeStats.Add($"calc{Capitalise(field)}={low}");
+                        (hasFixedLevel ? behindFirstLine : changeStats).Add($"calc{Capitalise(field)}={low}");
                         needsAutoCalcOff = true;
                         break;
 
@@ -540,39 +700,55 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 }
             }
 
-            // A span interpolates BETWEEN TWO LEVELS, so it is meaningless without the range it runs
-            // over - "health=250~650" alone does not say which NPC gets 250. levelRange therefore comes
-            // first, exactly as SkyPatcher's own example writes it
+            // A span interpolates BETWEEN TWO LEVELS, so it needs the range it runs over - without one,
+            // "health=250~650" is a random value since SkyPatcher 8.0.1 (NpcGroupValueKind.Random).
+            // levelRange therefore comes first, exactly as SkyPatcher's own example writes it
             // (docs/NPC_Patcher.txt: levelRange=1~30:changeStats=health=625~900).
-            if (anySpan && !scales)
+            if (anySpan)
             {
                 var range = LevelRange(group, members, stats);
 
+                // No range, because the members do not differ in level. The values are still written:
+                // without levelRange SkyPatcher 8.0.1 gives each NPC a random number (its changelog,
+                // and measured on Bandit 01: 113 NPCs, all level 1, 76 different values). The result is
+                // the same as the kind random, so that is what the user is told.
                 if (range == null)
-                    problems.Add("a value span needs a level range to run over, and this group's members " +
-                                 "have no level range - set a level span, or use a single value instead");
+                {
+                    var actual = stats?.Spread(members, v => v.Level);
+
+                    problems.Add((actual is { Resolved: > 0 } && actual.Low == actual.High
+                                     ? $"every member is level {actual.Low}, so this span has no level range to run over"
+                                     : "this span has no level range to run over") +
+                                 " - each NPC gets a random value instead, drawn anew at every game start, " +
+                                 "the same as the kind random");
+                }
                 else
+                {
                     operations.Add($"levelRange={range.Value.Low}~{range.Value.High}");
+                }
 
-                // THE TRAP A SPAN WALKS INTO, found in game on 2026-09-27: a level span on the group
-                // sets the levelRange and NOTHING ELSE - it changes no NPC's level, because level=
-                // takes a single number. So a group whose members all sit on ONE level interpolates
-                // every one of them to the same point, and the user sees the low end everywhere while
-                // the rule looks like it should produce a range.
-                //
-                // "Bandit 01" is exactly that shape: 44 members, all level 1. Said out loud here,
-                // because the alternative is finding out by hunting bandits.
-                var actual = stats?.Spread(members, v => v.Level);
+                // An NPC that scales already stores its multiplier in the level field, so it sits above
+                // any range: all 38 of them got the high end in the measurement above. Without scaling
+                // on the group, setPcLevelMult=false gives them a fixed level instead.
+                int alreadyScaling = scales ? members.Count(m => m.UsesPcLevelMult) : 0;
 
-                if (actual is { Resolved: > 0 } && actual.Low == actual.High)
-                    problems.Add($"every member is level {actual.Low}, so a span can only ever produce " +
-                                 "its low end - the range interpolates over the NPC's OWN level, and a " +
-                                 "level span on the group does not change it. Use single values here, or " +
-                                 "put the span on a group whose members differ in level.");
+                if (alreadyScaling > 0)
+                    problems.Add($"{alreadyScaling} member(s) already scale with the player, so a span " +
+                                 "gives them its high end");
             }
 
-            // Before changeStats, the way the reference mod orders them.
-            operations.AddRange(bonuses);
+            // Before changeStats, the way the reference mod orders them. A bonus adds to the result of
+            // calc, so it goes wherever calc goes.
+            if (behindFirstLine.Count > 0)
+            {
+                afterLevel.AddRange(bonuses);
+                afterLevel.Add("changeStats=" + string.Join(",", behindFirstLine));
+                afterLevel.Add("setAutoCalcStats=false");
+            }
+            else
+            {
+                operations.AddRange(bonuses);
+            }
 
             if (changeStats.Count > 0) operations.Add("changeStats=" + string.Join(",", changeStats));
 
@@ -594,14 +770,28 @@ namespace SkyrimCraftingTool.Services.PatchGen
             // mandatory (section 5.2). That was too narrow: it is mandatory for ANY value this rule
             // sets, because the flag does not care which of them the patch wrote. The reference mod
             // says the same by example - all 101 of its NPC rules carry it (docs/Referenz).
-            if (needsAutoCalcOff || changeStats.Count > 0 || changeSkills.Count > 0 || bonuses.Count > 0)
+            if (follows)
+            {
+                int fixedStats = members.Count(m => (m.Flags & (uint)NpcFlag.AutoCalcStats) == 0);
+
+                if (fixedStats > 0)
+                    problems.Add($"{fixedStats} member(s) do not have AutoCalc, so the game does not calculate " +
+                                 "their stats - they get the value, but it does not grow with the level");
+            }
+            else if (needsAutoCalcOff || changeStats.Count > 0 || changeSkills.Count > 0 || bonuses.Count > 0)
+            {
                 operations.Add("setAutoCalcStats=false");
+            }
 
             // The second mandatory clause of 5.2. setPcLevelMult=false takes a FALLBACK LEVEL, which is
             // a per-NPC number a group cannot know - so it is taken from the group's own level value
             // when there is one, and reported when there is not. Measured: 654 NPCs scale with the
-            // player.
-            if (needsAutoCalcOff)
+            // player. Not on a group that scales: its rule switches the flag on.
+            //
+            // A fixed level needs it too: with the flag on, level=30 is a multiplier of x0.03. Together
+            // the two give exactly that level, in either order (measured 2026-11-04, 63 of 63 and 45 of
+            // 45). setPcLevelMult=false=30 alone does not: it is only an upper limit (95 of 190 on 30).
+            if ((needsAutoCalcOff || hasFixedLevel) && !scales)
             {
                 int scaling = members.Count(m => m.UsesPcLevelMult);
                 if (scaling > 0)
@@ -706,9 +896,10 @@ namespace SkyrimCraftingTool.Services.PatchGen
             var level = group.Values.FirstOrDefault(v =>
                 string.Equals(v.Field, "level", StringComparison.OrdinalIgnoreCase));
 
-            // A level SPAN no longer feeds the levelRange: since 2026-09-27 it means "scales with the
-            // player between these two", which is a different instruction entirely - and one that
-            // cannot be combined with a level-dependent value (see the check in BuildOperations).
+            // A level SPAN does not feed the levelRange: since 2026-09-27 it means "scales with the
+            // player between these two", a different instruction. The range is always the members' own
+            // levels, which is what changeStats reads. The resolver has no level for an NPC that scales
+            // already, so those do not stretch it.
             if (stats == null) return null;
 
             var spread = stats.Spread(members, v => v.Level);
@@ -755,6 +946,13 @@ namespace SkyrimCraftingTool.Services.PatchGen
                           "not in the rule.");
                     continue;
                 }
+
+                // factionsToAdd leaves a member that is already in the faction on its old rank, so a
+                // rank is only certain after a remove (measured 2026-11-04, see
+                // NpcRuleBuilder.AppendFactionOps). Without a rank there is nothing to enforce, and a
+                // remove would reset the ranks members already have.
+                if (extra != null && op == "factionsToAdd")
+                    operations.Add($"factionsToRemove={Target(entry.TargetKey)}");
 
                 // A rank or a count is part of the operation where it takes one - factionsToAdd and
                 // objectsToAdd do, perksToAdd does not.

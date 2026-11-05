@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 
 using SkyrimCraftingTool.Model;
+using SkyrimCraftingTool.Services.TemplateChildren;
 
 namespace SkyrimCraftingTool.Services.PatchGen
 {
@@ -72,7 +73,40 @@ namespace SkyrimCraftingTool.Services.PatchGen
             if (options.GenerateCobj)
                 GenerateCobj(options, report);
 
+            if (!options.DryRun)
+                DeleteStaleOwnEsps(options, report);
+
             return report;
+        }
+
+        // The INI folders are wiped on every run (WriteCategory); the ESPs sit loose in OutputRoot, so
+        // they are cleaned up one by one: every own plugin this run did not write goes. Without this a
+        // plugin whose recipes were all back to original kept its old ESP - still active in
+        // plugins.txt, so the old recipe state kept applying in the game (44 such files, 2026-10-29).
+        private static void DeleteStaleOwnEsps(PatchGenOptions options, PatchGenReport report)
+        {
+            if (string.IsNullOrEmpty(options.OutputRoot) || !Directory.Exists(options.OutputRoot)) return;
+
+            var written = new HashSet<string>(report.WrittenFiles.Select(Path.GetFullPath), StringComparer.OrdinalIgnoreCase);
+
+            foreach (var path in Directory.EnumerateFiles(options.OutputRoot, KeyFactory.OwnOutputPrefix + "*.esp", SearchOption.TopDirectoryOnly))
+            {
+                // "*.esp" also matches ".esp_old" and the like on Windows - only the real extension.
+                if (!string.Equals(Path.GetExtension(path), ".esp", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!KeyFactory.IsOwnOutputPlugin(Path.GetFileName(path))) continue;
+                if (written.Contains(Path.GetFullPath(path))) continue;
+
+                try
+                {
+                    File.Delete(path);
+                    report.DeletedFiles.Add(path);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // Typically the game or xEdit still holds it open.
+                    report.Warnings.Add($"{Path.GetFileName(path)} is no longer generated but could not be deleted: {ex.Message}");
+                }
+            }
         }
 
         // --- SkyPatcher (Phase A) ---
@@ -99,36 +133,75 @@ namespace SkyrimCraftingTool.Services.PatchGen
             var ownLists = UserLeveledListStore.ReadAll(_dbPath);
             var ownListKeys = new OwnListKeys(ResolveUserListKeys(options, ownLists), options, report);
 
+            // Template children follow their template (Kinder-Patcher, TemplateInheritance): every
+            // active row is read, because a child with no edit of its own still gets a rule when its
+            // template was changed. Rows that are neither edited nor a child produce nothing.
+            var childExtras = new ChildExtrasStore(_dbPath ?? DefaultItemDbPath).LoadAll();
+
+            var armorRows = _itemReader.ReadAllArmor();
+            var armorByKey = new Dictionary<string, ArmorPatchPair>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in armorRows) armorByKey.TryAdd(row.Pair.Original.Key, row.Pair);
+            string? ArmorTemplateOf(string key) => armorByKey.TryGetValue(key, out var p) ? p.Original.TemplateKey ?? "" : null;
+
             var armorByPlugin = new Dictionary<string, List<SkyPatcherRule>>(StringComparer.OrdinalIgnoreCase);
-            foreach (var pair in _itemReader.ReadEditedArmor())
+            foreach (var row in armorRows)
             {
-                pair.Edited.ObjectEffectKey =
-                    MapEnchantmentKey(pair.Edited.ObjectEffectKey, pair.Original.ObjectEffectKey,
-                                      pair.Edited.Key, userEnchantments, options, report);
+                var root = TemplateInheritance.RootOf(row.Pair.Original.Key, ArmorTemplateOf);
+                if (!row.IsEdited && root == null) continue;
+
+                var pair = row.Pair;
+                if (row.IsEdited)
+                    pair.Edited.ObjectEffectKey =
+                        MapEnchantmentKey(pair.Edited.ObjectEffectKey, pair.Original.ObjectEffectKey,
+                                          pair.Edited.Key, userEnchantments, options, report);
+                if (root != null)
+                    pair = TemplateInheritance.Armor(pair, armorByKey[root],
+                        childExtras.TryGetValue(pair.Original.Key, out var x) ? x : null);
 
                 var rule = ItemRuleBuilder.BuildArmorRule(pair.Original, pair.Edited, out var skip);
                 if (Accept(rule, skip, report))
+                {
                     report.ArmorRuleCount += Add(armorByPlugin, rule!);
+                    if (root != null) report.ChildRuleCount++;
+                }
 
-                LeveledListRuleBuilder.ParsePlacements(
-                    pair.Edited.Key, pair.Edited.EditorID, pair.Edited.ContainerString,
-                    placements, containerPlacements, lvliNames, containerNames);
+                if (row.IsEdited)
+                    LeveledListRuleBuilder.ParsePlacements(
+                        pair.Edited.Key, pair.Edited.EditorID, pair.Edited.ContainerString,
+                        placements, containerPlacements, lvliNames, containerNames);
             }
 
+            var weaponRows = _itemReader.ReadAllWeapons();
+            var weaponByKey = new Dictionary<string, WeaponPatchPair>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in weaponRows) weaponByKey.TryAdd(row.Pair.Original.Key, row.Pair);
+            string? WeaponTemplateOf(string key) => weaponByKey.TryGetValue(key, out var p) ? p.Original.TemplateKey ?? "" : null;
+
             var weaponByPlugin = new Dictionary<string, List<SkyPatcherRule>>(StringComparer.OrdinalIgnoreCase);
-            foreach (var pair in _itemReader.ReadEditedWeapons())
+            foreach (var row in weaponRows)
             {
-                pair.Edited.ObjectEffectKey =
-                    MapEnchantmentKey(pair.Edited.ObjectEffectKey, pair.Original.ObjectEffectKey,
-                                      pair.Edited.Key, userEnchantments, options, report);
+                var root = TemplateInheritance.RootOf(row.Pair.Original.Key, WeaponTemplateOf);
+                if (!row.IsEdited && root == null) continue;
+
+                var pair = row.Pair;
+                if (row.IsEdited)
+                    pair.Edited.ObjectEffectKey =
+                        MapEnchantmentKey(pair.Edited.ObjectEffectKey, pair.Original.ObjectEffectKey,
+                                          pair.Edited.Key, userEnchantments, options, report);
+                if (root != null)
+                    pair = TemplateInheritance.Weapon(pair, weaponByKey[root],
+                        childExtras.TryGetValue(pair.Original.Key, out var x) ? x : null);
 
                 var rule = ItemRuleBuilder.BuildWeaponRule(pair.Original, pair.Edited, out var skip);
                 if (Accept(rule, skip, report))
+                {
                     report.WeaponRuleCount += Add(weaponByPlugin, rule!);
+                    if (root != null) report.ChildRuleCount++;
+                }
 
-                LeveledListRuleBuilder.ParsePlacements(
-                    pair.Edited.Key, pair.Edited.EditorID, pair.Edited.ContainerString,
-                    placements, containerPlacements, lvliNames, containerNames);
+                if (row.IsEdited)
+                    LeveledListRuleBuilder.ParsePlacements(
+                        pair.Edited.Key, pair.Edited.EditorID, pair.Edited.ContainerString,
+                        placements, containerPlacements, lvliNames, containerNames);
             }
 
             // Books, scrolls, misc, soul gems, ammo, food, ingredients, keys. They have no stats to
@@ -521,6 +594,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
             connString.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase)
                 ? connString.Substring("Data Source=".Length)
                 : connString;
+
+        private static string DefaultItemDbPath => Path.Combine(GlobalState.Tool.InputFolder, "Item", "item.db");
 
         private static string Describe(string? listKey) =>
             string.IsNullOrWhiteSpace(listKey) ? "(none)" : listKey;
@@ -920,6 +995,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 report.CobjDeepCopiedCount += res.DeepCopiedCount;
                 report.CobjFromScratchCount += res.FromScratchCount;
                 report.CobjConditionRewriteSkippedCount += res.ConditionRewriteSkippedCount;
+                report.CobjPlaceholderRestoredCount += res.PlaceholderRestoredCount;
                 report.CobjDeletedCount += res.DeletedCount;
                 report.StaleConditionDataCount += res.StaleConditionDataCount;
                 report.EnchantmentEspOverrideCount += res.EnchantmentOverrideCount;

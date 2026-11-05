@@ -7,30 +7,20 @@ using SkyrimCraftingTool.Model;
 
 namespace SkyrimCraftingTool.Services.PatchGen
 {
-    // Ordered plugin list from plugins.txt (same parse as FileDBHandler.GetPluginsFromTxt: active
-    // lines are '*'-prefixed, vanilla masters prepended). Used only to order the generated ESP's
-    // master list — Mutagen discovers *which* masters via MastersListContentOption.Iterate.
+    // Ordered plugin list - the same one the scan uses (FileDBHandler.OrderWithVanillaFirst: active
+    // '*' lines of plugins.txt, vanilla masters in front, Skyrim.ccc's Creation Club plugins right
+    // after them). Orders the generated ESP's master list (Mutagen discovers *which* masters via
+    // MastersListContentOption.Iterate).
     public static class LoadOrderReader
     {
-        private static readonly string[] Vanilla =
-            { "Skyrim.esm", "Update.esm", "Dawnguard.esm", "HearthFires.esm", "Dragonborn.esm" };
-
         public static IReadOnlyList<ModKey> Read(string? pluginsTxtPath = null)
         {
             var path = pluginsTxtPath ?? GlobalState.PluginsFilePath;
 
-            var names = new List<string>();
-            if (!string.IsNullOrEmpty(path) && File.Exists(path))
-            {
-                names = File.ReadAllLines(path)
-                    .Where(l => !string.IsNullOrWhiteSpace(l) && l.StartsWith("*"))
-                    .Select(l => l.TrimStart('*').Trim())
-                    .ToList();
-            }
-
-            foreach (var v in Vanilla.Reverse())
-                if (!names.Contains(v, StringComparer.OrdinalIgnoreCase))
-                    names.Insert(0, v);
+            var lines = !string.IsNullOrEmpty(path) && File.Exists(path)
+                ? File.ReadAllLines(path)
+                : Array.Empty<string>();
+            var names = FileDBHandler.OrderWithVanillaFirst(lines, CreationClubPlugins.Read(GlobalState.GameDataPath));
 
             var keys = new List<ModKey>();
             foreach (var n in names)

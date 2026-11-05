@@ -37,6 +37,10 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // conditions the scan cannot represent and rewriting would have deleted them.
         public int ConditionRewriteSkippedCount { get; set; }
 
+        // Unreadable conditions put back verbatim into a rewritten list in place of their "?"
+        // placeholder row (docs/Conditions-Plan.md, C1). Before, each of those withheld the edit.
+        public int PlaceholderRestoredCount { get; set; }
+
         // Recipes the user took out of the game: an override carrying the Deleted record flag.
         // Reported separately because it is the one COBJ operation that REMOVES content another mod
         // put there - the same reason RemovalStore reports its decisions on their own.
@@ -78,10 +82,10 @@ namespace SkyrimCraftingTool.Services.PatchGen
             _ => null,
         };
 
-        // The five types with an editor in the UI. Everything else is preserved but read-only, and
-        // so can neither be added nor removed by the user - which is what makes a count mismatch a
-        // reliable "this database is stale" signal.
-        private static bool IsEditableCondition(IConditionGetter cond)
+        // The five types the scan kept from the start (ConditionCatalog.Core). An item.db from before
+        // the condition-scan fix holds only these, so fewer of the others than the real record has
+        // means "stale database". Counted on the scanned snapshot, not the live rows - see BuildOne.
+        private static bool IsCoreCondition(IConditionGetter cond)
         {
             var d = DataOf(cond);
             return d is IHasPerkConditionDataGetter
@@ -89,6 +93,72 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 || d is IGetActorValueConditionDataGetter
                 || d is IGetLevelConditionDataGetter
                 || d is IGetStageDoneConditionDataGetter;
+        }
+
+        // Which original condition each "?" placeholder row stands for, in placeholder order - or null
+        // when they cannot be matched up (the rewrite is then withheld).
+        //
+        // Two ways, by what the scan stored:
+        //  - Every placeholder carries its position in the scanned record (Extra, since 2026-10-24).
+        //    Then each one names its own original, and placeholders may have been DELETED - the
+        //    remaining ones still find theirs.
+        //  - Older rows carry none. Then the k-th placeholder is the k-th unreadable condition, which
+        //    only holds while none was removed, so the counts must agree.
+        // Either way the function name is checked, so a plugin that changed since the scan is caught
+        // instead of handing back someone else's condition.
+        //
+        // Which way is decided on the SCANNED rows (the pre-edit snapshot, or the live rows when there
+        // is none): if the scan stored positions, deleting placeholders is fine - even all of them,
+        // which leaves no live row to tell. If it did not, the count rule applies.
+        internal static List<IConditionGetter>? ResolvePlaceholders(
+            IReadOnlyList<Model.COBJConditionRecord> rows, IReadOnlyList<Model.COBJConditionRecord> scanned,
+            IReadOnlyList<IConditionGetter> recordConditions)
+        {
+            var placeholders = rows.Where(r => ConditionCatalog.IsUnsupported(r.ConditionType)).ToList();
+            var scannedPlaceholders = scanned.Where(r => ConditionCatalog.IsUnsupported(r.ConditionType)).ToList();
+            var resolved = new List<IConditionGetter>();
+
+            bool byPosition = scannedPlaceholders.Count > 0
+                && scannedPlaceholders.All(p => ConditionCatalog.TryGetPlaceholderPosition(p, out _))
+                && placeholders.All(p => ConditionCatalog.TryGetPlaceholderPosition(p, out _));
+
+            if (byPosition)
+            {
+                var used = new HashSet<int>();
+                foreach (var p in placeholders)
+                {
+                    ConditionCatalog.TryGetPlaceholderPosition(p, out int pos);
+                    if (pos < 0 || pos >= recordConditions.Count || !used.Add(pos)) return null;
+                    var original = recordConditions[pos];
+                    // Name only, not "is unreadable": a type the builder learned since the scan (GetStage,
+                    // 2026-10-24) is still a placeholder in an un-rescanned database, and its original
+                    // is now representable.
+                    if (!SameFunction(p, original)) return null;
+                    resolved.Add(original);
+                }
+                return resolved;
+            }
+
+            // Unreadable conditions - plus those of a function a placeholder still names, for the same
+            // reason as above.
+            var placeholderFunctions = placeholders.Select(p => ConditionCatalog.FunctionName(p.ConditionType)).ToHashSet();
+            var originals = recordConditions.Where(c =>
+                !IsRepresentable(c)
+                || (DataOf(c) is { } d && placeholderFunctions.Contains(ConditionCatalog.FunctionNameOf(d.GetType())))).ToList();
+            if (placeholders.Count != originals.Count) return null;
+            for (int i = 0; i < placeholders.Count; i++)
+            {
+                if (!SameFunction(placeholders[i], originals[i])) return null;
+                resolved.Add(originals[i]);
+            }
+            return resolved;
+        }
+
+        private static bool SameFunction(Model.COBJConditionRecord placeholder, IConditionGetter original)
+        {
+            var data = DataOf(original);
+            return data != null
+                && ConditionCatalog.FunctionName(placeholder.ConditionType) == ConditionCatalog.FunctionNameOf(data.GetType());
         }
 
         // The condition data types ItemDBHandler.Scan.cs knows how to persist. Anything else never
@@ -102,14 +172,19 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 _ => null,
             };
 
-            // Compared against a global variable ("Smithing >= the value of CC0262"): BuildCondition only
-            // writes number comparisons, so the global would become 0 and the recipe free for everyone.
-            // 32 recipes of a real modlist (2026-10-23). Such a recipe keeps its original conditions.
-            if (cond is IConditionGlobalGetter) return false;
+            // Compared against a global variable ("Smithing >= the value of CC0262"): rebuilt as a
+            // ConditionGlobal from the key the scan stores in Value (36 recipes of the real modlist,
+            // 2026-10-24). Until then these kept their original conditions.
+            if (d == null) return false;
 
-            // Run on a specific reference: the scan does not keep which one, so a rebuilt condition
-            // would point at nothing. Such a recipe keeps its original conditions instead.
-            if (d == null || d.RunOnType == Condition.RunOnType.Reference) return false;
+            // Run on a specific reference: the scan keeps which one since 2026-10-24 (RunOnRef,
+            // PlayerRef for 96% of them). Rows from an older scan are caught by the stale check in
+            // BuildOne, not here. QuestAlias/PackageData/EventData pick their subject through
+            // RunOnTypeIndex, which is not stored - those keep their original conditions.
+            if (d.RunOnType == Condition.RunOnType.Reference && d.Reference.FormKey.IsNull) return false;
+            if (d.RunOnType is Condition.RunOnType.QuestAlias
+                or Condition.RunOnType.PackageData
+                or Condition.RunOnType.EventData) return false;
 
             return d is IHasPerkConditionDataGetter
                 || d is IGetIsSexConditionDataGetter
@@ -124,7 +199,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 || d is IHasKeywordConditionDataGetter
                 || d is IGetQuestCompletedConditionDataGetter
                 || d is IGetInCurrentLocConditionDataGetter
-                || d is IGetVMQuestVariableConditionDataGetter;
+                || d is IGetVMQuestVariableConditionDataGetter
+                || d is IGetStageConditionDataGetter;   // editable since 2026-10-24
         }
 
         public CobjEspResult Build(
@@ -333,7 +409,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 AddString(e.CreatedItemKey);
                 AddString(e.WorkbenchKey);
                 foreach (var (k, _) in e.Ingredients) AddString(k);
-                foreach (var c in e.Conditions) AddString(c.Target);
+                foreach (var c in e.Conditions) { AddString(c.Target); AddString(c.RunOnRef); }
             }
 
             return ordering;
@@ -487,6 +563,9 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
         public sealed record NewSpellEffect(string MagicEffectKey, float Magnitude, int Duration, int Area);
 
+        private static readonly FormKey VoiceEquipType = FormKey.Factory("025BEE:Skyrim.esm");
+        private static readonly FormKey EitherHandEquipType = FormKey.Factory("013F44:Skyrim.esm");
+
 
         // A spell the user created in the tool (docs/Spells-Plan.md, S-P6).
         //
@@ -517,6 +596,14 @@ namespace SkyrimCraftingTool.Services.PatchGen
             // vanilla SPEL at all.
             if (Enum.TryParse<SpellType>(e.SpellType, ignoreCase: true, out var spellType))
                 spell.Type = spellType;
+
+            // ETYP IS REQUIRED, AND NOTHING IN THE TOOL ASKS FOR IT. It says what the spell is
+            // equipped to, and a record without it was what every created spell used to get. Derived
+            // from the type, which is the only thing that decides it in practice. Measured on
+            // 7.574 scanned spells: Voice for most powers and shouts, Either Hand for the rest.
+            spell.EquipmentType.SetTo(spell.Type is SpellType.Power or SpellType.LesserPower or SpellType.Voice
+                ? VoiceEquipType
+                : EitherHandEquipType);
 
             if (Enum.TryParse<CastType>(e.CastType, ignoreCase: true, out var castType))
                 spell.CastType = castType;
@@ -767,25 +854,66 @@ namespace SkyrimCraftingTool.Services.PatchGen
             // because the scan understands only 5 of the condition types that occur in practice.
             //
             // - Deep copy, conditions untouched by the user -> keep the copied ones verbatim.
-            // - Deep copy, but the real record holds a condition we can't represent -> keep the
-            //   copied ones and say so; rewriting would drop it.
+            // - Deep copy, but the real record holds a condition we can't represent -> write the
+            //   user's set, with each "?" placeholder row replaced by the copied original it stands
+            //   for (docs/Conditions-Plan.md, C1). If the placeholders don't line up with the real
+            //   record, keep the copied ones and say so; rewriting would drop something.
             // - Otherwise -> write the user's set (this is also the from-scratch path).
             bool copiedConditions = winner != null;
             int unrepresentable = winner?.Conditions.Count(c => !IsRepresentable(c)) ?? 0;
 
+            // Resolved against the deep copy BEFORE its list is cleared below: the originals the
+            // placeholders get swapped back for, in placeholder order.
+            // The rows as scanned (see the stale-database guard below for why not the live ones -
+            // read-only rows can be deleted since 2026-10-24).
+            var scanned = e.OriginalConditions.Count > 0 ? e.OriginalConditions : e.Conditions;
+
+            var originalsForPlaceholders = ResolvePlaceholders(e.Conditions, scanned, cobj.Conditions.ToList());
+            bool placeholdersMatch = originalsForPlaceholders != null;
+
+            // A Global comparison stored as a plain number (a scan from before the key went into
+            // Value) would be rebuilt as "compare against 0" - every such row must carry its key.
+            int winnerGlobals = winner?.Conditions.Count(c => c is IConditionGlobalGetter && IsRepresentable(c)) ?? 0;
+            int dbGlobals = scanned.Count(c =>
+                !ConditionCatalog.IsUnsupported(c.ConditionType) && (c.Value ?? "").Contains('|'));
+            bool globalsMissing = copiedConditions && dbGlobals < winnerGlobals;
+
             // Stale-database guard.
             //
-            // Read-only conditions (GetItemCount, EPTemperingItemIsEnchanted, ...) cannot be added or
-            // removed in the UI, so their count in item.db must match the real record's. If the DB
-            // has fewer, it was written by a scan from before those types were understood - and
+            // Everything beyond the first five types (EPTemperingItemIsEnchanted, GetItemCount, "?"
+            // placeholders, ...) was dropped by the scan before the condition-scan fix. If the scanned
+            // rows hold fewer of them than the real record, the database predates that fix - and
             // rewriting from it would delete exactly the conditions that fix was about.
             //
-            // This matters on upgrade: before, those types were "unrepresentable" and the check
-            // below withheld the rewrite. Now that they ARE representable, an un-rescanned database
-            // would sail straight through and lose them.
-            int winnerReadOnly = winner?.Conditions.Count(c => !IsEditableCondition(c)) ?? 0;
-            int dbReadOnly = e.Conditions.Count(c => !ConditionCatalog.IsEditable(c.ConditionType));
+            // Counted on the snapshot taken before the first edit (OriginalConditions), not on the
+            // live rows: GetItemCount is editable since C3, so a live row the user deleted would look
+            // exactly like one the old scan never stored. Without a snapshot the live rows stand in,
+            // which is exact as long as nothing beyond the five was removable - true until C3.
+            int winnerReadOnly = winner?.Conditions.Count(c => !IsCoreCondition(c)) ?? 0;
+            int dbReadOnly = scanned.Count(c => !ConditionCatalog.IsCore(c.ConditionType));
             bool staleDb = copiedConditions && dbReadOnly < winnerReadOnly;
+
+            // Reference rows without their reference: scanned before RunOnRef existed, or an edited
+            // recipe (a rescan leaves its rows alone). Rebuilt as they are they would run on nothing.
+            // When every Reference condition of the real record runs on the same reference - almost
+            // always PlayerRef - that is the answer; otherwise the rewrite is withheld.
+            bool missingRunOnRef = false;
+            var refRowsWithoutRef = e.Conditions
+                .Where(c => c.RunOn == nameof(Condition.RunOnType.Reference) && string.IsNullOrEmpty(c.RunOnRef))
+                .ToList();
+            if (copiedConditions && e.ConditionsEdited && refRowsWithoutRef.Count > 0)
+            {
+                var winnerRefs = winner!.Conditions
+                    .Select(DataOf)
+                    .Where(d => d != null && d.RunOnType == Condition.RunOnType.Reference && !d.Reference.FormKey.IsNull)
+                    .Select(d => d!.Reference.FormKey)
+                    .Distinct()
+                    .ToList();
+                if (winnerRefs.Count == 1)
+                    foreach (var row in refRowsWithoutRef) row.RunOnRef = KeyFactory.BuildMasterKey(winnerRefs[0]);
+                else
+                    missingRunOnRef = true;
+            }
 
             if (copiedConditions && !e.ConditionsEdited)
             {
@@ -804,19 +932,60 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     "database predates the condition-scan fix. Run Scan/Rescan, then generate again. " +
                     "The original conditions were kept.");
             }
-            else if (copiedConditions && unrepresentable > 0)
+            else if (missingRunOnRef)
             {
                 result.ConditionRewriteSkippedCount++;
                 result.Warnings.Add(
+                    $"{e.ToolKey}: your condition edits were NOT written — {refRowsWithoutRef.Count} stored " +
+                    "condition(s) run on a reference this database does not know, and the real recipe uses " +
+                    "more than one. Reset this recipe's conditions, run Scan/Rescan, redo the edit and generate again. " +
+                    "The original conditions were kept.");
+            }
+            else if (globalsMissing)
+            {
+                result.ConditionRewriteSkippedCount++;
+                result.Warnings.Add(
+                    $"{e.ToolKey}: your condition edits were NOT written — the real recipe compares " +
+                    $"{winnerGlobals} condition(s) against a global variable, but the stored conditions " +
+                    "only know " + dbGlobals + ". Reset this recipe's conditions, run Scan/Rescan, redo the " +
+                    "edit and generate again. The original conditions were kept.");
+            }
+            else if (copiedConditions && !placeholdersMatch)
+            {
+                // Also catches placeholders WITHOUT an original - copied over from another recipe,
+                // or the plugin dropped the condition since - which would otherwise index past the end.
+                result.ConditionRewriteSkippedCount++;
+                result.Warnings.Add(
                     $"{e.ToolKey}: your condition edits were NOT written — the real recipe has " +
-                    $"{unrepresentable} condition(s) of a type this tool cannot read yet, and " +
-                    "rewriting the list would have deleted them. The original conditions were kept.");
+                    $"{unrepresentable} condition(s) this tool cannot read, and the stored placeholders " +
+                    "for them do not match it (plugin changed since the scan, or copied from another recipe). Run Scan/Rescan; " +
+                    "if the recipe was edited, reset its conditions first. The original conditions were kept.");
             }
             else
             {
                 cobj.Conditions.Clear();
+                int nextOriginal = 0;
                 foreach (var condRec in e.Conditions)
                 {
+                    // A placeholder: put back the original it stands for. Only reachable with
+                    // placeholdersMatch, so there is one per placeholder and the function agrees.
+                    //
+                    // Verbatim except for the flags, which are the ROW's: deleting the last member of
+                    // an OR group clears the OR of the row before it, and when that row is a
+                    // placeholder the change has to reach the ESP too. Unedited, the row carries the
+                    // flags the scan read, so this changes nothing.
+                    if (ConditionCatalog.IsUnsupported(condRec.ConditionType) && copiedConditions)
+                    {
+                        var original = originalsForPlaceholders![nextOriginal++].DeepCopy();
+                        // Operator and flags were added to the scan together (2026-10-23): a row without an
+                        // operator predates both, and its empty Flags means "unknown", not "no OR".
+                        if (!string.IsNullOrEmpty(condRec.CompareOperator))
+                            original.Flags = ParseFlags(condRec.Flags, original.Flags);
+                        cobj.Conditions.Add(original);
+                        result.PlaceholderRestoredCount++;
+                        continue;
+                    }
+
                     var cond = BuildCondition(condRec, result);
                     if (cond != null) cobj.Conditions.Add(cond);
                 }
@@ -881,6 +1050,17 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     data = new GetLevelConditionData { RunOnType = runOn };
                     fallbackOp = CompareOperator.GreaterThanOrEqualTo;
                     break;
+
+                // The quest's CURRENT stage compared against the value - "Quest >= 20". Not
+                // GetStageDone, which asks whether one particular stage was set and compares to 1.
+                case "GetStage":
+                {
+                    var d = new GetStageConditionData { RunOnType = runOn };
+                    d.Quest.Link.SetTo(KeyFactory.ParseFormKey(r.Target));
+                    data = d;
+                    fallbackOp = CompareOperator.GreaterThanOrEqualTo;   // 147 of the 227 real ones
+                    break;
+                }
 
                 case "GetStageDone":
                 {
@@ -975,11 +1155,30 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     return null;
             }
 
+            if (runOn == Condition.RunOnType.Reference)
+            {
+                // Only reachable without a reference for a recipe that was never deep-copied (BuildOne
+                // fills or withholds the others). Running on nothing would make the condition fail
+                // silently in game, so say so instead.
+                if (string.IsNullOrEmpty(r.RunOnRef))
+                {
+                    result.Warnings.Add(
+                        $"A '{r.ConditionType}' condition runs on a reference that is not stored — skipped. Rescan to fix.");
+                    return null;
+                }
+                data.Reference.SetTo(KeyFactory.ParseFormKey(r.RunOnRef));
+            }
+
             var op = Enum.TryParse<CompareOperator>(r.CompareOperator, out var storedOp)
                 ? storedOp
                 : fallbackOp;
 
-            var cond = Float(data, op, ParseF(value));
+            // Compared against a global: the scan stores the global's key as the value. Checked on the
+            // RAW value - HasPerk/GetIsSex/GetStageDone normalise `value` above and would turn the key
+            // into a number. Written as a float this was "compare against 0".
+            Condition cond = (r.Value ?? "").Contains('|')
+                ? Global(data, op, KeyFactory.ParseFormKey(r.Value!))
+                : Float(data, op, ParseF(value));
 
             if (!string.IsNullOrWhiteSpace(r.Flags)
                 && Enum.TryParse<Condition.Flag>(r.Flags, ignoreCase: true, out var flags))
@@ -990,12 +1189,27 @@ namespace SkyrimCraftingTool.Services.PatchGen
             return cond;
         }
 
+        private static ConditionGlobal Global(ConditionData data, CompareOperator op, FormKey global)
+        {
+            var cond = new ConditionGlobal { Data = data, CompareOperator = op };
+            cond.ComparisonValue.SetTo(global);
+            return cond;
+        }
+
         private static ConditionFloat Float(ConditionData data, CompareOperator op, float value) => new()
         {
             Data = data,
             CompareOperator = op,
             ComparisonValue = value,
         };
+
+        // A row's stored flags ("" = none, "OR", "OR,SwapSubjectAndTarget"). Text that does not parse keeps
+        // what the plugin had rather than silently dropping every flag.
+        private static Condition.Flag ParseFlags(string? stored, Condition.Flag fallback)
+        {
+            if (string.IsNullOrWhiteSpace(stored)) return 0;
+            return Enum.TryParse<Condition.Flag>(stored, ignoreCase: true, out var flags) ? flags : fallback;
+        }
 
         private static float ParseF(string s) =>
             float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0f;

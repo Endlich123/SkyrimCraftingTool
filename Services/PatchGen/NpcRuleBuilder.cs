@@ -34,7 +34,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
             AppendFlagOps(ops, npc);
             AppendLevelOps(ops, npc);
             bool statsChanged = AppendStatOps(ops, npc);
-            AppendSkillOps(ops, npc);
+            bool skillsChanged = AppendSkillOps(ops, npc);
             AppendKeywordOps(ops, npc);
             AppendFactionOps(ops, npc);
             AppendSpellOps(ops, npc);
@@ -43,6 +43,13 @@ namespace SkyrimCraftingTool.Services.PatchGen
             AppendLinkOps(ops, npc);
             AppendBodyOps(ops, npc);
             AppendAiOps(ops, npc);
+
+            // WITHOUT THIS THE ENGINE TAKES THE VALUES BACK on an NPC whose stats it calculates.
+            // Measured on Adrianne Avenicci (runtime dump 2026-10-31): smithing=80 came out as 26,
+            // health=950 as 1114 (the calculated value plus 950 as offset). The group rules write it
+            // with every value (NpcGroupRuleBuilder, measured 2026-09-27) and arrive exactly.
+            if ((statsChanged || skillsChanged) && (npc.Flags & (uint)NpcFlag.AutoCalcStats) != 0)
+                ops.Add("setAutoCalcStats=false");
 
             if (ops.Count == 0) return null;
 
@@ -166,11 +173,23 @@ namespace SkyrimCraftingTool.Services.PatchGen
             // falls back to, and without it the documented failure is a level of 1000. So turning the
             // multiplier off ALWAYS carries a level, whether or not the level field itself was
             // touched - a rule that switches the mode and leaves the level to chance is a trap.
-            if (multChanged)
+            //
+            // Turning it ON takes a second parameter too, and a bare "setPcLevelMult=true" is ignored:
+            // measured on Adrianne Avenicci (runtime dump 2026-10-31), the flag stayed off. The group
+            // rules have written "true=<max>" plus "level=1000" since 2026-09-27 and arrive - with the
+            // flag on, level is the MULTIPLIER x 1000, so the record's old level 6 would mean x0.006.
+            if (multChanged && npc.UsesPcLevelMult)
             {
-                ops.Add(npc.UsesPcLevelMult
-                    ? "setPcLevelMult=true"
-                    : $"setPcLevelMult=false={PatchFormat.Int(npc.Level)}");
+                int fallback = npc.CalcMaxLevel > 0 ? npc.CalcMaxLevel : Math.Max(1, npc.Level);
+                ops.Add($"setPcLevelMult=true={PatchFormat.Int(fallback)}");
+            }
+            else if (multChanged)
+            {
+                // The number alone is only an upper limit: the NPC gets (calcLevelMin + calcLevelMax) / 2,
+                // capped by it. Measured 2026-11-04: 95 of 190 NPCs reached 30 that way, and 63 of 63
+                // with level= behind it.
+                ops.Add($"setPcLevelMult=false={PatchFormat.Int(npc.Level)}");
+                ops.Add($"level={PatchFormat.Int(npc.Level)}");
             }
             else if (levelChanged)
             {
@@ -184,6 +203,14 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
             if (npc.CalcMaxLevel != npc.Scanned.CalcMaxLevel)
                 ops.Add($"calcLevelMax={PatchFormat.Int(npc.CalcMaxLevel)}");
+
+            // The multiplier itself, after the bounds - the order the group rules use. x1.0 unless
+            // the record carries one of its own.
+            if (multChanged && npc.UsesPcLevelMult)
+            {
+                float mult = npc.LevelMult > 0 ? npc.LevelMult : 1f;
+                ops.Add($"level={PatchFormat.Int((int)Math.Round(mult * 1000))}");
+            }
         }
 
         // --------------------
@@ -411,9 +438,13 @@ namespace SkyrimCraftingTool.Services.PatchGen
         }
 
         // Factions: a set with a rank attached, which makes three cases rather than two. A rank
-        // CHANGE is emitted as an add, because factionsToAdd carries the rank and there is no
-        // separate "set the rank" operation - adding a faction the NPC is already in is how the rank
-        // gets written.
+        // CHANGE is a remove AND an add. factionsToAdd leaves an NPC that is already in the faction
+        // alone and there is no "set the rank" operation.
+        //
+        // Measured in game on 2026-11-04 (SkyPatcher 8.0.1, 445 NPCs of one class): factionsToAdd=X=2
+        // gave the 434 newcomers rank 2 and left the 11 members on 0. factionsToRemove=X followed by
+        // factionsToAdd=X=3 on the same line moved all of them to 3. The remove has to come first:
+        // that is the order that was measured.
         private static void AppendFactionOps(List<string> ops, NpcRecord npc)
         {
             var scanned = (npc.ScannedFactions ?? new List<NpcFactionRecord>())
@@ -425,16 +456,19 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 .Where(f => !scanned.TryGetValue(f.FactionKey, out int rank) || rank != f.Rank)
                 .ToList();
 
-            var removed = scanned.Keys.Where(k => !currentKeys.Contains(k)).ToList();
+            var removed = scanned.Keys
+                .Where(k => !currentKeys.Contains(k))
+                .Concat(added.Select(f => f.FactionKey).Where(scanned.ContainsKey))
+                .ToList();
+
+            if (removed.Count > 0)
+                ops.Add("factionsToRemove=" + string.Join(",", removed.Select(PatchFormat.RefKey8)));
 
             if (added.Count > 0)
             {
                 ops.Add("factionsToAdd=" + string.Join(",",
                     added.Select(f => $"{PatchFormat.RefKey8(f.FactionKey)}={PatchFormat.Int(f.Rank)}")));
             }
-
-            if (removed.Count > 0)
-                ops.Add("factionsToRemove=" + string.Join(",", removed.Select(PatchFormat.RefKey8)));
         }
 
         // --------------------
@@ -443,7 +477,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
         // Same shape as changeStats: one operation, the changed skills in it, in the order the
         // editor shows them so a regenerated file diffs cleanly against the previous one.
-        private static void AppendSkillOps(List<string> ops, NpcRecord npc)
+        private static bool AppendSkillOps(List<string> ops, NpcRecord npc)
         {
             var changed = npc.Skills
                 .Where(s => s.Value != s.ScannedValue && !string.IsNullOrWhiteSpace(s.Skill))
@@ -451,9 +485,10 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 .Select(s => $"{s.Skill.ToLowerInvariant()}={PatchFormat.Int(s.Value)}")
                 .ToList();
 
-            if (changed.Count == 0) return;
+            if (changed.Count == 0) return false;
 
             ops.Add("changeSkills=" + string.Join(",", changed));
+            return true;
         }
 
         private static int IndexOf(string skill)

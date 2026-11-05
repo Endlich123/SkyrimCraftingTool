@@ -39,6 +39,12 @@ namespace SkyrimCraftingTool.Services.PatchGen
         public bool IsDeleted { get; init; }
         public IReadOnlyList<COBJConditionRecord> Conditions { get; init; } = Array.Empty<COBJConditionRecord>();
 
+        // The conditions as scanned, frozen before the first edit (COBJ_Conditions_Original). Read only
+        // for an edited recipe. The stale-scan check in CobjEspBuilder compares THESE against the real
+        // record: the live rows can no longer tell "the old scan dropped it" from "the user removed it"
+        // once a type such as GetItemCount is editable. Empty when no snapshot exists.
+        public IReadOnlyList<COBJConditionRecord> OriginalConditions { get; init; } = Array.Empty<COBJConditionRecord>();
+
         // The user replaced this recipe's condition set. Only then may the ESP builder overwrite the
         // conditions of the record it deep-copied from the load order - see CobjEspBuilder.BuildOne.
         public bool ConditionsEdited { get; init; }
@@ -144,6 +150,9 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     WorkbenchKey = row.Workbench,
                     Ingredients = ParseIngredients(row.Ingredients),
                     Conditions = ReadConditions(conn, row.Key),
+                    OriginalConditions = row.ConditionsEdited
+                        ? ReadConditions(conn, row.Key, "COBJ_Conditions_Original")
+                        : Array.Empty<COBJConditionRecord>(),
                     ConditionsEdited = row.ConditionsEdited,
                     CreatedObjectCount = row.CreatedCount,
                     CreatedObjectCountEdited = row.CountEdited,
@@ -165,11 +174,11 @@ namespace SkyrimCraftingTool.Services.PatchGen
             return entries;
         }
 
-        private static List<COBJConditionRecord> ReadConditions(SqliteConnection conn, string cobjKey)
+        private static List<COBJConditionRecord> ReadConditions(SqliteConnection conn, string cobjKey, string table = "COBJ_Conditions")
         {
             var list = new List<COBJConditionRecord>();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT ConditionType, Target, Value, Extra, RunOn, CompareOperator, Flags FROM COBJ_Conditions WHERE COBJKey = @k";
+            cmd.CommandText = $"SELECT ConditionType, Target, Value, Extra, RunOn, CompareOperator, Flags, RunOnRef FROM {table} WHERE COBJKey = @k ORDER BY rowid";
             cmd.Parameters.AddWithValue("@k", cobjKey);
             using var r = cmd.ExecuteReader();
             while (r.Read())
@@ -184,6 +193,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     RunOn = Str(r, 4),
                     CompareOperator = Str(r, 5),
                     Flags = Str(r, 6),
+                    RunOnRef = Str(r, 7),
                 });
             }
             return list;

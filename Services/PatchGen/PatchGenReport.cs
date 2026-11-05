@@ -8,6 +8,10 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // --- SkyPatcher (Phase A) ---
         public int ArmorRuleCount { get; set; }
         public int WeaponRuleCount { get; set; }
+
+        // Of those, the rules of template children - built from their template (Kinder-Patcher,
+        // TemplateInheritance), most of them for children without an edit of their own.
+        public int ChildRuleCount { get; set; }
         public int EnchantmentRuleCount { get; set; }
         public int FormListRuleCount { get; set; }
 
@@ -68,6 +72,9 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // the scan cannot represent - writing them would have deleted those.
         public int CobjConditionRewriteSkippedCount { get; set; }
 
+        // Unreadable conditions carried over verbatim from the real record into a rewritten list.
+        public int CobjPlaceholderRestoredCount { get; set; }
+
         // Recipes taken out of the game via a Deleted-record override. Reported on its own because
         // it is the one COBJ operation that REMOVES content another mod put there - the same reason
         // RemovalStore reports its container and leveled-list decisions separately.
@@ -99,6 +106,9 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
         // Absolute paths of the .ini files written (empty on a dry run).
         public List<string> WrittenFiles { get; } = new();
+
+        // Own ESPs from an earlier run that this run no longer produces, deleted (empty on a dry run).
+        public List<string> DeletedFiles { get; } = new();
 
         // Set from PatchGenOptions.DryRun so the report can describe itself honestly: everything
         // below was worked out, nothing was written. Without it the same numbers read as a finished
@@ -165,6 +175,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 };
                 // The two NPC counts are named only when there are any: neither was in this line before
                 // G5, and a permanent "0 NPC rule(s)" on a patch that never touches NPCs is noise.
+                if (ChildRuleCount > 0)
+                    parts.Add($"{ChildRuleCount} of the armor/weapon rules follow a template (template children)");
                 if (SpellRuleCount > 0)
                     parts.Add($"{SpellRuleCount} spell rule(s)");
                 if (NpcRuleCount > 0)
@@ -192,6 +204,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     parts.Add($"{CobjDeletedCount} recipe(s) removed from the game");
                 if (EnchantmentAssignmentChangesUnpatched > 0)
                     parts.Add($"{EnchantmentAssignmentChangesUnpatched} FLST assignment change(s) NOT patched");
+                if (DeletedFiles.Count > 0)
+                    parts.Add($"{DeletedFiles.Count} old ESP(s) no longer needed, deleted");
                 if (Warnings.Count > 0)
                     parts.Add($"{Warnings.Count} warning(s)");
                 return string.Join("; ", parts);
