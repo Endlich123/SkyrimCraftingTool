@@ -117,6 +117,24 @@
                 </StackPanel>
             </GroupBox>
 
+            <!-- Kinder-Patcher K5 (docs/Plan_Aktuell/KinderPatcher-Plan.md): one-off cleanup of the
+                 edits template children carried before they followed their template. -->
+            <GroupBox Header="Template children"
+                      Style="{StaticResource DarkGroupBoxStyle}"
+                      Padding="10"
+                      Margin="0,0,0,15">
+                <StackPanel>
+                    <TextBlock Text="Enchanted variants and other items made from a template follow it: the patch writes the template's changes into them. Edits they carry in slots, type, keywords (and the numbers of enchanted ones) are ignored - this clears them."
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,10"/>
+                    <Button Content="Clear inherited edits of template children"
+                            Command="{Binding CleanUpChildEditsCommand}"
+                            Style="{StaticResource StandardButtonStyle}"
+                            HorizontalAlignment="Left"/>
+                </StackPanel>
+            </GroupBox>
+
             <!-- Every tab's Export / Import in one go (user, 2026-10-18) - the tabs' own exports in the
                  tabs' own folders, no second system. The import is one preview over all of them, so
                  references between tabs - an item pointing at an own enchantment - are matched in a

@@ -254,7 +254,7 @@
                         <Button DockPanel.Dock="Right"
                                 Content="Reset"
                                 Command="{Binding ResetOwnersCommand}"
-                                Visibility="{Binding CanResetOwners, Converter={StaticResource BoolToVis}}"
+                                IsEnabled="{Binding CanResetOwners}" ToolTipService.ShowOnDisabled="True"
                                 Style="{StaticResource StandardButtonStyle}"
                                 ToolTip="Takes back everything you decided here about the picked container(s) or list(s): removed objects go back in, put-back entries are dropped again, a list's chance and flags return to the plugins. Asks first. Items placed into it are not touched."/>
                         <TextBlock Text="{Binding ContentsHeader}"

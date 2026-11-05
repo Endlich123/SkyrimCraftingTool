@@ -57,7 +57,7 @@
             <Button DockPanel.Dock="Right" Content="Reset all" Width="90" Margin="0,0,8,0"
                     Command="{Binding ResetAllCommand}"
                     Style="{StaticResource StandardButtonStyle}"
-                    Visibility="{Binding HasRows, Converter={StaticResource BoolToVis}}"/>
+                    IsEnabled="{Binding HasRows}"/>
             <TextBlock Text="These are list properties, not placements - your items stay where you put them."
                        Foreground="{DynamicResource ColorTextTertiary}"
                        FontSize="11" VerticalAlignment="Center"/>

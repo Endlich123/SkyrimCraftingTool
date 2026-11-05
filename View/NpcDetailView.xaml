@@ -59,13 +59,20 @@
                         <TextBlock Text="{Binding EditorID}"
                                    Foreground="{DynamicResource ColorTextTertiary}"
                                    Margin="0,0,0,2"/>
+                        <TextBlock Text="{Binding OriginalEditorIdLabel, Mode=OneWay}"
+                                   Foreground="{DynamicResource ColorTextTertiary}"
+                                   FontStyle="Italic"
+                                   FontSize="11"
+                                   Margin="0,0,0,2"
+                                   Visibility="{Binding IsEditorIdRenamed, Converter={StaticResource BoolToVis}}"
+                                   ToolTip="An override renamed this NPC. SkyPatcher's EditorID filters match the original name, so a group rule may name this NPC separately."/>
                         <TextBlock Text="{Binding Key}"
                                    Foreground="{DynamicResource ColorTextTertiary}"
                                    FontSize="11"
                                    Margin="0,0,0,8"/>
 
                         <!-- Reset sits with the record it resets, not in the toolbar: it drops every
-                             change on THIS NPC and nothing else. Hidden unless there is something to
+                             change on THIS NPC and nothing else. Greyed out unless there is something to
                              undo, so it cannot be pressed hopefully. -->
                         <Button Content="Reset this NPC"
                                 Command="{Binding DataContext.ResetNpcCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
@@ -73,7 +80,7 @@
                                 HorizontalAlignment="Left"
                                 Margin="0,0,0,12"
                                 ToolTip="Discards every change to this NPC and goes back to what the plugins say."
-                                Visibility="{Binding HasAnyEdit, Converter={StaticResource BoolToVis}}"/>
+                                IsEnabled="{Binding HasAnyEdit}" ToolTipService.ShowOnDisabled="True"/>
 
                         <!-- The other direction: this record IS a template. Editing it moves every
                              NPC below it, which is the reason to be here rather than on one of
@@ -351,14 +358,15 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Grid Margin="0,0,10,4">
+                                        <Grid Margin="0,0,10,9">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Text="{Binding DisplayName}"
-                                                       Foreground="{DynamicResource ColorTextSecondary}"/>
+                                                       Foreground="{DynamicResource ColorTextSecondary}"
+                                                       VerticalAlignment="Center"/>
                                             <TextBox Grid.Column="1"
                                                      Text="{Binding Value}"
                                                      MinWidth="44"
@@ -367,11 +375,13 @@
                                                      model:NumericTextBoxBehavior.Mode="Integer"
                                                      model:NumericTextBoxBehavior.Max="100"
                                                      Style="{StaticResource ItemTextBoxStyle}"
+                                                     Margin="0,0,5,0"
                                                      ToolTip="0 - 100. A skill does nothing above 100: the game's own ceiling, and what every perk and damage formula reads it against."/>
                                             <TextBlock Grid.Column="2"
                                                        Text="{Binding OffsetDisplay}"
                                                        Foreground="{DynamicResource ColorTextTertiary}"
                                                        Margin="4,0,0,0"
+                                                       VerticalAlignment="Center"
                                                        ToolTip="Skill offset - a separate value from the base one to its left."/>
                                         </Grid>
                                     </DataTemplate>
@@ -411,9 +421,10 @@
                                                            Foreground="{DynamicResource ColorTextPrimary}"
                                                            VerticalAlignment="Center"
                                                            TextTrimming="CharacterEllipsis"/>
-                                                <!-- The rank is editable now: factionsToAdd carries
-                                                     it, and there is no separate operation to set
-                                                     it. 0 is right for 94 % of memberships. -->
+                                                <!-- The rank is editable now. There is no operation
+                                                     to set it: a change is written as factionsToRemove
+                                                     plus factionsToAdd. 0 is right for 94 % of
+                                                     memberships. -->
                                                 <TextBox Grid.Column="1"
                                                          Text="{Binding Rank}"
                                                          TextAlignment="Right"
@@ -421,12 +432,10 @@
                                                          Style="{StaticResource ItemTextBoxStyle}"
                                                          ToolTip="Faction rank. 0 unless the faction actually uses ranks."/>
                                                 <Button Grid.Column="2"
-                                                        Content="✕"
-                                                        Width="26"
                                                         Margin="6,0,0,0"
                                                         Command="{Binding DataContext.RemoveFactionCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                         CommandParameter="{Binding}"
-                                                        Style="{StaticResource StandardButtonStyle}"
+                                                        Style="{StaticResource RemoveButtonStyle}"
                                                         ToolTip="Remove this NPC from the faction"/>
                                             </Grid>
                                         </DataTemplate>
@@ -601,10 +610,10 @@
                                                     </TextBlock.Style>
                                                 </TextBlock>
                                                 <Button Grid.Column="2"
-                                                        Content="✕" Width="26" Margin="6,0,0,0"
+                                                        Margin="6,0,0,0"
                                                         Command="{Binding DataContext.RemoveSpellCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                         CommandParameter="{Binding}"
-                                                        Style="{StaticResource StandardButtonStyle}"
+                                                        Style="{StaticResource RemoveButtonStyle}"
                                                         ToolTip="Take this spell away"/>
                                             </Grid>
                                         </DataTemplate>
@@ -670,10 +679,10 @@
                                                      perksToRemove, so one the plugins gave this NPC
                                                      cannot be taken away by any patch. -->
                                                 <Button Grid.Column="2"
-                                                        Content="✕" Width="26" Margin="6,0,0,0"
+                                                        Margin="6,0,0,0"
                                                         Command="{Binding DataContext.RemovePerkCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                         CommandParameter="{Binding}"
-                                                        Style="{StaticResource StandardButtonStyle}"
+                                                        Style="{StaticResource RemoveButtonStyle}"
                                                         ToolTip="Take this perk away again"
                                                         Visibility="{Binding CanRemove, Converter={StaticResource BoolToVis}}"/>
                                             </Grid>
@@ -745,10 +754,10 @@
                                                          Style="{StaticResource ItemTextBoxStyle}"
                                                          ToolTip="How many. A changed amount is patched as a remove followed by an add, because objectsToAdd adds."/>
                                                 <Button Grid.Column="2"
-                                                        Content="✕" Width="26" Margin="6,0,0,0"
+                                                        Margin="6,0,0,0"
                                                         Command="{Binding DataContext.RemoveItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                         CommandParameter="{Binding}"
-                                                        Style="{StaticResource StandardButtonStyle}"
+                                                        Style="{StaticResource RemoveButtonStyle}"
                                                         ToolTip="Take this out of the inventory"/>
                                             </Grid>
                                         </DataTemplate>

@@ -148,6 +148,13 @@
                                     Margin="6,0,0,0"
                                     ToolTip="Remembers these members, so the next scan can report what changed."/>
 
+                            <Button Content="Reset values"
+                                    Command="{Binding ResetValuesCommand}"
+                                    IsEnabled="{Binding HasValuesToReset}" ToolTipService.ShowOnDisabled="True"
+                                    Style="{StaticResource StandardButtonStyle}"
+                                    Margin="6,0,0,0"
+                                    ToolTip="Removes every value and perk from this group, so the patch writes nothing for it. The filter, the hand corrections and the confirmed members stay. Asks first."/>
+
                             <Button Content="Delete group"
                                     Command="{Binding DeleteGroupCommand}"
                                     Style="{StaticResource ActionButtonWarmStyle}"
@@ -193,7 +200,7 @@
                                                   SelectedValuePath="Token"
                                                   DisplayMemberPath="Label"
                                                   Style="{StaticResource CompactComboBoxStyle}"
-                                                  VerticalAlignment="Center"/>
+                                                  VerticalAlignment="Stretch"/>
 
                                         <!-- The words follow the axis: filterByEditorIdContains is a
                                              substring test, so "is" would be a lie about what the patch
@@ -205,7 +212,7 @@
                                                   DisplayMemberPath="Label"
                                                   Style="{StaticResource CompactComboBoxStyle}"
                                                   Margin="6,0,0,0"
-                                                  VerticalAlignment="Center"/>
+                                                  VerticalAlignment="Stretch"/>
 
                                         <!-- Six axes pick from what the load order actually holds, with
                                              the member count in the label - the catalogues run to
@@ -617,8 +624,49 @@
 
                             <TextBlock Grid.Column="1" Text="is"
                                        Foreground="{DynamicResource ColorTextTertiary}"/>
-                            <TextBlock Grid.Column="2" Text="how"
-                                       Foreground="{DynamicResource ColorTextTertiary}"/>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                <TextBlock Text="how"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource ColorTextTertiary}"/>
+                                <Button Margin="6,0,0,0" Style="{StaticResource InfoButtonStyle}">
+                                    <Button.ToolTip>
+                                        <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                            <StackPanel MaxWidth="420">
+                                                <TextBlock Text="How the value is set"
+                                                           Style="{StaticResource ToolTipTitelStyle}"/>
+                                                <TextBlock Text="direct: every member gets this value."
+                                                           Style="{StaticResource ToolTipTextStyle}"
+                                                           TextWrapping="Wrap"
+                                                           Margin="5,4,0,0"/>
+                                                <TextBlock Text="span: from - to, spread over the group's level range. An NPC at the low end gets the first number, one at the high end the second. If all members share one level it works like random. On the Level row, a span makes the group scale with the player between the two levels."
+                                                           Style="{StaticResource ToolTipTextStyle}"
+                                                           TextWrapping="Wrap"
+                                                           Margin="5,4,0,0"/>
+                                                <TextBlock Text="random: from - to, each member gets its own number, drawn anew at every game start. Needs SkyPatcher 8.0.1."
+                                                           Style="{StaticResource ToolTipTextStyle}"
+                                                           TextWrapping="Wrap"
+                                                           Margin="5,4,0,0"/>
+                                                <TextBlock Text="follow: the game keeps calculating this stat from the NPC's level, so it grows with the player, and your number is added on top. One number, or from - to for a random one. How fast it grows depends on the NPC's class. Skills cannot be set on such a group, and span, mult and calc do not go with it."
+                                                           Style="{StaticResource ToolTipTextStyle}"
+                                                           TextWrapping="Wrap"
+                                                           Margin="5,4,0,0"/>
+                                                <TextBlock Text="mult: multiplies each member's own value (1.5 = +50 %)."
+                                                           Style="{StaticResource ToolTipTextStyle}"
+                                                           TextWrapping="Wrap"
+                                                           Margin="5,4,0,0"/>
+                                                <TextBlock Text="calc: a value per level. The game works out the total from each NPC's level."
+                                                           Style="{StaticResource ToolTipTextStyle}"
+                                                           TextWrapping="Wrap"
+                                                           Margin="5,4,0,0"/>
+                                                <TextBlock Text="Calc is not written while a member already scales with the player, unless the group sets a fixed level. A span works there and uses each NPC's level from before the group's change."
+                                                           Style="{StaticResource ToolTipTextStyle}"
+                                                           TextWrapping="Wrap"
+                                                           Margin="5,4,0,0"/>
+                                            </StackPanel>
+                                        </ToolTip>
+                                    </Button.ToolTip>
+                                </Button>
+                            </StackPanel>
                             <TextBlock Grid.Column="3" Text="should be"
                                        Foreground="{DynamicResource ColorTextTertiary}"/>
                         </Grid>
@@ -661,15 +709,22 @@
                                                   ItemsSource="{Binding Kinds}"
                                                   SelectedItem="{Binding Kind}"
                                                   Style="{StaticResource CompactComboBoxStyle}"
-                                                  VerticalAlignment="Center"/>
+                                                  VerticalAlignment="Stretch"/>
 
+                                        <!-- Decimal, not Integer: a multiplier like 1.5 goes in here too. -->
                                         <TextBox Grid.Column="3"
                                                  Text="{Binding Low, UpdateSourceTrigger=LostFocus}"
+                                                 model:NumericTextBoxBehavior.Mode="Decimal"
+                                                 model:NumericTextBoxBehavior.Max="{Binding MaxValue}"
+                                                 model:NumericTextBoxBehavior.AllowEmpty="True"
                                                  Style="{StaticResource ItemTextBoxStyle}"
                                                  Margin="6,0,0,0"/>
 
                                         <TextBox Grid.Column="4"
                                                  Text="{Binding High, UpdateSourceTrigger=LostFocus}"
+                                                 model:NumericTextBoxBehavior.Mode="Decimal"
+                                                 model:NumericTextBoxBehavior.Max="{Binding MaxValue}"
+                                                 model:NumericTextBoxBehavior.AllowEmpty="True"
                                                  Style="{StaticResource ItemTextBoxStyle}"
                                                  Width="70"
                                                  Margin="6,0,0,0"
@@ -744,7 +799,7 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
 
-                        <TextBlock Text="An empty box removes the value from the group. A span needs both ends, and a skill takes a single number."
+                        <TextBlock Text="An empty box removes the value from the group. Span and random need both ends, and a skill takes a single number."
                                    Foreground="{DynamicResource ColorTextTertiary}"
                                    TextWrapping="Wrap"
                                    Margin="0,6,0,0"/>
@@ -834,7 +889,7 @@
                                     Content="Add perk"
                                     Command="{Binding AddPerkCommand}"
                                     Style="{StaticResource StandardButtonStyle}"
-                                    Margin="6,0,0,0"/>
+                                    Margin="6,0,0,5"/>
                         </Grid>
 
                         <TextBlock Text="Only adding: SkyPatcher has perksToAdd and no perksToRemove, so a perk the plugins give an NPC cannot be taken away by a rule."

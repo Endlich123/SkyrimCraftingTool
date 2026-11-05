@@ -265,8 +265,9 @@
                                     <!-- StandardButtonStyle carries only a RIGHT margin, so this sat
                                          flush against Import. The gap is wider than the 6 the action
                                          buttons use between themselves - this one deletes things. -->
-                                    <Button Content="Reset edited"
+                                    <Button Content="Reset all Enchantments"
                                             Command="{Binding ResetPluginCommand}"
+                                            IsEnabled="{Binding HasEditedEnchantments}" ToolTipService.ShowOnDisabled="True"
                                             Margin="10,0,5,5"
                                             Style="{StaticResource StandardButtonStyle}">
                                         <Button.ToolTip>
@@ -274,7 +275,22 @@
                                                 <TextBlock Style="{StaticResource ToolTipTitelStyle}"
                                                            TextWrapping="Wrap"
                                                            MaxWidth="380"
-                                                           Text="Reverts fields and effects on every edited enchantment in this plugin. Scanned records go back to what their plugin defines; ones you created go back to the empty enchantment they started as. Nothing is deleted - use Delete for that. Covers the whole plugin regardless of any active tree filter, asks for confirmation with the exact count first, and leaves shared worn-restriction list contents alone."/>
+                                                           Text="Reverts fields, effects and the assigned worn-restriction list on every edited enchantment in this plugin. Scanned records go back to what their plugin defines; ones you created go back to the empty enchantment they started as. Nothing is deleted - use Delete for that. Covers the whole plugin regardless of any active tree filter and asks for confirmation with the exact count first. The CONTENTS of the lists are shared and have their own button: Reset all Worn-Restriction-Lists."/>
+                                            </ToolTip>
+                                        </Button.ToolTip>
+                                    </Button>
+
+                                    <Button Content="Reset all Worn-Restriction-Lists"
+                                            Command="{Binding ResetPluginWornRestrictionListsCommand}"
+                                            IsEnabled="{Binding UsesEditedWornRestrictionList}" ToolTipService.ShowOnDisabled="True"
+                                            Margin="0,0,5,5"
+                                            Style="{StaticResource StandardButtonStyle}">
+                                        <Button.ToolTip>
+                                            <ToolTip Style="{StaticResource InfoTooltipStyle}">
+                                                <TextBlock Style="{StaticResource ToolTipTitelStyle}"
+                                                           TextWrapping="Wrap"
+                                                           MaxWidth="380"
+                                                           Text="Reverts the keyword contents of every edited worn-restriction list that an enchantment in this plugin uses, back to the scanned state. The lists are shared, so every enchantment using one - in any plugin - gets the reverted list; the confirmation says how many. Which list an enchantment points at stays as it is (that belongs to Reset all Enchantments)."/>
                                             </ToolTip>
                                         </Button.ToolTip>
                                     </Button>
@@ -431,7 +447,7 @@
                                     Margin="15,0,0,0"
                                     Style="{StaticResource StandardButtonStyle}"
                                     Command="{Binding DataContext.ResetEnchantmentCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                    IsEnabled="{Binding DataContext.HasEnchantmentChanges, RelativeSource={RelativeSource AncestorType=UserControl}}">
+                                    IsEnabled="{Binding DataContext.HasEnchantmentChanges, RelativeSource={RelativeSource AncestorType=UserControl}}" ToolTipService.ShowOnDisabled="True">
                                     <Button.ToolTip>
                                         <ToolTip Style="{StaticResource InfoTooltipStyle}">
                                             <StackPanel>
@@ -1014,7 +1030,7 @@
                                     Style="{StaticResource StandardButtonStyle}"
                                     Margin="8,0,0,5"
                                     Command="{Binding DataContext.ResetWornRestrictionListCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                    IsEnabled="{Binding DataContext.CanResetWornRestrictionList, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    IsEnabled="{Binding DataContext.CanResetWornRestrictionList, RelativeSource={RelativeSource AncestorType=UserControl}}" ToolTipService.ShowOnDisabled="True"
                                     ToolTip="Revert this worn-restriction list's keyword contents to the pristine scanned set. Affects every enchantment that uses the list, not just this one."/>
                             <ComboBox ItemsSource="{Binding DataContext.WornRestrictionListChoices, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                       SelectedItem="{Binding DataContext.SelectedWornRestrictionListChoice, RelativeSource={RelativeSource AncestorType=UserControl}}"

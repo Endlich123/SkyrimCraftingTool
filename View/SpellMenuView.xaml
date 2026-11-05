@@ -245,6 +245,18 @@
                             </TextBlock>
                         </Border>
 
+                        <!-- Cast type or target type that does not fit an effect. A hint and no more:
+                             a few vanilla spells have one too. See Services/SpellDelivery. -->
+                        <Border Background="{DynamicResource ColorSurfaceWarn}"
+                                BorderBrush="{DynamicResource ColorBorderLight}"
+                                BorderThickness="1" CornerRadius="3"
+                                Padding="8,5" Margin="0,0,0,10"
+                                Visibility="{Binding HasEffectDeliveryWarning, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="{Binding EffectDeliveryWarning}"
+                                       TextWrapping="Wrap" FontSize="11"
+                                       Foreground="{DynamicResource ColorTextSecondary}"/>
+                        </Border>
+
 
                         <!-- BASIC INFO, as an expander like every other detail panel in the tool.
                              A collapsed section must still admit that something inside it changed -
@@ -266,7 +278,7 @@
                                     <Button Content="Reset fields"
                                             Command="{Binding ResetFieldsCommand}"
                                             Style="{StaticResource StandardButtonStyle}"
-                                            Visibility="{Binding SelectedFieldsEdited, Converter={StaticResource BoolToVis}}"
+                                            IsEnabled="{Binding SelectedFieldsEdited}" ToolTipService.ShowOnDisabled="True"
                                             ToolTip="Puts the record's own fields back to what the scan found. Leaves the effects alone — they have their own Reset."/>
                                 </StackPanel>
 
@@ -376,7 +388,7 @@
                                         <Button.ToolTip>
                                             <ToolTip Style="{StaticResource InfoTooltipStyle}">
                                                 <TextBlock Style="{StaticResource ToolTipTitelStyle}" TextWrapping="Wrap"
-                                                           Text="Spell, Ability, Power, LesserPower, Voice, Disease, Poison or Addiction. Read-only on a scanned record: SkyPatcher has no operation for it, and the tree is grouped by it. On a spell you created here the generated ESP writes it from scratch, so it can be set."/>
+                                                           Text="Spell, Ability, Power, LesserPower, Voice, Disease, Poison or Addiction. Power can be used once a day, LesserPower as often as you like. Read-only on a scanned record: SkyPatcher has no operation for it, and the tree is grouped by it. On a spell you created here the generated ESP writes it from scratch, so it can be set."/>
                                             </ToolTip>
                                         </Button.ToolTip>
                                     </Button>
@@ -587,10 +599,10 @@
                                 <Button Content="Reset effects"
                                         Command="{Binding DataContext.ResetEffectsCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         Style="{StaticResource StandardButtonStyle}"
-                                        Visibility="{Binding DataContext.SelectedEffectsEdited, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}"
+                                        IsEnabled="{Binding DataContext.SelectedEffectsEdited, RelativeSource={RelativeSource AncestorType=UserControl}}" ToolTipService.ShowOnDisabled="True"
                                         ToolTip="Puts magnitude, duration and area back to what the scan found, and undoes any effect added or removed here."/>
 
-                                <Button Margin="10,0,0,0" Style="{StaticResource InfoButtonStyle}">
+                                <Button Margin="10,0,5,5" Style="{StaticResource InfoButtonStyle}">
                                     <Button.ToolTip>
                                         <ToolTip Style="{StaticResource InfoTooltipStyle}">
                                             <StackPanel>

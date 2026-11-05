@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using SkyrimCraftingTool.Model;
@@ -79,23 +78,6 @@ namespace SkyrimCraftingTool.View
                 System.Windows.MessageBox.Show(this,
                     $"Could not save the report:{Environment.NewLine}{ex.Message}",
                     "Save failed", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
-        }
-
-        private void OpenFolder_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                Directory.CreateDirectory(AppLogger.LogFolderPath);
-                Process.Start(new ProcessStartInfo("explorer.exe", $"\"{AppLogger.LogFolderPath}\"")
-                {
-                    UseShellExecute = true,
-                });
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogError("LogViewerWindow.OpenFolder", ex);
-                StatusText.Text = $"Could not open the folder: {ex.Message}";
             }
         }
 

@@ -41,10 +41,11 @@
                  confirmation for all of it (see MultiSelectDetailVM.ResetSelection). Deliberately
                  NOT inside one of the Expanders below - those all ADD something to the selection,
                  this is the one destructive action here and shouldn't be buried in a collapsed
-                 section. Always enabled, like the Apply buttons: a selection with nothing to revert
-                 answers via StatusMessage instead of a greyed-out button with no explanation. -->
+                 section. Greyed out while no selected item is edited (HasEditedInSelection); the tooltip
+                 still shows then, so the button explains itself. -->
             <Button Content="Reset ALL selected"
                     Command="{Binding ResetSelectionCommand}"
+                    IsEnabled="{Binding HasEditedInSelection}" ToolTipService.ShowOnDisabled="True"
                     Style="{StaticResource StandardButtonStyle}"
                     HorizontalAlignment="Left"
                     Margin="0,0,0,10">
@@ -240,9 +241,10 @@
                               Style="{StaticResource ItemCheckBoxStyle}"
                               Margin="0,0,0,4"/>
 
-                    <ItemsControl ItemsSource="{Binding CraftingConditionsTemplate}" Margin="0,0,0,4">
+                    <ItemsControl ItemsSource="{Binding CraftingConditionsTemplate}" model:ConditionGroupingBehavior.IsEnabled="True" Margin="0,0,0,4">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
+                                <ContentControl Style="{StaticResource ConditionRowFrameStyle}">
                                 <Grid Margin="0,5">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="200"/>
@@ -283,7 +285,7 @@
                                     <!-- RunOn -->
                                     <DockPanel Grid.Column="3" VerticalAlignment="Center">
                                         <TextBlock Text="Run On:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center"/>
-                                        <CheckBox DockPanel.Dock="Right" Content="OR" IsChecked="{Binding IsOr}" Margin="6,0,0,5" VerticalAlignment="Center" VerticalContentAlignment="Center"
+                                        <CheckBox DockPanel.Dock="Right" Content="OR" IsChecked="{Binding IsOr}" Visibility="{Binding HasEditableOrBox, Converter={StaticResource BoolToHidden}}" Margin="6,0,0,5" VerticalAlignment="Center" VerticalContentAlignment="Center"
                                                   Style="{StaticResource ItemCheckBoxStyle}" ToolTip="Either this OR the next condition must be true. Unticked, all conditions must be true."/>
                                         <ComboBox
                                               ItemsSource="{Binding RunOnOptions}"
@@ -293,11 +295,12 @@
 
                                     <!-- Remove -->
                                     <Button Grid.Column="4"
-                                        Command="{Binding DataContext.RemoveCraftingConditionCommand,
+                                        IsEnabled="{Binding CanRemove}"
+                    Command="{Binding DataContext.RemoveCraftingConditionCommand,
                                                   RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                         CommandParameter="{Binding}"
                                         Style="{StaticResource RemoveButtonStyle}"
-                                        ToolTip="Remove Condition"/>
+                                        ToolTip="{Binding RemoveToolTip}" ToolTipService.ShowOnDisabled="True"/>
 
                                                                         <!-- Read-only condition overlay: covers the whole row for a condition type that is preserved
                                                                              but not editable. The overlay itself lives in Styles/ConditionTemplates.xaml as the
@@ -306,7 +309,7 @@
                                                                              filled element. Null content means the template is never instantiated for an ordinary
                                                                              condition, so its bindings (Explanation, FunctionName, ...) cannot be evaluated against a
                                                                              view model that has none of them. That was 12 binding errors per editable row. -->
-                                                                        <ContentControl Grid.Column="0" Grid.ColumnSpan="5" Panel.ZIndex="10">
+                                                                        <ContentControl Grid.Column="0" Grid.ColumnSpan="4" Panel.ZIndex="10">
                                                                             <ContentControl.Style>
                                                                                 <Style TargetType="ContentControl">
                                                                                     <Style.Triggers>
@@ -318,6 +321,7 @@
                                                                             </ContentControl.Style>
                                                                         </ContentControl>
                                 </Grid>
+                                </ContentControl>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -398,9 +402,10 @@
                               Style="{StaticResource ItemCheckBoxStyle}"
                               Margin="0,0,0,4"/>
 
-                    <ItemsControl ItemsSource="{Binding TemperConditionsTemplate}" Margin="0,0,0,4">
+                    <ItemsControl ItemsSource="{Binding TemperConditionsTemplate}" model:ConditionGroupingBehavior.IsEnabled="True" Margin="0,0,0,4">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
+                                <ContentControl Style="{StaticResource ConditionRowFrameStyle}">
                                 <Grid Margin="0,5">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="200"/>
@@ -441,7 +446,7 @@
                                     <!-- RunOn -->
                                     <DockPanel Grid.Column="3" VerticalAlignment="Center">
                                         <TextBlock Text="Run On:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center"/>
-                                        <CheckBox DockPanel.Dock="Right" Content="OR" IsChecked="{Binding IsOr}" Margin="6,0,0,5" VerticalAlignment="Center" VerticalContentAlignment="Center"
+                                        <CheckBox DockPanel.Dock="Right" Content="OR" IsChecked="{Binding IsOr}" Visibility="{Binding HasEditableOrBox, Converter={StaticResource BoolToHidden}}" Margin="6,0,0,5" VerticalAlignment="Center" VerticalContentAlignment="Center"
                                                   Style="{StaticResource ItemCheckBoxStyle}" ToolTip="Either this OR the next condition must be true. Unticked, all conditions must be true."/>
                                         <ComboBox
                                               ItemsSource="{Binding RunOnOptions}"
@@ -451,11 +456,12 @@
 
                                     <!-- Remove -->
                                     <Button Grid.Column="4"
-                                        Command="{Binding DataContext.RemoveTemperConditionCommand,
+                                        IsEnabled="{Binding CanRemove}"
+                    Command="{Binding DataContext.RemoveTemperConditionCommand,
                                                   RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                         CommandParameter="{Binding}"
                                         Style="{StaticResource RemoveButtonStyle}"
-                                        ToolTip="Remove Condition"/>
+                                        ToolTip="{Binding RemoveToolTip}" ToolTipService.ShowOnDisabled="True"/>
 
                                                                         <!-- Read-only condition overlay: covers the whole row for a condition type that is preserved
                                                                              but not editable. The overlay itself lives in Styles/ConditionTemplates.xaml as the
@@ -464,7 +470,7 @@
                                                                              filled element. Null content means the template is never instantiated for an ordinary
                                                                              condition, so its bindings (Explanation, FunctionName, ...) cannot be evaluated against a
                                                                              view model that has none of them. That was 12 binding errors per editable row. -->
-                                                                        <ContentControl Grid.Column="0" Grid.ColumnSpan="5" Panel.ZIndex="10">
+                                                                        <ContentControl Grid.Column="0" Grid.ColumnSpan="4" Panel.ZIndex="10">
                                                                             <ContentControl.Style>
                                                                                 <Style TargetType="ContentControl">
                                                                                     <Style.Triggers>
@@ -476,6 +482,7 @@
                                                                             </ContentControl.Style>
                                                                         </ContentControl>
                                 </Grid>
+                                </ContentControl>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -618,7 +625,7 @@
                               Style="{StaticResource ItemCheckBoxStyle}"
                               Margin="0,0,0,4"/>
 
-                    <ItemsControl ItemsSource="{Binding BreakdownConditionsTemplate}"
+                    <ItemsControl ItemsSource="{Binding BreakdownConditionsTemplate}" model:ConditionGroupingBehavior.IsEnabled="True"
                                   ItemTemplate="{StaticResource ConditionRowTemplate}"/>
 
                     <Button Command="{Binding AddBreakdownConditionCommand}"

@@ -105,7 +105,7 @@
                         <TextBlock Text="+ Addon" Foreground="{DynamicResource ColorTextTertiary}" VerticalAlignment="Center" Margin="0,0,4,0"/>
                         <ComboBox Width="150" ItemsSource="{Binding AddonOptions, Mode=OneWay}" SelectedItem="{Binding AddonToAdd}" Style="{StaticResource CompactComboBoxStyle}" Margin="0,0,4,4"/>
                         <Button Content="Add" Command="{Binding AddAddonCommand}" Style="{StaticResource StandardButtonStyle}" Padding="8,0" Margin="0,0,10,4"/>
-                        <Button Content="Reset" Command="{Binding ResetChoiceCommand}" Style="{StaticResource StandardButtonStyle}" Padding="8,0" Margin="0,0,0,4"
+                        <Button Content="Reset" Command="{Binding ResetChoiceCommand}" IsEnabled="{Binding HasOwnChoice}" ToolTipService.ShowOnDisabled="True" Style="{StaticResource StandardButtonStyle}" Padding="8,0" Margin="0,0,0,4"
                                 ToolTip="Back to what the pre-fill (and the plugin card) gives this item."/>
                     </WrapPanel>
                     <ItemsControl ItemsSource="{Binding Addons, Mode=OneWay}" ItemsPanel="{StaticResource ChipPanel}" Margin="24,2,0,0"/>
@@ -156,7 +156,7 @@
                         <TextBlock Text="+ Addon" Foreground="{DynamicResource ColorTextTertiary}" VerticalAlignment="Center" Margin="0,0,4,0"/>
                         <ComboBox Width="150" ItemsSource="{Binding AddonOptions, Mode=OneWay}" SelectedItem="{Binding AddonToAdd}" Style="{StaticResource CompactComboBoxStyle}" Margin="0,0,4,4"/>
                         <Button Content="Add" Command="{Binding AddAddonCommand}" Style="{StaticResource StandardButtonStyle}" Padding="8,0" Margin="0,0,10,4"/>
-                        <Button Content="Reset" Command="{Binding ResetChoiceCommand}" Style="{StaticResource StandardButtonStyle}" Padding="8,0" Margin="0,0,0,4"
+                        <Button Content="Reset" Command="{Binding ResetChoiceCommand}" IsEnabled="{Binding HasOwnChoice}" ToolTipService.ShowOnDisabled="True" Style="{StaticResource StandardButtonStyle}" Padding="8,0" Margin="0,0,0,4"
                                 ToolTip="Back to what the pre-fill detects per item."/>
                     </WrapPanel>
                     <ItemsControl ItemsSource="{Binding AddedAddons, Mode=OneWay}" ItemsPanel="{StaticResource ChipPanel}" Margin="28,2,0,0"/>
@@ -226,6 +226,7 @@
                     Command="{Binding CollapseAllCommand}" Style="{StaticResource StandardButtonStyle}" ToolTip="Close every plugin card shown."/>
             <Button DockPanel.Dock="Left" Content="Reset all" Width="80" Margin="16,0,0,0"
                     Command="{Binding ResetAllCommand}" Style="{StaticResource ActionButtonWarmStyle}"
+                    IsEnabled="{Binding HasChoicesToReset}" ToolTipService.ShowOnDisabled="True"
                     ToolTip="Every card shown back to on and (auto): preset combinations and switched-off plugins and items are dropped. Asks first; the items themselves are not changed."/>
         </DockPanel>
 

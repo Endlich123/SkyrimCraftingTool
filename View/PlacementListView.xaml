@@ -99,6 +99,7 @@
                     <Button DockPanel.Dock="Right"
                             Content="Reset placement"
                             Command="{Binding ResetPlacementCommand}"
+                            IsEnabled="{Binding CanResetPlacement}" ToolTipService.ShowOnDisabled="True"
                             Style="{StaticResource StandardButtonStyle}"
                             ToolTip="Takes this record's placement back to what the plugins say. Its other edits (an armor's rating, say) stay."/>
                     <TextBlock Text="{Binding TargetName}"
@@ -141,6 +142,7 @@
                         <Button DockPanel.Dock="Right"
                                 Content="Reset picked"
                                 Command="{Binding ResetPlacementCommand}"
+                                IsEnabled="{Binding CanResetPlacement}" ToolTipService.ShowOnDisabled="True"
                                 Style="{StaticResource StandardButtonStyle}"
                                 ToolTip="Takes the placements of every picked record back to what the plugins say. Asks first."/>
 
@@ -163,10 +165,20 @@
 
             <!-- The host is THIS view model, which is why the panel's bindings resolve: it answers
                  the same nine members MainContentVM does. With several records picked it is handed
-                 the template instead of a record - see PlacementListVM.PlacementTarget. -->
-            <ContentPresenter Content="{Binding}"
-                              ContentTemplate="{StaticResource ContainerPlacementPanelTemplate}"
-                              Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}"/>
+                 the template instead of a record - see PlacementListVM.PlacementTarget.
+
+                 THE SCROLLVIEWER IS THE HOST'S JOB. The panel grows with what is selected - one
+                 merchant chest alone lists 30+ leveled lists - and has no scroll region of its own;
+                 the item editor brings one. Without it here, DockPanel cut the panel off at the
+                 window edge and everything below was out of reach, on every placement sub-tab
+                 (user, 2026-11-05). The panel's container list keeps its virtualisation: its height
+                 is fixed, so the infinite height from up here never reaches it. -->
+            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}">
+                <ContentPresenter Content="{Binding}"
+                                  ContentTemplate="{StaticResource ContainerPlacementPanelTemplate}"/>
+            </ScrollViewer>
         </DockPanel>
     </Grid>
 </UserControl>

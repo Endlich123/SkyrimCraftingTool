@@ -404,6 +404,16 @@
                         <ContentControl Content="{Binding KeywordPicker}"/>
                         <TextBlock Text="WeapMaterial* - finds the material on a weapon, and is what the smithing perks read. A weapon that already carries it keeps its other material keywords."
                                    Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,4,0,0"/>
+
+                        <TextBlock Text="Also requires keyword" Style="{StaticResource ItemLabelStyle}" Margin="0,12,0,4"/>
+                        <DockPanel Margin="0,0,0,6">
+                            <Button DockPanel.Dock="Right" Content="Clear" Width="60" Margin="6,0,0,0"
+                                    Command="{Binding ClearRequiredKeywordCommand}" Style="{StaticResource StandardButtonStyle}"/>
+                            <TextBlock Text="{Binding RequiredKeywordDisplay, Mode=OneWay}" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <ContentControl Content="{Binding RequiredKeywordPicker}"/>
+                        <TextBlock Text="Optional. The material only matches when the weapon carries this keyword too - for a mod with two tiers under one material keyword (Lunar Armory: the honed tier also carries WeapMaterialDraugrHoned). Put such a material above the plain one."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,4,0,0"/>
                     </StackPanel>
                 </GroupBox>
 
@@ -697,6 +707,16 @@
                         <ItemsControl ItemsSource="{Binding AlsoChoices}" ItemTemplate="{StaticResource NameChoiceTemplate}"
                                       ItemsPanel="{StaticResource WrapPanelTemplate}"/>
                         <TextBlock Text="Whenever this addon is in - picked automatically or by hand - the ticked ones come along (e.g. Premium -> Rich). Use this rather than giving it another addon's keyword: an addon's keywords also pick it, so that would hand it to every item already carrying the keyword."
+                                   Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Style="{StaticResource DarkGroupBoxStyle}" Padding="10" Margin="0,12,0,0">
+                    <GroupBox.Header><TextBlock Text="Only together with these addons" Style="{StaticResource TitelStyle}"/></GroupBox.Header>
+                    <StackPanel>
+                        <ItemsControl ItemsSource="{Binding RequiresChoices}" ItemTemplate="{StaticResource NameChoiceTemplate}"
+                                      ItemsPanel="{StaticResource WrapPanelTemplate}"/>
+                        <TextBlock Text="Picked automatically only when ALL ticked addons are in as well (e.g. Top T = Top + Transparent). Without a keyword, name or EditorID of its own, that alone picks it. Picking it by hand ignores this."
                                    Foreground="{DynamicResource ColorTextTertiary}" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,0"/>
                     </StackPanel>
                 </GroupBox>
