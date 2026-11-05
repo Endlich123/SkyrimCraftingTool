@@ -86,6 +86,7 @@
                     <DockPanel LastChildFill="True">
                         <Button DockPanel.Dock="Right" Content="Reset list" Width="90"
                                 Command="{Binding ResetListPropertiesCommand}"
+                                IsEnabled="{Binding HasListEdit}" ToolTipService.ShowOnDisabled="True"
                                 Style="{StaticResource StandardButtonStyle}"
                                 ToolTip="Put chance and calculation back to what your load order has."/>
                         <TextBlock Text="{Binding ListEditSummary}"

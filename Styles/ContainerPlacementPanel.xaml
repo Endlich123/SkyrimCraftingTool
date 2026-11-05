@@ -88,8 +88,8 @@
                      its template), so the VirtualizingStackPanel knows the visible height and builds only
                      the rows on screen, recycling them while scrolling.
                      ScrollUnit Pixel keeps the smooth scrolling of before (item scrolling would jump row by
-                     row). The fixed height is what makes this work; the list never had a scroll region of
-                     the page around it to compete with. -->
+                     row). The fixed height is what makes this work: the hosts put this panel in a page
+                     ScrollViewer, which would otherwise hand the list infinite height and build every row. -->
                 <ItemsControl ItemsSource="{Binding FilteredContainers}"
                               Height="180"
                               VirtualizingPanel.IsVirtualizing="True"

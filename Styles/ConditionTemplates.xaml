@@ -27,7 +27,81 @@
          an alias, so the inline copies could migrate onto it later without changing their owners.
          Not done in the same breath on purpose - those sections work, and this one had no visual
          test to catch a regression. -->
+    <!-- OR-GROUP FRAME around one condition row. Wrap a row's content in
+         <ContentControl Style="{StaticResource ConditionRowFrameStyle}"> and put
+         model:ConditionGroupingBehavior.IsEnabled="True" on its ItemsControl; the behavior fills
+         GroupPosition / Connector / IsDanglingOr (ConditionGroups.Apply).
+
+         Drawn: "OR" or "AND" above each row but the first, and a bar down the left of every OR group
+         that continues through the "OR" between its rows - so "(A or B) and C" is visible without
+         reading each row's OR box. Skyrim binds OR tighter than AND, which is why a group is a bar
+         and not an indented child row: its members are equals.
+
+         One frame for all six condition lists (two inline rows each in MainContentView and
+         MultiSelectDetailView, plus ConditionRowTemplate below) - the rows themselves differ. -->
+    <Style x:Key="ConditionRowFrameStyle" TargetType="ContentControl">
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContentControl">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>   <!-- connector -->
+                            <RowDefinition Height="Auto"/>   <!-- the row -->
+                            <RowDefinition Height="Auto"/>   <!-- dangling-OR warning -->
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="10"/>   <!-- group bar -->
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- The bar through the connector: only when this row continues a group. -->
+                        <Border x:Name="ConnectorBar" Grid.Row="0" Grid.Column="0" Width="3" HorizontalAlignment="Left"
+                                Background="{DynamicResource ColorAccent}" Visibility="Collapsed"/>
+                        <TextBlock x:Name="ConnectorText" Grid.Row="0" Grid.Column="1"
+                                   Text="{Binding Connector}" FontSize="10" FontWeight="SemiBold"
+                                   Margin="2,0,0,0" Foreground="{DynamicResource ColorTextTertiary}"/>
+
+                        <Border x:Name="RowBar" Grid.Row="1" Grid.Column="0" Width="3" HorizontalAlignment="Left"
+                                Background="{DynamicResource ColorAccent}" Visibility="Collapsed"/>
+                        <ContentPresenter Grid.Row="1" Grid.Column="1"/>
+
+                        <TextBlock x:Name="DanglingText" Grid.Row="2" Grid.Column="1" Visibility="Collapsed"
+                                   FontSize="10" Margin="2,0,0,4" Foreground="{DynamicResource ColorWarning}"
+                                   Text="OR on the last condition - nothing follows to pair it with."
+                                   ToolTip="The OR flag joins a condition with the NEXT one. On the last row there is none; untick OR unless another condition belongs after it."/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <DataTrigger Binding="{Binding Connector}" Value="">
+                            <Setter TargetName="ConnectorText" Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Connector}" Value="OR">
+                            <Setter TargetName="ConnectorText" Property="Foreground" Value="{DynamicResource ColorAccent}"/>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding GroupPosition}" Value="First">
+                            <Setter TargetName="RowBar" Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding GroupPosition}" Value="Middle">
+                            <Setter TargetName="RowBar" Property="Visibility" Value="Visible"/>
+                            <Setter TargetName="ConnectorBar" Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding GroupPosition}" Value="Last">
+                            <Setter TargetName="RowBar" Property="Visibility" Value="Visible"/>
+                            <Setter TargetName="ConnectorBar" Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding IsDanglingOr}" Value="True">
+                            <Setter TargetName="DanglingText" Property="Visibility" Value="Visible"/>
+                            <Setter TargetName="RowBar" Property="Visibility" Value="Visible"/>
+                            <Setter TargetName="RowBar" Property="Background" Value="{DynamicResource ColorWarning}"/>
+                        </DataTrigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <DataTemplate x:Key="ConditionRowTemplate">
+        <ContentControl Style="{StaticResource ConditionRowFrameStyle}">
         <Grid Margin="0,5">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="200"/>   <!-- Type -->
@@ -60,7 +134,7 @@
 
             <DockPanel Grid.Column="3" VerticalAlignment="Center">
                 <TextBlock Text="Run On:" Style="{StaticResource ItemLabelStyle}" VerticalAlignment="Center"/>
-                <CheckBox DockPanel.Dock="Right" Content="OR" IsChecked="{Binding IsOr}" Margin="6,0,0,5" VerticalAlignment="Center" VerticalContentAlignment="Center"
+                <CheckBox DockPanel.Dock="Right" Content="OR" IsChecked="{Binding IsOr}" Visibility="{Binding HasEditableOrBox, Converter={StaticResource BoolToHidden}}" Margin="6,0,0,5" VerticalAlignment="Center" VerticalContentAlignment="Center"
                           Style="{StaticResource ItemCheckBoxStyle}" ToolTip="Either this OR the next condition must be true. Unticked, all conditions must be true."/>
                 <ComboBox ItemsSource="{Binding RunOnOptions}"
                           SelectedItem="{Binding RunOn}"
@@ -68,10 +142,11 @@
             </DockPanel>
 
             <Button Grid.Column="4"
+                    IsEnabled="{Binding CanRemove}"
                     Command="{Binding DataContext.RemoveConditionCommand,
                               RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                     CommandParameter="{Binding}"
-                    ToolTip="Remove Condition"
+                    ToolTip="{Binding RemoveToolTip}" ToolTipService.ShowOnDisabled="True"
                     Style="{StaticResource RemoveButtonStyle}"/>
 
             <!-- Read-only overlay for a preserved but non-editable condition type. Content is set
@@ -79,7 +154,7 @@
                  element: null content means the template is never instantiated for an ordinary
                  condition, so its bindings cannot be evaluated against a view model that has none
                  of them. That was 12 binding errors per editable row. -->
-            <ContentControl Grid.Column="0" Grid.ColumnSpan="5" Panel.ZIndex="10">
+            <ContentControl Grid.Column="0" Grid.ColumnSpan="4" Panel.ZIndex="10">
                 <ContentControl.Style>
                     <Style TargetType="ContentControl">
                         <Style.Triggers>
@@ -91,6 +166,7 @@
                 </ContentControl.Style>
             </ContentControl>
         </Grid>
+        </ContentControl>
     </DataTemplate>
 
     <!-- HasPerk -->
@@ -158,28 +234,48 @@
          were evaluated against every ORDINARY condition too, and failed. Collapsed or not, WPF still
          resolves them: 12 binding errors per editable row, drowning out real ones. A template is
          only instantiated for the type it belongs to, so the bindings cannot miss. -->
+    <!-- Bottom margin 5 like every control in the row (ItemComboBoxStyle, RemoveButtonStyle): the
+         overlay is stretched over the row's full height, and without it it reached 5px lower than the
+         pickers and the remove button beside it looked shifted up (2026-10-24).
+         NO right margin: the overlay has to cover the RunOn column to its edge - with a 5px gap the
+         OR checkbox underneath showed through as a stray "R". The row's OR is in ValueDisplay. -->
     <DataTemplate DataType="{x:Type local:ReadOnlyConditionViewModel}">
-        <Border Background="{DynamicResource ColorBackgroundControl}"
-                BorderBrush="{DynamicResource ColorDivider}"
-                BorderThickness="1" Padding="6,4"
-                ToolTip="{Binding Explanation}">
-            <StackPanel Orientation="Horizontal">
-                <TextBlock Text="Locked:" FontWeight="SemiBold"
-                           VerticalAlignment="Center"
-                           Foreground="{DynamicResource ColorTextMuted}"/>
-                <TextBlock Text="{Binding FunctionName}" Margin="6,0,0,0"
-                           FontWeight="SemiBold" VerticalAlignment="Center"/>
-                <TextBlock Text="{Binding TargetDisplay}" Margin="10,0,0,0"
-                           VerticalAlignment="Center"
-                           Foreground="{DynamicResource ColorTextMuted}"/>
-                <TextBlock Text="{Binding ValueDisplay}" Margin="10,0,0,0"
-                           VerticalAlignment="Center"
-                           Foreground="{DynamicResource ColorTextMuted}"/>
-                <TextBlock Text="(preserved, not editable)" Margin="14,0,0,0"
-                           FontStyle="Italic" VerticalAlignment="Center"
-                           Foreground="{DynamicResource ColorTextMuted}"/>
-            </StackPanel>
-        </Border>
+        <DockPanel>
+            <!-- The one editable part: the OR flag. Moving a locked condition in or out of an OR group
+                 is safe - see ReadOnlyConditionViewModel.IsOrRaw.
+                 OUTSIDE the border and with the editable rows' exact margin (6,0,0,5, docked right in
+                 the RunOn column), so it sits where theirs does; inside the padded border it was 7px
+                 further in. The editable rows hide their own OR box for a read-only row
+                 (HasEditableOrBox), or it would show through here. -->
+            <CheckBox DockPanel.Dock="Right" Content="OR" IsChecked="{Binding IsOrRaw}"
+                      IsEnabled="{Binding CanEditOr}"
+                      Margin="6,0,0,5"
+                      VerticalAlignment="Center" VerticalContentAlignment="Center"
+                      Style="{StaticResource ItemCheckBoxStyle}"
+                      ToolTip="Either this OR the next condition must be true. Unticked, all conditions must be true."/>
+            <Border Background="{DynamicResource ColorBackgroundControl}"
+                    BorderBrush="{DynamicResource ColorDivider}"
+                    BorderThickness="1" Padding="6,4"
+                    Margin="0,0,0,5"
+                    ToolTip="{Binding Explanation}">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Locked:" FontWeight="SemiBold"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource ColorTextMuted}"/>
+                    <TextBlock Text="{Binding FunctionName}" Margin="6,0,0,0"
+                               FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding TargetDisplay}" Margin="10,0,0,0"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource ColorTextMuted}"/>
+                    <TextBlock Text="{Binding ValueDisplay}" Margin="10,0,0,0"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource ColorTextMuted}"/>
+                    <TextBlock Text="(preserved, not editable)" Margin="14,0,0,0"
+                               FontStyle="Italic" VerticalAlignment="Center"
+                               Foreground="{DynamicResource ColorTextMuted}"/>
+                </StackPanel>
+            </Border>
+        </DockPanel>
     </DataTemplate>
 
     <!-- GetStageDone -->
@@ -207,6 +303,59 @@
                       Style="{StaticResource CompactComboBoxStyle}"
                       Margin="0,0,5,5"/>
         </Grid>
+    </DataTemplate>
+
+    <!-- EPTemperingItemIsEnchanted: no target - it asks about the item being tempered. Same muted box
+         as GetLevel so the columns stay aligned. Usually "!= 1" with OR, followed by HasPerk Arcane
+         Blacksmith: "not enchanted, or has the perk". -->
+    <DataTemplate DataType="{x:Type local:TemperEnchantedConditionViewModel}">
+        <Border Background="{DynamicResource ColorBackgroundControl}"
+                BorderBrush="{DynamicResource ColorDivider}"
+                BorderThickness="1"
+                Padding="4"
+                Margin="0,0,5,5"
+                Opacity="0.5"
+                ToolTip="1 if the item being tempered is enchanted. Vanilla: '!= 1' with OR, then HasPerk Arcane Blacksmith - enchanted items need the perk, the rest don't.">
+            <TextBlock Text="(item being tempered is enchanted)"
+                       Foreground="{DynamicResource ColorTextMuted}"
+                       FontSize="11"/>
+        </Border>
+    </DataTemplate>
+
+    <!-- GetStage: the quest's CURRENT stage vs. the Value column ("Quest >= 20"). Same quest picker as
+         GetStageDone; the stage itself is the value, so instead of a stage box the quest's defined
+         stages are shown as a hint. -->
+    <DataTemplate DataType="{x:Type local:QuestCurrentStageConditionViewModel}">
+        <DockPanel>
+            <TextBlock DockPanel.Dock="Right" Text="{Binding StagesHint}"
+                       Margin="6,0,5,5" VerticalAlignment="Center" MaxWidth="160"
+                       TextTrimming="CharacterEllipsis" ToolTip="{Binding StagesHint}"
+                       FontSize="11" Foreground="{DynamicResource ColorTextMuted}"/>
+            <ComboBox ItemsSource="{Binding DataContext.FilteredQuests,
+                                            RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                      SelectedItem="{Binding SelectedQuest}"
+                      IsSynchronizedWithCurrentItem="False"
+                      BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
+                      ToolTip="The quest whose current stage is compared against the Value."
+                      Style="{StaticResource ItemComboBoxStyle}"/>
+        </DockPanel>
+    </DataTemplate>
+
+    <!-- GetItemCount. The list is the view model's own Matches - the first hits of what is typed out
+         of ~54,000 items (ConditionItemCatalog) - not an owner list like the two above: no owner
+         needs it, and a ComboBox over all of them is unusable even virtualized. TextSearch is off so
+         typing filters instead of jumping the selection; the count is the Value column. -->
+    <DataTemplate DataType="{x:Type local:ItemCountConditionViewModel}">
+        <ComboBox ItemsSource="{Binding Matches}"
+                  SelectedItem="{Binding SelectedItem}"
+                  IsSynchronizedWithCurrentItem="False"
+                  IsEditable="True"
+                  IsTextSearchEnabled="False"
+                  StaysOpenOnEdit="True"
+                  Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                  BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
+                  ToolTip="Item, weapon, armor or form list. Type part of the name, then pick it from the list."
+                  Style="{StaticResource ItemComboBoxStyle}"/>
     </DataTemplate>
 
 </ResourceDictionary>
