@@ -44,7 +44,7 @@ namespace SkyrimCraftingTool.Model
             Table = "COBJ_Conditions",
             OriginalTable = "COBJ_Conditions_Original",
             KeyColumn = "COBJKey",
-            Columns = new[] { "COBJKey", "ConditionType", "Target", "Value", "Extra", "RunOn", "CompareOperator", "Flags" },
+            Columns = new[] { "COBJKey", "ConditionType", "Target", "Value", "Extra", "RunOn", "CompareOperator", "Flags", "RunOnRef" },
             Payload = d => d.ConditionRows,
         };
 

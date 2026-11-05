@@ -104,6 +104,15 @@ namespace SkyrimCraftingTool.Model
         {
             var list = LoadTable("Quests", "Quest");
 
+            // Name is the EditorID, and a quest does not have to have one: 9 of 7,660 on the real
+            // modlist (2026-10-24) don't - script-only quests of overlay/makeup mods and two CC plugins.
+            // They showed as blank lines in the GetStage/GetStageDone pickers. The key at least says
+            // where one comes from. Quests feed only those pickers, so the stand-in cannot leak into
+            // anything that expects a real EditorID.
+            foreach (var q in list)
+                if (string.IsNullOrWhiteSpace(q.Name))
+                    q.Name = $"(no EditorID) {q.Key}";
+
             // GroupBy/First for the same reason as _cacheByKey below, and it is NOT theoretical:
             // keys are built from FormKey.ModKey.FileName, i.e. the plugin name as spelled in the
             // master list of whichever plugin was being scanned. Two mods overriding the same record
@@ -251,7 +260,9 @@ namespace SkyrimCraftingTool.Model
             // "INSERT OR IGNORE" — the FIRST row written for a given key wins — so results are
             // written into an array indexed by plugin position (not a ConcurrentBag), keeping write
             // order identical to allgamePathfromDB's load order regardless of parse thread timing.
+            // Never the tool's own output - see KeyFactory.IsOwnOutputPlugin.
             var pluginFiles = allgamePathfromDB
+                .Where(plugin => !SkyrimCraftingTool.Services.KeyFactory.IsOwnOutputPlugin(plugin.FileName))
                 .SelectMany(plugin => plugin.FullPaths)
                 .ToList();
 

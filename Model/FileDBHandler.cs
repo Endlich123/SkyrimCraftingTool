@@ -96,9 +96,10 @@ namespace SkyrimCraftingTool.Model
         private List<string> GetPluginsFromTxt()
         {
             var pluginsTxt = GlobalState.PluginsFilePath;
-            if (!File.Exists(pluginsTxt)) return VanillaPluginNames.ToList();
+            var creationClub = Services.CreationClubPlugins.Read(GlobalState.GameDataPath);
+            if (!File.Exists(pluginsTxt)) return OrderWithVanillaFirst(Array.Empty<string>(), creationClub);
 
-            return OrderWithVanillaFirst(File.ReadAllLines(pluginsTxt));
+            return OrderWithVanillaFirst(File.ReadAllLines(pluginsTxt), creationClub);
         }
 
         // Split out of GetPluginsFromTxt so it can be tested without a database - the constructor
@@ -118,7 +119,12 @@ namespace SkyrimCraftingTool.Model
         //
         // Mods were never affected: they come out of plugins.txt in its own order and sit after
         // this block, so they still beat vanilla.
-        internal static List<string> OrderWithVanillaFirst(IEnumerable<string> pluginsTxtLines)
+        //
+        // creationClub: Skyrim.ccc's installed plugins (Services/CreationClubPlugins), implicit like
+        // the masters and loaded straight after them. Without them the scan skipped every Creation
+        // Club record no mod overrides.
+        internal static List<string> OrderWithVanillaFirst(
+            IEnumerable<string> pluginsTxtLines, IEnumerable<string>? creationClub = null)
         {
             var names = pluginsTxtLines
                 .Where(l => !string.IsNullOrWhiteSpace(l) && l.StartsWith("*"))
@@ -129,6 +135,12 @@ namespace SkyrimCraftingTool.Model
             // go in front of everything plugins.txt does name, in one go and in their own order.
             names.InsertRange(0, VanillaPluginNames
                 .Where(v => !names.Contains(v, StringComparer.OrdinalIgnoreCase)));
+
+            // After the last master, wherever plugins.txt put it. Same rule as for the masters: one
+            // that plugins.txt already names keeps that place.
+            int afterMasters = names.FindLastIndex(n => VanillaPluginNames.Contains(n, StringComparer.OrdinalIgnoreCase)) + 1;
+            names.InsertRange(afterMasters, (creationClub ?? Array.Empty<string>())
+                .Where(c => !names.Contains(c, StringComparer.OrdinalIgnoreCase)));
 
             return names;
         }

@@ -264,7 +264,8 @@ namespace SkyrimCraftingTool.Model
                     CASE WHEN IsEdited = 1 AND IsEditedEnchantAmount IS NOT NULL
                          THEN IsEditedEnchantAmount
                          ELSE EnchantAmount
-                    END AS EnchantAmount
+                    END AS EnchantAmount,
+                    TemplateKey
                 FROM Armor WHERE Active = 1;";
 
             using var reader = cmd.ExecuteReader();
@@ -292,6 +293,7 @@ namespace SkyrimCraftingTool.Model
                     ContainerString = reader.IsDBNull(9) ? "{}" : reader.GetString(9),
                     ObjectEffectKey = reader.IsDBNull(10) ? "" : reader.GetString(10),
                     EnchantAmount = reader.IsDBNull(11) ? 0 : reader.GetInt32(11),
+                    TemplateKey = reader.IsDBNull(12) ? "" : reader.GetString(12),
                 });
             }
 
@@ -365,7 +367,8 @@ namespace SkyrimCraftingTool.Model
                     CASE WHEN IsEdited = 1 AND IsEditedCritPercentMult IS NOT NULL
                          THEN IsEditedCritPercentMult
                          ELSE CritPercentMult
-                    END AS CritPercentMult
+                    END AS CritPercentMult,
+                    TemplateKey
                 FROM Weapons WHERE Active = 1;";
 
             using var reader = cmd.ExecuteReader();
@@ -396,6 +399,7 @@ namespace SkyrimCraftingTool.Model
                     EnchantAmount = reader.IsDBNull(12) ? 0 : reader.GetInt32(12),
                     CritDamage = reader.IsDBNull(13) ? 0 : reader.GetInt32(13),
                     CritPercentMult = reader.IsDBNull(14) ? 0f : (float)reader.GetDouble(14),
+                    TemplateKey = reader.IsDBNull(15) ? "" : reader.GetString(15),
                 });
             }
 
@@ -520,8 +524,10 @@ namespace SkyrimCraftingTool.Model
                          ELSE RunOn 
                     END AS RunOn,
                     CompareOperator,
-                    Flags
-                FROM COBJ_Conditions;";
+                    Flags,
+                    RunOnRef
+                FROM COBJ_Conditions
+                ORDER BY Id;";
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
@@ -534,7 +540,8 @@ namespace SkyrimCraftingTool.Model
                     Extra = reader.IsDBNull(4) ? "" : reader.GetString(4),
                     RunOn = reader.IsDBNull(5) ? "" : reader.GetString(5),
                     CompareOperator = reader.IsDBNull(6) ? "" : reader.GetString(6),
-                    Flags = reader.IsDBNull(7) ? "" : reader.GetString(7)
+                    Flags = reader.IsDBNull(7) ? "" : reader.GetString(7),
+                    RunOnRef = reader.IsDBNull(8) ? "" : reader.GetString(8)
                 });
             }
             return list;
@@ -586,7 +593,8 @@ namespace SkyrimCraftingTool.Model
             snapshotCmd.Transaction = transaction;
             snapshotCmd.CommandText =
                 $@"INSERT INTO {spec.OriginalTable} ({spec.ColumnList})
-                   SELECT {spec.ColumnList} FROM {spec.Table} WHERE {spec.KeyColumn} = @key";
+                   SELECT {spec.ColumnList} FROM {spec.Table} WHERE {spec.KeyColumn} = @key
+                   ORDER BY rowid";
             snapshotCmd.Parameters.AddWithValue("@key", key);
             snapshotCmd.ExecuteNonQuery();
         }
@@ -625,6 +633,7 @@ namespace SkyrimCraftingTool.Model
                     insertCmd.Parameters["@runOn"].Value = cond.RunOn ?? "";
                     insertCmd.Parameters["@op"].Value = cond.CompareOperator ?? "";
                     insertCmd.Parameters["@flags"].Value = cond.Flags ?? "";
+                    insertCmd.Parameters["@runOnRef"].Value = cond.RunOnRef ?? "";
                     insertCmd.ExecuteNonQuery();
                 }
             }
@@ -676,7 +685,7 @@ namespace SkyrimCraftingTool.Model
 
             var table = conditionsEdited ? "COBJ_Conditions_Original" : "COBJ_Conditions";
             using var cmd = connection.CreateCommand();
-            cmd.CommandText = $"SELECT ConditionType, Target, Value, Extra, RunOn, CompareOperator, Flags FROM {table} WHERE COBJKey = @key";
+            cmd.CommandText = $"SELECT ConditionType, Target, Value, Extra, RunOn, CompareOperator, Flags, RunOnRef FROM {table} WHERE COBJKey = @key ORDER BY rowid";
             cmd.Parameters.AddWithValue("@key", cobjKey);
 
             using var reader = cmd.ExecuteReader();
@@ -692,6 +701,7 @@ namespace SkyrimCraftingTool.Model
                     RunOn = reader.IsDBNull(4) ? "" : reader.GetString(4),
                     CompareOperator = reader.IsDBNull(5) ? "" : reader.GetString(5),
                     Flags = reader.IsDBNull(6) ? "" : reader.GetString(6),
+                    RunOnRef = reader.IsDBNull(7) ? "" : reader.GetString(7),
                 });
             }
             return list;
@@ -731,9 +741,10 @@ namespace SkyrimCraftingTool.Model
                 using (var restoreCmd = connection.CreateCommand())
                 {
                     restoreCmd.Transaction = transaction;
-                    restoreCmd.CommandText = @"INSERT INTO COBJ_Conditions (COBJKey, ConditionType, Target, Value, Extra, RunOn, CompareOperator, Flags)
-                                                SELECT COBJKey, ConditionType, Target, Value, Extra, RunOn, CompareOperator, Flags
-                                                FROM COBJ_Conditions_Original WHERE COBJKey = @key";
+                    restoreCmd.CommandText = @"INSERT INTO COBJ_Conditions (COBJKey, ConditionType, Target, Value, Extra, RunOn, CompareOperator, Flags, RunOnRef)
+                                                SELECT COBJKey, ConditionType, Target, Value, Extra, RunOn, CompareOperator, Flags, RunOnRef
+                                                FROM COBJ_Conditions_Original WHERE COBJKey = @key
+                                                ORDER BY rowid";
                     restoreCmd.Parameters.AddWithValue("@key", cobjKey);
                     restoreCmd.ExecuteNonQuery();
                 }
@@ -1075,6 +1086,21 @@ namespace SkyrimCraftingTool.Model
         {
             LoadCache();
             return GroupForCaches(pluginFileNames, _armorCache, _weaponCache, _cobjCache, _cobjCondtionsCache);
+        }
+
+        public IReadOnlyCollection<string> GetRecordPluginNames()
+        {
+            LoadCache();
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            void Add(string key)
+            {
+                int idx = key?.IndexOf('|') ?? -1;
+                if (idx > 0) names.Add(key![..idx]);
+            }
+            foreach (var a in _armorCache) Add(a.Key);
+            foreach (var w in _weaponCache) Add(w.Key);
+            foreach (var c in _cobjCache) Add(c.Key);
+            return names;
         }
 
         // ONE PASS, NOT ONE SEARCH PER PLUGIN (docs/Performance-Plan.md, P-P7). The cache build used to

@@ -31,6 +31,11 @@
         // the missing-charge case was actually found.
         public int EnchantAmount { get; set; }
 
+        // The weapon this one was made from (CNAM "Template"), as Plugin|FormID - empty when it has
+        // none. See ArmorRecord.TemplateKey; built for weapons too 2026-10-26 (Thaumaturgy's 363 CC
+        // crossbow variants carry 0 damage of their own and are only right through their template).
+        public string TemplateKey { get; set; } = "";
+
         // Liste von Plugin|FormID
         public List<string> Keywords { get; set; } = new();
         public string ContainerString { get; set; } = "";

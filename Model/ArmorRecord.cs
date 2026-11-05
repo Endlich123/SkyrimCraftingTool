@@ -37,6 +37,11 @@
         // 0 on every unenchanted record, which is also what an absent field reads as.
         public int EnchantAmount { get; set; }
 
+        // The armor this one was made from (TNAM "Template Armor"), as Plugin|FormID - empty when it
+        // has none. The armor counterpart of an enchantment's base: Thaumaturgy and vanilla make
+        // every enchanted variant from its plain piece this way. Scanned only, never edited.
+        public string TemplateKey { get; set; } = "";
+
         // Liste von Plugin|FormID
         public List<string> Keywords { get; set; } = new();
         public string ContainerString { get; set; } = "";

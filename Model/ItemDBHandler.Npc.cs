@@ -112,7 +112,10 @@ namespace SkyrimCraftingTool.Model
                         -- Which lists the user has taken over. The snapshot tables cannot answer
                         -- that on their own: a list that is EMPTY in the plugins snapshots to no
                         -- rows, which looks exactly like no snapshot at all.
-                        FactionsEdited, ListsEdited
+                        FactionsEdited, ListsEdited,
+
+                        -- What SkyPatcher's EditorID filters see (the defining plugin's EditorID).
+                        OriginalEditorID
                     FROM Npc
                     WHERE Active = 1" + (editedOnly ? " AND IsEdited = 1" : "") + ";";
 
@@ -197,6 +200,8 @@ namespace SkyrimCraftingTool.Model
 
                     if (Int(reader, i++) != 0) factionsEdited.Add(npc.Key);
                     if (Int(reader, i++) != 0) listsEdited.Add(npc.Key);
+
+                    npc.OriginalEditorID = Str(reader, i++);
 
                     npcs.Add(npc);
                     byKey[npc.Key] = npc;

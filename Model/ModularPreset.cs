@@ -225,6 +225,12 @@ namespace SkyrimCraftingTool.Model
         // handed Premium to every item that already carries ClothingRich.
         public List<string> AlsoAddons { get; set; } = new();
 
+        // Picked automatically only when ALL of these addons are in as well (user, 2026-10-25:
+        // "Top T" = Top + Transparent - a rule's addon list only means "one of"). Without a keyword,
+        // name or EditorID trigger of its own, the requirement itself picks it. Picking by hand
+        // ignores it, like OnlySlots and OnlyPlugins.
+        public List<string> RequiresAddons { get; set; } = new();
+
         // Multipliers for the values the engine COMPUTES (material totals x slot share) - e.g.
         // "Expensive" = JewelryExpensive + value x10. Never applied to values an item keeps (no
         // material): those are the item's own, and every further Apply would multiply them again.

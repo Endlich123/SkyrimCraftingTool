@@ -173,7 +173,7 @@ namespace SkyrimCraftingTool.Model
         {
             var rows = new List<Dictionary<string, string>>();
             using var cmd = connection.CreateCommand();
-            cmd.CommandText = "SELECT ConditionType, Target, Value, Extra, RunOn, CompareOperator, Flags FROM COBJ_Conditions WHERE COBJKey = @key";
+            cmd.CommandText = "SELECT ConditionType, Target, Value, Extra, RunOn, CompareOperator, Flags, RunOnRef FROM COBJ_Conditions WHERE COBJKey = @key ORDER BY Id";
             cmd.Parameters.AddWithValue("@key", cobjKey);
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
@@ -187,6 +187,7 @@ namespace SkyrimCraftingTool.Model
                     ["RunOn"] = SafeStr(reader, 4),
                     ["CompareOperator"] = SafeStr(reader, 5),
                     ["Flags"] = SafeStr(reader, 6),
+                    ["RunOnRef"] = SafeStr(reader, 7),
                 });
             }
             return rows;
@@ -678,8 +679,8 @@ namespace SkyrimCraftingTool.Model
                 {
                     using var insertCmd = connection.CreateCommand();
                     insertCmd.Transaction = transaction;
-                    insertCmd.CommandText = @"INSERT INTO COBJ_Conditions (COBJKey, ConditionType, Target, Value, Extra, RunOn, CompareOperator, Flags)
-                                               VALUES (@key, @type, @target, @value, @extra, @runOn, @op, @flags)";
+                    insertCmd.CommandText = @"INSERT INTO COBJ_Conditions (COBJKey, ConditionType, Target, Value, Extra, RunOn, CompareOperator, Flags, RunOnRef)
+                                               VALUES (@key, @type, @target, @value, @extra, @runOn, @op, @flags, @runOnRef)";
                     insertCmd.Parameters.AddWithValue("@key", item.Key);
                     insertCmd.Parameters.AddWithValue("@type", cond.GetValueOrDefault("ConditionType", ""));
                     insertCmd.Parameters.AddWithValue("@target", cond.GetValueOrDefault("Target", ""));
@@ -690,6 +691,9 @@ namespace SkyrimCraftingTool.Model
                     // builder falls back to its per-type guess, i.e. the old behaviour.
                     insertCmd.Parameters.AddWithValue("@op", cond.GetValueOrDefault("CompareOperator", ""));
                     insertCmd.Parameters.AddWithValue("@flags", cond.GetValueOrDefault("Flags", ""));
+                    // Same for RunOnRef: an old export leaves a Reference row without its reference,
+                    // which CobjEspBuilder then refuses to rewrite rather than point at nothing.
+                    insertCmd.Parameters.AddWithValue("@runOnRef", cond.GetValueOrDefault("RunOnRef", ""));
                     insertCmd.ExecuteNonQuery();
                 }
                 using (var flagCmd = connection.CreateCommand())

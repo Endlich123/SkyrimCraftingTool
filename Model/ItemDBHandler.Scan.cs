@@ -254,7 +254,9 @@ namespace SkyrimCraftingTool.Model
             // order regardless of thread scheduling.
             _formIDDB.EnsureCacheLoaded();
 
+            // Never the tool's own output (KeyFactory.IsOwnOutputPlugin) - it would come back as mod data.
             var pluginFiles = allgamePathfromDB
+                .Where(plugin => !KeyFactory.IsOwnOutputPlugin(plugin.FileName))
                 .SelectMany(plugin => plugin.FullPaths.Select(fullPath => (plugin.FileName, fullPath)))
                 .ToList();
 
@@ -574,9 +576,25 @@ namespace SkyrimCraftingTool.Model
             // COBJ conditions and enchantment effects have - a rescan may refresh the record, never
             // the user's own list.
             var latestNpcByKey = new Dictionary<string, ParsedNpc>(StringComparer.OrdinalIgnoreCase);
+
+            // The EditorID the DEFINING plugin gave the NPC - the plugin named in its key. An
+            // override can rename it, and SkyPatcher matches filterByEditorIdContains against this
+            // original one (its NPC EditorIDs come from powerofthree's Tweaks, which keeps the first;
+            // measured 2026-10-31: 43 Bandit War bandits renamed "OREO_..." over Skyrim.esm were
+            // missed). The rule builder needs it to know what such a filter really reaches.
+            var originalNpcEditorIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
             foreach (var parsed in parsedPlugins)
                 foreach (var npc in parsed.Npcs)
-                    latestNpcByKey[(string)npc.Values[0]] = npc;
+                {
+                    var key = (string)npc.Values[0];
+                    latestNpcByKey[key] = npc;
+
+                    var definingPlugin = key.Split('|')[0];
+                    if (string.Equals(parsed.PluginName, definingPlugin, StringComparison.OrdinalIgnoreCase)
+                        || !originalNpcEditorIds.ContainsKey(key))
+                        originalNpcEditorIds[key] = npc.Values[1] as string ?? "";
+                }
 
             var allNpcs = new List<object[]>();
             var allNpcFactions = new List<object[]>();
@@ -586,7 +604,7 @@ namespace SkyrimCraftingTool.Model
 
             foreach (var kv in latestNpcByKey)
             {
-                allNpcs.Add(kv.Value.Values);
+                allNpcs.Add(kv.Value.Values.Append(originalNpcEditorIds.GetValueOrDefault(kv.Key, "")).ToArray());
 
                 if (!npcFactionsEditedKeys.Contains(kv.Key))
                 {
@@ -869,6 +887,8 @@ namespace SkyrimCraftingTool.Model
             MarkInactiveExcept(connection, transaction, "LeveledList", "Key", latestLeveledListByKey.Keys, extraWhere: "Original = 1");
             MarkInactiveExcept(connection, transaction, "LeveledNpc", "Key", latestLeveledNpcByKey.Keys);
 
+            PurgeOwnOutputRecipes(connection, transaction);
+
             PerfLog.Record("Scan, item DB: mark records no plugin defines any more inactive", phase);
 
             writeSw.Stop();
@@ -1092,6 +1112,26 @@ namespace SkyrimCraftingTool.Model
         // at the tens-of-thousands-of-keys scale this app's scans run at).
         // internal for the regression test: the casing rule below is invisible in the SQL and cost a
         // record that had just been written (see ScanKeyCasingTests).
+        // The recipes earlier scans read out of the tool's own ESPs, before the scan skipped them. Not
+        // marked inactive but deleted: they are copies of the user's own recipes (Original=0 under
+        // SkyrimCraftingTool.esp), not records a plugin might bring back - and a preset that had
+        // edited one would keep it in "only edited" and in the patch. Original = 1 only, so the
+        // user's own recipes, which share the prefix, are never touched. After the first scan with
+        // the filter there is nothing left to find; measured before it: 2.442 rows, 757 edited.
+        // Recipes only - no other table held a row from the own output.
+        internal static int PurgeOwnOutputRecipes(SqliteConnection connection, SqliteTransaction transaction)
+        {
+            const string ownRows = "SELECT Key FROM COBJ WHERE Original = 1 AND Key LIKE '" + KeyFactory.OwnOutputPrefix + "%'";
+
+            using var cmd = connection.CreateCommand();
+            cmd.Transaction = transaction;
+            cmd.CommandText =
+                $"DELETE FROM COBJ_Conditions WHERE COBJKey IN ({ownRows}); " +
+                $"DELETE FROM COBJ_Conditions_Original WHERE COBJKey IN ({ownRows}); " +
+                $"DELETE FROM COBJ WHERE Key IN ({ownRows});";
+            return cmd.ExecuteNonQuery();
+        }
+
         internal static void MarkInactiveExcept(SqliteConnection connection, SqliteTransaction transaction, string table, string keyColumn, IEnumerable<string> scannedKeys, string extraWhere = null)
         {
             var keys = scannedKeys.Distinct().ToList();
@@ -1243,9 +1283,9 @@ namespace SkyrimCraftingTool.Model
         }
 
         private static readonly string[] ArmorParamNames =
-            { "@key", "@editorID", "@name", "@weight", "@val", "@armorRating", "@slotMask", "@armorType", "@keywords", "@objectEffect", "@enchantAmount" };
+            { "@key", "@editorID", "@name", "@weight", "@val", "@armorRating", "@slotMask", "@armorType", "@keywords", "@objectEffect", "@enchantAmount", "@templateKey" };
         private static readonly string[] WeaponParamNames =
-            { "@key", "@editorID", "@name", "@weight", "@val", "@dmg", "@speed", "@reach", "@stagger", "@keywords", "@objectEffect", "@enchantAmount", "@critDamage", "@critPercentMult" };
+            { "@key", "@editorID", "@name", "@weight", "@val", "@dmg", "@speed", "@reach", "@stagger", "@keywords", "@objectEffect", "@enchantAmount", "@critDamage", "@critPercentMult", "@templateKey" };
         private static readonly string[] WorldItemParamNames =
             { "@key", "@editorID", "@name", "@kind" };
         private static readonly string[] ArmorAddonParamNames = { "@key", "@editorID" };
@@ -1254,7 +1294,7 @@ namespace SkyrimCraftingTool.Model
         private static readonly string[] CobjParamNames =
             { "@key", "@name", "@createdItem", "@createdCount", "@workbench", "@ingredients" };
         private static readonly string[] CobjConditionParamNames =
-            { "@cobjKey", "@extra", "@runOn", "@type", "@target", "@value", "@op", "@flags" };
+            { "@cobjKey", "@extra", "@runOn", "@type", "@target", "@value", "@op", "@flags", "@runOnRef" };
         private static readonly string[] EnchantmentParamNames =
             { "@key", "@editorID", "@name", "@cast", "@target", "@cost", "@wrestr", "@baseEnch",
               "@enchType", "@flags", "@chargeTime", "@enchAmount" };
@@ -1280,6 +1320,7 @@ namespace SkyrimCraftingTool.Model
             "@weight", "@height",
             "@aggression", "@confidence", "@assistance", "@morality", "@mood", "@energy",
             "@keywords",
+            "@originalEditorID",   // appended in the merge, not by the parser - see originalNpcEditorIds
         };
 
         private static readonly string[] NpcColumnNames =
@@ -1292,6 +1333,7 @@ namespace SkyrimCraftingTool.Model
             "Weight", "Height",
             "Aggression", "Confidence", "Assistance", "Morality", "Mood", "EnergyLevel",
             "Keywords",
+            "OriginalEditorID",
         };
 
         private static readonly string[] NpcFactionParamNames = { "@npcKey", "@factionKey", "@rank" };
@@ -1314,8 +1356,8 @@ namespace SkyrimCraftingTool.Model
         // added - they are no longer just "key, editorID, name".
         private static readonly string[] ClassParamNames = { "@key", "@editorID", "@name", "@hw", "@mw", "@sw" };
         private static readonly string[] ClassColumnNames = { "Key", "EditorID", "Name", "HealthWeight", "MagickaWeight", "StaminaWeight" };
-        private static readonly string[] RaceParamNames = { "@key", "@editorID", "@name", "@sh", "@sm", "@ss" };
-        private static readonly string[] RaceColumnNames = { "Key", "EditorID", "Name", "StartingHealth", "StartingMagicka", "StartingStamina" };
+        private static readonly string[] RaceParamNames = { "@key", "@editorID", "@name", "@sh", "@sm", "@ss", "@kw", "@flags" };
+        private static readonly string[] RaceColumnNames = { "Key", "EditorID", "Name", "StartingHealth", "StartingMagicka", "StartingStamina", "Keywords", "Flags" };
         private static readonly string[] ClassSkillParamNames = { "@classKey", "@skill", "@weight" };
         private static readonly string[] ClassSkillColumnNames = { "ClassKey", "Skill", "Weight" };
         private static readonly string[] RaceBoostParamNames = { "@raceKey", "@skill", "@boost" };
@@ -1333,9 +1375,9 @@ namespace SkyrimCraftingTool.Model
         // param names (stripping "@") is wrong wherever they differ and was the cause of the
         // "table Armor has no column named val" crash.
         internal static readonly string[] ArmorColumnNames =
-            { "Key", "EditorID", "Name", "Weight", "Value", "ArmorRating", "BodySlotMask", "ArmorType", "Keywords", "ObjectEffectKey", "EnchantAmount" };
+            { "Key", "EditorID", "Name", "Weight", "Value", "ArmorRating", "BodySlotMask", "ArmorType", "Keywords", "ObjectEffectKey", "EnchantAmount", "TemplateKey" };
         internal static readonly string[] WeaponColumnNames =
-            { "Key", "EditorID", "Name", "Weight", "Value", "Damage", "Speed", "Reach", "Stagger", "Keywords", "ObjectEffectKey", "EnchantAmount", "CritDamage", "CritPercentMult" };
+            { "Key", "EditorID", "Name", "Weight", "Value", "Damage", "Speed", "Reach", "Stagger", "Keywords", "ObjectEffectKey", "EnchantAmount", "CritDamage", "CritPercentMult", "TemplateKey" };
         internal static readonly string[] WorldItemColumnNames =
             { "Key", "EditorID", "Name", "Kind" };
         internal static readonly string[] ArmorAddonColumnNames = { "Key", "EditorID" };
@@ -1344,7 +1386,7 @@ namespace SkyrimCraftingTool.Model
         internal static readonly string[] CobjColumnNames =
             { "Key", "Name", "CreatedItem", "CreatedObjectCount", "WorkbenchKeyword", "Ingredients" };
         private static readonly string[] CobjConditionColumnNames =
-            { "COBJKey", "Extra", "RunOn", "ConditionType", "Target", "Value", "CompareOperator", "Flags" };
+            { "COBJKey", "Extra", "RunOn", "ConditionType", "Target", "Value", "CompareOperator", "Flags", "RunOnRef" };
         internal static readonly string[] EnchantmentColumnNames =
             { "Key", "EditorID", "Name", "CastType", "TargetType", "EnchantmentCost", "WornRestrictionListKey", "BaseEnchantmentKey",
               "EnchantType", "Flags", "ChargeTime", "EnchantmentAmount" };
@@ -1670,7 +1712,10 @@ namespace SkyrimCraftingTool.Model
                     armor.ObjectEffect.FormKey.IsNull ? "" : KeyFactory.BuildMasterKey(armor.ObjectEffect.FormKey),
                     // EAMT: the record's own charge pool, needed for a maximum charge alongside the
                     // enchantment link. Absent on every unenchanted record, which reads as 0.
-                    (int)(armor.EnchantmentAmount ?? 0)
+                    (int)(armor.EnchantmentAmount ?? 0),
+                    // TNAM: the armor this one was made from - Thaumaturgy and vanilla build every
+                    // enchanted variant on its plain piece this way. Empty when there is none.
+                    armor.TemplateArmor.FormKey.IsNull ? "" : KeyFactory.BuildMasterKey(armor.TemplateArmor.FormKey)
                 });
 
                 // The armature links, in order. Ordinal is the list position and nothing else - it
@@ -1725,7 +1770,9 @@ namespace SkyrimCraftingTool.Model
                     // Checked against Skyrim.esm 2026-10-23: every weapon has CRDT, Iron Sword 3,
                     // Daedric Sword 7 - Mutagen reads it as the game does.
                     (int)(weap.Critical?.Damage ?? 0),
-                    weap.Critical?.PercentMult ?? 0f
+                    weap.Critical?.PercentMult ?? 0f,
+                    // CNAM: the weapon this one was made from - see the armor's TNAM above.
+                    weap.Template.FormKey.IsNull ? "" : KeyFactory.BuildMasterKey(weap.Template.FormKey)
                 });
 
                 // The easy case: WEAP carries its own MODL, no addon hop. 2.466 of 2.484 vanilla
@@ -1795,8 +1842,10 @@ namespace SkyrimCraftingTool.Model
                 // --------------------------------
                 // Conditions → COBJ_Conditions
                 // --------------------------------
+                int position = -1;
                 foreach (var cond in cobj.Conditions)
                 {
+                    position++;   // before any `continue`: it is the index in the RECORD
                     // ConditionFloat compares against a fixed float value, ConditionGlobal compares
                     // against a Global. Both get produced by ESP/ESL/ESM files, so we need to read
                     // both. When reading from plugin files, Mutagen returns overlay types (e.g.
@@ -1833,6 +1882,13 @@ namespace SkyrimCraftingTool.Model
                     string runOn = data.RunOnType.ToString();
                     string extra = "";
 
+                    // Which reference a Reference condition runs on - PlayerRef for 96% of them.
+                    // Without it a rebuilt condition points at nothing, so CobjEspBuilder had to
+                    // refuse every recipe holding one (1,918 on the real modlist).
+                    string runOnRef = "";
+                    if (data.RunOnType == Condition.RunOnType.Reference && !data.Reference.FormKey.IsNull)
+                        runOnRef = KeyFactory.BuildMasterKey(data.Reference.FormKey);
+
                     // Single-FormLink parameter, shared by most of the types below.
                     static string LinkKey<T>(IFormLinkOrIndexGetter<T> link)
                         where T : class, Mutagen.Bethesda.Plugins.Records.IMajorRecordGetter
@@ -1844,7 +1900,7 @@ namespace SkyrimCraftingTool.Model
 
                     void Add(string type, string target, string value) =>
                         parsedCobj.ConditionRows.Add(new object[]
-                            { key, extra, runOn, type, target, value, op, flags });
+                            { key, extra, runOn, type, target, value, op, flags, runOnRef });
 
                     // ---- editable types (each has a ViewModel + XAML template) ----
 
@@ -1875,6 +1931,14 @@ namespace SkyrimCraftingTool.Model
                     if (data is IGetStageDoneConditionDataGetter stageData)
                     {
                         Add("GetStageDone", LinkKey(stageData.Quest), stageData.Stage.ToString());
+                        continue;
+                    }
+
+                    // The quest's current stage compared against the value (editable since 2026-10-24;
+                    // 227 on the real modlist across 23 plugins, mostly ">= 20" style unlock gates).
+                    if (data is IGetStageConditionDataGetter stage)
+                    {
+                        Add("GetStage", LinkKey(stage.Quest), comparisonValue);
                         continue;
                     }
 
@@ -1938,11 +2002,13 @@ namespace SkyrimCraftingTool.Model
                     // ---- anything else ----
                     //
                     // Recorded rather than silently discarded, so the UI can show that the recipe
-                    // has conditions the tool doesn't understand and CobjEspBuilder knows never to
-                    // rewrite this recipe's condition list. Only the function name survives.
-                    var fn = data.GetType().Name
-                        .Replace("ConditionDataBinaryOverlay", "")
-                        .Replace("ConditionData", "");
+                    // has conditions the tool doesn't understand. Only the function name survives.
+                    // The row doubles as a placeholder: CobjEspBuilder swaps the original back in at
+                    // this position when it rewrites the list (docs/Conditions-Plan.md, C1).
+                    var fn = ConditionCatalog.FunctionNameOf(data.GetType());
+                    // Its position goes into Extra, so the builder finds the right original even after
+                    // other placeholders were deleted (ConditionCatalog.TryGetPlaceholderPosition).
+                    extra = position.ToString(CultureInfo.InvariantCulture);
                     Add(ConditionCatalog.UnsupportedPrefix + fn, "", comparisonValue);
                 }
 
@@ -2451,6 +2517,9 @@ namespace SkyrimCraftingTool.Model
                     Starting(race, BasicStat.Health),
                     Starting(race, BasicStat.Magicka),
                     Starting(race, BasicStat.Stamina),
+                    string.Join(",", (race.Keywords ?? Array.Empty<IFormLinkGetter<IKeywordGetter>>())
+                        .Select(k => KeyFactory.BuildMasterKey(k.FormKey))),
+                    (long)(ulong)race.Flags,
                 });
 
                 // Seven fixed slots in the record rather than a list, most of them empty. A boost of

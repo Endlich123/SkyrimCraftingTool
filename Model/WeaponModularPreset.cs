@@ -80,6 +80,12 @@ namespace SkyrimCraftingTool.Model
         // WeapMaterial*, Plugin|FormID. Empty = no material keyword.
         public string MaterialKeyword { get; set; } = "";
 
+        // A second keyword the weapon must ALSO carry for the keyword match - empty = none. For a mod
+        // with two tiers under one material keyword: Lunar Armory gives every weapon
+        // PI_WeapMaterialLunar, the honed tier additionally WeapMaterialDraugrHoned (2026-10-29).
+        // "Lunar Honed" requires that one and stands above "Lunar" in the list.
+        public string RequiredKeyword { get; set; } = "";
+
         // Fallback recognition when the item carries no material keyword (see NameMatcher).
         public string NamePatterns { get; set; } = "";
         public string NameExclusions { get; set; } = "";

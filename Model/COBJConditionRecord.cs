@@ -41,6 +41,12 @@ namespace SkyrimCraftingTool.Model
         // PackageData, EventData. The editable types only ever produce Subject/Target.
         public string RunOn { get; set; } = "";
 
+        // RunOnRef: Plugin|FormID of the placed reference when RunOn is Reference, "" otherwise.
+        // Measured 2026-10-24 across the modlist: 96% of them are PlayerRef (Skyrim.esm|000014).
+        // Before this column the scan dropped it, so every recipe holding a Reference condition
+        // (1,918 of them) could not have its conditions rewritten. See docs/Conditions-Plan.md, C2.
+        public string RunOnRef { get; set; } = "";
+
         // CompareOperator: EqualTo, NotEqualTo, GreaterThan, GreaterThanOrEqualTo, LessThan,
         // LessThanOrEqualTo. Empty on rows written before this column existed - the ESP builder then
         // falls back to the old per-type guess, which measured exact against the vanilla masters.

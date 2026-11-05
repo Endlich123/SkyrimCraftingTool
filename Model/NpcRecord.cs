@@ -14,6 +14,19 @@ namespace SkyrimCraftingTool.Model
         public string Name { get; set; } = "";
         public string ShortName { get; set; } = "";
 
+        // The EditorID the defining plugin gave the NPC, before any override renamed it. SkyPatcher's
+        // EditorID filters match this one, not EditorID (measured 2026-10-31). Empty before the
+        // first scan that reads it - then EditorID is the best guess there is.
+        public string OriginalEditorID { get; set; } = "";
+
+        // The EditorID SkyPatcher sees.
+        public string SkyPatcherEditorID => string.IsNullOrEmpty(OriginalEditorID) ? EditorID : OriginalEditorID;
+
+        // An override renamed it - worth showing, because a filter on the visible name may miss it.
+        public bool IsEditorIdRenamed =>
+            !string.IsNullOrEmpty(OriginalEditorID)
+            && !string.Equals(OriginalEditorID, EditorID, System.StringComparison.OrdinalIgnoreCase);
+
         // The two tree levels below the plugin. Every NPC has exactly one class - measured on the
         // real load order, none is without - which is what lets Plugin -> Class -> NPC hold every
         // NPC exactly once (NPC-Plan.md §8).

@@ -117,6 +117,17 @@ namespace SkyrimCraftingTool.Model
     {
         public const string Direct = "direct";
         public const string Span = "span";
+
+        // "health=150~250" with NO levelRange: each NPC draws its own whole number between the two.
+        // Needs SkyPatcher 8.0.1. Measured 2026-11-04: 445 NPCs, all in range, 100 different values.
+        // Drawn anew at every game start: 0 of 192 NPCs kept their value between two launches.
+        // A span writes the same text and adds levelRange, which makes the value follow the level.
+        public const string Random = "random";
+
+        // The numbers go on top of what the game calculates from the NPC's level, so the stat grows with
+        // the player. AutoCalc stays on, see NpcGroupRuleBuilder.BuildOperations.
+        public const string Follow = "follow";
+
         public const string Mult = "mult";
         public const string Calc = "calc";
 

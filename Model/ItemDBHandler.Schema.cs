@@ -47,6 +47,10 @@ namespace SkyrimCraftingTool.Model
             AddColumnIfMissing(connection, "COBJ_Conditions", "Flags", "TEXT");
             AddColumnIfMissing(connection, "COBJ_Conditions_Original", "CompareOperator", "TEXT");
             AddColumnIfMissing(connection, "COBJ_Conditions_Original", "Flags", "TEXT");
+            // Empty on rows scanned before it existed; CobjEspBuilder treats such a Reference row
+            // as stale and keeps the original conditions (docs/Conditions-Plan.md, C2).
+            AddColumnIfMissing(connection, "COBJ_Conditions", "RunOnRef", "TEXT");
+            AddColumnIfMissing(connection, "COBJ_Conditions_Original", "RunOnRef", "TEXT");
             AddColumnIfMissing(connection, "Enchantments", "Active", "INTEGER NOT NULL DEFAULT 1");
             AddColumnIfMissing(connection, "Enchantments", "EffectsEdited", "INTEGER NOT NULL DEFAULT 0");
             AddColumnIfMissing(connection, "Enchantments", "KeywordsEdited", "INTEGER NOT NULL DEFAULT 0");
@@ -128,6 +132,12 @@ namespace SkyrimCraftingTool.Model
                 AddColumnIfMissing(connection, table, "IsEditedEnchantAmount", "INTEGER");
             }
 
+            // The armor an enchanted variant was made from (TNAM, "Template Armor"), 2026-10-25 - the
+            // armor counterpart of an enchantment's base. Scanned only, never edited, so no shadow
+            // column. NULL on an existing database until the next scan fills it.
+            AddColumnIfMissing(connection, "Armor", "TemplateKey", "TEXT");
+            AddColumnIfMissing(connection, "Weapons", "TemplateKey", "TEXT");   // CNAM, the same for weapons (2026-10-26)
+
             // Critical damage (CRDT), 2026-10-23. NULL on an existing database until the next scan
             // fills it - reads as 0, and an unedited 0 writes nothing to the patch.
             AddColumnIfMissing(connection, "Weapons", "CritDamage", "INTEGER");
@@ -145,6 +155,10 @@ namespace SkyrimCraftingTool.Model
             AddColumnIfMissing(connection, "Npc", "IsEditedCombatStyleKey", "TEXT");
             AddColumnIfMissing(connection, "Npc", "IsEditedCrimeFactionKey", "TEXT");
 
+            // The EditorID of the defining plugin, which SkyPatcher's EditorID filters match against
+            // (2026-10-31). Empty until the next scan fills it.
+            AddColumnIfMissing(connection, "Npc", "OriginalEditorID", "TEXT");
+
             // The AutoCalc inputs, added after Classes and Races had shipped as name catalogues.
             // Stay NULL on an existing database until the next scan - the scan is the only writer.
             AddColumnIfMissing(connection, "Classes", "HealthWeight", "INTEGER");
@@ -153,6 +167,11 @@ namespace SkyrimCraftingTool.Model
             AddColumnIfMissing(connection, "Races", "StartingHealth", "REAL");
             AddColumnIfMissing(connection, "Races", "StartingMagicka", "REAL");
             AddColumnIfMissing(connection, "Races", "StartingStamina", "REAL");
+
+            // The race's keywords (ActorTypeNPC ...) and flags (Child ...), scanned with the race. NULL until
+            // the next scan.
+            AddColumnIfMissing(connection, "Races", "Keywords", "TEXT");
+            AddColumnIfMissing(connection, "Races", "Flags", "INTEGER");
 
             // Who wrote a filter line. Empty for every line that existed before this column did, which
             // is the right answer: they were all written by hand or by the seeder, and the auto-check
@@ -626,6 +645,7 @@ namespace SkyrimCraftingTool.Model
                     ContainerString TEXT,
                     ObjectEffectKey TEXT,
                     EnchantAmount INTEGER,
+                    TemplateKey TEXT,
 
                     IsEditedName Text,
                     IsEditedWeight REAL,
@@ -660,6 +680,7 @@ namespace SkyrimCraftingTool.Model
                     EnchantAmount INTEGER,
                     CritDamage INTEGER,
                     CritPercentMult REAL,
+                    TemplateKey TEXT,
 
                     IsEditedName Text,
                     IsEditedWeight REAL,
@@ -753,6 +774,10 @@ namespace SkyrimCraftingTool.Model
                     CompareOperator TEXT,
                     Flags TEXT,
 
+                    -- Plugin|FormID of the reference a RunOn = Reference condition runs on
+                    -- (PlayerRef for 96% of them). Empty for every other RunOn.
+                    RunOnRef TEXT,
+
                     IsEditedTarget TEXT,
                     IsEditedValue TEXT,
                     IsEditedExtra TEXT,
@@ -776,7 +801,8 @@ namespace SkyrimCraftingTool.Model
                     Extra TEXT,
                     RunOn TEXT,
                     CompareOperator TEXT,
-                    Flags TEXT
+                    Flags TEXT,
+                    RunOnRef TEXT
                 );
 
                 -- Every read, save and reset of ONE recipe's conditions goes by COBJKey. Without these
@@ -1188,6 +1214,10 @@ namespace SkyrimCraftingTool.Model
                     Name TEXT,
                     ShortName TEXT,
 
+                    -- The EditorID of the plugin that defines the NPC; an override may have renamed
+                    -- it, and SkyPatcher's EditorID filters still see this one.
+                    OriginalEditorID TEXT,
+
                     -- Tree levels. Every NPC has exactly one class (measured: 0 without), which is
                     -- what makes Plugin -> Class -> NPC a tree with no duplicates and no catch-all
                     -- node - see NPC-Plan.md section 8.
@@ -1403,6 +1433,8 @@ namespace SkyrimCraftingTool.Model
                     StartingHealth REAL,
                     StartingMagicka REAL,
                     StartingStamina REAL,
+                    Keywords TEXT,
+                    Flags INTEGER,
                     Active INTEGER NOT NULL DEFAULT 1
                 );
 
