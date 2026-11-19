@@ -1,0 +1,51 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:model="clr-namespace:SkyrimCraftingTool.Model">
+
+    <!-- ONE ROW LOOK FOR THE RECORD PICKERS (2026-11-07).
+
+         The EditorID as before, the group grey after it - the skill tree of a perk ("MAG_Armorer  ·
+         Smithing"), the kind of a material ("IngotIron  · Misc") - and a tooltip with game name, group,
+         key and the in-game description (FormIDRecord.Group / FullName / Description). A keyword has
+         none of these, so its row looks as it did and its tooltip is the key alone.
+
+         IN AN EDITABLE COMBOBOX, SET TextSearch.TextPath="Name" NEXT TO THIS TEMPLATE. With an
+         ItemTemplate WPF cannot take the edit box's text from DisplayMemberPath (the two exclude each
+         other); without TextPath it falls back to ToString(), which happens to be Name for FormIDRecord
+         but is not something to lean on.
+
+         The tooltip is a plain string on purpose: the implicit ToolTip style in Controls.xaml wraps
+         long strings, and a <ToolTip> element here would need InfoTooltipStyle named on it
+         (TooltipStyleTests). -->
+
+    <DataTemplate x:Key="RecordChoiceTemplate" DataType="{x:Type model:FormIDRecord}">
+        <StackPanel Orientation="Horizontal" Background="Transparent"
+                    ToolTip="{Binding ToolTipText, Mode=OneWay}">
+            <TextBlock Text="{Binding Name, Mode=OneWay}"/>
+            <TextBlock Text="{Binding Suffix, Mode=OneWay}"
+                       Foreground="{DynamicResource ColorTextTertiary}"/>
+        </StackPanel>
+    </DataTemplate>
+
+    <!-- The same for the Spells tab's half-cost perk picker, whose entries are PerkChoice (they carry
+         "(none)" and show "Name (EditorID)"). Pair with TextSearch.TextPath="Display". -->
+    <DataTemplate x:Key="PerkChoiceTemplate" DataType="{x:Type model:PerkChoice}">
+        <StackPanel Orientation="Horizontal" Background="Transparent"
+                    ToolTip="{Binding ToolTipText, Mode=OneWay}">
+            <TextBlock Text="{Binding Display, Mode=OneWay}"/>
+            <TextBlock Text="{Binding SkillSuffix, Mode=OneWay}"
+                       Foreground="{DynamicResource ColorTextTertiary}"/>
+        </StackPanel>
+    </DataTemplate>
+
+    <!-- The Enchantment tab's magic-effect picker: "EditorID | Name  · ConstantEffect/Self".
+         Pair with TextSearch.TextPath="Label". -->
+    <DataTemplate x:Key="MagicEffectChoiceTemplate" DataType="{x:Type model:MagicEffectsRecords}">
+        <StackPanel Orientation="Horizontal" Background="Transparent"
+                    ToolTip="{Binding ToolTipText, Mode=OneWay}">
+            <TextBlock Text="{Binding Label, Mode=OneWay}"/>
+            <TextBlock Text="{Binding Suffix, Mode=OneWay}"
+                       Foreground="{DynamicResource ColorTextTertiary}"/>
+        </StackPanel>
+    </DataTemplate>
+</ResourceDictionary>

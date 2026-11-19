@@ -2,16 +2,6 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:model="clr-namespace:SkyrimCraftingTool.Model">
 
-    <!-- WHAT A LEVELED LIST DOES, and what that means for one object in it.
-         Hosted by a LeveledListEditorVM, and shown in TWO places: the leveled-list window, where it
-         has always been, and the contents pane of the Container/LeveledList tab, which is where
-         someone reads a list without having come through an item. Shared the way the container
-         placement panel is - one host, one piece of markup, no second copy to drift.
-
-         THE TWO HALVES BELONG NEXT TO EACH OTHER. Left: properties of the whole list, which change
-         the odds for every mod feeding it. Right: what those odds actually are, recomputed on every
-         change. The calculator sits here rather than in the dry-run on the user's own reasoning: by
-         the time it shows up in the dry-run it is too late. -->
     <DataTemplate x:Key="LeveledListPropertiesPanel">
         <Grid Margin="0,0,0,10">
             <Grid.ColumnDefinitions>

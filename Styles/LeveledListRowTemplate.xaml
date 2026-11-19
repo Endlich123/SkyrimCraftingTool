@@ -76,8 +76,6 @@
                            Foreground="{DynamicResource ColorWarning}"/>
             </Border>
 
-            <!-- Not one of this container's own lists: a list further down that the user placed into
-                 from the list window. Said on the row, or it would look like the container holds it. -->
             <Border Margin="0,0,8,0"
                     Padding="5,1"
                     CornerRadius="3"

@@ -1,6 +1,7 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:local="clr-namespace:SkyrimCraftingTool.ViewModel">
+                    xmlns:local="clr-namespace:SkyrimCraftingTool.ViewModel"
+                    xmlns:views="clr-namespace:SkyrimCraftingTool.View">
 
     <!-- The build box (BuildBoxVM): one template for the item, the multi-selection and the plugin
          view, so the three cannot drift apart. The slot row only exists on a single item. -->
@@ -57,7 +58,7 @@
                             <TextBlock Text="Slots:" Style="{StaticResource ItemLabelStyle}" Margin="0,0,8,0"/>
                             <TextBlock Text="{Binding SlotSummary, Mode=OneWay}" VerticalAlignment="Center" TextWrapping="Wrap"/>
                         </DockPanel>
-                        <Expander Style="{StaticResource DarkExpanderStyle}" Header="Change slot definitions" IsExpanded="False" Margin="0,4,0,0">
+                        <Expander views:ExpanderState.Key="build.slots" Style="{StaticResource DarkExpanderStyle}" Header="Change slot definitions" IsExpanded="False" Margin="0,4,0,0">
                             <ItemsControl ItemsSource="{Binding SlotChoices}" Margin="0,6,0,0">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>

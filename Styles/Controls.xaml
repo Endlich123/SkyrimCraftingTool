@@ -110,15 +110,6 @@
         <Setter Property="FontSize" Value="11"/>
     </Style>
 
-    <!-- An identifier the user reads and copies, and must never edit: an EditorID, a key, a COBJ
-         origin.
-         DISABLED IS NOT READ-ONLY, and that was the bug. These were IsEnabled="False", which greys
-         the box AND takes it out of the focus order - so the text could not be clicked into, could
-         not be selected, and could not be copied. For a FormID that is about to be typed into xEdit
-         or a SkyPatcher rule by hand, that is the one thing it is there for.
-         IsReadOnly keeps every keystroke out while leaving the text selectable. The caret is hidden
-         and the box stays out of the tab order so it still reads as "not a field you fill in", and
-         the muted foreground keeps the greyed look it had. -->
     <Style x:Key="CopyableIdentifierStyle" TargetType="TextBox" BasedOn="{StaticResource ItemTextBoxStyle}">
         <Setter Property="IsReadOnly" Value="True"/>
         <Setter Property="IsReadOnlyCaretVisible" Value="False"/>
@@ -272,6 +263,77 @@
     <!--      COMBOBOX         -->
     <!-- ===================== -->
 
+    <!-- Its own instance: Converters.xaml is merged after this dictionary, so its BoolToVis is not
+         reachable from here by StaticResource. -->
+    <BooleanToVisibilityConverter x:Key="PickerBoolToVis"/>
+
+    <!-- One filter chip in a picker's dropdown (ViewModel.PickerChip). Not focusable on purpose: the
+         editable ComboBox closes its dropdown when it loses keyboard focus, so a chip that took focus
+         would close the list it is meant to filter. -->
+    <Style x:Key="PickerChipStyle" TargetType="ToggleButton">
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Margin" Value="0,0,4,3"/>
+        <Setter Property="Padding" Value="7,1"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Foreground" Value="{DynamicResource ColorTextSecondary}"/>
+        <Setter Property="Background" Value="{DynamicResource ColorBackgroundPanel}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource ColorBorder}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="chip"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="9"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="chip" Property="BorderBrush" Value="{DynamicResource ColorBorderLight}"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="chip" Property="Background" Value="{DynamicResource ColorAccent}"/>
+                            <Setter TargetName="chip" Property="BorderBrush" Value="{DynamicResource ColorAccentLight}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource ColorTextPrimary}"/>
+                        </Trigger>
+                        <!-- "Not these" (right-click, PickerChip.IsExcluded). -->
+                        <DataTrigger Binding="{Binding IsExcluded}" Value="True">
+                            <Setter TargetName="chip" Property="BorderBrush" Value="{DynamicResource ColorWarning}"/>
+                        </DataTrigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- One chip (ViewModel.PickerChip), for every chip bar - the dropdown pickers below and the
+         record pickers of the building-block editor. Left click: only these. Right click: hide them,
+         drawn struck through with a warning border. -->
+    <DataTemplate x:Key="PickerChipTemplate">
+        <ToggleButton Style="{StaticResource PickerChipStyle}"
+                      ToolTip="{Binding ToolTip, Mode=OneWay}"
+                      IsChecked="{Binding IsActive, Mode=TwoWay}">
+            <ToggleButton.InputBindings>
+                <MouseBinding Gesture="RightClick" Command="{Binding ToggleExcludedCommand}"/>
+            </ToggleButton.InputBindings>
+            <TextBlock Text="{Binding Label, Mode=OneWay}">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsExcluded}" Value="True">
+                                <Setter Property="TextDecorations" Value="Strikethrough"/>
+                                <Setter Property="Opacity" Value="0.7"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </ToggleButton>
+    </DataTemplate>
+
     <Style x:Key="ItemComboBoxStyle" TargetType="ComboBox">
         <Setter Property="Background" Value="{DynamicResource ColorBackgroundControl}"/>
         <Setter Property="Foreground" Value="{DynamicResource ColorTextPrimary}"/>
@@ -369,19 +431,61 @@
                            AllowsTransparency="True">
                             <Border Background="{DynamicResource ColorBackgroundControl}"
                                 BorderBrush="{DynamicResource ColorBorder}"
-                                BorderThickness="1">
-                                <!-- CanContentScroll: without it the ScrollViewer scrolls by pixel, which turns
-                                     virtualisation off again. MaxHeight: the stock ComboBox template binds
-                                     MaxDropDownHeight, this one had dropped it. -->
-                                <ScrollViewer CanContentScroll="True"
-                                              MaxHeight="{TemplateBinding MaxDropDownHeight}">
-                                    <ItemsPresenter/>
-                                </ScrollViewer>
+                                BorderThickness="1"
+                                MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
+                                <DockPanel>
+                                    <!-- FILTER CHIPS (2026-11-07). Only on a box that carries a
+                                         model:PickerChips.Filter with at least two groups - the skill
+                                         trees of the perks, the kinds of the materials. Every other
+                                         box using this style keeps its plain dropdown. MaxWidth makes
+                                         the chips wrap instead of widening the dropdown to one row.
+
+                                         DataContext is the PickerFilter, set by PickerChips from code
+                                         (see there for why not a binding); null on a box without one,
+                                         and then every binding below falls back to Collapsed. -->
+                                    <Border x:Name="ChipBar"
+                                            DockPanel.Dock="Top"
+                                            DataContext="{x:Null}"
+                                            Visibility="{Binding HasChips, Converter={StaticResource PickerBoolToVis}, FallbackValue=Collapsed}"
+                                            BorderBrush="{DynamicResource ColorDivider}"
+                                            BorderThickness="0,0,0,1"
+                                            Padding="5,5,5,2">
+                                        <DockPanel MaxWidth="440">
+                                            <Button x:Name="ChipClear"
+                                                    DockPanel.Dock="Right"
+                                                    Content="✕"
+                                                    Focusable="False"
+                                                    Visibility="{Binding IsFiltering, Converter={StaticResource PickerBoolToVis}, FallbackValue=Collapsed}"
+                                                    VerticalAlignment="Top"
+                                                    Margin="4,0,0,0"
+                                                    Padding="5,0"
+                                                    Cursor="Hand"
+                                                    Background="Transparent"
+                                                    BorderThickness="0"
+                                                    Foreground="{DynamicResource ColorTextSecondary}"
+                                                    ToolTip="Show every group again"
+                                                    Command="{Binding ClearCommand}"/>
+                                            <ItemsControl ItemsSource="{Binding Chips}" ItemTemplate="{StaticResource PickerChipTemplate}">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <WrapPanel/>
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                            </ItemsControl>
+                                        </DockPanel>
+                                    </Border>
+
+                                    <!-- CanContentScroll: without it the ScrollViewer scrolls by pixel, which turns
+                                         virtualisation off again. MaxHeight: the stock ComboBox template binds
+                                         MaxDropDownHeight, this one had dropped it. -->
+                                    <ScrollViewer CanContentScroll="True"
+                                                  MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                        <ItemsPresenter/>
+                                    </ScrollViewer>
+                                </DockPanel>
                             </Border>
                         </Popup>
                     </Grid>
-                    
-                    
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
@@ -759,10 +863,6 @@
          resource keys differ between them (set via the resource names baked into each style below). -->
     <Style x:Key="ActionButtonStyle" TargetType="Button">
         <Setter Property="Padding" Value="10,4"/>
-        <!-- The gap goes RIGHT, after the button - the rule StandardButtonStyle and the WrapPanels
-             here already follow. It used to be on the left (6,0,0,5), which indented the first
-             button of every row by 6 px against everything below it; the rows that noticed fixed it
-             one by one with a Margin="0,..." of their own (user, 2026-10-12). -->
         <Setter Property="Margin" Value="0,0,6,5"/>
         <Setter Property="Foreground" Value="{DynamicResource ColorTextOnAccent}"/>
         <Setter Property="Background" Value="{DynamicResource ColorAccent}"/>

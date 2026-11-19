@@ -1,6 +1,10 @@
 ﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:local="clr-namespace:SkyrimCraftingTool.ViewModel">
+                    xmlns:local="clr-namespace:SkyrimCraftingTool.ViewModel"
+                    xmlns:model="clr-namespace:SkyrimCraftingTool.Model">
+
+    <!-- Its own instance, so this dictionary does not depend on the merge order of Converters.xaml. -->
+    <model:PickerOptionsConverter x:Key="PickerOptionsConverter"/>
 
     <!-- The "Target" cell of a condition row, one template per condition type.
          Implicit (DataType, no x:Key), so a ContentControl bound to the condition itself picks the
@@ -170,15 +174,28 @@
     </DataTemplate>
 
     <!-- HasPerk -->
+    <!-- The list is the item's perk catalogue (shared by every condition); the skill chips are this
+         condition's own (PerkFilter), applied by PickerOptionsConverter - which also keeps the
+         selected perk in the list, so a chip can never blank the condition. -->
     <DataTemplate DataType="{x:Type local:PerkConditionViewModel}">
-        <ComboBox ItemsSource="{Binding DataContext.FilteredCraftingPerks,
-                                        RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                  SelectedItem="{Binding SelectedPerk}"
+        <ComboBox SelectedItem="{Binding SelectedPerk}"
+                  model:PickerChips.Filter="{Binding PerkFilter}"
                   IsSynchronizedWithCurrentItem="False"
                   BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
                   IsEditable="True"
                   Text="{Binding PerkSearchText}"
-                  Style="{StaticResource ItemComboBoxStyle}"/>
+                  ItemTemplate="{DynamicResource RecordChoiceTemplate}"
+                  TextSearch.TextPath="Name"
+                  Style="{StaticResource ItemComboBoxStyle}">
+            <ComboBox.ItemsSource>
+                <MultiBinding Converter="{StaticResource PickerOptionsConverter}">
+                    <Binding Path="DataContext.FilteredCraftingPerks" RelativeSource="{RelativeSource AncestorType=ItemsControl}"/>
+                    <Binding Path="PerkFilter"/>
+                    <Binding Path="PerkFilter.Version"/>
+                    <Binding Path="SelectedPerk"/>
+                </MultiBinding>
+            </ComboBox.ItemsSource>
+        </ComboBox>
     </DataTemplate>
 
     <!-- GetIsSex -->
@@ -278,6 +295,17 @@
         </DockPanel>
     </DataTemplate>
 
+    <!-- A row of the stage picker (GetStageDone, GetStage): the index, then the first line of the
+         stage's journal text in grey; the whole text as tooltip. The box itself shows only the index
+         (TextSearch.TextPath="Index" on the ComboBox), so picking a row writes a plain number. -->
+    <DataTemplate x:Key="QuestStageItemTemplate" DataType="{x:Type model:QuestStageOption}">
+        <StackPanel Orientation="Horizontal" Background="Transparent" ToolTip="{Binding ToolTipText}">
+            <TextBlock Text="{Binding Index}" MinWidth="28"/>
+            <TextBlock Text="{Binding Label}" Margin="8,0,0,0"
+                       Foreground="{DynamicResource ColorTextMuted}"/>
+        </StackPanel>
+    </DataTemplate>
+
     <!-- GetStageDone -->
     <DataTemplate DataType="{x:Type local:QuestStageConditionViewModel}">
         <Grid>
@@ -297,9 +325,12 @@
             <ComboBox Grid.Column="1"
                       IsEditable="True"
                       IsSynchronizedWithCurrentItem="False"
-                      ItemsSource="{Binding AvailableStages}"
-                      Text="{Binding Stage, UpdateSourceTrigger=LostFocus}"
-                      ToolTip="Stages defined by the selected quest — or type one."
+                      ItemsSource="{Binding StageOptions}"
+                      ItemTemplate="{StaticResource QuestStageItemTemplate}"
+                      TextSearch.TextPath="Index"
+                      IsTextSearchEnabled="False"
+                      Text="{Binding Stage, UpdateSourceTrigger=PropertyChanged}"
+                      ToolTip="{Binding StageToolTip}"
                       Style="{StaticResource CompactComboBoxStyle}"
                       Margin="0,0,5,5"/>
         </Grid>
@@ -322,23 +353,38 @@
         </Border>
     </DataTemplate>
 
-    <!-- GetStage: the quest's CURRENT stage vs. the Value column ("Quest >= 20"). Same quest picker as
-         GetStageDone; the stage itself is the value, so instead of a stage box the quest's defined
-         stages are shown as a hint. -->
+    <!-- GetStage: the quest's CURRENT stage vs. the Value column ("Quest >= 20"). The function has
+         only the quest as parameter - the stage IS the Value. The stage box is a second way into
+         that Value (StageText), not a field of its own: picking a stage fills the Value box, typing
+         a Value shows here. -->
     <DataTemplate DataType="{x:Type local:QuestCurrentStageConditionViewModel}">
-        <DockPanel>
-            <TextBlock DockPanel.Dock="Right" Text="{Binding StagesHint}"
-                       Margin="6,0,5,5" VerticalAlignment="Center" MaxWidth="160"
-                       TextTrimming="CharacterEllipsis" ToolTip="{Binding StagesHint}"
-                       FontSize="11" Foreground="{DynamicResource ColorTextMuted}"/>
-            <ComboBox ItemsSource="{Binding DataContext.FilteredQuests,
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="80"/>
+            </Grid.ColumnDefinitions>
+
+            <ComboBox Grid.Column="0"
+                      ItemsSource="{Binding DataContext.FilteredQuests,
                                             RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                       SelectedItem="{Binding SelectedQuest}"
                       IsSynchronizedWithCurrentItem="False"
                       BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
                       ToolTip="The quest whose current stage is compared against the Value."
                       Style="{StaticResource ItemComboBoxStyle}"/>
-        </DockPanel>
+
+            <ComboBox Grid.Column="1"
+                      IsEditable="True"
+                      IsSynchronizedWithCurrentItem="False"
+                      ItemsSource="{Binding StageOptions}"
+                      ItemTemplate="{StaticResource QuestStageItemTemplate}"
+                      TextSearch.TextPath="Index"
+                      IsTextSearchEnabled="False"
+                      Text="{Binding StageText, UpdateSourceTrigger=PropertyChanged}"
+                      ToolTip="{Binding StageToolTip}"
+                      Style="{StaticResource CompactComboBoxStyle}"
+                      Margin="0,0,5,5"/>
+        </Grid>
     </DataTemplate>
 
     <!-- GetItemCount. The list is the view model's own Matches - the first hits of what is typed out
