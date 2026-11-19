@@ -45,7 +45,6 @@ namespace SkyrimCraftingTool.Services
         public static readonly TabExportModule Enchantments =
             new("Enchantments", "enchantment", ExportUnits.Enchantments, ExportUnits.WornRestrictionList);
 
-        // TE-3. Scanned spells' field and effect edits, and spells the user created.
         public static readonly TabExportModule Spells =
             new("Spells", "spell", ExportUnits.Spells);
 
@@ -58,10 +57,6 @@ namespace SkyrimCraftingTool.Services
         public static readonly TabExportModule NpcGroups =
             new("NpcGroups", "NPC group", ExportUnits.NpcGroup);
 
-        // TE-6. Everything this tab decides: where items are placed (armor, weapons AND the world
-        // items that have no other tab), list chances, removed and restored entries, and the user's
-        // own lists with where they hang. One module, so an own list and the placements into it
-        // travel - and are matched - together.
         public static readonly TabExportModule Containers =
             new("Containers", "container/list change",
                 ExportUnits.UserLeveledList, ExportUnits.Placement, ExportUnits.LeveledListEdit,
@@ -69,10 +64,6 @@ namespace SkyrimCraftingTool.Services
 
         public static readonly IReadOnlyList<TabExportModule> All = new[] { Items, Enchantments, Spells, Npcs, NpcGroups, Containers };
 
-        // Every unit of every tab - what "Import all" in Settings previews in ONE pass over the files
-        // of all tab folders (user, 2026-10-18: Settings uses the tabs' exports, it is not a second
-        // system). One pass means one ImportKeyMap: an own enchantment that gets a new key on a
-        // collision is remapped for the items and NPCs pointing at it in the same import.
         public static readonly IReadOnlyList<ExportUnit> AllUnits = All.SelectMany(m => m.Units).ToArray();
     }
 }

@@ -74,24 +74,6 @@ namespace SkyrimCraftingTool.Services
         }
     }
 
-    // The name -> bytes half of the mesh index: which archive or loose file a normalised path
-    // resolves to, resolved the way the game resolves it.
-    //
-    // PRIORITY, highest first:
-    //   1. a loose file, from the highest-priority mod that ships one
-    //   2. a BSA entry, from the highest-priority mod that ships one
-    // Loose beats archived outright - that is the engine's own rule, and it is why a replacer mod
-    // that ships no BSA works at all.
-    //
-    // Under MO2 the Data folder is virtual, so "is there a loose file" cannot be answered by looking
-    // at Data alone: the answer is spread over mods\<mod>\meshes\ and decided by modlist.txt
-    // (ModListOrder, top wins). Without a mod list - Vortex, or a hand-built setup - deployment has
-    // already flattened everything into Data and walking Data alone is then the correct answer, not
-    // a fallback.
-    //
-    // Cost, measured on 208 mods / 139 BSAs: 640 ms for 10.645 loose meshes, 289 ms for 28.938 BSA
-    // entries. That is cheap enough to rebuild on every scan, which is why nothing here is cached
-    // between runs - a stale index would answer for a mod the user has since disabled.
     public sealed class MeshLocator
     {
         // Value is the label that goes into the database AND what is needed to open the file.
@@ -248,8 +230,6 @@ namespace SkyrimCraftingTool.Services
             }
             catch (Exception ex)
             {
-                // A mod folder that vanished mid-walk, or one the user has no rights to. The index is
-                // allowed to be incomplete; it is not allowed to stop a scan.
                 AppLogger.LogWarning($"Mesh index: loose walk of {label}\\{folderName} failed ({ex.Message})");
             }
         }

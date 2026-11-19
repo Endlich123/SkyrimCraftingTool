@@ -39,7 +39,7 @@ namespace SkyrimCraftingTool.Services
         void SaveEnchantmentWornRestrictionKeywords(string listKey, List<string> keywordKeys);
 
         // Reset: pristine (pre-edit) Name/Cost + clearing their shadow columns
-        EnchantmentRecord GetOriginalEnchantment(string key);
+        EnchantmentRecord? GetOriginalEnchantment(string key);
         void ResetEnchantmentEdits(string key);
 
         // Reset: Effects / Worn Restriction Keywords (lazy _Original snapshot tables - see
@@ -49,8 +49,6 @@ namespace SkyrimCraftingTool.Services
         List<string> GetOriginalWornRestrictionKeywords(string listKey);
         void ResetWornRestrictionKeywords(string listKey);
 
-        // Create / delete an enchantment of the user's own (Enchantments.Original = 0). It lives
-        // under the tool's pseudo-plugin until the generated ESP gives it a real home.
         EnchantmentRecord CreateEnchantment(string editorId, string name);
         bool DeleteEnchantment(string key);
     }

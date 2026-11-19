@@ -32,13 +32,6 @@ namespace SkyrimCraftingTool.Services
         public static string GetLegacyItemFilePath(string key, string displayName)
             => Path.Combine(ExportsRoot, RelativeItemPath(key, displayName));
 
-        // EVERY part is sanitized, the one after the '|' included. For records that part is a FormID
-        // and harmless, but not every unit's key is "Plugin|FormID": an NPC group is "auto|<seed>"
-        // or "user|<name>", and seeds look like "tier:OREO_EncBandit06". Unsanitized, the ':' made
-        // Windows write an NTFS alternate data stream - "Bandit 01 (CYR)_tier" with the JSON hidden
-        // in a stream ":CYREncBandit01.json" - so the file had no .json name, the import never found
-        // it, and groups sharing a name prefix landed in the same file (found 2026-10-17 on the
-        // user's first real group export). A name with '/' would have made a sub folder.
         private static string RelativeItemPath(string key, string displayName)
         {
             var (plugin, formId) = SplitKey(key);
@@ -74,7 +67,7 @@ namespace SkyrimCraftingTool.Services
             File.WriteAllText(path, json);
         }
 
-        public static ExportFile ReadFile(string path)
+        public static ExportFile? ReadFile(string path)
         {
             var json = File.ReadAllText(path);
             return JsonSerializer.Deserialize<ExportFile>(json);

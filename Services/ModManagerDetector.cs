@@ -4,16 +4,6 @@ using SkyrimCraftingTool.Model;
 
 namespace SkyrimCraftingTool.Services
 {
-    // The little that has to be worked out about the user's setup, and nothing more.
-    //
-    // An earlier version of this read ModOrganizer.ini to derive all four paths from one instance
-    // folder. It was dropped: the convenience was real but it bought nothing for CORRECTNESS, and
-    // it cost an ini parser, a second folder picker and a Qt value-unwrapping quirk. modlist.txt
-    // sits in the same profile folder as the plugins.txt the user already has to supply, so one
-    // Path.Combine does the whole job.
-    //
-    // Nothing here ever writes. It only proposes, so a wrong guess is visible in the dialog rather
-    // than silently baked into settings.json.
     public static class ModManagerDetector
     {
         // MO2 keeps plugins.txt and modlist.txt side by side in profiles\<profile>\. Deriving one
@@ -45,7 +35,7 @@ namespace SkyrimCraftingTool.Services
             return !string.IsNullOrWhiteSpace(modList) && File.Exists(modList);
         }
 
-        public static bool TryInferForExistingSettings(FolderSettings settings, out FolderSettings inferred)
+        public static bool TryInferForExistingSettings(FolderSettings settings, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out FolderSettings? inferred)
         {
             inferred = null;
             if (settings == null) return false;
@@ -55,8 +45,6 @@ namespace SkyrimCraftingTool.Services
 
             inferred = new FolderSettings
             {
-                // The paths the user already confirmed stay exactly as they are. Only the two
-                // genuinely new values are filled in.
                 GameDataPath = settings.GameDataPath,
                 ModDirectoryPath = settings.ModDirectoryPath,
                 PluginsFilePath = settings.PluginsFilePath,

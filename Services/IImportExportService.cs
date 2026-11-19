@@ -8,7 +8,7 @@ namespace SkyrimCraftingTool.Services
     // on ItemDBHandler itself (ExportUnits.All), for the round-trip suites.
     public interface IImportExportService
     {
-        List<EditedItemDto> GetEditedItems(IReadOnlyList<ExportUnit> units, ExportScope scope, string scopeValue = null);
+        List<EditedItemDto> GetEditedItems(IReadOnlyList<ExportUnit> units, ExportScope scope, string? scopeValue = null);
         ImportPlan PreviewImport(IReadOnlyList<ExportUnit> units, List<EditedItemDto> fileItems);
         ImportResult ApplyImport(IReadOnlyList<ExportUnit> units, ImportPlan plan, HashSet<string> conflictKeysToUseFileVersion);
     }

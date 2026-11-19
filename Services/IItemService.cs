@@ -67,8 +67,6 @@ namespace SkyrimCraftingTool.Services
         // Placeable records (books, scrolls, misc, …): one editable field, one method.
         void UpdateWorldItemContainerString(string key, string containerString);
 
-        // The placement on its own, for the Container/LeveledList tab: which records have one of the
-        // user's, and taking one back to what the plugins say (ItemDBHandler.ResetPlacement).
         HashSet<string> EditedPlacementKeys();
         void ResetPlacement(string table, string key);
         List<WorldItemRecord> LoadWorldItems();
@@ -90,15 +88,15 @@ namespace SkyrimCraftingTool.Services
         System.Collections.Generic.IList<object> SearchByType(string v);
 
         // Reset: pristine (pre-edit) base values + clearing the shadow columns Reset reverts
-        ArmorRecord GetOriginalArmor(string key);
-        WeaponRecord GetOriginalWeapon(string key);
+        ArmorRecord? GetOriginalArmor(string key);
+        WeaponRecord? GetOriginalWeapon(string key);
         void ResetArmorEdits(string key);
         void ResetWeaponEdits(string key);
 
         // Orphaned edits: Armor/Weapons rows edited but no longer in the scanned load order.
         List<OrphanedEdit> GetOrphanedItemEdits();
         void DeleteItemRow(string table, string key);
-        COBJRecord GetOriginalCOBJ(string key);
+        COBJRecord? GetOriginalCOBJ(string key);
         void ResetCOBJEdits(string key);
         void DeleteCOBJ(string key);
         List<COBJConditionRecord> GetOriginalCOBJConditions(string cobjKey);

@@ -7,9 +7,6 @@ using SkyrimCraftingTool.Model;
 
 namespace SkyrimCraftingTool.Services
 {
-    // Non-blocking collector for issues the user should know about but that shouldn't interrupt them
-    // (dead references, "preset from a newer build", rescan summary, ...). Surfaced by the status
-    // strip at the bottom of MainWindow. Access it through IssueHub.Current.
     public sealed class IssueService : INotifyPropertyChanged
     {
         public ObservableCollection<AppIssue> Issues { get; } = new();

@@ -7,18 +7,6 @@ using SkyrimCraftingTool.Model;
 
 namespace SkyrimCraftingTool.Services
 {
-    // Writes and clears the NPC shadow columns (Prio 8 / N-P2, docs/NPC-Plan.md).
-    //
-    // Deliberately NOT the item save pipeline. That one exists to debounce: an armor rating sits on a
-    // slider and a keyword chip fires on every click, so writes have to be coalesced, flushed on
-    // close, and cancelled per item. The NPC fields are text boxes committed on focus loss - one
-    // edit, one write - so a debouncer would add a whole failure mode (a pending save lost on exit)
-    // in exchange for nothing.
-    //
-    // The contract is the one the rest of the database uses: the base column stays as the scan read
-    // it, IsEdited<X> holds the user's value, and IsEdited = 1 says the user's value counts. Reset
-    // sets the shadow column back to NULL - never touching the base column, which is the only copy
-    // of what the plugin actually says.
     public sealed class NpcEditStore
     {
         private readonly string _dbPath;
@@ -62,7 +50,7 @@ namespace SkyrimCraftingTool.Services
         // One field on one NPC. Passing null clears that field's edit, which is what Reset does -
         // there is no other way to say "back to what the plugin says", because the base column is
         // never overwritten.
-        public void SaveField(string npcKey, string column, object value)
+        public void SaveField(string npcKey, string column, object? value)
         {
             if (!Ready || string.IsNullOrWhiteSpace(npcKey)) return;
             if (!Editable.Contains(column))
@@ -179,10 +167,6 @@ namespace SkyrimCraftingTool.Services
             transaction.Commit();
         }
 
-        // Once, and only if the NPC has never been edited: a second snapshot would record the user's
-        // own earlier edit as if the plugin had shipped it, and the diff would then quietly lose
-        // whatever they did first.
-        // internal: the import (ItemDBHandler.ApplyNpcItem) takes the same snapshot, in its transaction.
         internal static void SnapshotFactionsOnce(SqliteConnection connection, SqliteTransaction transaction, string npcKey)
         {
             using (var check = connection.CreateCommand())

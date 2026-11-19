@@ -39,19 +39,8 @@ namespace SkyrimCraftingTool.Services
         string Key, string EditorId, int ChanceNone, string Flags, IReadOnlyList<OddsEntry> Entries,
         double? GlobalChance = null);
 
-    // The user's pending edits, applied on top of the scanned values without writing anything. This
-    // is what makes the preview live: the window hands over what the boxes currently say, and the
-    // same math runs against "before" and "after".
     public sealed record OddsOverride(int? ChanceNone, CalcFlagMode Flags = CalcFlagMode.Unchanged);
 
-    // A placement the patch WOULD add. The whole point of the calculator is answering "if I patch it
-    // like this, how often will I see it" - and at that moment the item is not in the list yet, so
-    // there is nothing to measure.
-    //
-    // Passed as a COLLECTION, and that is not a convenience: every item the user has lined up for
-    // this list belongs in the calculation, not only the one whose window is open. An item joining a
-    // list of twelve is one in thirteen; with nine more waiting in other items' settings it is one
-    // in twenty-two. Counting only the open item would flatter every number this window shows.
     public sealed record PendingPlacement(string ListKey, string ItemKey, int Level, int Count);
 
     // Probability that at least one copy appears, and how many copies to expect. Both, because they
@@ -185,13 +174,6 @@ namespace SkyrimCraftingTool.Services
 
     public static class LeveledListOdds
     {
-        // One request of `count` items from a list, at a player level, with the user's pending edits
-        // applied.
-        //
-        // "Request of count items" rather than "one roll" is the honest unit, because the caller
-        // decides how many it asks for and the CalculateForEachItemInCount flag turns that number
-        // into repeated rolls - which is the difference between "3 copies of one draw" and "three
-        // independent chances".
         public static OddsResult Chance(
             OddsModel model,
             string listKey,
@@ -393,11 +375,6 @@ namespace SkyrimCraftingTool.Services
             return withPending;
         }
 
-        // What share of rolls produces nothing, in the order the game decides it:
-        //   1. the user's pending edit, if there is one
-        //   2. the list's chance-none GLOBAL, if it has one - the stored number is then dead weight
-        //      (parked at 100 in 209 of the 223 cases, which would read as "never gives anything")
-        //   3. the stored number
         private static int ChanceNoneOf(OddsList list, IReadOnlyDictionary<string, OddsOverride>? overrides)
         {
             if (overrides != null && overrides.TryGetValue(list.Key, out var o) && o.ChanceNone.HasValue)

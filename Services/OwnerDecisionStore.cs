@@ -6,21 +6,6 @@ using SkyrimCraftingTool.Model;
 
 namespace SkyrimCraftingTool.Services
 {
-    // Everything the user decided about ONE container or leveled list on the Container/LeveledList
-    // tab, seen as a whole - for that tab's "only edited" filter and its reset (user, 2026-10-17).
-    //
-    //   container      objects taken out                 (ContainerRemovedEntry)
-    //   leveled list   objects taken out                 (LeveledListRemovedEntry)
-    //                  entries an override dropped, put back (LeveledListRestoredEntry)
-    //                  chance of nothing / calc flags    (LeveledListEdit)
-    //
-    // NOT the placements of items into it. Those are decisions about the ITEM, stored on the item,
-    // and they have their own "only edited" and reset on the placement sub-tabs. Resetting a chest
-    // here must not quietly un-place every armor the user put into it.
-    //
-    // Reads and deletes the same rows RemovalStore, LeveledListRestoreStore and LeveledListEditStore
-    // write - a reset is "every one of those decisions taken back", which is exactly deleting the
-    // rows: in all three stores the decision IS the row.
     public static class OwnerDecisionStore
     {
         private static string ItemDbPath =>

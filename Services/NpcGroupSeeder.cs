@@ -126,12 +126,6 @@ namespace SkyrimCraftingTool.Services
 
                 AddDefaultExclusions(group);
 
-                // THE THRESHOLD IS CHECKED ON WHAT THE PREDICATE RESOLVES TO, not on how many NPCs
-                // carry the token. Measured before this was added: seven class groups passed a
-                // threshold of 40 raw members and then resolved to 0, 1, 2, 3, 16, 20 and 33 - the
-                // exclude clauses had taken the rest. A group that promises 40 and delivers none is
-                // worse than no group, because the user's next question is which of the two numbers
-                // lied.
                 if (!Keep(resolver, group, _options.MinTierGroup))
                 {
                     droppedTier++;
@@ -249,16 +243,6 @@ namespace SkyrimCraftingTool.Services
             };
         }
 
-        // Section 2.1: named characters, quest-critical ones and the ones the game protects are out by
-        // default. They are written as CLAUSES rather than filtered away silently, so the group says on
-        // its face what it leaves out - and so the user can drop the clause for a group where it is
-        // wrong.
-        //
-        // These three resolve here but do not all translate: there is no filterByUnique, so G5 has to
-        // reach that one through the keyword tagger of section 5.3.
-        // A candidate is kept only if its PREDICATE reaches at least the threshold, and only if the
-        // predicate is clean: a warning means the resolver could not evaluate a clause, and a seeded
-        // group nobody wrote by hand has no business carrying one.
         private static bool Keep(NpcGroupResolver resolver, NpcGroup group, int threshold)
         {
             var resolution = resolver.Resolve(group);

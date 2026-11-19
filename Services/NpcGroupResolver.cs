@@ -5,33 +5,10 @@ using SkyrimCraftingTool.Model;
 
 namespace SkyrimCraftingTool.Services
 {
-    // Predicate -> member list (G2, docs/NPC-Gruppen-Plan.md section 4).
-    //
-    // This is the half of the group model that must never be stored: a saved member list goes stale
-    // on the next rescan, and a saved change then reaches NPCs nobody ever looked at - "Bandit
-    // Stufe 3 has 71 members instead of 54" (section 8). So membership is recomputed from the NPC
-    // records every time it is needed, and the only thing kept beside it is the snapshot the diff
-    // compares against.
-    //
-    // WHAT IT RESOLVES AND WHAT IT DOES NOT: this answers "which NPCs does the user mean", read off
-    // the scanned records. It is NOT a prediction of which NPCs SkyPatcher will touch at runtime, and
-    // the two differ on purpose in two places:
-    //
-    //   * a rule reaches NPCs this database never saw - that is the point of a filter rule, and
-    //   * some exclusions have no filter at all: filterByUnique does not exist, so the default
-    //     exclusion of the 1.313 unique NPCs resolves here but needs the keyword tagger of section
-    //     5.3 to reach the game.
-    //
-    // The rule builder (G5) closes that gap and reports it. Pretending the two are the same would put
-    // a member count on screen that the patch cannot keep.
     public sealed class NpcGroupResolver
     {
         private readonly List<NpcRecord> _npcs;
 
-        // Read the EditorID axis the way SkyPatcher does: against the EditorID of the plugin that
-        // defines the NPC, not the override that renamed it (measured 2026-10-31). Only the rule
-        // builder asks for this, to know what its filter really reaches - membership stays on the
-        // name the user sees.
         private readonly bool _asSkyPatcherSees;
 
         public NpcGroupResolver(IEnumerable<NpcRecord>? npcs, bool asSkyPatcherSees = false)

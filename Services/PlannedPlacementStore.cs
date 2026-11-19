@@ -6,21 +6,6 @@ using SkyrimCraftingTool.Model;
 
 namespace SkyrimCraftingTool.Services
 {
-    // Taking back a placement the user made, from the pane that shows it.
-    //
-    // THE DECISION LIVES IN THE OTHER RECORD. A "+ new" row in a container's contents is not the
-    // container's state at all - it is a line in some item's IsEditedContainerString, and taking it
-    // out means editing that item. The pane does it anyway, because the row is where the user sees
-    // the placement and "undo it where you made it" was a fair description of a detour nobody should
-    // have to walk.
-    //
-    // THE LAST RESORT, NOT THE FIRST. Where the item has a live view model, OwnerContentsVM goes
-    // through that instead - an ARMO/WEAP is owned by the item tree's ItemNodeVM, which carries its
-    // own dirty state and save pipeline, and writing the row behind its back would let it save the
-    // old placement back later. This is for the case where nothing is loaded.
-    //
-    // Three tables because a placement can live in any of them: armor, weapons and everything the
-    // world-item tabs place (books, scrolls, misc, soul gems, ammo, food, ingredients, keys).
     public static class PlannedPlacementStore
     {
         private static readonly string[] Tables = { "Armor", "Weapons", "WorldItem" };

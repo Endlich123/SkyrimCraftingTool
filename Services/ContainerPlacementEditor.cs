@@ -39,8 +39,6 @@ namespace SkyrimCraftingTool.Services
             }
             catch (Exception ex)
             {
-                // Refuse rather than guess. Rewriting a string we could not read would be the one
-                // way to lose placements the user never asked to touch.
                 AppLogger.LogError($"ContainerPlacementEditor: unreadable ContainerString, left alone", ex);
                 return containerString;
             }

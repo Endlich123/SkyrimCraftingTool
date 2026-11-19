@@ -5,20 +5,6 @@ using SkyrimCraftingTool.Model;
 
 namespace SkyrimCraftingTool.Services
 {
-    // The rescan diff (G6, docs/NPC-Gruppen-Plan.md section 8).
-    //
-    // WHY THIS IS NOT OPTIONAL. A group is a predicate, so its membership is whatever the load order
-    // happens to match - install one mod and "Bandit tier 3" holds 71 NPCs where it held 54. The saved
-    // change then reaches 17 NPCs nobody ever looked at, and nothing about the group looks different.
-    //
-    // That is the same danger that took the faction view out in September (_alt/NPC-Plan.md section 12),
-    // and the answer settled on then was visibility rather than giving the mechanism up: the membership
-    // the user CONFIRMED is kept (NpcGroupMemberSnapshot), the fresh membership is held against it, and
-    // the difference is reported BY NAME. Until it is confirmed again the group counts as unchecked, and
-    // the patch report says so.
-    //
-    // A count on its own would not do the job. "54 -> 71" tells you something changed; "17 new from
-    // Bandit Overhaul.esp" tells you whether you meant it.
     public static class NpcGroupDiffService
     {
         public static NpcGroupDrift Compare(

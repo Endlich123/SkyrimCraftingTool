@@ -36,23 +36,6 @@ namespace SkyrimCraftingTool.Services
         }
     }
 
-    // "Which mesh should I show for this item?" - the one question the preview needs answered and the
-    // index cannot answer in a single column.
-    //
-    // A WEAPON names its model directly. AN ARMOR DOES NOT: it names a list of addons, and only the
-    // addon has a path. Several addons is the normal case - the four race variants of a steel helmet are
-    // four ARMA with four meshes, all equally correct - and each addon then has up to four slots of its
-    // own. So there is no single right answer, and this returns the lot, best first.
-    //
-    // WHY "BEST" IS NOT SIMPLY "MALE": measured on a real 208-mod load order, 146 addons have a male
-    // mesh from the base game and a female mesh from a mod. 22 of those point the male slot at BARE
-    // VANILLA SKIN - malehands_1.nif, malefeet_1.nif - which is how a female-only mod says "this garment
-    // has no male version". Taking the male slot first then shows bare hands instead of the gloves, and
-    // nothing about the picture says why. The other 124 are genuine male variants (mostly amulets) and
-    // are perfectly fine to show.
-    //
-    // So the default demotes a bare-skin placeholder and nothing else. Everything beyond that is the
-    // user's to choose, because the data really does hold several equally correct answers.
     public static class MeshLookup
     {
         // Preference between slots, worn before carried. The ground model is the item lying in a chest -

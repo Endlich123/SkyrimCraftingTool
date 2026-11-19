@@ -38,7 +38,7 @@ namespace SkyrimCraftingTool.Services
             File.WriteAllText(path, json);
         }
 
-        public static PresetFile ReadPreset(string path)
+        public static PresetFile? ReadPreset(string path)
         {
             var json = File.ReadAllText(path);
             var file = JsonSerializer.Deserialize<PresetFile>(json);
@@ -92,7 +92,8 @@ namespace SkyrimCraftingTool.Services
             if (!samePath && File.Exists(newPath))
                 throw new IOException($"A preset file already exists at '{newPath}'.");
 
-            var file = ReadPreset(oldPath);
+            var file = ReadPreset(oldPath)
+                ?? throw new IOException($"The preset file '{oldPath}' is empty.");
             file.PresetName = newName;
             WritePreset(file);
 

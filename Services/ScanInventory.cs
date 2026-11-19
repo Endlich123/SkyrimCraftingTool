@@ -8,31 +8,6 @@ using SkyrimCraftingTool.Model;
 
 namespace SkyrimCraftingTool.Services
 {
-    // What a scan actually found, counted per record type.
-    //
-    // The rescan report used to say one thing - how many item keys appeared and disappeared - which
-    // made it look like nothing had happened whenever a plugin changed enchantments, recipes or
-    // containers but no armor or weapon keys. Everything below is already scanned and stored; it was
-    // simply never counted.
-    //
-    // These are ACTIVE RECORDS ACROSS THE WHOLE LOAD ORDER, not rows per plugin. An override does
-    // not add a line: the key is built from the record's master FormKey, so a mod overriding
-    // Skyrim.esm's steel sword writes onto that same key, and the plugins are written in load order
-    // so the winner is what remains. A mod that only overrides therefore moves no number here - by
-    // design, because listing overrides separately would inflate the list into something other than
-    // "what the load order actually contains".
-    //
-    // The two groups are not cosmetic, they behave differently and the report says so:
-    //   * item.db keeps rows that vanished from the load order, flagged Active = 0, so your edits to
-    //     them survive. Counting therefore has to ask for Active = 1, or the numbers only ever grow.
-    //   * formid.db is dropped and rebuilt on every scan (see FormIDDBHandler.CreateTables), so its
-    //     numbers are simply "what the current load order resolves to" - there is no history in it.
-    // Changed answers the question the counts cannot: a plugin update that rebalances armor ratings
-    // adds and removes nothing, so every number above it stays put and the report reads as though
-    // the scan did nothing. It counts records that were already there and whose SCANNED values are
-    // different afterwards - not edits of yours, which live in separate columns and are untouched by
-    // a scan. -1 where it could not be worked out (no snapshot, missing table), and rendered as
-    // nothing rather than as "0 changed", for the same reason Count uses n/a.
     public sealed record ScanCategory(string Label, int Count, int Changed = -1)
     {
         // Counting failed for this one (missing table, older DB). Reported as "n/a" rather than as a
@@ -103,23 +78,22 @@ namespace SkyrimCraftingTool.Services
             ("Enchantments",  "Enchantments",  "Key",          true),
             ("MagicEffects",  "Magic effects", "Key",          true),
             ("Container",     "Containers",    "ContainerKey", true),
+            // Counted from formid.db's LVLi table until 2026-11-07; that copy is gone, item.db's
+            // LeveledList is the one list - and with it this line can now say "changed" too.
+            ("LeveledList",   "Leveled lists", "Key",          true),
+            // Misc, food, ingredients, ammo, soul gems, books, scrolls, keys. Replaces the formid.db
+            // "Materials" line (2026-11-07), which counted five of these kinds from a copy.
+            ("WorldItem",     "World items",   "Key",          true),
         };
 
         private static readonly (string Table, string Label, string KeyColumn, bool HasActive)[] FormIdTables =
         {
             ("Keywords",  "Keywords",      "Key", false),
-            ("Materials", "Materials",     "Key", false),
             ("Perks",     "Perks",         "Key", false),
             ("Quests",    "Quests",        "Key", false),
-            ("LVLi",      "Leveled lists", "Key", false),
             ("FormLists", "Form lists",    "Key", false),
         };
 
-        // What counts as a value for each record type: exactly the columns the scan itself writes,
-        // taken from the scan's own lists rather than restated here. Anything else in those tables
-        // is either the user's (the IsEdited* shadows, ContainerString) or bookkeeping (Active,
-        // LastChanged) - a scan must never move those, and counting them as changes would report
-        // the user's own work back at them as if a mod had done it.
         private static readonly Dictionary<string, string[]> ValueColumns = new(StringComparer.Ordinal)
         {
             ["Armor"] = ItemDBHandler.ArmorColumnNames,
@@ -129,6 +103,7 @@ namespace SkyrimCraftingTool.Services
             ["Enchantments"] = ItemDBHandler.EnchantmentColumnNames,
             ["Magic effects"] = ItemDBHandler.MagicEffectColumnNames,
             ["Containers"] = ItemDBHandler.ContainerColumnNames,
+            ["Leveled lists"] = ItemDBHandler.LeveledListColumnNames,
         };
 
         public static ScanInventory Read(ScanValueSnapshot? before = null)

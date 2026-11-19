@@ -43,8 +43,6 @@ namespace SkyrimCraftingTool.Services
 
         private static string KeyFor(NavTab tab) => $"nav.tab.{tab}.visible";
 
-        // Shown unless the user said otherwise: a new tab appears for everyone who has not been
-        // asked, rather than staying hidden until someone finds the setting.
         public static bool IsVisible(NavTab tab) => AppPrefs.GetBool(KeyFor(tab), fallback: true);
 
         public static void SetVisible(NavTab tab, bool visible)

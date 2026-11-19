@@ -25,10 +25,23 @@ namespace SkyrimCraftingTool.Services
             foreach (var plugin in activePlugins)
             {
                 var pluginKey = plugin.FileName.ToLowerInvariant();
-                var pluginNode = new PluginNodeVM { PluginName = plugin.FileName, Main = parent };
+                var expansion = parent.TreeExpansion;
+                var pluginNode = new PluginNodeVM
+                {
+                    PluginName = plugin.FileName, Main = parent,
+                    Expansion = expansion, ExpansionKey = plugin.FileName,
+                };
 
-                var armorCategory = new CategoryNodeVM { CategoryName = "Armor" };
-                var weaponCategory = new CategoryNodeVM { CategoryName = "Weapons" };
+                var armorCategory = new CategoryNodeVM
+                {
+                    CategoryName = "Armor",
+                    Expansion = expansion, ExpansionKey = TreeExpansion.Child(plugin.FileName, "Armor"),
+                };
+                var weaponCategory = new CategoryNodeVM
+                {
+                    CategoryName = "Weapons",
+                    Expansion = expansion, ExpansionKey = TreeExpansion.Child(plugin.FileName, "Weapons"),
+                };
 
                 if (armorByPlugin.TryGetValue(pluginKey, out var armorList))
                 {

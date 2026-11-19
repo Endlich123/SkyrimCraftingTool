@@ -17,10 +17,6 @@ namespace SkyrimCraftingTool.Services
         public bool IsEmpty => !ChanceNone.HasValue && Flags == CalcFlagMode.Unchanged;
     }
 
-    // One edit with the load order beside it, for the overview of everything the user has changed.
-    //
-    // Both sides on purpose: an edit stored as "10" says nothing on its own months later. "25% -> 10%"
-    // is a sentence, and it is also what the reset button undoes.
     public sealed record LeveledListEditDetail(
         LeveledListEdit Edit, string EditorId, int ScannedChanceNone, string ScannedFlags, string LastChanged)
     {
@@ -46,12 +42,6 @@ namespace SkyrimCraftingTool.Services
         }
     }
 
-    // Reads and writes LeveledListEdit - the table that holds what the user changed about a list,
-    // never what was scanned.
-    //
-    // Its own small store rather than another method on ItemDBHandler: the list window opens one
-    // list at a time and the patch generator reads all of them at once, and neither needs the
-    // snapshot machinery around items. Writes are one row.
     public static class LeveledListEditStore
     {
         private static string ItemDbPath =>
@@ -171,9 +161,6 @@ namespace SkyrimCraftingTool.Services
             return edits;
         }
 
-        // Every edit with enough context to be read back months later: the list's name, and what the
-        // load order says, so the overview can put both sides next to each other ("25% -> 10%")
-        // rather than only the value the user typed.
         public static IReadOnlyList<LeveledListEditDetail> ReadAllDetailed(string? dbPath = null)
         {
             var details = new List<LeveledListEditDetail>();

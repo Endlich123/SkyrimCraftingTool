@@ -87,52 +87,47 @@ namespace SkyrimCraftingTool.Services
         public static List<EditedItemDto> ReadAllExportedItems(TabExportModule module)
             => ReadItems(module, ExportFileStore.FindAllFiles(module.Folder));
 
-        // A DTO with no changed fields and no edited child rows carries nothing to apply — it comes
-        // from an item that was edited then reset (the reset paths leave LastChanged non-null, so an
-        // old export picked it up). Drop it so it never clutters the conflict window / preview.
-        //
-        // The child lists come from ChildTables.All rather than being listed here, so a fourth unit
-        // is carried the day it is described and not the day someone remembers this method. Each is
-        // tested for null, never for Count: an EMPTY list is a payload - it means "the user removed
-        // them all" - and the export only ever sets a list when that unit's *Edited flag was up.
-        // Counting instead made "cleared to empty" indistinguishable from "never touched", so an
-        // enchantment stripped of its effects, or a recipe stripped of its conditions, was silently
-        // dropped before the preview ever saw it.
         public static bool HasPayload(EditedItemDto d) =>
             d.Fields.Count > 0
             || ChildTables.All.Any(spec => spec.Payload(d) != null)
             || (d.Rows != null && d.Rows.Values.Any(list => list != null));
 
-        // Preview -> (conflict window if needed) -> Apply. Returns null if the user cancelled the
-        // conflict dialog; the caller does its own refresh + summary around this.
         public static ImportResult? RunImport(IImportExportService service, TabExportModule module, List<EditedItemDto> items)
             => RunImport(service, module.Units, items.Where(module.Accepts).ToList());
 
         // Over any set of units - one tab's, or every tab's at once for "Import all".
         public static ImportResult? RunImport(IImportExportService service, IReadOnlyList<ExportUnit> units, List<EditedItemDto> items)
         {
-            var tables = new HashSet<string>(units.Select(u => u.Table), StringComparer.Ordinal);
-            items = items.Where(i => i != null && tables.Contains(i.Table ?? "")).Where(HasPayload).ToList();
-            var plan = service.PreviewImport(units, items);
-
-            var useFileVersion = new HashSet<string>();
-            if (plan.Conflicts.Count > 0)
-            {
-                var resolved = View.ImportConflictWindow.ShowDialog(plan.Conflicts);
-                if (resolved == null)
-                    return null;
-                useFileVersion = resolved;
-            }
+            var plan = PreviewImport(service, units, items);
+            var useFileVersion = ResolveConflicts(plan);
+            if (useFileVersion == null)
+                return null;
 
             return service.ApplyImport(units, plan, useFileVersion);
+        }
+
+        // The three steps of RunImport one by one, for a caller that shows a loading screen around
+        // the preview and the apply but must take it down for the conflict dialog in between.
+        public static ImportPlan PreviewImport(IImportExportService service, IReadOnlyList<ExportUnit> units, List<EditedItemDto> items)
+        {
+            var tables = new HashSet<string>(units.Select(u => u.Table), StringComparer.Ordinal);
+            items = items.Where(i => i != null && tables.Contains(i.Table ?? "")).Where(HasPayload).ToList();
+            return service.PreviewImport(units, items);
+        }
+
+        // The keys whose file version wins, or null when the dialog was cancelled (nothing written).
+        public static HashSet<string>? ResolveConflicts(ImportPlan plan)
+        {
+            if (plan.Conflicts.Count == 0)
+                return new HashSet<string>();
+
+            return View.ImportConflictWindow.ShowDialog(plan.Conflicts);
         }
 
         public static string SummaryText(ImportResult r) =>
             $"Updated: {r.Applied}{Environment.NewLine}" +
             $"Skipped (identical): {r.SkippedEqual}{Environment.NewLine}" +
             $"Skipped (not present locally): {r.SkippedMissing.Count}{Environment.NewLine}" +
-            // Own line, not folded into "not present locally": this means a corrupt export file
-            // (unreadable LastChanged), not a missing plugin - very different fix for the user.
             $"Skipped (unreadable export file): {r.SkippedInvalid}{Environment.NewLine}" +
             $"Conflicts - used import: {r.ConflictsUsedFile}{Environment.NewLine}" +
             $"Conflicts - kept local: {r.ConflictsKeptLocal}" +

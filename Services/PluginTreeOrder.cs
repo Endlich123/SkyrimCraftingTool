@@ -41,12 +41,6 @@ namespace SkyrimCraftingTool.Services
                     lastVanilla = i;
             }
 
-            // Doubled, so an unknown plugin can sit between two known ones. The tool's own
-            // pseudo-plugin (records the user created) is not a master of anything and always last,
-            // whether or not the list carries it - after a rescan it does not.
-            //
-            // A list without any vanilla master gives "after the vanilla masters" no place to be, so
-            // an unknown plugin then goes after everything instead of in front of it.
             int unknownRank = lastVanilla >= 0 ? lastVanilla * 2 + 1 : int.MaxValue - 1;
 
             return plugin =>

@@ -11,7 +11,8 @@ namespace SkyrimCraftingTool.Services
     // Writes one PresetSlotConfig's enabled fields onto a single item. Since 2026-10-20 the only
     // caller is the modular preset applier (ModularPresetApplier): it builds the engine's result into
     // this shape. The slot presets this was written for are gone; their merge rules - recipe
-    // creation, the exact-set ingredient merge, condition replacement per type, the breakdown block,
+    // creation, the exact-set ingredient merge, condition replacement (since 2026-11-09 every
+    // editable condition, see MergeConditions), the breakdown block,
     // enchantment strip, placements added - are what this keeps.
     //
     // Writes go through the item's property setters. Returns the ItemNodeVM field names actually
@@ -139,8 +140,6 @@ namespace SkyrimCraftingTool.Services
             bool created = false;
             if (!hasRecipe)
             {
-                // Prerequisite the user flagged during planning: a preset can't set Workbench/Ingredients/
-                // Conditions on an item with no COBJ yet — create one first, the same way the "+" button does.
                 if (isTemper) item.CreateTemperRecipe(); else item.CreateCraftingRecipe();
                 hasRecipe = isTemper ? item.HasTemperRecipe : item.HasCraftingRecipe;
                 created = hasRecipe;
@@ -154,10 +153,12 @@ namespace SkyrimCraftingTool.Services
                 // Workbench can't be summed like a number — first enabled, non-empty value wins,
                 // in ascending Armor-Slot-bit order (GetMatchingArmorConfigs already sorted `matches`).
                 var wb = matches.Select(m => m.CraftRecipe.WorkbenchKey)
-                    .FirstOrDefault(w => w.Enabled && !string.IsNullOrEmpty(w.Value));
-                if (wb != null && item.CraftingWorkbenchKey != wb.Value)
+                    .Where(w => w.Enabled)
+                    .Select(w => w.Value)
+                    .FirstOrDefault(v => !string.IsNullOrEmpty(v));
+                if (!string.IsNullOrEmpty(wb) && item.CraftingWorkbenchKey != wb)
                 {
-                    item.CraftingWorkbenchKey = wb.Value;
+                    item.CraftingWorkbenchKey = wb;
                     touched.Add(nameof(ItemNodeVM.CraftingWorkbenchKey));
                 }
             }
@@ -218,7 +219,7 @@ namespace SkyrimCraftingTool.Services
             // Drop what the preset doesn't want.
             for (int i = target.Count - 1; i >= 0; i--)
             {
-                if (!desiredCounts.ContainsKey(target[i].Key))
+                if (!desiredCounts.ContainsKey(target[i].Key ?? ""))
                 {
                     target.RemoveAt(i);
                     changed = true;
@@ -234,7 +235,7 @@ namespace SkyrimCraftingTool.Services
                     continue;
                 }
 
-                var mat = item.Main?.AllAvailableMaterials?.FirstOrDefault(x => x.Key == key);
+                var mat = item.Main?.FindMaterial(key);
                 var entry = new IngredientEntryVM(item, isTemper);
                 entry.InitializeMaterials(item.Main?.AllAvailableMaterials ?? new List<FormIDRecord>());
                 if (mat != null)
@@ -249,25 +250,6 @@ namespace SkyrimCraftingTool.Services
             return changed;
         }
 
-        // For every ConditionType the (enabled, matching) preset slots define, the item's EXISTING
-        // conditions of that same type are cleared once, then replaced by the preset's condition(s)
-        // of that type — so a preset's HasPerk requirement replaces the item's old HasPerk
-        // requirement instead of coexisting alongside it as a second, possibly conflicting one.
-        // Conditions of a type no matching slot touches are left completely alone. Multiple matching
-        // slots can still each contribute their own distinct condition of the same type (keeps the
-        // "slots addieren" rule) - only an exact (Type, Target, RunOn) duplicate is skipped.
-        // The breakdown block: one output material with its amount, the bench, and conditions.
-        //
-        // Shaped like ApplyRecipe but NOT folded into it. A breakdown recipe is a different record
-        // shape - the item is on the ingredient side and what the preset sets is what comes OUT - so
-        // the ingredient merge below would be writing the wrong half of it. Keeping them apart also
-        // left ApplyRecipe's isTemper branching untouched.
-        //
-        // It edits the item's breakdown recipe, creating one if there is none, exactly like the
-        // crafting block does. It never adds a SECOND recipe to an item that already has one: that
-        // is the author's rule for presets ("like crafting/temper"), and on a CCOR load order the
-        // common case is an item that already has a mod breakdown - adding to it every time would
-        // double the recipe on every apply.
         private static void ApplyBreakdown(ItemNodeVM item, List<PresetSlotConfig> matches, List<string> touched)
         {
             bool wanted = matches.Any(m =>
@@ -317,8 +299,7 @@ namespace SkyrimCraftingTool.Services
                     // selected, and the box stayed EMPTY until a restart re-ran the load path that
                     // resolves key -> material. MergeIngredients does the same two-step for the
                     // crafting block, for the same reason.
-                    var material = item.Main?.AllAvailableMaterials?
-                        .FirstOrDefault(m => string.Equals(m.Key, output.Key, StringComparison.OrdinalIgnoreCase));
+                    var material = item.Main?.FindMaterial(output.Key);
 
                     // The public setter, not SetSelectedMaterialSilent: the silent one is right for
                     // the crafting block, whose save handler re-reads the whole ingredient list
@@ -336,11 +317,20 @@ namespace SkyrimCraftingTool.Services
                 touched.Add(nameof(ItemNodeVM.BreakdownRecipes));
         }
 
-        private static bool MergeConditions(ItemNodeVM item, ObservableCollection<BaseConditionViewModel> target,
+        internal static bool MergeConditions(ItemNodeVM item, ObservableCollection<BaseConditionViewModel> target,
             List<PresetSlotConfig> matches, Func<PresetSlotConfig, RecipeConfig> select)
         {
             bool changed = false;
-            var clearedTypes = new HashSet<string>();
+            bool cleared = false;
+
+            // A list that already ENDS on an OR - as the plugin wrote it, nothing after it. The game
+            // has nothing to pair that OR with, so "A or B or (end)" is "A or B". The preset's rows go
+            // on the end, and the OR would join them: 4 Vigilant recipes became "global or global or
+            // Steel Smithing" in the first test, the perk alone opening a recipe that wants quest
+            // progress. 50 of 1,783 conditioned recipes on the real modlist end like this.
+            // Taken BEFORE anything is removed: a row whose OR partner the preset replaces (global OR
+            // perk -> global OR the preset's perk) is a group on purpose and keeps its OR.
+            var danglingOr = target.LastOrDefault() is { HasOrFlag: true } last ? last : null;
 
             foreach (var m in matches)
             {
@@ -349,22 +339,34 @@ namespace SkyrimCraftingTool.Services
 
                 foreach (var entry in recipe.Conditions.Value ?? new List<ConditionEntry>())
                 {
-                    if (clearedTypes.Add(entry.ConditionType))
+                    // A preset with conditions REPLACES every condition the editor can set - the recipe
+                    // ends up as the preset says, not as the preset plus whatever editable rows the
+                    // plugin had of other types (2026-11-09; before, only the types the preset itself
+                    // named were replaced, so an old GetItemCount or GetLevel stayed on beside it).
+                    // What the editor cannot set stays: read-only and unknown functions, and an
+                    // editable type compared against a global - nothing in a preset could put them
+                    // back. A preset without conditions leaves the item's alone (Enabled = false).
+                    if (!cleared)
                     {
-                        var toRemove = target
-                            .Where(c => ConditionMapper.ToRecord(c, string.Empty).ConditionType == entry.ConditionType)
-                            .ToList();
+                        cleared = true;
+                        var toRemove = target.Where(c => c.Type != CustomConditionType.ReadOnly).ToList();
                         foreach (var old in toRemove)
                             target.Remove(old); // CollectionChanged fires NotifyFieldChanged, same as Add below
                         if (toRemove.Count > 0) changed = true;
                     }
 
-                    bool alreadyPresent = target.Any(c =>
+                    // Exact duplicate from an earlier matching slot in this same apply. EVERY field, not
+                    // just type/target/run-on: "GetLevel >= 10" and "GetLevel < 30" share all three
+                    // and are a range, not a repeat - the second one used to vanish here.
+                    var wanted = entry.ToRecord();
+                    bool alreadyPresent = target.Any(c => SameCondition(ConditionMapper.ToRecord(c, string.Empty), wanted));
+                    if (alreadyPresent) continue;
+
+                    if (danglingOr != null)
                     {
-                        var rec = ConditionMapper.ToRecord(c, string.Empty);
-                        return rec.ConditionType == entry.ConditionType && rec.Target == entry.Target && rec.RunOn == entry.RunOn;
-                    });
-                    if (alreadyPresent) continue; // exact duplicate from an earlier matching slot in this same apply
+                        if (ReferenceEquals(target.LastOrDefault(), danglingOr)) danglingOr.ClearOrFlag();
+                        danglingOr = null;
+                    }
 
                     var vm = PresetConditionMapper.ToViewModel(entry, item.AllAvailablePerks, item.AllAvailableQuests);
                     target.Add(vm);
@@ -374,6 +376,16 @@ namespace SkyrimCraftingTool.Services
             return changed;
         }
 
+        private static bool SameCondition(COBJConditionRecord a, COBJConditionRecord b)
+            => a.ConditionType == b.ConditionType
+            && string.Equals(a.Target, b.Target, StringComparison.OrdinalIgnoreCase)
+            && a.Value == b.Value
+            && a.RunOn == b.RunOn
+            && (a.CompareOperator ?? "") == (b.CompareOperator ?? "")
+            && (a.Flags ?? "") == (b.Flags ?? "")
+            && string.Equals(a.RunOnRef ?? "", b.RunOnRef ?? "", StringComparison.OrdinalIgnoreCase)
+            && (a.Extra ?? "") == (b.Extra ?? "");
+
         // A container already selected on the item (whether from before this Apply, or added by an
         // earlier matching slot in this same Apply) has its LVLi levels REPLACED by the preset's
         // levels, not left untouched - "old gets replaced by new" applies here too. A container
@@ -381,8 +393,10 @@ namespace SkyrimCraftingTool.Services
         private static void ApplyContainer(ItemNodeVM item, List<PresetSlotConfig> matches, List<string> touched)
         {
             var enabledStrings = matches
-                .Where(m => m.Container.Enabled && !string.IsNullOrEmpty(m.Container.Value))
-                .Select(m => m.Container.Value);
+                .Where(m => m.Container.Enabled)
+                .Select(m => m.Container.Value)
+                .OfType<string>()
+                .Where(v => v.Length > 0);
 
             bool changed = false;
             foreach (var containerString in enabledStrings)

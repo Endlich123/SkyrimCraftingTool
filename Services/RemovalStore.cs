@@ -6,11 +6,6 @@ using SkyrimCraftingTool.Model;
 
 namespace SkyrimCraftingTool.Services
 {
-    // One object the user decided to take out of a container or a leveled list.
-    //
-    // OwnerKey is the container or the list; Reference is the object. No level and no count: the
-    // patch removes an OBJECT, every occurrence of it, and cannot pick one of several identical
-    // entries (see the LeveledListRemovedEntry schema comment).
     public sealed record RemovedEntry(string OwnerKey, string Reference);
 
     // Which of the two kinds of owner a decision belongs to. The two tables are identical in shape
@@ -28,22 +23,12 @@ namespace SkyrimCraftingTool.Services
         Recipe,
     }
 
-    // The user's "take this out" decisions, kept strictly apart from anything the scan writes.
-    //
-    // THE MIRROR OF LeveledListRestoreStore, and deliberately shaped like it: a decision is a ROW.
-    // Present means removed, deleted means not removed. That is the whole of the undo story - there
-    // is no separate history log, because the decision IS the history. The restore flow has worked
-    // that way since it shipped, tests included.
-    //
-    // AND THE ONE PLACE THAT GIVES UP THE ADDITIVE GUARANTEE. Every other thing this tool writes
-    // only ever adds; a row in here deletes content another mod put there. That is why it lives in
-    // its own tables, behind its own screen, and is reported separately by the patch generator.
     public static class RemovalStore
     {
         private static string ItemDbPath =>
             Path.Combine(GlobalState.Tool?.InputFolder ?? "", "Item", "item.db");
 
-        private static string Resolve(string dbPath)
+        private static string Resolve(string? dbPath)
             => string.IsNullOrWhiteSpace(dbPath) ? ItemDbPath : dbPath;
 
         internal static string TableOf(RemovalScope scope) => scope switch
@@ -68,9 +53,7 @@ namespace SkyrimCraftingTool.Services
             return cmd.ExecuteScalar() != null;
         }
 
-        // What the user took out of this one container/list. Read when its detail view opens, so the
-        // contents can show which rows are already dealt with.
-        public static IReadOnlyCollection<string> RemovedKeys(RemovalScope scope, string ownerKey, string dbPath = null)
+        public static IReadOnlyCollection<string> RemovedKeys(RemovalScope scope, string ownerKey, string? dbPath = null)
         {
             var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (string.IsNullOrWhiteSpace(ownerKey)) return result;
@@ -98,8 +81,7 @@ namespace SkyrimCraftingTool.Services
             return result;
         }
 
-        // Everything the user took out, for the patch run.
-        public static IReadOnlyList<RemovedEntry> ReadAll(RemovalScope scope, string dbPath = null)
+        public static IReadOnlyList<RemovedEntry> ReadAll(RemovalScope scope, string? dbPath = null)
         {
             var result = new List<RemovedEntry>();
 
@@ -128,7 +110,7 @@ namespace SkyrimCraftingTool.Services
 
         // How many decisions exist in total, for the "you are changing things for every mod" notice.
         // Counted rather than read: the notice needs a number, not the rows.
-        public static int Count(RemovalScope scope, string dbPath = null)
+        public static int Count(RemovalScope scope, string? dbPath = null)
         {
             var path = Resolve(dbPath);
             if (!File.Exists(path)) return 0;
@@ -150,7 +132,7 @@ namespace SkyrimCraftingTool.Services
             }
         }
 
-        public static void Add(RemovalScope scope, RemovedEntry entry, string dbPath = null)
+        public static void Add(RemovalScope scope, RemovedEntry entry, string? dbPath = null)
         {
             if (entry == null) return;
             if (KeyFactory.IsUnsetKey(entry.OwnerKey) || KeyFactory.IsUnsetKey(entry.Reference)) return;
@@ -164,8 +146,6 @@ namespace SkyrimCraftingTool.Services
                 c.Open();
 
                 using var cmd = c.CreateCommand();
-                // Upsert, like the restore store: ticking the same row twice is the user saying the
-                // same thing twice, not an error worth a message.
                 cmd.CommandText = $@"
                     INSERT INTO {TableOf(scope)} ({OwnerColumnOf(scope)}, Reference, LastChanged)
                     VALUES (@k, @r, @now)
@@ -182,7 +162,7 @@ namespace SkyrimCraftingTool.Services
         }
 
         // Undo. Deleting the decision is the whole of it - nothing else recorded it.
-        public static void Remove(RemovalScope scope, string ownerKey, string reference, string dbPath = null)
+        public static void Remove(RemovalScope scope, string ownerKey, string reference, string? dbPath = null)
         {
             if (string.IsNullOrWhiteSpace(ownerKey) || string.IsNullOrWhiteSpace(reference)) return;
 

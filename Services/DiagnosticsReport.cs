@@ -9,14 +9,6 @@ using SkyrimCraftingTool.Model;
 
 namespace SkyrimCraftingTool.Services
 {
-    // Builds the text that goes into a bug report.
-    //
-    // Everything here is produced LOCALLY and written to a file or the clipboard. The tool never
-    // sends anything anywhere - users decide what to share and can read the whole report first.
-    //
-    // The point is to answer, without a back-and-forth, the questions that actually come up:
-    // which build, which mod manager layout, did they rescan since the last schema change, and
-    // what did the log say. A report missing any of those costs a round trip per bug.
     public static class DiagnosticsReport
     {
         public static string Build()
@@ -48,8 +40,6 @@ namespace SkyrimCraftingTool.Services
             }
             catch (Exception ex)
             {
-                // One broken section must not cost the user the rest of the report - that would
-                // defeat the whole purpose on exactly the machines where things are going wrong.
                 sb.AppendLine($"(could not be collected: {ex.Message})");
             }
             sb.AppendLine();
@@ -172,9 +162,6 @@ namespace SkyrimCraftingTool.Services
             }
         }
 
-        // Paths are the most useful part of a report and also the part that carries a real name,
-        // since Windows profiles are usually the user's. Swap the profile folder for a placeholder:
-        // the shape of the path is what matters for diagnosing a mod-manager layout, not who owns it.
         private static string Redact(string path)
         {
             if (string.IsNullOrEmpty(path)) return path;

@@ -33,7 +33,7 @@ namespace SkyrimCraftingTool.Services
         private static string ItemDbPath =>
             Path.Combine(GlobalState.Tool?.InputFolder ?? "", "Item", "item.db");
 
-        private static string Resolve(string dbPath) =>
+        private static string Resolve(string? dbPath) =>
             string.IsNullOrWhiteSpace(dbPath) ? ItemDbPath : dbPath;
 
         private static bool TableExists(SqliteConnection c)
@@ -43,8 +43,7 @@ namespace SkyrimCraftingTool.Services
             return cmd.ExecuteScalar() != null;
         }
 
-        // The COBJ the user picked, or "" when they never picked one.
-        public static string MainFor(string itemKey, RecipeKind kind, string dbPath = null)
+        public static string MainFor(string itemKey, RecipeKind kind, string? dbPath = null)
         {
             if (string.IsNullOrWhiteSpace(itemKey)) return "";
 
@@ -71,7 +70,7 @@ namespace SkyrimCraftingTool.Services
             }
         }
 
-        public static void Set(string itemKey, RecipeKind kind, string cobjKey, string dbPath = null)
+        public static void Set(string itemKey, RecipeKind kind, string cobjKey, string? dbPath = null)
         {
             if (KeyFactory.IsUnsetKey(itemKey) || KeyFactory.IsUnsetKey(cobjKey)) return;
 
@@ -84,8 +83,6 @@ namespace SkyrimCraftingTool.Services
                 c.Open();
 
                 using var cmd = c.CreateCommand();
-                // Upsert: picking the same recipe twice is the user saying the same thing twice,
-                // not an error worth a message.
                 cmd.CommandText = @"
                     INSERT INTO MainRecipe (ItemKey, Kind, CobjKey, LastChanged)
                     VALUES (@item, @kind, @cobj, @now)
@@ -104,7 +101,7 @@ namespace SkyrimCraftingTool.Services
 
         // Back to "the first one". Also what has to happen when the chosen recipe is deleted -
         // leaving the row would point the editor at a COBJ that no longer exists.
-        public static void Clear(string itemKey, RecipeKind kind, string dbPath = null)
+        public static void Clear(string itemKey, RecipeKind kind, string? dbPath = null)
         {
             if (string.IsNullOrWhiteSpace(itemKey)) return;
 
@@ -131,7 +128,7 @@ namespace SkyrimCraftingTool.Services
 
         // Drops any decision that names this COBJ, whichever item and kind it was made for. Called
         // when a recipe is removed, so no decision is left pointing at a record that is gone.
-        public static void ForgetRecipe(string cobjKey, string dbPath = null)
+        public static void ForgetRecipe(string cobjKey, string? dbPath = null)
         {
             if (string.IsNullOrWhiteSpace(cobjKey)) return;
 
@@ -159,10 +156,10 @@ namespace SkyrimCraftingTool.Services
         // candidates, the first one otherwise. The fallback matters - a decision can outlive its
         // recipe (a mod was removed and the next scan dropped the row), and pointing the editor at
         // nothing would make the item look like it had no recipe at all.
-        public static T Choose<T>(IEnumerable<T> candidates, Func<T, string> keyOf, string storedMainKey)
+        public static T? Choose<T>(IEnumerable<T>? candidates, Func<T, string> keyOf, string storedMainKey)
             where T : class
         {
-            T first = null;
+            T? first = null;
 
             foreach (var candidate in candidates ?? Array.Empty<T>())
             {

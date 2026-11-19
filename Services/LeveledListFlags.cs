@@ -2,16 +2,6 @@ using System;
 
 namespace SkyrimCraftingTool.Services
 {
-    // The calculation flags of a leveled list, as the PATCHER can express them - not as the record
-    // stores them.
-    //
-    // That distinction is the whole point of this type. The record holds independent bits
-    // (0x01 all levels, 0x02 for each item in count, 0x04 use all, 0x08 special loot), but
-    // SkyPatcher offers a closed set of operations and says plainly: "Only one flag at a time can be
-    // set" (docs/Leveled_List_Patcher.txt). It ships calcForLevelAndEachItem precisely because the
-    // one combination people want cannot be reached by issuing two operations. So the editable model
-    // is a CHOICE, never a set of checkboxes - checkboxes would let the user build a state the patch
-    // cannot write.
     public enum CalcFlagMode
     {
         // No flag operation is written: the list keeps whatever it has. The default for every list
@@ -49,10 +39,6 @@ namespace SkyrimCraftingTool.Services
         public static bool HasEachItem(string? flags) => Contains(flags, EachItemName);
         public static bool HasUseAll(string? flags) => Contains(flags, UseAllName);
 
-        // SpecialLoot has no SkyPatcher operation at all. It is carried here so the window can say
-        // so instead of quietly dropping it: 108 lists in the real load order have it, and a user
-        // who switches the flags on one of them deserves to know that this bit is not part of the
-        // deal either way.
         public static bool HasSpecialLoot(string? flags) => Contains(flags, SpecialLootName);
 
         private static bool Contains(string? flags, string name)

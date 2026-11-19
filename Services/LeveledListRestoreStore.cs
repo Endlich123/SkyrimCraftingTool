@@ -6,25 +6,8 @@ using SkyrimCraftingTool.Model;
 
 namespace SkyrimCraftingTool.Services
 {
-    // One entry the user decided to put back into a leveled list after an override dropped it.
-    //
-    // Level and Count are the values it had where it was last seen, so putting one back restores it
-    // as it was rather than at some invented default.
     public sealed record RestoredEntry(string ListKey, string Reference, int Level, int Count);
 
-    // The user's answers to the lost-entry report.
-    //
-    // WHY A STORE OF ITS OWN rather than reusing item placements, which say the same thing: a
-    // placement lives in the ITEM's ContainerString, and only Armor and Weapons have one. Measured
-    // against the real load order, of 340 lost entries 12 are armor and 78 are weapons - the other
-    // 250 are nested lists, books and scrolls, record types the scan does not carry. Built on
-    // placements, this would have worked for a quarter of the cases and silently done nothing for
-    // the rest. SkyPatcher needs only the FormID, so the decision is kept on the LIST, where every
-    // type fits.
-    //
-    // Everything here is additive at runtime: the patch emits filterByLLs + addOnceToLLs, which
-    // supplements the list the game loaded rather than replacing the record. Nothing in this store
-    // can therefore clobber another mod - which is what made it safe to offer a restore at all.
     public static class LeveledListRestoreStore
     {
         private static string ItemDbPath =>
@@ -41,8 +24,6 @@ namespace SkyrimCraftingTool.Services
             return cmd.ExecuteScalar() != null;
         }
 
-        // Which references the user put back into this one list. Read when the list window opens, so
-        // the History block can show which rows are already dealt with.
         public static IReadOnlyCollection<string> RestoredKeys(string listKey, string? dbPath = null)
         {
             var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -71,7 +52,6 @@ namespace SkyrimCraftingTool.Services
             return result;
         }
 
-        // Everything the user put back, for the patch run.
         public static IReadOnlyList<RestoredEntry> ReadAll(string? dbPath = null)
         {
             var result = new List<RestoredEntry>();
@@ -114,8 +94,6 @@ namespace SkyrimCraftingTool.Services
                 c.Open();
 
                 using var cmd = c.CreateCommand();
-                // Upsert rather than insert: pressing the button twice is the user saying the same
-                // thing twice, not an error worth showing them.
                 cmd.CommandText = @"
                     INSERT INTO LeveledListRestoredEntry (ListKey, Reference, Level, Count, LastChanged)
                     VALUES (@k, @r, @l, @c, @now)

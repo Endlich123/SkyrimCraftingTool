@@ -44,25 +44,6 @@ namespace SkyrimCraftingTool.Services
         public int SurfacesWithDerivedFrame;
     }
 
-    // A rasteriser, written out rather than handed to Direct3D.
-    //
-    // WHY THIS EXISTS AT ALL. The preview ran on WPF's Viewport3D, which is fixed-function: it has no
-    // shader stage, so a normal map cannot be applied per pixel. Most of what makes a Skyrim armour look
-    // like anything lives in that map - the diffuse is often nearly flat, and in the latex case measured
-    // at luma 0,1 of 255, where no amount of light can help. The workaround in place bakes the relief
-    // into the diffuse once at load time with a fixed light, which paints the structure on: it does not
-    // move when the model turns, and that is exactly what reads as cheap.
-    //
-    // WHY NOT D3D11. It works - a probe got a D3D11 device onto a D3D9Ex shared surface in this process,
-    // all seven steps - but the route is interop: a hand-written vtable for IDirect3D9Ex, where one
-    // missing entry crashed the test host with an access violation rather than failing, and where
-    // CreateDeviceEx refused four of five plausible parameter sets. That is a lot of untestable surface
-    // on the user's GPU driver for a window that inspects armour meshes.
-    //
-    // WHAT THIS BUYS INSTEAD: every pixel is decided by code in this file, so the whole renderer is a
-    // pure function of its inputs - deterministic, no device, no driver, and therefore testable in the
-    // same suite as everything else. The cost is CPU time, which measured at a few tens of milliseconds
-    // for an armour at preview size, against a 16 ms budget nobody is holding this window to.
     public static class SoftwareRenderer
     {
         // Where the camera is and what it looks at. Kept separate from WPF's PerspectiveCamera so the
@@ -171,7 +152,7 @@ namespace SkyrimCraftingTool.Services
             // first version of this did the transform inside the band and was no faster than single
             // threaded - 142 ms became 167 - because an armour covers a fraction of the screen, so
             // repeating 23.000 vertex transforms sixteen times cost more than the pixels saved.
-            var prepared = new PreparedSurface[surfaces.Count];
+            var prepared = new PreparedSurface?[surfaces.Count];
             for (int i = 0; i < surfaces.Count; i++)
             {
                 prepared[i] = Prepare(surfaces[i], viewProjection, lighting, target);
@@ -670,8 +651,6 @@ namespace SkyrimCraftingTool.Services
         {
             double scale = Math.Clamp(lighting.Brightness, 0.1, 3.0);
 
-            // Base colour. A shape with no diffuse map is drawn mid-grey rather than skipped: a missing
-            // texture is a thing the user needs to SEE in the shape list, not a hole in the model.
             double red = 0.72, green = 0.72, blue = 0.72;
             if (surface.Diffuse is not null)
             {

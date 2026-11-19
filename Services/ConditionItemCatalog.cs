@@ -33,8 +33,6 @@ namespace SkyrimCraftingTool.Services
         public static FormIDRecord? Find(string? key) =>
             !string.IsNullOrEmpty(key) && _byKey.TryGetValue(key, out var r) ? r : null;
 
-        // The first `max` records whose display name contains the text. A ComboBox over all 54,000
-        // is not usable even virtualized; the editor shows these and the user narrows by typing.
         public static List<FormIDRecord> Search(string? text, int max = 100)
         {
             if (string.IsNullOrWhiteSpace(text)) return _all.Take(max).ToList();

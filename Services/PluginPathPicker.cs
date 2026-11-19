@@ -16,34 +16,6 @@ namespace SkyrimCraftingTool.Services
         public IReadOnlyList<PluginPathConflict> Conflicts { get; init; } = Array.Empty<PluginPathConflict>();
     }
 
-    // Picks ONE path per plugin file name.
-    //
-    // THE BUG THIS FIXES. FileDBHandler.ScanFileSystemForPlugins searches the game's Data folder AND
-    // the mod folder recursively, and every path whose file name appeared in plugins.txt was written
-    // to the Plugins table. GetActivePlugins then collected ALL of them into PluginInfo.FullPaths,
-    // and both scans do SelectMany over that - so a plugin that exists twice was PARSED TWICE and
-    // WRITTEN TWICE. Which copy ended up in the database was decided by the row order of
-    // "SELECT FileName, FullPath FROM Plugins WHERE Active = 1", a query with no ORDER BY, i.e. by
-    // the order a recursive Directory.GetFiles happened to insert them in.
-    //
-    // That is not a corner case. Measured on the author's own setup (2026-10-05): 96 plugin files
-    // existed in two copies - every vanilla master, every Creation Club file, and a dozen mods.
-    // Among them SkyrimCraftingTool.esp in a mod folder that modlist.txt marks DISABLED and in
-    // another that is enabled: the copy the game never loads could win.
-    //
-    // THE RULES, in order. They differ by manager because the managers differ:
-    //
-    //   MO2   - the VFS makes a mod folder override the game folder, and mod-vs-mod is decided by
-    //           modlist.txt priority. A plugin is only loadable from a mod's ROOT, so a copy buried
-    //           deeper inside a mod (FaceGen or voice folders are named after plugins) is not a
-    //           candidate at all. A disabled mod is not loaded, so its copy loses outright.
-    //   Vortex,
-    //   Other,
-    //   Unknown - deployment puts the real file in the game's Data folder, so the Data copy wins.
-    //
-    // Whatever happens, a file name that had candidates always gets exactly one back. Returning
-    // nothing would silently shrink the scan, which is a worse failure than picking the second-best
-    // copy - so the last rule is always a deterministic fallback, and it is reported as a conflict.
     public static class PluginPathPicker
     {
         public static PluginPathSelection PickOnePerFileName(
@@ -51,7 +23,7 @@ namespace SkyrimCraftingTool.Services
             string gameDataPath,
             string modDirectory,
             ModManagerKind kind,
-            ModListOrder modList = null)
+            ModListOrder? modList = null)
         {
             var chosen = new List<string>();
             var conflicts = new List<PluginPathConflict>();
@@ -63,7 +35,7 @@ namespace SkyrimCraftingTool.Services
 
             var groups = candidatePaths
                 .Where(p => !string.IsNullOrWhiteSpace(p))
-                .GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+                .GroupBy(p => Path.GetFileName(p), StringComparer.OrdinalIgnoreCase)
                 // Stable, manager-independent output order so two scans of the same disk agree.
                 .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
 
@@ -128,6 +100,7 @@ namespace SkyrimCraftingTool.Services
             var modRootCopies = candidates
                 .Select(p => (Path: p, Mod: ModFolderOf(p, modDirectory)))
                 .Where(x => x.Mod != null)
+                .Select(x => (x.Path, Mod: x.Mod!))
                 .ToList();
 
             var enabled = modRootCopies.Where(x => !modList.IsDisabled(x.Mod)).ToList();
@@ -206,7 +179,7 @@ namespace SkyrimCraftingTool.Services
             return ModFolderOf(path, modDirectory) != null;
         }
 
-        private static string FindUnder(IEnumerable<string> candidates, string root) =>
+        private static string? FindUnder(IEnumerable<string> candidates, string root) =>
             string.IsNullOrWhiteSpace(root)
                 ? null
                 : candidates.FirstOrDefault(p => IsUnder(p, root));
@@ -214,7 +187,7 @@ namespace SkyrimCraftingTool.Services
         // The mod folder name when the path is exactly <modDirectory>\<ModName>\<file>, else null.
         // Null is also the answer for a copy nested deeper, which is the point: MO2 does not load
         // those.
-        internal static string ModFolderOf(string path, string modDirectory)
+        internal static string? ModFolderOf(string path, string modDirectory)
         {
             if (string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(modDirectory)) return null;
             if (!IsUnder(path, modDirectory)) return null;

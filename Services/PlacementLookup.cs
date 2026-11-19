@@ -6,32 +6,12 @@ using SkyrimCraftingTool.Model;
 
 namespace SkyrimCraftingTool.Services
 {
-    // Where does something already sit, and what is in a leveled list.
-    //
-    // Read-only, and deliberately so: this answers questions about the load order as scanned. It has
-    // nothing to do with the placements the user configures in the Container tab - those live in
-    // ContainerString and are what the patch WILL add. Mixing the two would be the most misleading
-    // thing this feature could do: "already in the game" and "you asked for it" look identical in a
-    // list and mean opposite things.
     public enum PlacementKind { LeveledList, Container }
 
     // One place a thing was found. Level/Count are only meaningful for a leveled list.
     public sealed record Placement(
         PlacementKind Kind, string Key, string Name, int Level, int Count);
 
-    // One entry of a leveled list. IsList marks an entry that points at another leveled list rather
-    // than at an item - a third of all entries do. Those are shown as a link, not resolved: with a
-    // nesting depth of up to 9, expanding everything can mean thousands of rows, and the interesting
-    // answer is almost always the next hop.
-    // IsPlanned marks a row the PATCH will add - it is not in the list yet. Shown alongside the
-    // scanned contents rather than in a separate box, because the question the contents answer is
-    // "what will come out of this list", and a placement the user has already made is part of that
-    // answer. Marked, never mixed silently: what the game has and what the patch will add must stay
-    // tellable apart.
-    // IsRestored narrows IsPlanned: both are rows the patch will add, but one is something the user
-    // chose to put into the list and the other is something that USED to be in it until an override
-    // dropped it. Same effect on the game, different thing to read months later - "+ new" on a
-    // vanilla item that was always meant to be there would be a small lie.
     public sealed record LeveledListEntryInfo(
         int Ordinal, string Reference, string Name, int Level, int Count, bool IsList,
         bool IsPlanned = false, bool IsRestored = false);
@@ -46,28 +26,8 @@ namespace SkyrimCraftingTool.Services
         string Reference, string Name, int Level, int Count, string LostFrom, bool IsList,
         bool Ambiguous = false, string AddedBy = "", string DroppedBy = "");
 
-    // A row in the Container/LeveledList tab's tree.
-    //
-    // IsOwn marks a leveled list the user created in the tool (LeveledList.Original = 0). Defaulted,
-    // because containers and every caller written before own lists existed have no such thing.
     public sealed record OwnerSummary(string Key, string Name, int EntryCount, bool IsOwn = false);
 
-    // One OBJECT inside a container or a list, with every occurrence of it folded together.
-    //
-    // GROUPED, AND THAT IS THE WHOLE POINT. ContainerEntry and LeveledListEntry are keyed by ordinal
-    // because the same object may legitimately be listed twice - 3,982 list entries share
-    // (list, reference, level) with another. But the patch removes an OBJECT and takes every
-    // occurrence with it ("Removes all Potion of Extreme Healing from the filtered LL"). Offering
-    // the rows separately would let someone tick one of two identical entries and lose both in game.
-    //
-    // Occurrences is how many rows were folded in, so the view can say "x2" and mean it. TotalCount
-    // is their counts added up - a container holding 200 gold in one row and 50 in another holds 250.
-    //
-    // THE FOLD IS THE DECISION, NOT THE DISPLAY. Breakdown carries the rows that were folded in, so
-    // the view can show a list entry the way the leveled-list window shows it - "Level 8 x2" per
-    // row - while the tick above them stays one tick about the object. Showing the occurrences as
-    // separate TICKS is the thing that must not happen: the user would be ticking one of two
-    // identical entries, and the patch cannot do that.
     public sealed record OwnedEntry(
         string Reference, string Name, int Occurrences, int TotalCount, bool IsList, bool IsRemoved,
         IReadOnlyList<OwnedOccurrence>? Breakdown = null);
@@ -147,90 +107,10 @@ namespace SkyrimCraftingTool.Services
             return cmd.ExecuteScalar() != null;
         }
 
-        private const string FormIdAlias = "formids";
-
-        // Where formid.db sits relative to the database being read. Next to item.db in tests (so the
-        // attach path can actually be exercised), in its own folder under Input in the real layout.
-        private static string FormIdPathFor(string? dbPath)
-            => string.IsNullOrWhiteSpace(dbPath)
-                ? Path.Combine(GlobalState.Tool?.InputFolder ?? "", "FormID", "formid.db")
-                : Path.Combine(Path.GetDirectoryName(dbPath) ?? "", "formid.db");
-
-        // formid.db holds the reference tables, above all Materials. Attaching it costs one statement
-        // and saves a lookup per row; if it is missing the query runs without those names rather than
-        // failing, because a missing reference database must not cost the whole list view.
-        //
-        // THE ALREADY-ATTACHED CHECK IS NOT BELT AND BRACES. Microsoft.Data.Sqlite pools connections:
-        // disposing one hands the underlying handle back to the pool WITH this database still
-        // attached, and the next open gets that same handle. A second ATTACH then fails with
-        // "database formids is already in use" - so the first list a user opened showed names and
-        // every one after it showed raw keys, until the pool happened to hand out a fresh handle.
-        private static bool TryAttachFormIds(SqliteConnection c, string? dbPath)
-        {
-            var path = FormIdPathFor(dbPath);
-            if (!File.Exists(path)) return false;
-
-            try
-            {
-                // Attached ALREADY IS NOT ENOUGH - it has to be attached to THIS file. A pooled
-                // handle can come back carrying `formids` pointing at a different formid.db, and
-                // the name check alone accepted that and then read names out of the wrong database.
-                // Found as a flaky test (one run green, the next red) once enough test classes ran
-                // in parallel to make the pool hand such a handle over.
-                var attached = AttachedPath(c);
-
-                if (attached != null)
-                {
-                    if (SamePath(attached, path)) return true;
-
-                    using var detach = c.CreateCommand();
-                    detach.CommandText = $"DETACH DATABASE {FormIdAlias}";
-                    detach.ExecuteNonQuery();
-                }
-
-                using var cmd = c.CreateCommand();
-                cmd.CommandText = $"ATTACH DATABASE @p AS {FormIdAlias}";
-                cmd.Parameters.AddWithValue("@p", path);
-                cmd.ExecuteNonQuery();
-                return true;
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogWarning($"PlacementLookup: formid.db could not be attached ({ex.Message})");
-                return false;
-            }
-        }
-
-        // The file `formids` currently points at on this connection, or null when nothing is
-        // attached under that name.
-        private static string? AttachedPath(SqliteConnection c)
-        {
-            using var cmd = c.CreateCommand();
-            cmd.CommandText = "SELECT file FROM pragma_database_list WHERE name = @a";
-            cmd.Parameters.AddWithValue("@a", FormIdAlias);
-
-            var value = cmd.ExecuteScalar();
-            return value == null || value == DBNull.Value ? null : Convert.ToString(value);
-        }
-
-        internal static bool SamePath(string? a, string? b)
-        {
-            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return false;
-
-            try
-            {
-                return string.Equals(
-                    Path.GetFullPath(a).TrimEnd(Path.DirectorySeparatorChar),
-                    Path.GetFullPath(b).TrimEnd(Path.DirectorySeparatorChar),
-                    StringComparison.OrdinalIgnoreCase);
-            }
-            catch
-            {
-                // An unusable path is not the same path, and comparing them must not throw in the
-                // middle of opening a list.
-                return false;
-            }
-        }
+        // formid.db is not attached any more (2026-11-07). It was, for the names of its Materials table -
+        // a copy of WorldItem's misc/ingredient/food/ammo/soul-gem rows, which the queries below join
+        // directly. With it went the pooled-ATTACH workaround (a disposed connection came back still
+        // attached, possibly to another file) that this spot used to need.
 
         // Every leveled list and container that already holds this key, straight from the scanned
         // load order. Direct placements only - no walking up through parent lists. In the item view
@@ -289,18 +169,6 @@ namespace SkyrimCraftingTool.Services
         // Level/Count are what the rule will carry.
         public sealed record PlannedPlacement(string ItemKey, string Name, int Level, int Count);
 
-        // Everything the user has lined up for this list, across ALL items - not just the one whose
-        // window is open.
-        //
-        // Without this the list view shows the load order as scanned and nothing else, so ten items
-        // placed into the same list are invisible until the patch is generated. They also change the
-        // odds: an item joining a list of twelve is one in thirteen, but if nine more are waiting in
-        // other items' settings it is one in twenty-two. That is the difference between a calculator
-        // that answers the question and one that flatters it.
-        //
-        // The same "lowest level wins" rule as the patch (see LeveledListRuleBuilder.BuildRules): one
-        // list can be reached through several containers with different levels, and the shown value
-        // has to be the one that will actually be written.
         public static IReadOnlyList<PlannedPlacement> PlannedFor(string listKey, string? dbPath = null)
         {
             var planned = new List<PlannedPlacement>();
@@ -343,19 +211,6 @@ namespace SkyrimCraftingTool.Services
             return planned;
         }
 
-        // Every placement string that so much as mentions the key, from all THREE tables that can
-        // hold one.
-        //
-        // WorldItem was missing here, and that was a hole of its own: books, scrolls, misc items,
-        // soul gems, ammo, food, ingredients and keys are placed exactly like armor and weapons
-        // (PatchGeneratorService feeds them through the same ParsePlacements), so a book placed into
-        // a list was patched but never shown as planned - not here and not in the leveled-list
-        // window, which reads the same lookup.
-        //
-        // The shadow column, not the base one: the scan never writes ContainerString, so every
-        // placement is a user edit and lives in IsEditedContainerString. LIKE is a cheap pre-filter;
-        // the string is parsed properly by the caller, because a key can appear either as a list's
-        // or as the container's own.
         private static IEnumerable<(string ItemKey, string Name, string ContainerString)> ReadPlacementStrings(
             string key, string? dbPath, string what)
         {
@@ -599,22 +454,6 @@ namespace SkyrimCraftingTool.Services
                   ORDER BY 2",
                 "AllContainers");
 
-        // The tree of leveled lists, same rule - with two exceptions, both about the user's OWN lists
-        // (docs/LeveledList-Create-Plan.md, L-P1):
-        //
-        //   An own list (Original = 0) shows up EMPTY. A freshly created one has no entries yet, and
-        //   an inner join made the "Create" button look like it did nothing. Scanned lists keep the
-        //   old rule - a list nothing feeds is not worth a row - which is why this is a HAVING and
-        //   not just a LEFT JOIN.
-        //
-        //   A scanned copy of the tool's own OUTPUT is left out. The generated ESP is active in any
-        //   load order that uses the patch, so the scan reads it back in, and every own list would
-        //   then stand in the tree twice - once as the user's, once as the empty record the ESP
-        //   wrote for it.
-        //
-        // A database without the Original column (one the startup schema pass has not reached, or a
-        // hand-built test fixture) has no own lists by definition, and gets the query without them -
-        // naming a missing column would not narrow the result, it would empty it.
         public static IReadOnlyList<OwnerSummary> AllLeveledLists(string? dbPath = null)
             => ReadOwners(dbPath, HasOwnListColumn(dbPath) ? LeveledListsSql : LeveledListsWithoutOwnSql, "AllLeveledLists");
 
@@ -714,8 +553,6 @@ namespace SkyrimCraftingTool.Services
                 cmd.CommandText = sql;
                 using var r = cmd.ExecuteReader();
 
-                // The fourth column is the leveled-list query's own-list flag; the container query
-                // has none, and a container is never the user's.
                 bool hasOwnFlag = r.FieldCount > 3;
 
                 while (r.Read())
@@ -752,7 +589,6 @@ namespace SkyrimCraftingTool.Services
                 using var c = TryOpen(dbPath);
                 if (c == null) return result;
 
-                bool hasReferences = TryAttachFormIds(c, dbPath);
                 bool hasWorldItems = HasTable(c, "WorldItem");
 
                 // The decisions are read once and matched in memory: one small set per owner, and a
@@ -768,21 +604,22 @@ namespace SkyrimCraftingTool.Services
                 // has always shown. The aggregate is still carried - see OwnedEntry.
                 //
                 // Name resolution is the same ladder as everywhere else - nested list, armor,
-                // weapon, then formid.db's materials. The candidate columns stay at 3..8 so the
-                // positional FirstNonEmpty call below keeps working; Count and Level took 1 and 2,
-                // where the two aggregates used to be.
+                // weapon, then the world items (misc, ingredients, food, ammo, soul gems, books,
+                // scrolls, keys). The candidate columns stay at 3..8 so the positional FirstNonEmpty
+                // call below keeps working; Count and Level took 1 and 2, where the two aggregates
+                // used to be. Column 8 is an empty slot: it was formid.db's Materials, a copy of
+                // WorldItem's rows that went on 2026-11-07 (and the ATTACH with it).
                 cmd.CommandText = $@"
                     SELECT e.Reference, e.Count, {(hasLevel ? "e.Level" : "0")},
                            nested.EditorID,
                            a.Name, a.EditorID,
-                           w.Name, w.EditorID
-                           {(hasReferences ? ", m.Name" : ", NULL")}
+                           w.Name, w.EditorID,
+                           NULL
                            {(hasWorldItems ? ", wi.Name, wi.EditorID" : ", NULL, NULL")}
                     {fromClause}
                     LEFT JOIN LeveledList nested ON nested.Key = e.Reference
                     LEFT JOIN Armor a           ON a.Key      = e.Reference
                     LEFT JOIN Weapons w         ON w.Key      = e.Reference
-                    {(hasReferences ? "LEFT JOIN formids.Materials m ON m.Key = e.Reference" : "")}
                     {(hasWorldItems ? "LEFT JOIN WorldItem wi ON wi.Key = e.Reference" : "")}
                     WHERE {ownerColumn} = @k
                     ORDER BY e.Ordinal";
@@ -803,10 +640,8 @@ namespace SkyrimCraftingTool.Services
 
                     if (!byReference.TryGetValue(reference, out var folded))
                     {
-                        // 9 and 10 are the world item's name and EditorID, tried before formid.db's
-                        // materials dump at 8: both can hold the same key, and this database's own
-                        // table is the one a rescan keeps in step.
-                        folded = (FirstNonEmpty(r, reference, 3, 4, 5, 6, 7, 9, 10, 8), !r.IsDBNull(3), new List<OwnedOccurrence>());
+                        // 9 and 10 are the world item's name and EditorID; 8 is the empty slot.
+                        folded = (FirstNonEmpty(r, reference, 3, 4, 5, 6, 7, 9, 10), !r.IsDBNull(3), new List<OwnedOccurrence>());
                         byReference[reference] = folded;
                         order.Add(reference);
                     }
@@ -908,10 +743,10 @@ namespace SkyrimCraftingTool.Services
                     globalKey = r.IsDBNull(3) ? "" : r.GetString(3);
                 }
 
-                // formid.db carries the reference tables - above all Materials, which is everything a
-                // recipe can use as an ingredient (MISC plus INGR, AMMO, SLGM, ALCH). 4,413 of 28,475
-                // entries point at one of those, and without this they were shown as a raw key.
-                bool hasReferences = TryAttachFormIds(c, dbPath);
+                // Misc, ingredients, food, ammo, soul gems (and books, scrolls, keys) are WorldItem
+                // rows. 4,413 of 28,475 entries point at one of those, and without this join they
+                // were shown as a raw key. Until 2026-11-07 formid.db was attached for its Materials
+                // copy of the same rows.
                 bool hasWorldItems = HasTable(c, "WorldItem");
 
                 var entries = new List<LeveledListEntryInfo>();
@@ -927,14 +762,13 @@ namespace SkyrimCraftingTool.Services
                         SELECT e.Ordinal, e.Reference, e.Level, e.Count,
                                nested.EditorID,
                                a.Name, a.EditorID,
-                               w.Name, w.EditorID
-                               {(hasReferences ? ", m.Name" : ", NULL")}
+                               w.Name, w.EditorID,
+                               NULL
                                {(hasWorldItems ? ", wi.Name, wi.EditorID" : ", NULL, NULL")}
                         FROM LeveledListEntry e
                         LEFT JOIN LeveledList nested ON nested.Key = e.Reference
                         LEFT JOIN Armor a           ON a.Key      = e.Reference
                         LEFT JOIN Weapons w         ON w.Key      = e.Reference
-                        {(hasReferences ? "LEFT JOIN formids.Materials m ON m.Key = e.Reference" : "")}
                         {(hasWorldItems ? "LEFT JOIN WorldItem wi ON wi.Key = e.Reference" : "")}
                         WHERE e.ListKey = @k
                         ORDER BY e.Ordinal";
@@ -947,8 +781,8 @@ namespace SkyrimCraftingTool.Services
 
                         entries.Add(new LeveledListEntryInfo(
                             r.GetInt32(0), reference,
-                            // 10 and 11 are the world item, tried before the materials dump at 9.
-                            FirstNonEmpty(r, reference, 4, 5, 6, 7, 8, 10, 11, 9),
+                            // 10 and 11 are the world item; 9 is the empty slot.
+                            FirstNonEmpty(r, reference, 4, 5, 6, 7, 8, 10, 11),
                             r.GetInt32(2), r.GetInt32(3), isList));
                     }
                 }
@@ -957,7 +791,7 @@ namespace SkyrimCraftingTool.Services
                 // with the same name it would have had if it were still there. Ordered by name
                 // rather than by any stored order: there is no order left to preserve - these rows
                 // come from versions of the list that no longer exist.
-                var lost = ReadLostRows(c, hasReferences, new[] { listKey })
+                var lost = ReadLostRows(c, new[] { listKey })
                     .Select(row => row.Info)
                     .ToList();
 
@@ -996,9 +830,7 @@ namespace SkyrimCraftingTool.Services
                 using var c = TryOpen(dbPath);
                 if (c == null) return result;
 
-                bool hasReferences = TryAttachFormIds(c, dbPath);
-
-                var rows = ReadLostRows(c, hasReferences, listKeys);
+                var rows = ReadLostRows(c, listKeys);
 
                 foreach (var group in rows.GroupBy(r => r.ListKey, StringComparer.OrdinalIgnoreCase))
                 {
@@ -1030,7 +862,7 @@ namespace SkyrimCraftingTool.Services
         // copy of a query whose name-candidate columns are POSITIONAL (see below) would have been
         // the kind of duplicate that breaks quietly the next time a column is added.
         private static List<(string ListKey, string ListName, LeveledListLostEntryInfo Info)> ReadLostRows(
-            SqliteConnection c, bool hasReferences, IReadOnlyCollection<string> listKeys)
+            SqliteConnection c, IReadOnlyCollection<string> listKeys)
         {
             var rows = new List<(string, string, LeveledListLostEntryInfo)>();
             if (!HasTable(c, "LeveledListLostEntry")) return rows;
@@ -1050,8 +882,8 @@ namespace SkyrimCraftingTool.Services
                 SELECT l.Reference, l.Level, l.Count, l.LostFrom, l.Ambiguous,
                        nested.EditorID,
                        a.Name, a.EditorID,
-                       w.Name, w.EditorID
-                       {(hasReferences ? ", m.Name" : ", NULL")},
+                       w.Name, w.EditorID,
+                       NULL,
                        l.AddedBy, l.DroppedBy,
                        l.ListKey, owner.EditorID
                        {(hasWorldItems ? ", wi.Name, wi.EditorID" : ", NULL, NULL")}
@@ -1060,7 +892,6 @@ namespace SkyrimCraftingTool.Services
                 LEFT JOIN LeveledList owner  ON owner.Key  = l.ListKey
                 LEFT JOIN Armor a            ON a.Key      = l.Reference
                 LEFT JOIN Weapons w          ON w.Key      = l.Reference
-                {(hasReferences ? "LEFT JOIN formids.Materials m ON m.Key = l.Reference" : "")}
                 {(hasWorldItems ? "LEFT JOIN WorldItem wi ON wi.Key = l.Reference" : "")}
                 WHERE l.ListKey IN ({string.Join(",", names)})";
 
@@ -1073,12 +904,12 @@ namespace SkyrimCraftingTool.Services
             {
                 var reference = r.GetString(0);
 
-                // Columns 5..10 plus the world item at 15/16 are the name candidates, in the order
+                // Columns 5..9 plus the world item at 15/16 are the name candidates, in the order
                 // FirstNonEmpty should try them; 5 is the nested list's EditorID and therefore
-                // doubles as "this entry is a list".
+                // doubles as "this entry is a list". 10 is the empty slot (formid.db's Materials).
                 var info = new LeveledListLostEntryInfo(
                     reference,
-                    FirstNonEmpty(r, reference, 5, 6, 7, 8, 9, 15, 16, 10),
+                    FirstNonEmpty(r, reference, 5, 6, 7, 8, 9, 15, 16),
                     r.GetInt32(1), r.GetInt32(2),
                     r.IsDBNull(3) ? "" : r.GetString(3),
                     IsList: !r.IsDBNull(5),

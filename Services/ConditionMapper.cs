@@ -225,11 +225,6 @@ public static class ConditionMapper
         return rec;
     }
 
-    // A condition the user started but never pointed at anything - HasPerk with no perk picked,
-    // GetStageDone with no quest picked. Skipped when persisting a recipe (mirrors the empty-
-    // ingredient filter) so a half-built condition doesn't come back as a broken one on reload.
-    // GetLevel / GetIsSex / GetActorValue have no free-form target (or always have a value), so
-    // they're always persistable. Read-only ones came from a plugin, so they always are too.
     public static bool HasUsableTarget(BaseConditionViewModel vm) => vm switch
     {
         PerkConditionViewModel p => !p.PerkFormKey.IsNull,

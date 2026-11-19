@@ -194,15 +194,6 @@ namespace SkyrimCraftingTool.Services
             "illusion", "restoration", "enchanting",
         };
 
-        // THE CEILING (user, 2026-10-12). 100 is where the game stops reading a skill: the damage,
-        // armour and spell-cost formulas all top out there, and so does every perk requirement.
-        //
-        // What it does is cap the two editors' input boxes - the NPC's Skills block and the group
-        // editor's skill rows. The record field itself holds more, and a mod shipping a boss at 150
-        // keeps it: nothing here rewrites a scanned value or a stored edit.
-        //
-        // Lives beside the skill names because both editors need it, and two literal 100s is how
-        // they end up disagreeing.
         public const int MaxValue = 100;
 
         // What a reader expects to see, against the token the patch string uses: "marksman" is
@@ -346,6 +337,10 @@ namespace SkyrimCraftingTool.Services
         // enough for the group editor: a group adds perks its members do not carry yet, so the list it
         // offers cannot be built out of the members.
         IReadOnlyList<Model.FormIDRecord> PerkChoices();
+
+        // A perk row's tooltip: game name, skill tree, key, description (FormIDRecord.ToolTipText).
+        // The bare key for a perk formid.db does not know.
+        string PerkToolTip(string key);
     }
 
     public sealed class NpcLabels : INpcLabels
@@ -367,6 +362,10 @@ namespace SkyrimCraftingTool.Services
         public Dictionary<string, string> LeveledSpells { get; init; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, string> Perks { get; init; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, string> Weapons { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+
+        // The full formid.db perk rows behind Perks - game name, description, skill tree. May be
+        // empty (tests fill Perks alone); everything here falls back to the name map then.
+        public Dictionary<string, Model.FormIDRecord> PerkRecords { get; init; } = new(StringComparer.OrdinalIgnoreCase);
 
         // The inputs of the engine.s own stat calculation, for the 67,5 % of NPCs whose stored
         // Health/Magicka/Stamina the game ignores. Names alone cannot answer "what will this NPC
@@ -405,13 +404,18 @@ namespace SkyrimCraftingTool.Services
         private IReadOnlyList<Model.FormIDRecord>? _perkChoices;
 
         public IReadOnlyList<Model.FormIDRecord> PerkChoices() => _perkChoices ??= Perks
-            .Select(kv => new Model.FormIDRecord { Key = kv.Key, Name = kv.Value })
+            .Select(kv => PerkRecords.TryGetValue(kv.Key, out var rec)
+                ? rec
+                : new Model.FormIDRecord { Key = kv.Key, Name = kv.Value })
             .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        public string PerkToolTip(string key)
+            => key != null && PerkRecords.TryGetValue(key, out var rec) ? rec.ToolTipText : key ?? "";
+
         // An inventory line can point at anything - armour, a weapon, a potion, a leveled list. The
         // catalogues are searched in turn rather than one being guessed at from the key.
-        public string Item(string key)
+        public string Item(string? key)
         {
             foreach (var map in new[] { Armors, Weapons, LeveledItems, Spells })
                 if (map.TryGetValue(key ?? "", out var name)) return name;
@@ -422,7 +426,7 @@ namespace SkyrimCraftingTool.Services
         // An unset link reads as "-", a set one whose target is missing keeps the key. Falling back
         // to "-" for both would hide a dead reference, and a dead reference is exactly the thing a
         // patch has to stop at.
-        private static string Look(Dictionary<string, string> map, string key)
+        private static string Look(Dictionary<string, string> map, string? key)
         {
             if (string.IsNullOrWhiteSpace(key)) return "-";
             return map.TryGetValue(key, out var name) && !string.IsNullOrWhiteSpace(name) ? name : key;

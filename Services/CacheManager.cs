@@ -45,7 +45,18 @@ namespace SkyrimCraftingTool.Services
             step = PerfLog.Measure("Caches: keyword, material, perk, quest, container catalogues");
 
             snapshot.Keywords = _formIdService.SearchByType("Keyword");
-            snapshot.Materials = _formIdService.SearchByType("Material");
+
+            var worldItems = _itemService.LoadWorldItems();
+            snapshot.Materials = worldItems
+                .Where(w => WorldItemRecord.IngredientKinds.Contains(w.Kind))
+                .Select(ToMaterial)
+                // Armor and weapons as ingredients too: 881 recipes on the real modlist take an armor
+                // piece, 1,151 a weapon (staff enchanter, upgrades). Without them those ingredients
+                // showed as a raw key and could not be picked. The pickers start with these two kinds
+                // excluded (GearKinds) - 38,706 of them beside 6,332 materials.
+                .Concat(snapshot.Armor.Values.Select(a => ToMaterial(a.Key, a.EditorID, a.Name, "Armor")))
+                .Concat(snapshot.Weapons.Values.Select(w => ToMaterial(w.Key, w.EditorID, w.Name, "Weapon")))
+                .ToList();
             snapshot.Perks = _formIdService.SearchByType("Perk")
                 .GroupBy(p => p.Key)          
                 .Select(g => g.First())
@@ -63,7 +74,7 @@ namespace SkyrimCraftingTool.Services
                     .Select(a => ConditionItemCatalog.Entry(a.Key, a.Name, a.EditorID, "Armor"))
                 .Concat(snapshot.Weapons.Values
                     .Select(w => ConditionItemCatalog.Entry(w.Key, w.Name, w.EditorID, "Weapon")))
-                .Concat(_itemService.LoadWorldItems()
+                .Concat(worldItems
                     .Select(i => ConditionItemCatalog.Entry(i.Key, i.Name, i.EditorID, i.Kind)))
                 .Concat(_formIdService.SearchByType("FormList")
                     .Select(l => ConditionItemCatalog.Entry(l.Key, "", l.Name, "FormList")))
@@ -75,6 +86,28 @@ namespace SkyrimCraftingTool.Services
             _snapshot = snapshot;
             return snapshot;
         }
+
+        // A WorldItem row as the material pickers want it: Name = EditorID (what every picker shows and
+        // sorts by), FullName = the in-game name, Kind for the grey suffix and the filter.
+        internal static FormIDRecord ToMaterial(WorldItemRecord w) => ToMaterial(w.Key, w.EditorID, w.Name, w.Kind);
+
+        internal static FormIDRecord ToMaterial(string? key, string? editorId, string? name, string? kind)
+        {
+            var parts = (key ?? "").Split('|');
+            return new FormIDRecord
+            {
+                Key = key ?? "",
+                Name = editorId ?? "",
+                FullName = name ?? "",
+                Kind = kind ?? "",
+                Plugin = parts[0],
+                FormID = parts.Length > 1 ? parts[1] : "",
+                Type = "Material",
+            };
+        }
+
+        // The material kinds a picker starts with excluded (right-click on the chip brings them in).
+        public static readonly IReadOnlyList<string> GearKinds = new[] { "Armor", "Weapon" };
 
         // Armor updates
         public void UpdateArmorName(string key, string name)
@@ -370,10 +403,6 @@ namespace SkyrimCraftingTool.Services
             }
         }
 
-        // Drops a recipe entirely from the snapshot - counterpart to ItemDBHandler.DeleteCOBJ, used
-        // when the user resets a recipe they created from scratch (see MainContentVM.
-        // ResetCraftingRecipeEdits/ResetTemperRecipeEdits) instead of one that already existed in the
-        // plugin. Without this the deleted row would still linger here until the next full rescan.
         public void RemoveRecipe(string cobjKey)
         {
             if (string.IsNullOrEmpty(cobjKey)) return;

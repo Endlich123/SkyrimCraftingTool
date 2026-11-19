@@ -4,13 +4,6 @@ using System.Globalization;
 
 namespace SkyrimCraftingTool.Services
 {
-    // Reads the ContainerString: "{ContainerKey: {LVLiKey,Level[,Count]; ...}; ...}".
-    //
-    // The trailing Count is an extension, and an entry without it is not an error: every string
-    // written before it existed has two fields, and those strings are sitting in the user's item.db
-    // AND in their preset files (see PresetFile - same format on both sides). Missing count means 1,
-    // which is exactly what the patch wrote before the field existed, so an old string keeps meaning
-    // what it always meant.
     public static class ContainerStringParser
     {
         public const int DefaultCount = 1;
@@ -55,8 +48,6 @@ namespace SkyrimCraftingTool.Services
                         if (!int.TryParse(s[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var level))
                             continue;
 
-                        // A malformed count falls back to 1 rather than dropping the whole placement:
-                        // losing the level too would silently un-place an item the user had set up.
                         int count = DefaultCount;
                         if (s.Length > 2 &&
                             int.TryParse(s[2].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedCount) &&
@@ -76,7 +67,6 @@ namespace SkyrimCraftingTool.Services
         }
     }
 
-    // What the user asked for on one leveled list: from which level, and how many.
     public readonly record struct LvliPlacement(int Level, int Count);
 
     public class ParsedContainerEntry

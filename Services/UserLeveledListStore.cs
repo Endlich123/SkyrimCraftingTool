@@ -8,7 +8,6 @@ using SkyrimCraftingTool.Model;
 
 namespace SkyrimCraftingTool.Services
 {
-    // One of the user's own leveled lists: a LeveledList row with Original = 0.
     public sealed record UserLeveledList(string Key, string EditorId);
 
     public enum UserListTargetKind
@@ -32,15 +31,6 @@ namespace SkyrimCraftingTool.Services
         BadTarget,
     }
 
-    // The user's own leveled lists (docs/LeveledList-Create-Plan.md, L-P2 and L-P6).
-    //
-    // WHAT THE TOOL OWNS HERE IS THE EXISTENCE OF THE LIST, AND WHERE IT HANGS. Nothing else: the
-    // generated ESP writes an empty record, and everything that goes into it arrives the way it
-    // arrives in any other list - an item's placement, a SkyPatcher rule. That is the whole design,
-    // and it is why this store holds two things and not a list editor.
-    //
-    // Its own small store, like LeveledListEditStore and RemovalStore: one row per write, no snapshot
-    // machinery, and the patch generator reads it in one go.
     public static class UserLeveledListStore
     {
         // SkyPatcher refuses to add past this since 7.1.3 and writes a line into its log instead - the
@@ -61,23 +51,6 @@ namespace SkyrimCraftingTool.Services
         // which the scan reads back in once the ESP is active - see PlacementLookup.AllLeveledLists.
         internal const int KeyBaseline = 0x800000;
 
-        // THE ITEM'S WAY IN (L-P5): AN OWN LIST INSIDE THE CONTAINER IT WAS HUNG INTO. Put SCT_LList_800001 into
-        // 00SPGlacialChest4, and picking that chest on an item has to offer the list among the chest's
-        // own lists - that is what "it hangs there" means to anyone placing an item (user, 2026-10-12).
-        //
-        // THE ONLY WAY IN. There was a second one - a pseudo-container "Your leveled lists" holding every
-        // own list - and it was taken back out (user, 2026-10-12): among the containers it was simply in
-        // the wrong place. So a list that hangs only in another LIST, or nowhere yet, cannot be filled
-        // from an item until it also hangs in a container.
-        //
-        // The scan cannot know it: ContainerLVLI is what the plugins say, and the SkyPatcher rule that
-        // hangs the list there only exists in the game. But the tool knows - the target is its own
-        // decision, in UserLeveledListTarget - so it is merged in here, on top of the scanned rows.
-        //
-        // The scanned rows are never touched, only an own-list row is ever added or taken away. A new
-        // list is assigned rather than the old one edited: the scanned list is ItemDBHandler's cache.
-        //
-        // Returns the containers whose entries changed, so the caller can rebuild only those rows.
         public static IReadOnlySet<string> MergeOwnListsIntoContainers(IEnumerable<ContainerRecord> containers, string? dbPath = null)
         {
             var changed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -425,12 +398,6 @@ namespace SkyrimCraftingTool.Services
             return removed;
         }
 
-        // Would putting `listKey` into `targetKey` make a list contain itself?
-        //
-        // Only the user's own lists can close a loop. A scanned list is never inside an own list -
-        // nothing puts one there: own lists are filled by item placements and by other own lists - so
-        // walking down from `listKey` only ever meets own lists, and the question reduces to: is the
-        // target already somewhere inside the list being placed?
         internal static bool WouldCreateCycle(string listKey, string targetKey, string? dbPath = null)
         {
             // child -> the lists it hangs in, read once

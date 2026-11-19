@@ -7,15 +7,6 @@ using SkyrimCraftingTool.Model;
 
 namespace SkyrimCraftingTool.Services
 {
-    // Persistence for NPC groups (G2, docs/NPC-Gruppen-Plan.md section 4).
-    //
-    // Reads and writes the six NpcGroup* tables and nothing else. What it deliberately does NOT do is
-    // store membership: that is computed by NpcGroupResolver on every read, because a saved member
-    // list goes stale on the next rescan (section 8). The one member table here is the SNAPSHOT, and
-    // it exists to report that drift rather than to define a group.
-    //
-    // Not the item save pipeline, for the same reason NpcEditStore is not: that one debounces slider
-    // and chip edits. A group is saved when the user is done with it - one edit, one write.
     public sealed class NpcGroupStore
     {
         private readonly string _dbPath;
@@ -280,9 +271,6 @@ namespace SkyrimCraftingTool.Services
 
         // ---- the rescan snapshot ---------------------------------------------------------------
 
-        // What the user last CONFIRMED this group contains. Written by the confirmation, never by a
-        // resolution: a snapshot that updated itself on every read would agree with the new membership
-        // every time and the diff of section 8 would have nothing to report.
         public void SaveSnapshot(long groupId, IEnumerable<string>? npcKeys)
         {
             if (!Ready || groupId <= 0) return;
