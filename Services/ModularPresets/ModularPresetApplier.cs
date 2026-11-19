@@ -76,9 +76,6 @@ namespace SkyrimCraftingTool.Services.ModularPresets
     // result is written to the item. Also what every build box's Apply runs.
     public static class ModularPresetApplier
     {
-        // A safety rule (user, 2026-10-20): an item without a name is never built. Nameless
-        // records are skins, inventory placeholders and other things no player picks up - and a
-        // name pattern cannot have looked at them.
         public static bool IsSkipped(ItemNodeVM item) => string.IsNullOrWhiteSpace(item.Name);
 
         // The engine's result in the shape PresetApplyService already knows how to apply. Every
@@ -210,22 +207,6 @@ namespace SkyrimCraftingTool.Services.ModularPresets
             };
         }
 
-        // DISPLAY ONLY since the Kinder-Patcher (2026-10-28): the dry run's card shows what the child
-        // will hold in game. The patch no longer writes these numbers into the child - it takes them
-        // from the template's saved state times the child's extras (TemplateInheritance,
-        // ChildExtrasCalculator - the same arithmetic).
-        //
-        // An armor made from a template (TNAM) - every enchanted variant of Thaumaturgy and vanilla -
-        // gets the template's armor rating, value and weight (user, 2026-10-25: "the same item plus a
-        // magic effect"). Its own type and keywords stay as computed - its slots are the template's
-        // anyway (ArmorTemplateSlots, StateOf) - and being enchanted it
-        // gets no new recipe anyway. Held back when the variant itself keeps its values (an addon
-        // with KeepValues or LeaveUntouched, e.g. the vanilla uniques) and when the template is not
-        // in the scan.
-        //
-        // The template is computed from its own detection, without the dry run's plugin or item
-        // choices: the template usually sits in another plugin than the variant (vanilla vs.
-        // Thaumaturgy), and the dry run only knows the choices of the items it lists.
         public static void TakeTemplateValues(MainContentVM main, ModularCatalog catalog, ItemNodeVM item,
             ModularSelection selection, ModularResult result, HashSet<string>? materialKeywords,
             IReadOnlyDictionary<string, ItemNodeVM>? nodesByKey = null)
@@ -278,10 +259,6 @@ namespace SkyrimCraftingTool.Services.ModularPresets
             double value = computed?.Value ?? node?.Value ?? record!.Value;
             double weight = computed?.Weight ?? node?.Weight ?? record!.Weight;
 
-            // What the variant has and its plain piece has not, on top (user, 2026-10-25: enchanted
-            // robes get a bonus): "Master Robes" (x512) picks an enchanted master robe by its name,
-            // while its template is the plain robe. An addon both share is in the template's numbers
-            // already and is not counted twice.
             var extra = variantAddons.Where(a => !templateAddons.Contains(a.Name)).ToList();
             foreach (var a in extra)
             {

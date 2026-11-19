@@ -7,10 +7,6 @@ using System.Text.Json;
 
 namespace SkyrimCraftingTool.Services.ModularPresets
 {
-    // Which plugins the preset patch leaves out (user, 2026-10-22: "beim Preset-Patchen entscheiden
-    // können, welche ESP gepatcht werden"). Stored as the EXCLUDED names, so a mod added later is
-    // patched unless someone takes it out. Lives next to the building blocks, not inside them: it is
-    // about this load order, not part of a preset someone shares.
     public sealed class PatchPluginSelection
     {
         public static string DefaultPath => Path.Combine(PresetFileStore.PresetsRoot, "PatchPlugins.json");
@@ -59,9 +55,6 @@ namespace SkyrimCraftingTool.Services.ModularPresets
         // What the patch touches: the plugin is on AND the item is on.
         public bool Patches(string plugin, string itemKey) => IsIncluded(plugin) && IsItemIncluded(itemKey);
 
-        // The preset combination chosen in the dry run, per plugin and per item (user, 2026-10-22:
-        // "die Preset-Kombis sollten dort auch änderbar sein"). Applied on top of the detection:
-        // detected -> plugin choice -> item choice.
         public BuildChoice? PluginChoice(string plugin) => _pluginChoices.TryGetValue(plugin, out var c) ? c : null;
         public BuildChoice? ItemChoice(string itemKey) => _itemChoices.TryGetValue(itemKey, out var c) ? c : null;
 

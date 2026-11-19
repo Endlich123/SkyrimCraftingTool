@@ -53,8 +53,6 @@ namespace SkyrimCraftingTool.Services.ModularPresets
                 NamePatterns = PatternFromName(preset.PresetName),
             };
 
-            // Clothing (no class keyword): values stay out - clothing gets 0 by design - but the
-            // recipe still comes over, it is real data the user wrote.
             if (armorType != null && bodySharePercent > 0 && (body.ArmorRating.Enabled || body.Value.Enabled || body.Weight.Enabled))
             {
                 double f = 100.0 / bodySharePercent;
@@ -101,7 +99,7 @@ namespace SkyrimCraftingTool.Services.ModularPresets
             }
             if (source.Conditions.Enabled)
                 recipe.Conditions = (source.Conditions.Value ?? new List<ConditionEntry>())
-                    .Select(c => new ConditionEntry { ConditionType = c.ConditionType, Target = c.Target, Value = c.Value, RunOn = c.RunOn })
+                    .Select(c => c.Clone())
                     .ToList();
             return recipe;
         }

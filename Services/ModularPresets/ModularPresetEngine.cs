@@ -74,10 +74,6 @@ namespace SkyrimCraftingTool.Services.ModularPresets
     {
         private static readonly StringComparer Names = StringComparer.OrdinalIgnoreCase;
 
-        // The vanilla keywords that say WHAT an item is - type, slot, vendor. Always the rules' call,
-        // even when the user's catalog never mentions one: an item turned from Light into Heavy
-        // must not keep ArmorLight just because no rule happens to produce it. (A test caught
-        // exactly that on the first run.)
         public static readonly IReadOnlyCollection<string> BaselineManagedKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "Skyrim.esm|06BBD2", "Skyrim.esm|06BBD3", "Skyrim.esm|06BBE8", "Skyrim.esm|06BBE9", // ArmorHeavy/Light/Clothing/Jewelry
@@ -274,9 +270,6 @@ namespace SkyrimCraftingTool.Services.ModularPresets
                 if (temper != null) result.Temper = BuildRecipe(temper, slots, result.ArmorType, material, singleOutput: false);
                 if (breakdown != null) result.Breakdown = BuildRecipe(breakdown, slots, result.ArmorType, material, singleOutput: true);
 
-                // A recipe was there, and the slot factors took every entry out - a factor of 0
-                // means "none of this". Said in so many words: "the item gets no recipe" alone sent
-                // the user looking at the type's fallback, which was fine (2026-10-20).
                 string slotNames = string.Join(", ", slots.Select(s => s.Name));
                 if (craft != null && result.Craft == null)
                     result.Warnings.Add($"No crafting recipe: the recipe factors of '{slotNames}' are 0 for every ingredient.");
@@ -476,10 +469,6 @@ namespace SkyrimCraftingTool.Services.ModularPresets
             }
         }
 
-        // Count for position i = base count x (sum of the slot definitions' factor i), rounded half
-        // up; Fixed entries (catalysts) skip the factor. A factor of 0 drops the entry - the user's
-        // "Leather x0" means "this piece takes no leather" - but any factor above 0 costs at least
-        // one (gauntlets at x0.35 of a single ingot still take an ingot, as the LVL presets did).
         private static ModularRecipeResult? BuildRecipe(MaterialRecipe recipe, List<SlotDefinition> slots, string armorType, MaterialModule? material, bool singleOutput)
         {
             List<double> FactorsOf(SlotDefinition s) => material?.OverrideFor(armorType, s.Name)?.RecipeFactors ?? s.RecipeFactorsFor(armorType);
@@ -519,13 +508,7 @@ namespace SkyrimCraftingTool.Services.ModularPresets
             {
                 WorkbenchKey = recipe.WorkbenchKey,
                 Ingredients = ingredients,
-                Conditions = recipe.Conditions.Select(c => new ConditionEntry
-                {
-                    ConditionType = c.ConditionType,
-                    Target = c.Target,
-                    Value = c.Value,
-                    RunOn = c.RunOn,
-                }).ToList(),
+                Conditions = recipe.Conditions.Select(c => c.Clone()).ToList(),
             };
         }
     }

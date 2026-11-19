@@ -43,10 +43,6 @@ namespace SkyrimCraftingTool.Services.ModularPresets
             result.UnassignedBits = unassigned;
             if (unassigned != 0) result.Notes.Add($"Slot bits without a definition: {DescribeBits(unassigned)}.");
 
-            // Material: keyword first, then the optional name fallback. Clothing never by keyword and
-            // only name-only materials without a keyword (Silver, Gold - vanilla jewelry recipes): 1,011
-            // clothing items of the user's list would otherwise have picked up a material keyword, by a
-            // stray ArmorMaterial keyword or a name like "Leather Boots". Any material can be chosen by hand.
             var keywords = new HashSet<string>(item.Keywords, StringComparer.OrdinalIgnoreCase);
             bool isClothing = string.Equals(item.ArmorType, "Clothing", StringComparison.OrdinalIgnoreCase);
             //
@@ -91,16 +87,6 @@ namespace SkyrimCraftingTool.Services.ModularPresets
             return result;
         }
 
-        // Addons: the item already carries all its keywords, OR its name matches. OR, not AND -
-        // "Golden Ring" is meant to GET JewelryExpensive from the "Expensive" addon, not to need it.
-        //
-        // Repeated until nothing new is picked, with the keywords the picked addons ADD counted as
-        // carried: "Premium" adds ClothingRich, so "Rich" (triggered by ClothingRich) comes along in
-        // the same pass. Checking only the item's own keywords made the first Apply pick Premium
-        // and the second also Rich - a different value on every run (user, 2026-10-21).
-        //
-        // scope: the item's slot definitions (armor) or its weapon type (weapons) - what an addon's
-        // OnlySlots is checked against. Shared by both pre-fills.
         internal static void PickAddons(IReadOnlyList<KeywordAddon> addons, string itemName, string editorId, string plugin,
             IEnumerable<string> itemKeywords, IReadOnlyCollection<string> scope, List<string> picked, Dictionary<string, string> sources)
         {
@@ -216,9 +202,6 @@ namespace SkyrimCraftingTool.Services.ModularPresets
         // becomes "Helm" (31+42) + "Ear" (43) rather than "Hair" + "Circlet" + "Ear".
         public static (List<string> Names, uint Unassigned) CoverMask(IEnumerable<SlotDefinition> definitions, uint mask)
         {
-            // A record without any slot is only claimed by a definition without slots ("No slot"),
-            // which the user adds on purpose. Without one, it gets no definition and the engine
-            // leaves its values alone.
             if (mask == 0)
             {
                 var none = definitions.FirstOrDefault(d => ToMask(d.Bits) == 0);

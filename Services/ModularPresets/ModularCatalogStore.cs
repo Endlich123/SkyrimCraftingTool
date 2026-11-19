@@ -6,10 +6,6 @@ using System.Text.Json;
 
 namespace SkyrimCraftingTool.Services.ModularPresets
 {
-    // One JSON file per catalog under Output/Presets/Modules/<Armor|Weapons>/, so a user can hand
-    // someone their materials without their slot layout (or the other way round), and armor without
-    // weapons. The subfolder keeps these out of PresetFileStore.FindAllPresetFiles, which only lists
-    // the top level.
     public class ModularCatalogStore
     {
         public const int CurrentSchemaVersion = 1;
@@ -85,12 +81,6 @@ namespace SkyrimCraftingTool.Services.ModularPresets
             }
         }
 
-        // The catalog that ships with the tool (PresetDefaults/Modules/<kind>, embedded): vanilla
-        // Skyrim, so a fresh install starts with working blocks instead of empty tabs.
-        //
-        // Only into a folder with NO catalog file at all. A user's own catalog - even one file of it -
-        // is never touched, and an update never overwrites what someone built. Someone who deletes
-        // every file gets the default back on the next start, which is the way to reset it.
         public static bool SeedDefaultsIfEmpty(string root, string kind = "Armor", string[]? fileNames = null)
         {
             fileNames ??= FileNames;
