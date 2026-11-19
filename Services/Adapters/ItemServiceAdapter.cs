@@ -86,14 +86,14 @@ namespace SkyrimCraftingTool.Services.Adapters
         public void UpdateWeaponContainerString(string key, string containerString) => ItemDBHandler.UpdateWeaponContainerString(key, containerString);
 
         // Reset
-        public ArmorRecord GetOriginalArmor(string key) => ItemDBHandler.GetOriginalArmor(key);
-        public WeaponRecord GetOriginalWeapon(string key) => ItemDBHandler.GetOriginalWeapon(key);
+        public ArmorRecord? GetOriginalArmor(string key) => ItemDBHandler.GetOriginalArmor(key);
+        public WeaponRecord? GetOriginalWeapon(string key) => ItemDBHandler.GetOriginalWeapon(key);
         public void ResetArmorEdits(string key) => ItemDBHandler.ResetArmorEdits(key);
         public void ResetWeaponEdits(string key) => ItemDBHandler.ResetWeaponEdits(key);
 
         public List<OrphanedEdit> GetOrphanedItemEdits() => ItemDBHandler.GetOrphanedItemEdits();
         public void DeleteItemRow(string table, string key) => ItemDBHandler.DeleteItemRow(table, key);
-        public COBJRecord GetOriginalCOBJ(string key) => _handler.GetOriginalCOBJ(key);
+        public COBJRecord? GetOriginalCOBJ(string key) => _handler.GetOriginalCOBJ(key);
         public void ResetCOBJEdits(string key) => _handler.ResetCOBJEdits(key);
         public void DeleteCOBJ(string key) => _handler.DeleteCOBJ(key);
         public List<COBJConditionRecord> GetOriginalCOBJConditions(string cobjKey) => _handler.GetOriginalCOBJConditions(cobjKey);

@@ -26,7 +26,7 @@ namespace SkyrimCraftingTool.Services.Adapters
         public void UpdateSpellFlags(string key, int flags) => ItemDBHandler.UpdateSpellFlags(key, flags);
         public void UpdateSpellKeywords(string key, string csv) => ItemDBHandler.UpdateSpellKeywords(key, csv);
 
-        public SpellRecord GetOriginalSpell(string key) => ItemDBHandler.GetOriginalSpell(key);
+        public SpellRecord? GetOriginalSpell(string key) => ItemDBHandler.GetOriginalSpell(key);
         public void ResetSpellEdits(string key) => ItemDBHandler.ResetSpellEdits(key);
 
         public void SaveSpellEffects(string spellKey, List<SpellEffectRecord> effects)

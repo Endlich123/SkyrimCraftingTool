@@ -12,7 +12,7 @@ namespace SkyrimCraftingTool.Services.Adapters
             _handler = handler;
         }
 
-        public List<EditedItemDto> GetEditedItems(IReadOnlyList<ExportUnit> units, ExportScope scope, string scopeValue = null)
+        public List<EditedItemDto> GetEditedItems(IReadOnlyList<ExportUnit> units, ExportScope scope, string? scopeValue = null)
             => _handler.GetEditedItems(units, scope, scopeValue);
 
         public ImportPlan PreviewImport(IReadOnlyList<ExportUnit> units, List<EditedItemDto> fileItems)

@@ -66,7 +66,7 @@ namespace SkyrimCraftingTool.Services.Adapters
         public void SaveEnchantmentWornRestrictionKeywords(string listKey, List<string> keywordKeys)
             => ItemDBHandler.SaveWornRestrictionKeywords(listKey, keywordKeys);
 
-        public EnchantmentRecord GetOriginalEnchantment(string key) => ItemDBHandler.GetOriginalEnchantment(key);
+        public EnchantmentRecord? GetOriginalEnchantment(string key) => ItemDBHandler.GetOriginalEnchantment(key);
         public void ResetEnchantmentEdits(string key) => ItemDBHandler.ResetEnchantmentEdits(key);
 
         public List<EnchantmentEffectRecord> GetOriginalEnchantmentEffects(string enchantmentKey) => ItemDBHandler.GetOriginalEnchantmentEffects(enchantmentKey);
