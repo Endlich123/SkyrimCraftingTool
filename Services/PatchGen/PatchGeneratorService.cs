@@ -121,15 +121,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
             var placements = new List<LeveledListPlacement>();
             var containerPlacements = new List<ContainerPlacement>();
 
-            // An item can now wear an enchantment the user created here. Its key inside the tool
-            // ("SkyrimCraftingTool.esp|001001") is NOT the FormID the record ends up with - the ESP
-            // hands out its own, from the persistent map. The rule has to name that one, so the
-            // allocation happens before any rule is built.
             var userEnchantments = ResolveUserEnchantmentKeys(options, report);
 
-            // The same for the user's own leveled lists (docs/LeveledList-Create-Plan.md, L-P4): every
-            // rule that names one - an item placed into it, its properties, where it hangs - has to
-            // name the FormID the ESP gives it, not "SkyrimCraftingTool.esp|800001".
             var ownLists = UserLeveledListStore.ReadAll(_dbPath);
             var ownListKeys = new OwnListKeys(ResolveUserListKeys(options, ownLists), options, report);
 
@@ -284,10 +277,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
                 report.NpcRuleCount += Add(npcByPlugin, rule!);
 
-                // Written as asked, but said out loud: 61,4 % of NPCs take their stats from a
-                // template, and for those the game never reads the value this rule sets. Clearing
-                // the flag is a separate operation the user has to add deliberately (N-P4), so the
-                // patch is not silently "fixed" here - it is reported.
                 if (inherited != null)
                 {
                     report.Warnings.Add(
@@ -333,9 +322,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
                         report.NpcGroupRuleCount += Add(npcByPlugin, rule);
                     }
 
-                    // Section 8: a group may have grown members since anybody last looked at it - a mod
-                    // install is enough. Marked rather than withheld: the user asked for the patch, and
-                    // the honest answer is to name which groups moved and by how much.
                     snapshots.TryGetValue(group.Id, out var snapshot);
                     var drift = NpcGroupDiffService.Compare(group, set.Members, snapshot);
 
@@ -361,11 +347,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     report.FormListRuleCount += Add(formListByPlugin, rule!);
             }
 
-            // Container tab -> leveled lists. Grouped by the LIST's plugin, like formList above:
-            // the rule targets the list, not the item that goes into it.
-            //
-            // A placement into one of the user's OWN lists names it by its tool key; translated here,
-            // and withheld with a warning when the list will not exist in the patch (L-P4).
             var ownListNames = ownLists.ToDictionary(l => l.Key, l => l.EditorId, StringComparer.OrdinalIgnoreCase);
             placements = placements
                 .Select(p =>
@@ -390,12 +371,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     report.LeveledListRuleCount += Add(lvliByPlugin, rule);
             }
 
-            // Entries the user put back after an override dropped them. Additive like the placements
-            // above, so this can only ever add to a list, never take from it.
-            //
-            // An own list has no scanned entries, so it cannot have lost any - a row naming one could
-            // only be left over from a hand-edited database. Translated like everything else rather
-            // than trusted to be impossible.
             var restored = LeveledListRestoreStore.ReadAll()
                 .Select(e => !KeyFactory.IsUserKey(e.ListKey) ? e
                     : ownListKeys.Translate(e.ListKey, $"{e.Reference} is restored into it") is { } real ? e with { ListKey = real } : null)
@@ -409,13 +384,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     report.LeveledListRuleCount += Add(lvliByPlugin, rule);
             }
 
-            // The list's own properties, if the user changed any. Filed under the LIST's plugin
-            // rather than an item's, because these rules edit the list itself and reference nothing
-            // foreign - see LeveledListRuleBuilder.BuildPropertyRules.
-            //
-            // An own list goes through here too: its chance of none and calc flags are set the same
-            // way as any other list's, by rule, on top of the empty record the ESP writes. Its file is
-            // then the generated ESP's, which is right - without that ESP there is no list to edit.
             foreach (var stored in LeveledListEditStore.ReadAll())
             {
                 var edit = stored;
@@ -443,9 +411,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     ? $"{n} ({edit.ListKey})"
                     : edit.ListKey;
 
-                // Not a warning - the user asked for this. It is in the report because a change to a
-                // list's own properties affects every mod feeding that list, and that belongs on the
-                // record of what this patch does.
                 report.LeveledListPropertyEdits.Add($"{name}: {string.Join(", ", rule.Operations)}");
             }
 
@@ -463,14 +428,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     report.ContainerRuleCount += Add(contByPlugin, rule);
             }
 
-            // What the user decided to take OUT, from the Container/LeveledList tab.
-            //
-            // EVERY OTHER RULE THIS METHOD WRITES ONLY ADDS. These delete content other mods put
-            // there, which is what makes the patch stop being safe-by-construction. They are counted
-            // apart and listed one by one in the report - not as a warning, because the user asked
-            // for them, but on the record, the same way a list-property edit is.
-            // Removals from an own list are translated like everything else - though with no scanned
-            // entries there is nothing in one that the load order put there to take out.
             var listRemovals = RemovalStore.ReadAll(RemovalScope.LeveledList)
                 .Select(e => !KeyFactory.IsUserKey(e.OwnerKey) ? e
                     : ownListKeys.Translate(e.OwnerKey, $"{e.Reference} is removed from it") is { } real ? e with { OwnerKey = real } : null)
@@ -483,7 +440,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 if (!Accept(rule, null, report)) continue;
 
                 report.RemovalRuleCount += Add(lvliByPlugin, rule);
-                report.Removals.Add(rule.Comment);
+                report.Removals.Add(rule.Comment ?? "");
             }
 
             foreach (var rule in LeveledListRuleBuilder.BuildRemovalRules(
@@ -492,12 +449,9 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 if (!Accept(rule, null, report)) continue;
 
                 report.RemovalRuleCount += Add(contByPlugin, rule);
-                report.Removals.Add(rule.Comment);
+                report.Removals.Add(rule.Comment ?? "");
             }
 
-            // WHERE THE USER'S OWN LISTS HANG (L-P6): into another leveled list, or into a container.
-            // Without one of these an own list exists in the ESP and hands out nothing - nothing in
-            // the game ever rolls a list nobody references.
             var ownPlacements = new List<LeveledListRuleBuilder.OwnListPlacement>();
             var listEditorIds = _itemReader.ReadLeveledListEditorIds();
             string ownEsp = options.EspNameFor(KeyFactory.UserPluginName);
@@ -609,12 +563,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
             if (rule == null) return false;
 
-            // Taking an enchantment OFF still gets said out loud, but no longer because the syntax is
-            // a guess - "objectEffect=null" was confirmed in game on 2026-09-30 (see
-            // ItemRuleBuilder.ObjectEffectRemovalOp). What remains is the part the rule cannot
-            // promise: the patch changes the BASE record, and by the user's own experience an
-            // enchantment that has already been put on an item is not reliably gone from copies a
-            // save has already handed out. So the warning now points at the save, not at the syntax.
             if (rule.Operations.Any(op => op == ItemRuleBuilder.ObjectEffectRemovalOp))
                 report.Warnings.Add(
                     $"{rule.TargetPlugin}|{rule.TargetFormId}: removes the item's enchantment " +
@@ -705,14 +653,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             return map;
         }
 
-        // toolKey -> the key the user's own leveled list really has in the generated ESP
-        // (docs/LeveledList-Create-Plan.md, L-P4). The enchantment version above, for lists - with
-        // one difference: an empty list is still written (an effectless enchantment is not), so every
-        // own list gets an entry.
-        //
-        // The same two traps as there. The file name is not always SkyrimCraftingTool.esp - with the
-        // per-plugin split it is "SkyrimCraftingTool - SkyrimCraftingTool.esp" (EspNameFor). And a dry
-        // run only peeks: a list that was never generated has no ID yet, and no ID is guessed for it.
         private Dictionary<string, string> ResolveUserListKeys(
             PatchGenOptions options, IReadOnlyList<UserLeveledList> ownLists)
         {
@@ -769,7 +709,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 return null;
             }
 
-            // Back from the ESP key to the name the user gave the list, for a warning worth reading.
             public string? ToolKeyFor(string realKey)
                 => _map.FirstOrDefault(kv => string.Equals(kv.Value, realKey, StringComparison.OrdinalIgnoreCase)).Key;
         }
@@ -817,8 +756,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             }
         }
 
-        // Rewrites an item's enchantment key when it points at one of the user's own enchantments.
-        // Everything else passes through untouched.
         private static string MapEnchantmentKey(
             string? edited, string? original, string itemKey,
             IReadOnlyDictionary<string, string> userEnchantments,
@@ -854,16 +791,12 @@ namespace SkyrimCraftingTool.Services.PatchGen
             var enchOverrides = _enchantmentEspOverrides;
             var newEnchantments = _enchReader.ReadNewEnchantments();
 
-            // The user's own leveled lists: empty records, one per list (L-P3).
             var newLists = UserLeveledListStore.ReadAll(_dbPath)
                 .Select(l => new CobjEspBuilder.NewLeveledListEspEntry(l.Key, l.EditorId))
                 .ToList();
 
-            // The user's own spells, built from scratch in the ESP.
             var newSpells = _spellReader.ReadNewSpells();
 
-            // Recipes, overridden enchantments, the user's own enchantments, lists and spells share
-            // the ESP, so any one of them on its own is reason enough to build it.
             if (entries.Count == 0 && enchOverrides.Count == 0 && newEnchantments.Count == 0
                 && newLists.Count == 0 && newSpells.Count == 0) return;
 
@@ -919,7 +852,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
             foreach (var e in enchOverrides) ownEspNames.Add(options.EspNameFor(e.SourcePlugin));
 
             var sourcePlugins = options.PluginsInLoadOrder
-                .Where(p => !ownEspNames.Contains(p.FileName))
+                .Where(p => !ownEspNames.Contains(p.FileName) && !KeyFactory.IsOwnOutputPlugin(p.FileName))
                 .ToList();
 
             using var resolver = WinningRecordResolver.Open(
@@ -929,9 +862,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             bool allEsl = true;
             var espPaths = new List<string>();
 
-            // One pass over both sources, keyed by the ESP each record belongs in. With the global
-            // split mode that is a single group; with PerSourcePlugin an enchantment from plugin X
-            // shares a file with X's recipes, which is what the user asked for either way.
             var cobjByEsp = entries
                 .GroupBy(e => options.EspNameFor(e.SourcePlugin), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
@@ -940,19 +870,14 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 .GroupBy(e => options.EspNameFor(e.SourcePlugin), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
 
-            // The user's own enchantments have no source plugin to split by - they belong to the
-            // tool's pseudo-plugin, which maps to the same ESP its recipes go to.
             var newEnchByEsp = newEnchantments
                 .GroupBy(_ => options.EspNameFor(KeyFactory.UserPluginName), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
 
-            // Same for the user's own leveled lists - and it has to be the SAME name ResolveUserListKeys
-            // handed the rules, or the rules would point into a file the list is not in.
             var newListsByEsp = newLists
                 .GroupBy(_ => options.EspNameFor(KeyFactory.UserPluginName), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
 
-            // Same rule for the user's own spells.
             var newSpellByEsp = newSpells
                 .GroupBy(_ => options.EspNameFor(KeyFactory.UserPluginName), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);

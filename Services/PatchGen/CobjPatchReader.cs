@@ -24,29 +24,13 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // How many objects the recipe produces (NAM1). Always at least 1 - see COBJRecord.
         public int CreatedObjectCount { get; init; } = 1;
 
-        // The user changed the count. Same role as ConditionsEdited, and for the same reason: an
-        // override is a DEEP COPY of the winning record, so a field the user did not touch must be
-        // left exactly as the copy has it. Writing the stored value unconditionally would push a 1
-        // over the real count of every record whose item.db row predates the CreatedObjectCount
-        // column - which is every row until the next scan.
         public bool CreatedObjectCountEdited { get; init; }
 
-        // The user took this recipe out of the game. The ESP gets an override carrying the Deleted
-        // record flag and nothing else - no field on this entry is written for such a record.
-        //
-        // Only ever set for a MOD's recipe: one the tool created is deleted row and all, so it
-        // never reaches the patch at all.
         public bool IsDeleted { get; init; }
         public IReadOnlyList<COBJConditionRecord> Conditions { get; init; } = Array.Empty<COBJConditionRecord>();
 
-        // The conditions as scanned, frozen before the first edit (COBJ_Conditions_Original). Read only
-        // for an edited recipe. The stale-scan check in CobjEspBuilder compares THESE against the real
-        // record: the live rows can no longer tell "the old scan dropped it" from "the user removed it"
-        // once a type such as GetItemCount is editable. Empty when no snapshot exists.
         public IReadOnlyList<COBJConditionRecord> OriginalConditions { get; init; } = Array.Empty<COBJConditionRecord>();
 
-        // The user replaced this recipe's condition set. Only then may the ESP builder overwrite the
-        // conditions of the record it deep-copied from the load order - see CobjEspBuilder.BuildOne.
         public bool ConditionsEdited { get; init; }
 
         // The plugin this recipe "belongs to" for per-source-plugin ESP splitting: the overridden
@@ -121,15 +105,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 }
             }
 
-            // Recipes the user took out. They are a decision, not an edit, so they live in their own
-            // table and the query above does not see them: a mod recipe that was only REMOVED has
-            // no IsEdited, no ConditionsEdited and Original = 1, so nothing would have brought it
-            // into the patch.
             var removed = ReadRemovedRecipeKeys(conn);
 
-            // A recipe the TOOL created and the user then removed is simply not written. It never
-            // existed in the game, so leaving it out IS its removal - there is nothing to flag as
-            // deleted, and emitting an override for a FormID no plugin owns would inject it.
             var removedToolRecipes = rows
                 .Where(r => r.IsNew && removed.Contains(r.Key))
                 .Select(r => r.Key)
@@ -222,8 +199,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             return result;
         }
 
-        // The COBJ keys the user removed. A missing table is not an error: an item.db from before
-        // this feature simply has no removals, and the patch run must not fall over on it.
         private static HashSet<string> ReadRemovedRecipeKeys(SqliteConnection conn)
         {
             var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

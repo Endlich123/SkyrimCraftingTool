@@ -21,13 +21,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
             AppendName(ops, original.Name, edited.Name, edited.Key, ref nameSkip);
 
-            // baseCost alone is NOT enough. Without the ENCH ENIT "Manual Calc" flag the game
-            // AUTO-CALCULATES the enchantment cost from its effects and ignores the stored value,
-            // so the edit would silently do nothing. SkyPatcher exposes that flag as
-            // "costoverride" - the official example pairs the two for exactly this reason.
-            //
-            // Side effect the user is opting into by editing the cost at all: the enchantment
-            // stops auto-scaling with its effects. Only ever emitted together with baseCost.
             if (!NumEqual(original.EnchantmentCost, edited.EnchantmentCost))
             {
                 ops.Add($"baseCost={PatchFormat.Num(edited.EnchantmentCost)}");
@@ -75,21 +68,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
             return editorId.Length > 0 ? editorId : name;
         }
 
-        // Per-enchantment effect diff. mgefsToChange/Add/Remove are ENCHANTMENT operations: they
-        // touch this enchantment's own effect entries, never the shared MGEF record — which is
-        // exactly what EnchantmentEffects PRIMARY KEY(EnchantmentKey, MagicEffectKey) models.
-        //
-        // Returns every referenced MGEF key so the generator's dead-reference pass can flag effects
-        // that no longer resolve against the current scan.
-        // The rest of ENIT, as far as SkyPatcher reaches. Per the official enchantment-patcher docs
-        // there is setFlags / removeFlags, chargeTime and enchantmentAmount - but no enchantType and
-        // no targetType, so those two never appear here. A record whose enchant type the user
-        // changed can only be a user-created one, and those are written by the ESP from scratch.
         internal static void AppendEnitOps(List<string> ops, EnchantmentRecord original, EnchantmentRecord edited)
         {
-            // Flags are a bitfield but the operations are by NAME, so the diff has to be per bit:
-            // setFlags only turns bits on, removeFlags only turns them off. Sending every set bit
-            // every time would fight other mods' rules for flags this user never touched.
             var set = new List<string>();
             var remove = new List<string>();
 

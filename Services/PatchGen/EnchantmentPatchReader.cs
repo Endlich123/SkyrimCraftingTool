@@ -158,12 +158,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             return byEnchantment;
         }
 
-        // The enchantments the user created in the tool (Original = 0). They have no scanned
-        // original to diff against - they exist nowhere until the generated ESP writes them - so
-        // they take the ESP route rather than producing SkyPatcher rules.
-        //
-        // The effective values are read the same way the editor shows them, shadow columns and all:
-        // a user record is edited through the very same paths as a scanned one.
         public IReadOnlyList<CobjEspBuilder.NewEnchantmentEspEntry> ReadNewEnchantments()
         {
             using var conn = new SqliteConnection(_connString);

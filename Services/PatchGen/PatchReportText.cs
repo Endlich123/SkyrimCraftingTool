@@ -47,8 +47,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             if (report.DryRun)
                 sb.AppendLine($"  Would be written under {outputRoot}");
 
-            // Above masters and warnings on purpose: an ESP override is not an error, but it is a
-            // consequence the user should take in knowingly rather than discover later.
             if (report.StaleScanNotice != null)
             {
                 sb.AppendLine();
@@ -63,13 +61,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 sb.AppendLine("  " + report.EspOverrideNotice);
             }
 
-            // Content the user took out. THE most consequential thing this file reports, so it comes
-            // before everything else and is spelled out one line at a time.
-            //
-            // Every other rule in this patch adds. These delete entries other mods put there, and two
-            // things about that have to be visible without being hunted for: that the patch is no
-            // longer purely additive, and that a removal takes EVERY occurrence of the object rather
-            // than the one row someone ticked.
             if (report.Removals.Count > 0)
             {
                 sb.AppendLine();
@@ -82,10 +73,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     sb.AppendLine("  " + removal);
             }
 
-            // Non-additive in a second, milder sense - it changes how a list behaves rather than what
-            // is in it - so it gets named list by list rather than counted. Not a warning: the user
-            // set these deliberately, with the calculator in the list window showing what each one
-            // does. But a change to a list's own properties reaches every mod feeding that list.
             if (report.LeveledListPropertyEdits.Count > 0)
             {
                 sb.AppendLine();

@@ -94,13 +94,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             AppendKeywordOps(ops, original.Keywords, edited.Keywords);
         }
 
-        // Flags are a bitfield but the operations work by NAME, so the diff has to be per bit:
-        // setFlags turns bits on, removeFlags turns them off. Sending every set bit every time would
-        // fight other mods' rules over flags this user never touched.
-        //
-        // Bits NOTHING NAMES ARE LEFT ALONE. Three of them are in real use - 415 spells in a measured
-        // load order - and there is simply no way to write them: both operations take names. The
-        // editor does not offer them either, so they can never differ here.
         private static void AppendFlagOps(List<string> ops, int original, int edited)
         {
             if (original == edited) return;

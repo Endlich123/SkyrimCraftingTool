@@ -29,39 +29,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
         int UsedLevel,
         IReadOnlyList<int> AllLevels);
 
-    // "This item goes straight into that container", i.e. a container the user selected while every
-    // one of its LVLi sliders stayed at 0.
     public sealed record ContainerPlacement(string ItemKey, string ItemEditorId, string ContainerKey, string ContainerName = "");
 
-    // item -> leveled-list placements  =>  one filterByLLs rule per leveled list.
-    //
-    // WHY THIS IS THE LEVELED-LIST PATCHER AND NOT THE CONTAINER ONE: the Container tab does not
-    // put items into a CONT. The scan only records a container's entries when the entry itself is
-    // an LVLI (see ItemDBHandler.Scan.cs, "CONTAINER + LVLI"), and an item's ContainerString stores
-    // "{ContainerKey: {LVLiKey,Level; ...}}" - the container is the grouping the user browses by,
-    // the leveled list with its level is the actual placement. So the operation is
-    // addOnceToLLs under filterByLLs, which also stays clear of SkyPatcher's CTD disclaimer on
-    // addToContainers (that one is about putting leveled LISTS into containers - something this
-    // tool never produces).
-    //
-    // THE TWO PLACEMENT KINDS. A container row carries its own leveled lists, each with a level
-    // slider, and which one the user meant is decided by those sliders:
-    //   every slider at 0 ("{ContainerKey: {}}")  -> the item goes into the CONTAINER itself
-    //                                                -> filterByContainers + addOnceToContainers
-    //   any slider above 0                        -> the item goes into THOSE leveled lists
-    //                                                -> filterByLLs + addOnceToLLs
-    // So both patchers are in play, and the sliders are the switch between them. SkyPatcher's CTD
-    // disclaimer on addToContainers does not apply either way: it is about putting a leveled LIST
-    // into a container as the object, and the object here is always the ARMO/WEAP itself.
-    //
-    // ADDITIVE ONLY, BY CONSTRUCTION: the scan never fills Armor/Weapons.ContainerString (see
-    // ArmorParamNames/WeaponParamNames), so the pristine value is always empty and every placement
-    // is something the user added. There is no "was in that list, now removed" state to express,
-    // which is why nothing here emits removeFromLLs or removeFromContainers.
-    //
-    // addOnce, not add: the patch is regenerated from scratch on every export and SkyPatcher INIs
-    // stack with whatever else touches the list, so a plain addToLLs would keep appending the same
-    // item on every game start.
     public static class LeveledListRuleBuilder
     {
         // The Container tab models a level per list, never a count - one entry per placement.
@@ -200,17 +169,10 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 {
                     var levels = item.Select(p => p.Level).Distinct().OrderBy(l => l).ToList();
 
-                    // One list can sit in several containers, each with its own slider. Lowest level
-                    // wins: it is the earliest point the user asked to see the item, and any higher
-                    // setting is already covered from there on. Reported so it is a decision the
-                    // user can see rather than a silent pick.
                     int level = levels[0];
                     if (levels.Count > 1)
                         conflictList.Add(new LeveledListLevelConflict(list.Key, item.Key, level, levels));
 
-                    // The count follows the level that won, rather than being maximised separately -
-                    // otherwise a list reached twice could end up with one container's level and the
-                    // other's count, which is a placement the user never configured anywhere.
                     int count = item.Where(p => p.Level == level)
                                     .Select(p => p.Count)
                                     .DefaultIfEmpty(1)
@@ -243,21 +205,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             return rules;
         }
 
-        // Entries the user put back after an override dropped them.
-        //
-        // The same shape as a placement rule above and for the same reason: filterByLLs picks the
-        // list, addOnceToLLs supplements it at runtime. Nothing is overridden, so a restored entry
-        // cannot take anything away from the mod that dropped it - it only puts back what used to be
-        // there alongside whatever that mod added.
-        //
-        // Filed under the REFERENCE's plugin, like a placement is filed under the item's: if the mod
-        // that owns the item leaves the load order, the rule leaves with it rather than pointing at
-        // a FormID nothing defines any more. Restoring vanilla content therefore lands in
-        // Skyrim.esm.ini, which is correct - if Skyrim.esm is gone, so is everything else.
-        //
-        // addOnce, not add: the same restoration must not stack if the list already has the entry
-        // back because a conflicting mod was removed. That is also why nothing here has to be
-        // re-checked against a later scan.
         public static IReadOnlyList<SkyPatcherRule> BuildRestoreRules(
             IEnumerable<RestoredEntry> restored,
             IReadOnlyDictionary<string, string>? lvliNames = null)
@@ -306,21 +253,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             return rules;
         }
 
-        // Objects the user decided to take OUT of a container or a list.
-        //
-        // THE ONE PLACE IN THIS FILE THAT IS NOT ADDITIVE, and everything above says why that matters:
-        // every other rule here supplements what the game loaded, so it cannot clobber another mod
-        // and the patch can be regenerated at will. These rules delete. They are built separately,
-        // counted separately and reported separately for exactly that reason - see
-        // PatchGeneratorService, which puts them in their own section of the report.
-        //
-        // ONE OPERATION PER OBJECT, NEVER PER ENTRY. removeFromLLs / removeFromContainers take an
-        // object and take every occurrence of it with them. The editor therefore folds identical
-        // entries into one row before the user ever sees them (PlacementLookup.OwnedEntry), so there
-        // is no way to ask for something this cannot express.
-        //
-        // Filed under the REFERENCE's plugin, like the restore rules: if the mod that owns the object
-        // leaves the load order, the rule leaves with it instead of naming a FormID nothing defines.
         public static IReadOnlyList<SkyPatcherRule> BuildRemovalRules(
             IEnumerable<RemovedEntry> removed,
             RemovalScope scope,
@@ -375,20 +307,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             return rules;
         }
 
-        // The list's OWN properties: chance of nothing, and how it calculates.
-        //
-        // A different kind of rule from everything above it, in one crucial way. The placement rules
-        // ADD something of the user's to a list and are therefore filed under the ITEM's plugin, so
-        // they only exist while that mod does. These EDIT the list itself and reference no foreign
-        // form at all, so they belong in the list's own file - which is what leaving FilePlugin empty
-        // means (see SkyPatcherRule.FilePlugin). Skyrim.esm.ini is always loaded, and that is
-        // correct here: if Skyrim.esm is missing, so is the list.
-        //
-        // These are also the only rules in this tool that are not purely additive. chanceNone and
-        // the calc flags belong to the WHOLE list, so a change here changes the odds for every mod
-        // feeding it. That is a decision the user makes knowingly (2026-09-15) with the calculator
-        // in the list window showing the new number as they type - it is not something that should
-        // ever happen as a side effect of placing an item.
         public static IReadOnlyList<SkyPatcherRule> BuildPropertyRules(
             IEnumerable<LeveledListEdit> edits,
             IReadOnlyDictionary<string, string>? lvliNames = null)
@@ -480,13 +398,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             return rules;
         }
 
-        // One of the user's own leveled lists going into another list or into a container
-        // (docs/LeveledList-Create-Plan.md, L-P6) - with every key already translated to what the
-        // generated ESP really calls it. Translating is the generator's job; this only shapes rules.
-        //
-        // FilePlugin is the generated ESP: the rule names a record only that ESP defines, so it must
-        // only be read while that ESP is loaded - the same "filed under what it references" rule the
-        // restore and removal rules follow.
         public sealed record OwnListPlacement(
             string ListKey,
             string ListName,

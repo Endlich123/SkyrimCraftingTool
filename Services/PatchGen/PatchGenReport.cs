@@ -19,30 +19,16 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // different SkyPatcher folders and a reader comparing against xEdit wants them apart.
         public int SpellRuleCount { get; set; }
 
-        // Spells the user created in the tool, which the generated ESP brings into existence.
         public int NewSpellCount { get; set; }
 
         // Container-tab placements, emitted as filterByLLs/addOnceToLLs rules - one per leveled
         // list, not per item (see LeveledListRuleBuilder).
         public int LeveledListRuleCount { get; set; }
 
-        // Edits to a leveled list's OWN properties - chance of nothing, calculation flags. Counted
-        // apart from the placements above because they are a different promise: a placement adds
-        // something of the user's, this changes how the list behaves for everything in it.
         public int LeveledListPropertyRuleCount { get; set; }
 
-        // One line per edited list, for the report. Deliberately not a warning: the user asked for
-        // these. But a change that reaches every mod feeding a list belongs on the record of what
-        // this patch does, in words rather than as a number.
         public List<string> LeveledListPropertyEdits { get; } = new();
 
-        // Objects taken OUT of a container or a list, from the Container/LeveledList tab.
-        //
-        // ITS OWN COUNT AND ITS OWN LIST, and that is the point of it. Every other number in this
-        // report counts something the patch ADDS - which is why the patch composes with other mods
-        // and can be regenerated at will. These take content away, and a number buried in a total
-        // would let that pass unnoticed. Same treatment as LeveledListPropertyEdits above: not a
-        // warning, because the user asked for it, but written out in words.
         public int RemovalRuleCount { get; set; }
 
         public List<string> Removals { get; } = new();
@@ -92,12 +78,8 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // edits no SkyPatcher operation can carry (N-P6, docs/NPC-Plan.md �3.2).
         public int NpcEspOverrideCount { get; set; }
 
-        // Enchantments the user created in the tool. They exist in no plugin - the generated ESP is
-        // what brings them into the game, so they are new records, not overrides.
         public int NewEnchantmentCount { get; set; }
 
-        // Leveled lists the user created in the tool - empty records in the generated ESP, filled at
-        // runtime by SkyPatcher (docs/LeveledList-Create-Plan.md, L-P3).
         public int NewLeveledListCount { get; set; }
 
         // Same edit as above, but with ESP generation switched off there is no route for it at all.
@@ -138,10 +120,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             || NewLeveledListCount > 0
             || NewSpellCount > 0;
 
-        // Deliberately separate from Warnings: an ESP override is not a problem, but it IS a
-        // consequence the user should take in knowingly - the record is copied wholesale, so
-        // whatever other mods did to its remaining fields is frozen at generation time.
-        // Same idea as EspOverrideNotice: not an error, but the user has to act on it.
         public string? StaleScanNotice =>
             StaleConditionDataCount == 0 ? null :
             $"{StaleConditionDataCount} recipe(s) were left unpatched because their stored conditions " +

@@ -58,8 +58,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             ["pclevelmult"] = "filterByPCLevelMult",
         };
 
-        // A named list longer than this is reported. Not refused: the user may well mean it, and a rule
-        // that names 300 NPCs still works. Measured worst case on the seeded groups: 103.
         private const int LongListThreshold = 150;
 
         public static NpcGroupRuleSet BuildRules(
@@ -86,9 +84,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             // ScalingCounterExclusions. Membership is unaffected: that is still group.Predicates alone.
             var ruleGroup = WithScalingCounterExclusions(group, allGroups, problems, members);
 
-            // The reach is resolved as SkyPatcher sees the NPCs: its EditorID filters match the EditorID
-            // of the DEFINING plugin, and an override may have renamed it (measured 2026-10-31 - 43 of
-            // 113 renamed bandits were missed). Membership above stays on the name the user sees.
             var reachResolver = new NpcGroupResolver(npcs, asSkyPatcherSees: true);
 
             var clauses = BuildFilterClauses(ruleGroup, reachResolver, problems, out var ruleFilter, out bool anyInexpressible);
@@ -477,7 +472,7 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
                     copy.Predicates.Add(new NpcGroupPredicate
                     {
-                        Axis = clause.Axis,
+                        Axis = clause.Axis ?? "",
                         Mode = NpcGroupMode.Exclude,
                         Value = clause.Value,
                     });
@@ -708,10 +703,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             {
                 var range = LevelRange(group, members, stats);
 
-                // No range, because the members do not differ in level. The values are still written:
-                // without levelRange SkyPatcher 8.0.1 gives each NPC a random number (its changelog,
-                // and measured on Bandit 01: 113 NPCs, all level 1, 76 different values). The result is
-                // the same as the kind random, so that is what the user is told.
                 if (range == null)
                 {
                     var actual = stats?.Spread(members, v => v.Level);
@@ -887,9 +878,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             }
         }
 
-        // The range a span interpolates over: what the user asked the levels to become if a level span
-        // is set, otherwise what the members' levels ARE. The second is the honest default - it is the
-        // same number the editor shows in its "is" column.
         private static (string Low, string High)? LevelRange(
             NpcGroup group, IReadOnlyList<NpcRecord> members, NpcStatResolver? stats)
         {

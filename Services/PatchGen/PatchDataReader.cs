@@ -57,9 +57,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             return new NpcGroupStore(builder.DataSource).LoadAll();
         }
 
-        // What the user last confirmed each group contains (section 8). The report holds this against the
-        // membership the rules were built from, so it can say "54 -> 71, 17 new from XYZ.esp" rather than
-        // only whether a group was checked at all.
         public Dictionary<long, List<string>> ReadGroupSnapshots()
         {
             var builder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(_connString);
@@ -152,8 +149,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
                     // so in practice Original is always empty and this shadow IS the whole placement
                     // set - see LeveledListRuleBuilder on why that makes the feature additive-only.
                     ContainerString = r.IsDBNull(17) ? original.ContainerString : r.GetString(17),
-                    // Empty is a REAL value here, not "unset": it means the user took the
-                    // enchantment off. NULL is the one that means "not edited".
                     ObjectEffectKey = r.IsDBNull(19) ? original.ObjectEffectKey : r.GetString(19),
                     // 0 is a REAL value here too - an item taken back down to no charge.
                     EnchantAmount = r.IsDBNull(21) ? original.EnchantAmount : (int)Lng(r, 21),
@@ -319,9 +314,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             return counts;
         }
 
-        // ListKey -> EditorID, for every list the scan knows plus the user's own. The comment above a
-        // rule that targets a list hanging in no container would otherwise only carry its key -
-        // ReadLeveledListNames reads ContainerLVLI, and 86 % of all lists hang in no container.
         public IReadOnlyDictionary<string, string> ReadLeveledListEditorIds()
         {
             var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -348,14 +340,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             return names;
         }
 
-        // ContainerKey -> display name, for the "; ... via <container>" half of a rule's comment.
-        // Cosmetic like ReadLeveledListNames, and fails the same way rather than taking the export
-        // down with it.
-        // Placeable records the user has placed somewhere.
-        //
-        // No original/edited PAIR, unlike armor and weapons: these have exactly one editable field
-        // and the scan never writes its base column, so there is nothing to compare against. What
-        // comes back is the placement itself, which is all a rule needs.
         public IReadOnlyList<(string Key, string EditorId, string ContainerString)> ReadEditedWorldItems()
         {
             var rows = new List<(string, string, string)>();

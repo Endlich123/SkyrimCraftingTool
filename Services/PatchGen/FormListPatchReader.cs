@@ -6,8 +6,6 @@ using SkyrimCraftingTool.Model;
 
 namespace SkyrimCraftingTool.Services.PatchGen
 {
-    // One FLST whose contents the user edited: the pristine scanned member set alongside the
-    // current one, so FormListRuleBuilder can emit the add/remove delta.
     public sealed record FormListPatchPair(
         string ListKey,
         IReadOnlyList<string> OriginalMembers,

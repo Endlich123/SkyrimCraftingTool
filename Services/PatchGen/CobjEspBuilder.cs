@@ -23,14 +23,10 @@ namespace SkyrimCraftingTool.Services.PatchGen
         public int DeepCopiedCount { get; set; }
         public int FromScratchCount { get; set; }
 
-        // Enchantments the user created in the tool and that this ESP brings into existence.
         public int NewEnchantmentCount { get; set; }
 
-        // Leveled lists the user created in the tool - empty records, filled at runtime by SkyPatcher
-        // (docs/LeveledList-Create-Plan.md, L-P3).
         public int NewLeveledListCount { get; set; }
 
-        // Spells the user created in the tool and that this ESP brings into existence.
         public int NewSpellCount { get; set; }
 
         // Recipes whose edited condition set was NOT written, because the real record carries
@@ -41,9 +37,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // placeholder row (docs/Conditions-Plan.md, C1). Before, each of those withheld the edit.
         public int PlaceholderRestoredCount { get; set; }
 
-        // Recipes the user took out of the game: an override carrying the Deleted record flag.
-        // Reported separately because it is the one COBJ operation that REMOVES content another mod
-        // put there - the same reason RemovalStore reports its decisions on their own.
         public int DeletedCount { get; set; }
 
         // Recipes whose stored conditions are missing entries the real record has - the hallmark of
@@ -416,16 +409,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
         }
 
 
-        // An enchantment whose worn-restriction FLST assignment the user re-pointed.
-        //
-        // This is the ONLY enchantment edit that cannot go through SkyPatcher - there is no
-        // "wornRestrictions=" operation - so it is the one that forces an ESP override. Name, cost
-        // and effects all travel as INI rules and must NOT be written here as well, or the ESP would
-        // start winning over rules that are meant to compose with other mods.
-        // An enchantment the user created in the tool. Unlike the override above there is nothing to
-        // deep-copy: the record does not exist anywhere yet, so every field it gets is one the tool
-        // tracks. CastType/TargetType came from its first effect (see EnchantmentMenuVM), which is
-        // what the load order does too - 1,893 of 1,895 effect rows agree with their enchantment.
         public sealed record NewEnchantmentEspEntry(
             string ToolKey,
             string EditorId,
@@ -485,8 +468,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 Flags = (ObjectEffect.Flag)e.Flags,
                 ChargeTime = e.ChargeTime,
 
-                // Still mirrored when the user left it at 0 - vanilla does the same in 1862 of 1943
-                // records, and an amount of 0 means an enchanted weapon spends nothing per hit.
                 EnchantmentAmount = e.Amount != 0 ? e.Amount : (int)cost,
             };
 
@@ -539,12 +520,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             result.NewEnchantmentCount++;
         }
 
-        // A spell the user created in the tool. Like the new enchantment above there is nothing to
-        // deep-copy - the record exists nowhere yet, so every field it gets is one the tool tracks.
-        //
-        // It carries MORE fields than a patched spell can, and that is the point of the ESP route:
-        // SpellType, TargetType, Range and CastDuration have no SkyPatcher operation, so they are
-        // unreachable on a scanned record and perfectly writable on one built from scratch.
         public sealed record NewSpellEspEntry(
             string ToolKey,
             string EditorId,
@@ -567,10 +542,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
         private static readonly FormKey EitherHandEquipType = FormKey.Factory("013F44:Skyrim.esm");
 
 
-        // A spell the user created in the tool (docs/Spells-Plan.md, S-P6).
-        //
-        // Built from scratch, like a new enchantment and unlike every override: the record exists
-        // nowhere, so there is no winning copy to take and nothing to lose by writing every field.
         private static void BuildNewSpell(
             SkyrimMod mod, ModKey modKey, NewSpellEspEntry e, PatchFormIdMapStore map,
             string espFileName, ref uint maxNewId, CobjEspResult result)
@@ -649,7 +620,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             result.NewSpellCount++;
         }
 
-        // A leveled list the user created in the tool (docs/LeveledList-Create-Plan.md, L-P3).
         public sealed record NewLeveledListEspEntry(string ToolKey, string EditorId);
 
         // AN EMPTY RECORD, AND THAT IS ALL OF IT. SkyPatcher's leveled-list patcher can do everything
@@ -717,20 +687,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             result.EnchantmentOverrideCount++;
         }
 
-        // A recipe the user took out of the game: an override of the winning record carrying the
-        // Deleted record flag, and nothing else.
-        //
-        // COBJ is the one record type where this is safe and simple: NOTHING references a
-        // ConstructibleObject by FormID - the crafting menu just enumerates them - so there is no
-        // dangling reference to leave behind. The "deleted records crash the game" rule people
-        // remember is about REFR, which is why xEdit's fix for those is called "Undelete and Disable
-        // REFERENCES".
-        //
-        // Verified against Mutagen before this was built (2026-10-05): a deep copy with
-        // IsDeleted = true writes, reads back as deleted, and keeps a correct master list.
-        //
-        // Deep-copying rather than building an empty stub keeps the record's own FormKey and masters
-        // honest; the game ignores the payload of a deleted record either way.
         private static void BuildDeleted(
             SkyrimMod mod, CobjPatchEntry e, CobjEspResult result, WinningRecordResolver? resolver)
         {
@@ -815,21 +771,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
             cobj.CreatedObject.SetTo(KeyFactory.ParseFormKey(e.CreatedItemKey));
 
-            // The created-object count (NAM1), and WHEN it may be written.
-            //
-            // It used to be a literal 1 in both branches above - invisible while the tool only made
-            // forge and tempering recipes, which produce one item, but it is the central value of a
-            // breakdown recipe ("gives 2 steel ingots") and was already quietly wrong for anything
-            // producing a stack, arrows being the obvious case.
-            //
-            // A DEEP COPY is the case to be careful with. It already carries the winning record's
-            // real count, and item.db only learns that number on the next scan - so writing the
-            // stored value unconditionally would stamp a 1 over the truth for every row that
-            // predates the column. Same rule as the conditions right below: only an edit the user
-            // actually made is allowed to overwrite what the copy brought along.
-            //
-            // A new record and a from-scratch rebuild have nothing to preserve, so they take the
-            // stored value (which defaults to 1, exactly the old behaviour).
             if (e.IsNew || winner == null || e.CreatedObjectCountEdited)
                 cobj.CreatedObjectCount = (ushort)Math.Clamp(e.CreatedObjectCount, 1, ushort.MaxValue);
 
@@ -850,15 +791,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 });
             }
 
-            // Conditions are the one field where "write back what we tracked" is actively dangerous,
-            // because the scan understands only 5 of the condition types that occur in practice.
-            //
-            // - Deep copy, conditions untouched by the user -> keep the copied ones verbatim.
-            // - Deep copy, but the real record holds a condition we can't represent -> write the
-            //   user's set, with each "?" placeholder row replaced by the copied original it stands
-            //   for (docs/Conditions-Plan.md, C1). If the placeholders don't line up with the real
-            //   record, keep the copied ones and say so; rewriting would drop something.
-            // - Otherwise -> write the user's set (this is also the from-scratch path).
             bool copiedConditions = winner != null;
             int unrepresentable = winner?.Conditions.Count(c => !IsRepresentable(c)) ?? 0;
 
@@ -878,17 +810,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
                 !ConditionCatalog.IsUnsupported(c.ConditionType) && (c.Value ?? "").Contains('|'));
             bool globalsMissing = copiedConditions && dbGlobals < winnerGlobals;
 
-            // Stale-database guard.
-            //
-            // Everything beyond the first five types (EPTemperingItemIsEnchanted, GetItemCount, "?"
-            // placeholders, ...) was dropped by the scan before the condition-scan fix. If the scanned
-            // rows hold fewer of them than the real record, the database predates that fix - and
-            // rewriting from it would delete exactly the conditions that fix was about.
-            //
-            // Counted on the snapshot taken before the first edit (OriginalConditions), not on the
-            // live rows: GetItemCount is editable since C3, so a live row the user deleted would look
-            // exactly like one the old scan never stored. Without a snapshot the live rows stand in,
-            // which is exact as long as nothing beyond the five was removable - true until C3.
             int winnerReadOnly = winner?.Conditions.Count(c => !IsCoreCondition(c)) ?? 0;
             int dbReadOnly = scanned.Count(c => !ConditionCatalog.IsCore(c.ConditionType));
             bool staleDb = copiedConditions && dbReadOnly < winnerReadOnly;

@@ -36,17 +36,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
 
             using (var cmd = conn.CreateCommand())
             {
-                // (IsEdited OR EffectsEdited), not "LastChanged IS NOT NULL": the reset paths clear
-                // the flags but keep LastChanged, which feeds the import conflict check.
-                // EffectsEdited matters on its own - a spell whose only change is an effect value
-                // may still have IsEdited back at 0 after a partial reset.
-                //
-                // Original = 1 only. A spell the user created has no scanned record to patch, and
-                // its tool key is not the FormID it will end up with either - that goes the ESP
-                // route (S-P6). A rule naming its tool key would target a record existing nowhere.
-                //
-                // The CASE gating on IsEdited mirrors LoadSpells exactly, so the patch can never
-                // write a value the editor itself does not show.
                 cmd.CommandText = @"
                     SELECT Key, EditorID, EffectsEdited,
                            Name,
@@ -136,15 +125,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
             return pairs;
         }
 
-        // The spells the user created in the tool (Original = 0).
-        //
-        // They have no scanned original to diff against - they exist nowhere until the generated ESP
-        // writes them - so they take the ESP route rather than producing SkyPatcher rules. And they
-        // carry MORE than a rule could: SpellType, TargetType, Range and CastDuration have no
-        // operation at all, which is exactly why a record built from scratch can have them.
-        //
-        // The effective values are read as the editor shows them, shadow columns and all: a user
-        // record is edited through the very same paths as a scanned one.
         public IReadOnlyList<CobjEspBuilder.NewSpellEspEntry> ReadNewSpells()
         {
             if (!File.Exists(DbPath())) return Array.Empty<CobjEspBuilder.NewSpellEspEntry>();

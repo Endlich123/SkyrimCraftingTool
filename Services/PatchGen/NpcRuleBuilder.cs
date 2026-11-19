@@ -5,20 +5,8 @@ using SkyrimCraftingTool.Model;
 
 namespace SkyrimCraftingTool.Services.PatchGen
 {
-    // Pure diff: one scanned-versus-edited NPC -> one SkyPatcherRule, or null when nothing changed.
-    // No database, no filesystem. Same shape as ItemRuleBuilder - see docs/NPC-Plan.md §3 and §10.
-    //
-    // The filter is always filterByNpcs with this record's own FormID. That is the decision from
-    // NPC-Plan.md §10: a rule that names FormIDs hits exactly the NPCs it names, today and after any
-    // future mod install. A filterByFactions rule would reach further, and that is exactly why the
-    // editor never produced one behind the user.s back - the faction view that could has been gone
-    // since 2026-09-17 (NPC-Plan.md §12).
     public static class NpcRuleBuilder
     {
-        // An NPC that inherits its stats from a template and gets its stats patched anyway. The
-        // patch is written as asked - the user may well be clearing the flag by other means - but it
-        // is reported, because 61,4 % of NPCs are in this state and the edit silently does nothing
-        // for them (NPC-Plan.md §4).
         public sealed record InheritedStatsWarning(string Key, string Name, string TemplateKey);
 
         public static SkyPatcherRule? Build(NpcRecord npc, out InheritedStatsWarning? warning)
@@ -217,11 +205,6 @@ namespace SkyrimCraftingTool.Services.PatchGen
         // Stats
         // --------------------
 
-        // One changeStats operation with the changed values in it, not three operations - that is
-        // the documented shape ("changeStats=health=250, magicka=150, stamina=50").
-        //
-        // Only the changed ones: writing all three would patch two values the user never touched,
-        // and on an NPC whose magicka the game recalculates that is a visible difference.
         private static bool AppendStatOps(List<string> ops, NpcRecord npc)
         {
             var parts = new List<string>();
