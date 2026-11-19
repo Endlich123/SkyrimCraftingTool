@@ -23,8 +23,21 @@ public partial class App : System.Windows.Application
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
     }
 
+    // No "(Not Responding)" ghost window. Long jobs (tab load, mass patch, reset) run on the main UI
+    // thread, with the loading overlay drawn by a thread of its own (BusyOverlayPresenter). Switched
+    // away and back during such a job, the main window gets activation and paint messages it cannot
+    // answer until the job ends; after 5 s Windows replaced it with a pale ghost that also covered
+    // the overlay, and the tool looked crashed. Without the ghost the window keeps its last frame
+    // (DWM holds it) and the overlay goes on drawing on top. Process-wide - there is no per-thread or
+    // per-job switch - and it has to come before the first window. Trade-off: a real hang shows no
+    // "Not Responding" either; Task Manager still ends it.
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern void DisableProcessWindowsGhosting();
+
     protected override void OnStartup(StartupEventArgs e)
     {
+        DisableProcessWindowsGhosting();
+
         base.OnStartup(e);
 
         System.Windows.Application.Current.ShutdownMode = ShutdownMode.OnExplicitShutdown;

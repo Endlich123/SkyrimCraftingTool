@@ -29,6 +29,7 @@
                 <ResourceDictionary Source="Styles/PluginTreeTemplate.xaml"/>
                 <ResourceDictionary Source="Styles/ContainerPlacementPanel.xaml"/>
                 <ResourceDictionary Source="Styles/KeywordChips.xaml"/>
+                <ResourceDictionary Source="Styles/RecordChoiceTemplates.xaml"/>
             </ResourceDictionary.MergedDictionaries>
 
         </ResourceDictionary>
