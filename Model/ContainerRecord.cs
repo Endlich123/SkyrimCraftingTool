@@ -8,8 +8,8 @@ namespace SkyrimCraftingTool.Model
 {
     public class ContainerRecord
     {
-        public string ContainerKey { get; set; }
-        public string Name { get; set; }
+        public string ContainerKey { get; set; } = "";
+        public string Name { get; set; } = "";
 
         public List<ContainerLVLIRecord> LVLIEntries { get; set; } = new();
     }

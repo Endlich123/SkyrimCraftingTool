@@ -71,10 +71,6 @@ namespace SkyrimCraftingTool.Model
                     CASE WHEN IsEdited = 1 AND IsEditedFlags IS NOT NULL
                          THEN IsEditedFlags ELSE Flags END AS Flags,
 
-                    -- Edited for the tree and the only-edited filter means fields OR effects. Reset
-                    -- fields clears IsEdited while the effects can still be the user's - reading
-                    -- IsEdited alone dropped such a spell out of the filter with its edit still live
-                    -- (found 2026-10-17).
                     CASE WHEN IsEdited = 1 OR EffectsEdited = 1 THEN 1 ELSE 0 END AS IsEdited,
                     Original,
                     DroppedEffectRows,
@@ -89,18 +85,22 @@ namespace SkyrimCraftingTool.Model
                     (SELECT w.Ordinal
                        FROM ShoutWords w
                       WHERE w.SpellKey = Spells.Key
-                      ORDER BY w.ShoutKey, w.Ordinal LIMIT 1) AS ShoutWord,
-
-                    -- Only for the half-cost perk mismatch note (SpellRecord.HalfCostPerkMismatch).
-                    (SELECT p.EditorID FROM NpcPerkCatalogue p
-                      WHERE p.Key = CASE WHEN IsEdited = 1 AND IsEditedHalfCostPerkKey IS NOT NULL
-                                         THEN IsEditedHalfCostPerkKey ELSE HalfCostPerkKey END) AS PerkEditorId
+                      ORDER BY w.ShoutKey, w.Ordinal LIMIT 1) AS ShoutWord
                   FROM Spells
                   WHERE Active = 1;";
+
+            // The half-cost perk's EditorID, only for the mismatch note (SpellRecord.HalfCostPerkMismatch).
+            // From formid.db, the one perk list - it sat in this query as a subselect on the item.db
+            // copy until 2026-11-07.
+            var perkEditorIds = FormIDDBHandler.ReadPerks()
+                .GroupBy(p => p.Key, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().Name ?? "", StringComparer.OrdinalIgnoreCase);
 
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
+                string halfCostPerkKey = reader.IsDBNull(12) ? "" : reader.GetString(12);
+
                 list.Add(new SpellRecord
                 {
                     Key = reader.GetString(0),
@@ -126,7 +126,7 @@ namespace SkyrimCraftingTool.Model
                     EquipType = reader.IsDBNull(17) ? "" : reader.GetString(17),
                     ShoutName = reader.IsDBNull(18) ? "" : reader.GetString(18),
                     ShoutWord = reader.IsDBNull(19) ? 0 : reader.GetInt32(19),
-                    HalfCostPerkEditorId = reader.IsDBNull(20) ? "" : reader.GetString(20),
+                    HalfCostPerkEditorId = perkEditorIds.GetValueOrDefault(halfCostPerkKey, ""),
                 });
             }
 
@@ -230,9 +230,7 @@ namespace SkyrimCraftingTool.Model
         public static void ResetSpellEdits(string key)
             => ResetEditShadows("Spells", SpellShadowColumns, key);
 
-        // What the scan found, before any field edit. Used to show the user what Reset would go back
-        // to, and by the patch generator as the left-hand side of its diff.
-        public static SpellRecord GetOriginalSpell(string key)
+        public static SpellRecord? GetOriginalSpell(string key)
         {
             if (string.IsNullOrEmpty(key) || !File.Exists(ItemdbPathStatic())) return null;
 
@@ -268,46 +266,17 @@ namespace SkyrimCraftingTool.Model
             };
         }
 
-        // Every perk in the load order, for the half-cost perk picker. From the catalogue the scan
-        // writes for the NPC tab - every PERK record, not only the ones some NPC carries. Empty on a
-        // database without the catalogue.
+        // Every perk in the load order, for the half-cost perk picker - from formid.db, the one perk
+        // list (until 2026-11-07 from an item.db copy). Empty before the first scan.
         public static List<PerkChoice> GetPerkChoices()
-        {
-            var list = new List<PerkChoice>();
-            if (!File.Exists(ItemdbPathStatic())) return list;
-
-            using var connection = new ItemDbConnection(ConnString);
-            connection.Open();
-            if (!UserRecords.TableExists(connection, "NpcPerkCatalogue")) return list;
-
-            using var cmd = connection.CreateCommand();
-            cmd.CommandText = "SELECT Key, EditorID, Name FROM NpcPerkCatalogue WHERE Active = 1";
-            using var r = cmd.ExecuteReader();
-            while (r.Read())
-            {
-                string key = r.GetString(0);
-                string editorId = r.IsDBNull(1) ? "" : r.GetString(1);
-                string name = r.IsDBNull(2) ? "" : r.GetString(2);
-                list.Add(new PerkChoice(key, editorId, name));
-            }
-            return list.OrderBy(p => p.Display, StringComparer.OrdinalIgnoreCase).ToList();
-        }
+            => FormIDDBHandler.ReadPerks()
+                .Select(PerkChoice.From)
+                .OrderBy(p => p.Display, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
         private static string ItemdbPathStatic()
             => Path.Combine(GlobalState.Tool.InputFolder, "Item", "item.db");
 
-        // ===================================================================
-        // spells of the user's own (S-P6)
-        // ===================================================================
-
-        // A brand-new spell, keyed under the tool's own pseudo-plugin exactly like a user-created
-        // enchantment or recipe. It exists in no plugin - the generated ESP is what brings it into
-        // the game - so the row carries Original = 0 and the scan leaves it alone.
-        //
-        // SpellType defaults to "Spell" rather than staying empty: it is the tree's grouping level,
-        // and a record that appeared under "Unknown" until somebody noticed the dropdown would be a
-        // worse first impression than one that guessed the overwhelmingly common case. Measured,
-        // 2.389 of 3.684 are plain spells.
         public static SpellRecord CreateSpell(string editorId, string name)
         {
             string key = AllocateUserSpellKey();
@@ -350,8 +319,6 @@ namespace SkyrimCraftingTool.Model
             };
         }
 
-        // Only ever a record of the user's own. A scanned spell belongs to its plugin; "deleting" it
-        // here would mean nothing to the game and would lose the row the next rescan needs.
         public static bool DeleteSpell(string key)
         {
             if (string.IsNullOrWhiteSpace(key)) return false;
@@ -440,9 +407,6 @@ namespace SkyrimCraftingTool.Model
             }
         }
 
-        // Editable on a user-created record only, because SkyPatcher has no operation for any of
-        // them - see docs/Spell_Patcher.txt. EditorID is here for the same reason: a scanned
-        // record's belongs to its plugin.
         internal static readonly string[] UserOnlySpellColumns =
             { "EditorID", "SpellType", "TargetType", "SpellRange", "CastDuration", "Description" };
 
@@ -450,11 +414,6 @@ namespace SkyrimCraftingTool.Model
         // effects (S-P3)
         // ===================================================================
 
-        // Replaces a spell's effects wholesale.
-        //
-        // WHOLESALE AND IN ONE TRANSACTION, both deliberately. The editor hands over the list it
-        // has, so diffing here would be a second opinion about what the user did; and a delete that
-        // committed without its inserts is how an enchantment once lost its effects entirely.
         public static void SaveSpellEffects(string spellKey, List<SpellEffectRecord> effects)
         {
             if (string.IsNullOrEmpty(spellKey)) return;
@@ -491,8 +450,6 @@ namespace SkyrimCraftingTool.Model
                     insertCmd.ExecuteNonQuery();
                 }
 
-                // Marks the effects as the user's, so a rescan refreshes the RECORD and leaves these
-                // rows alone - the guard the scan reads as spellEffectsEditedKeys.
                 using (var flagCmd = new SqliteCommand(
                     "UPDATE Spells SET EffectsEdited = 1, IsEdited = 1, LastChanged = @now WHERE Key = @key",
                     conn, transaction))

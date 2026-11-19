@@ -26,25 +26,18 @@ namespace SkyrimCraftingTool.Model
         // ItemDBHandler.ResolveUserCobjKeys. Empty in exports written before TE-2.
         public string Uid { get; set; } = "";
 
-        // Field name -> Uid of the user-created record that field points at (TE-3). Set at export
-        // when a field's value is one of the user's own records - an item's enchantment, say - so
-        // the import finds that record by identity even after its Key changed on the way in.
-        // Null when the DTO references no user-created record.
-        public Dictionary<string, string> Refs { get; set; }
+        public Dictionary<string, string>? Refs { get; set; }
 
         // COBJ only, present when ConditionsEdited was set at export time.
-        public List<Dictionary<string, string>> ConditionRows { get; set; }
+        public List<Dictionary<string, string>>? ConditionRows { get; set; }
 
         // Enchantments only, present when EffectsEdited was set at export time.
-        public List<Dictionary<string, string>> EffectRows { get; set; }
+        public List<Dictionary<string, string>>? EffectRows { get; set; }
 
         // Enchantments only, present when KeywordsEdited was set at export time.
-        public List<string> WornRestrictionKeywords { get; set; }
+        public List<string>? WornRestrictionKeywords { get; set; }
 
-        // Named child lists for every unit after TE-1 (docs/TabExport-Plan.md §3.4), instead of one
-        // more dedicated property per unit. Same rule as the lists above: a name is present only when
-        // that child list was edited, and an EMPTY list is a payload ("the user removed them all").
-        public Dictionary<string, List<Dictionary<string, string>>> Rows { get; set; }
+        public Dictionary<string, List<Dictionary<string, string>>>? Rows { get; set; }
 
         // Display-only convenience for the item picker / conflict dialog — not required on import.
         public string DisplayName { get; set; } = "";
@@ -58,7 +51,7 @@ namespace SkyrimCraftingTool.Model
 
     public class ImportConflict
     {
-        public EditedItemDto FileItem { get; set; }
+        public required EditedItemDto FileItem { get; set; }
         public string LocalLastChanged { get; set; } = "";
     }
 
@@ -75,8 +68,6 @@ namespace SkyrimCraftingTool.Model
 
         public List<ImportConflict> Conflicts { get; set; } = new();
 
-        // What the summary should tell the user beyond the counts - a reference to one of their own
-        // records that this machine does not have, say. Filled while the plan is made (FollowKeys).
         public List<string> Notes { get; set; } = new();
     }
 

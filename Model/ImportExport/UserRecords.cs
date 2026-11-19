@@ -7,19 +7,6 @@ using System.Linq;
 
 namespace SkyrimCraftingTool.Model
 {
-    // Records the user created in the tool (Original = 0): recipes, enchantments, spells. Three
-    // things set them apart in an export, and all three live here once (TE-2 for recipes, TE-3 for
-    // the other two):
-    //
-    //  1. IDENTITY. Their Key is handed out locally (SkyrimCraftingTool.esp|<counter>) and every
-    //     install counts from the same baseline, so the same Key elsewhere is almost always a
-    //     different record. The Uid column is what travels; it is minted on first export.
-    //  2. THE WHOLE ROW. There is no scanned record underneath to fall back to, so the export carries
-    //     every column - base values AND shadow columns, exactly as they stand - and an import
-    //     recreates the row as it was. Reset then behaves on the target as it did on the source.
-    //  3. REFERENCES TO THEM. A field elsewhere that points at one (an item's enchantment) carries
-    //     the target's Uid next to its Key, so a later import - another tab, another run - finds the
-    //     record by identity even after its Key was changed on the way in.
     internal static class UserRecords
     {
         // Bookkeeping, never record data: the import writes these itself or leaves them alone.
@@ -104,18 +91,6 @@ namespace SkyrimCraftingTool.Model
             return cmd.ExecuteScalar() != null;
         }
 
-        // Settles the Key of every user-created record of one table in an import, before anything is
-        // probed, and records each change in `map`:
-        //
-        //   Uid known locally            -> that row is the record, whatever its Key is here
-        //   Uid unknown, Key free        -> imported under its own Key
-        //   Uid unknown, Key taken       -> someone else's record has that Key: a fresh Key
-        //   no Uid (export before TE-2)  -> by Key, as before - there is nothing better to go on
-        //
-        // "Free" means free in the WHOLE namespace the key lives in, not just in its own table: the
-        // patch turns every own key into a FormID of one ESP (UserKeyAllocator), so an enchantment
-        // imported under the key of a local spell would collide just the same. The FormID map counts
-        // as taken too - it still remembers a deleted record's key.
         internal static void ResolveKeys(SqliteConnection connection, string table, IEnumerable<EditedItemDto> items,
             ImportKeyMap map, IReadOnlyList<string> namespaceTables, Func<string> allocate)
         {
@@ -188,15 +163,6 @@ namespace SkyrimCraftingTool.Model
             return fields;
         }
 
-        // Recreates (or overwrites) a user-created row from an export. Only columns that exist in
-        // this table and are not bookkeeping are written - the field names come from a file, and a
-        // column name cannot be bound as a parameter.
-        //
-        // On an update, a SHADOW column the file does not mention is cleared: the file is the whole
-        // row, and an override it does not have is not there. A BASE column it does not mention is
-        // left alone - a file older than that column has nothing to say about it, and NULL could
-        // break a NOT NULL constraint and roll back the entire import.
-        // Returns false when no column applied.
         internal static bool WriteRow(SqliteConnection connection, SqliteTransaction transaction, string table,
             EditedItemDto item, string? lastChanged = null)
         {
@@ -249,8 +215,6 @@ namespace SkyrimCraftingTool.Model
 
         // ---- references to them ----
 
-        // At export: if `value` names a user-created record of `table`, its Uid - so the reference
-        // can be found again after an import changed that record's Key. "" otherwise.
         internal static string UidForReference(SqliteConnection connection, string table, string? value)
             => IsUserKey(value) && RowExists(connection, table, value!) ? EnsureUid(connection, table, value!) : "";
 

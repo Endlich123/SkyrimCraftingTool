@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using DynamicData;
 using Microsoft.Data.Sqlite;
 using Mutagen.Bethesda;
@@ -43,18 +43,10 @@ namespace SkyrimCraftingTool.Model
             EnsureSchema(connection);
             CreateTables(connection);
 
-            // Which COBJ/Enchantment records has the user hand-edited Conditions/Effects/
-            // WornRestrictionKeywords for? Unlike Armor/Weapon/COBJ/Enchantment's own fields (which
-            // have IsEdited* shadow columns on the SAME row), these three child tables have no
-            // shadow-column mechanism — a user edit is a full replace of the base child rows. So the
-            // only way to protect a hand-edited child set from being silently overwritten by this scan
-            // is a flag on the PARENT row, checked before we touch its children below.
             var conditionsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM COBJ WHERE ConditionsEdited = 1;");
             var effectsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM Enchantments WHERE EffectsEdited = 1;");
             // The same guard for the Spells tab (docs/Spells-Plan.md).
             var spellEffectsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM Spells WHERE EffectsEdited = 1;");
-            // Same protection for the NPC child lists: a rescan refreshes the record, never the
-            // faction or skill list the user has taken over.
             var npcFactionsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM Npc WHERE FactionsEdited = 1;");
             var npcSkillsEditedKeys = ReadFlaggedKeys(connection, "SELECT Key FROM Npc WHERE SkillsEdited = 1;");
             // The three N-P3 lists share one flag: they are edited together on one screen, and a
@@ -103,7 +95,6 @@ namespace SkyrimCraftingTool.Model
             using var insertShoutWord = PrepareInsert(connection, "ShoutWords", ShoutWordColumnNames, ShoutWordParamNames);
             using var insertShouts = PrepareUpsert(connection, "Shouts", NamedCatalogueColumnNames, NamedCatalogueParamNames);
             using var insertLeveledSpells = PrepareUpsert(connection, "LeveledSpells", PlainCatalogueColumnNames, PlainCatalogueParamNames);
-            using var insertPerkCatalogue = PrepareUpsert(connection, "NpcPerkCatalogue", NamedCatalogueColumnNames, NamedCatalogueParamNames);
             using var insertFactions = PrepareUpsert(connection, "Factions", NamedCatalogueColumnNames, NamedCatalogueParamNames);
             using var insertClasses = PrepareUpsert(connection, "Classes", ClassColumnNames, ClassParamNames);
             using var insertClassSkills = PrepareInsert(connection, "ClassSkillWeights", ClassSkillColumnNames, ClassSkillParamNames);
@@ -150,7 +141,6 @@ namespace SkyrimCraftingTool.Model
             using var insertShoutWordBatch = PrepareInsertBatch(connection, "ShoutWords", ShoutWordColumnNames, ShoutWordParamNames, RowsPerBatch(ShoutWordParamNames));
             using var insertShoutsBatch = PrepareUpsertBatch(connection, "Shouts", NamedCatalogueColumnNames, NamedCatalogueParamNames, RowsPerBatch(NamedCatalogueParamNames));
             using var insertLeveledSpellsBatch = PrepareUpsertBatch(connection, "LeveledSpells", PlainCatalogueColumnNames, PlainCatalogueParamNames, RowsPerBatch(PlainCatalogueParamNames));
-            using var insertPerkCatalogueBatch = PrepareUpsertBatch(connection, "NpcPerkCatalogue", NamedCatalogueColumnNames, NamedCatalogueParamNames, RowsPerBatch(NamedCatalogueParamNames));
             using var insertFactionsBatch = PrepareUpsertBatch(connection, "Factions", NamedCatalogueColumnNames, NamedCatalogueParamNames, RowsPerBatch(NamedCatalogueParamNames));
             using var insertClassesBatch = PrepareUpsertBatch(connection, "Classes", ClassColumnNames, ClassParamNames, RowsPerBatch(ClassParamNames));
             using var insertClassSkillsBatch = PrepareInsertBatch(connection, "ClassSkillWeights", ClassSkillColumnNames, ClassSkillParamNames, RowsPerBatch(ClassSkillParamNames));
@@ -193,7 +183,6 @@ namespace SkyrimCraftingTool.Model
             insertShoutWord.Transaction = transaction;
             insertShouts.Transaction = transaction;
             insertLeveledSpells.Transaction = transaction;
-            insertPerkCatalogue.Transaction = transaction;
             insertFactions.Transaction = transaction;
             insertClasses.Transaction = transaction;
             insertClassSkills.Transaction = transaction;
@@ -234,7 +223,6 @@ namespace SkyrimCraftingTool.Model
             insertShoutWordBatch.Transaction = transaction;
             insertShoutsBatch.Transaction = transaction;
             insertLeveledSpellsBatch.Transaction = transaction;
-            insertPerkCatalogueBatch.Transaction = transaction;
             insertFactionsBatch.Transaction = transaction;
             insertClassesBatch.Transaction = transaction;
             insertClassSkillsBatch.Transaction = transaction;
@@ -252,7 +240,10 @@ namespace SkyrimCraftingTool.Model
             // between plugins depends on write order matching allgamePathfromDB's load order
             // exactly. Parallel.For writes each result into its own reserved slot, preserving that
             // order regardless of thread scheduling.
-            _formIDDB.EnsureCacheLoaded();
+            //
+            // No formid.db lookup in the parse phase any more: the one thing it answered - "is this
+            // container entry a leveled list?" - is answered in the write phase from the leveled lists
+            // this scan reads itself (see allContainerLvli).
 
             // Never the tool's own output (KeyFactory.IsOwnOutputPlugin) - it would come back as mod data.
             var pluginFiles = allgamePathfromDB
@@ -281,7 +272,7 @@ namespace SkyrimCraftingTool.Model
                 enchCount += p.Enchantments.Count;
                 effCount += p.Enchantments.Sum(e => e.EffectRows.Count);
                 containerCount += p.Containers.Count;
-                lvliCount += p.Containers.Sum(c => c.LvliRows.Count);
+                lvliCount += p.LeveledLists.Count;
                 mgefCount += p.MagicEffectRows.Count;
             }
             Debug.WriteLine($"[ItemDB] Parse phase: {parseSw.ElapsedMilliseconds} ms ({pluginFiles.Count} plugins, " +
@@ -426,9 +417,9 @@ namespace SkyrimCraftingTool.Model
                         // presenting the pick as a reading - see LeveledListLostEntry's schema
                         // comment. Sticky: once ambiguous, always ambiguous, however many further
                         // versions agree afterwards.
-                        bool seenBefore = lost.TryGetValue(reference, out var previous);
+                        lost.TryGetValue(reference, out var previous);
 
-                        bool ambiguous = seenBefore
+                        bool ambiguous = previous != null
                                          && (!Equals(previous[2], row[3])
                                              || !Equals(previous[3], row[4])
                                              || Convert.ToInt32(previous[5]) == 1);
@@ -437,7 +428,7 @@ namespace SkyrimCraftingTool.Model
                         // LostFrom keeps the last. The winner never carries the entry (that is what
                         // makes it lost), so the first version seen here is genuinely the one that
                         // introduced it.
-                        object addedBy = seenBefore ? previous[6] : parsed.PluginName;
+                        object addedBy = previous != null ? previous[6] : parsed.PluginName;
 
                         lost[reference] = new object[]
                         {
@@ -504,10 +495,6 @@ namespace SkyrimCraftingTool.Model
             }
             allEnchantmentEffects.AddRange(latestEffectRow.Values);
 
-            // WornRestrictionKeywords rows for EVERY FLST (E3 — was previously only enchant-referenced
-            // lists, populated inside the enchant loop). Last plugin per list key wins its whole
-            // member set. A list the user has hand-edited (WornRestrictionListState.IsEdited=1, or the
-            // legacy per-enchant flag) is skipped entirely so the scan never clobbers it.
             var allWornRestrictionKeywords = new List<object[]>();
             var wornRestrictionListKeysToRewrite = new List<string>();
             var latestFormListByKey = new Dictionary<string, ParsedFormList>(StringComparer.OrdinalIgnoreCase);
@@ -538,8 +525,14 @@ namespace SkyrimCraftingTool.Model
                 // Same rationale as EnchantmentEffects above — ContainerLVLI has
                 // PRIMARY KEY(ContainerKey, LVLiKey), but a container's own item list can list the same
                 // leveled item more than once (e.g. duplicate entries from a patch).
-                foreach (var row in container.LvliRows)
-                    latestLvliRow[((string)row[0], (string)row[1])] = row;
+                foreach (var entry in container.EntryRows)
+                {
+                    string refKey = (string)entry[2];
+                    if (!latestLeveledListByKey.TryGetValue(refKey, out var list)) continue;
+
+                    string containerKey = (string)entry[0];
+                    latestLvliRow[(containerKey, refKey)] = new object[] { containerKey, refKey, list.Values[1] ?? "" };
+                }
             }
             allContainerLvli.AddRange(latestLvliRow.Values);
 
@@ -568,13 +561,6 @@ namespace SkyrimCraftingTool.Model
                 allLeveledNpcEntries.AddRange(list.EntryRows);
             }
 
-            // NPCs (Prio 8 / N-P1). Winner-per-key like every other parent table, and the children
-            // come only from that winner: a later plugin that dropped a faction must not leave the
-            // earlier plugin's row behind.
-            //
-            // Child rows are skipped for any NPC whose list the user has edited, the same protection
-            // COBJ conditions and enchantment effects have - a rescan may refresh the record, never
-            // the user's own list.
             var latestNpcByKey = new Dictionary<string, ParsedNpc>(StringComparer.OrdinalIgnoreCase);
 
             // The EditorID the DEFINING plugin gave the NPC - the plugin named in its key. An
@@ -655,14 +641,6 @@ namespace SkyrimCraftingTool.Model
 
             var allSpellCatalogue = Deduped(p => p.SpellCatalogueRows);
 
-            // A spell's effect rows follow the winning record, and a spell whose effects the user has
-            // taken over keeps them: the scan refreshes the record, never an edit. Same two rules as
-            // EnchantmentEffects, for the same reason.
-            //
-            // The inner dedupe is not optional either. One SPEL's own effect list may name the same
-            // base MagicEffect twice with different values - PRIMARY KEY(SpellKey, MagicEffectKey)
-            // cannot hold both, and a plain INSERT would crash on the collision rather than keep one.
-            // How many were lost is counted per spell at parse time (DroppedEffectRows).
             var allSpellEffects = new List<object[]>();
             var spellEffectRewriteKeys = new List<string>();
             {
@@ -692,7 +670,6 @@ namespace SkyrimCraftingTool.Model
             // Spells tab's labels - every shout is rewritten, nothing here is ever edited.
             var allShoutWords = DedupedChildren(p => p.ShoutWordRows);
             var allLeveledSpellCatalogue = Deduped(p => p.LeveledSpellCatalogueRows);
-            var allPerkCatalogue = Deduped(p => p.PerkCatalogueRows);
 
             // WHICH of the three a spell entry is can only be decided here, with every plugin's
             // records in hand: the NPC record keeps spells, shouts and leveled spells in one list and
@@ -834,7 +811,6 @@ namespace SkyrimCraftingTool.Model
             ExecuteRowsBatched(insertShoutWord, insertShoutWordBatch, ShoutWordParamNames, allShoutWords, RowsPerBatch(ShoutWordParamNames));
             ExecuteRowsBatched(insertShouts, insertShoutsBatch, NamedCatalogueParamNames, allShoutCatalogue, RowsPerBatch(NamedCatalogueParamNames));
             ExecuteRowsBatched(insertLeveledSpells, insertLeveledSpellsBatch, PlainCatalogueParamNames, allLeveledSpellCatalogue, RowsPerBatch(PlainCatalogueParamNames));
-            ExecuteRowsBatched(insertPerkCatalogue, insertPerkCatalogueBatch, NamedCatalogueParamNames, allPerkCatalogue, RowsPerBatch(NamedCatalogueParamNames));
             ExecuteRowsBatched(insertFactions, insertFactionsBatch, NamedCatalogueParamNames, allFactions, RowsPerBatch(NamedCatalogueParamNames));
             ExecuteRowsBatched(insertClasses, insertClassesBatch, ClassParamNames, allClasses, RowsPerBatch(ClassParamNames));
             ExecuteRowsBatched(insertClassSkills, insertClassSkillsBatch, ClassSkillParamNames, allClassSkillWeights, RowsPerBatch(ClassSkillParamNames));
@@ -848,19 +824,11 @@ namespace SkyrimCraftingTool.Model
             PerfLog.Record("Scan, item DB: of which the mesh index", TimeSpan.FromMilliseconds(meshStats.IndexMs), meshStats.ToString());
             phase.Restart();
 
-            // Parent tables: anything not touched by this scan is no longer defined by any currently
-            // active plugin — mark it inactive (hidden from Load*) instead of deleting, so its
-            // IsEdited*/Original data survives in case the plugin comes back. COBJ additionally
-            // excludes Original=0 (user-created recipes, which never appear in a scan's key-set by
-            // definition — without this exemption every user recipe would be marked inactive on every
-            // single scan, since nothing ever "scans" them).
             MarkInactiveExcept(connection, transaction, "Armor", "Key", allArmor.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "Weapons", "Key", allWeapon.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "WorldItem", "Key", allWorldItems.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "ArmorAddon", "Key", allArmorAddons.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "COBJ", "Key", latestCobjByKey.Keys, extraWhere: "Original = 1");
-            // Original = 1 only: a user-created enchantment exists in no plugin, so a scan must
-            // never retire it. Same guard as COBJ above.
             MarkInactiveExcept(connection, transaction, "Enchantments", "Key", latestEnchantmentByKey.Keys, extraWhere: "Original = 1");
             MarkInactiveExcept(connection, transaction, "Container", "ContainerKey", latestContainerByKey.Keys);
             MarkInactiveExcept(connection, transaction, "MagicEffects", "Key", allMagicEffects.Select(r => (string)r[0]));
@@ -873,17 +841,11 @@ namespace SkyrimCraftingTool.Model
             MarkInactiveExcept(connection, transaction, "Outfits", "Key", allOutfits.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "VoiceTypes", "Key", allVoiceTypes.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "CombatStyles", "Key", allCombatStyles.Select(r => (string)r[0]));
-            // Original = 1 only. A spell the user created in the tool exists in no plugin, so it is
-            // never "seen" by a scan - without this it would go inactive on the very next one.
             MarkInactiveExcept(connection, transaction, "Spells", "Key",
                                allSpellCatalogue.Select(r => (string)r[0]), extraWhere: "Original = 1");
             MarkInactiveExcept(connection, transaction, "Shouts", "Key", allShoutCatalogue.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "LeveledSpells", "Key", allLeveledSpellCatalogue.Select(r => (string)r[0]));
-            MarkInactiveExcept(connection, transaction, "NpcPerkCatalogue", "Key", allPerkCatalogue.Select(r => (string)r[0]));
             MarkInactiveExcept(connection, transaction, "Globals", "Key", allGlobals.Select(r => (string)r[0]));
-            // Original = 1 only, like COBJ and Enchantments above: a list the user created exists in
-            // no plugin, so no scan will ever "see" it, and without this guard every rescan would
-            // switch it off (docs/LeveledList-Create-Plan.md, L-P1).
             MarkInactiveExcept(connection, transaction, "LeveledList", "Key", latestLeveledListByKey.Keys, extraWhere: "Original = 1");
             MarkInactiveExcept(connection, transaction, "LeveledNpc", "Key", latestLeveledNpcByKey.Keys);
 
@@ -1105,20 +1067,6 @@ namespace SkyrimCraftingTool.Model
             }
         }
 
-        // Marks rows in `table` inactive when their key wasn't among `scannedKeys` — i.e. no currently
-        // active plugin defines/touches them anymore, whether because the whole plugin was removed or
-        // just that one record was dropped from an updated version of it. Verified against a real
-        // SQLite instance before wiring in (temp table + NOT EXISTS, not a giant IN-list, to stay fast
-        // at the tens-of-thousands-of-keys scale this app's scans run at).
-        // internal for the regression test: the casing rule below is invisible in the SQL and cost a
-        // record that had just been written (see ScanKeyCasingTests).
-        // The recipes earlier scans read out of the tool's own ESPs, before the scan skipped them. Not
-        // marked inactive but deleted: they are copies of the user's own recipes (Original=0 under
-        // SkyrimCraftingTool.esp), not records a plugin might bring back - and a preset that had
-        // edited one would keep it in "only edited" and in the patch. Original = 1 only, so the
-        // user's own recipes, which share the prefix, are never touched. After the first scan with
-        // the filter there is nothing left to find; measured before it: 2.442 rows, 757 edited.
-        // Recipes only - no other table held a row from the own output.
         internal static int PurgeOwnOutputRecipes(SqliteConnection connection, SqliteTransaction transaction)
         {
             const string ownRows = "SELECT Key FROM COBJ WHERE Original = 1 AND Key LIKE '" + KeyFactory.OwnOutputPrefix + "%'";
@@ -1132,7 +1080,7 @@ namespace SkyrimCraftingTool.Model
             return cmd.ExecuteNonQuery();
         }
 
-        internal static void MarkInactiveExcept(SqliteConnection connection, SqliteTransaction transaction, string table, string keyColumn, IEnumerable<string> scannedKeys, string extraWhere = null)
+        internal static void MarkInactiveExcept(SqliteConnection connection, SqliteTransaction transaction, string table, string keyColumn, IEnumerable<string> scannedKeys, string? extraWhere = null)
         {
             var keys = scannedKeys.Distinct().ToList();
             var tempTable = PopulateKeyTempTable(connection, transaction, "_ActiveKeys", keys);
@@ -1196,7 +1144,6 @@ namespace SkyrimCraftingTool.Model
             public List<object[]> ShoutWordRows = new();
             public List<object[]> ShoutCatalogueRows = new();
             public List<object[]> LeveledSpellCatalogueRows = new();
-            public List<object[]> PerkCatalogueRows = new();
 
             // Mesh index (render stage 1). ARMA is scanned as a record in its own right because it,
             // not ARMO, is what carries a model path.
@@ -1231,27 +1178,26 @@ namespace SkyrimCraftingTool.Model
         // WornRestrictionKeywords table, which E3 treats as a general "FLST contents" table.
         private sealed class ParsedFormList
         {
-            public string ListKey;
+            public required string ListKey;
             public List<object[]> MemberRows = new();   // { ListKey, MemberKey }
         }
 
         private sealed class ParsedCobj
         {
-            public object[] Values;
+            public required object[] Values;
             public List<object[]> ConditionRows = new();
         }
 
         private sealed class ParsedEnchantment
         {
-            public object[] Values;
+            public required object[] Values;
             public List<object[]> EffectRows = new();
         }
 
         private sealed class ParsedContainer
         {
-            public object[] Values;
-            public List<object[]> LvliRows = new();
-            public List<object[]> EntryRows = new();   // every entry, not just the leveled lists
+            public required object[] Values;
+            public List<object[]> EntryRows = new();   // every entry; the leveled lists among them are picked out in the write phase
         }
 
         // A leveled list plus its entries. Same parent/child shape as ParsedContainer, and for the
@@ -1268,7 +1214,7 @@ namespace SkyrimCraftingTool.Model
 
         private sealed class ParsedNpc
         {
-            public object[] Values;
+            public required object[] Values;
             public List<object[]> FactionRows = new();
             public List<object[]> SkillRows = new();
             public List<object[]> SpellRows = new();
@@ -1278,7 +1224,7 @@ namespace SkyrimCraftingTool.Model
 
         private sealed class ParsedLeveledList
         {
-            public object[] Values;
+            public required object[] Values;
             public List<object[]> EntryRows = new();
         }
 
@@ -1365,7 +1311,7 @@ namespace SkyrimCraftingTool.Model
 
         private static readonly string[] MagicEffectParamNames =
             { "@key", "@editorID", "@name", "@hasMag", "@hasDur", "@hasAre", "@castType", "@targetType",
-              "@school", "@skillLevel", "@baseCost" };
+              "@school", "@skillLevel", "@baseCost", "@description" };
         private static readonly string[] GlobalParamNames = { "@key", "@editorID", "@value" };
 
         // Real table column names, in the same order as the matching *ParamNames array above.
@@ -1416,7 +1362,7 @@ namespace SkyrimCraftingTool.Model
         internal static readonly string[] ContainerColumnNames = { "ContainerKey", "Name" };
         private static readonly string[] ContainerLvliColumnNames = { "ContainerKey", "LVLiKey", "LVLiName" };
         private static readonly string[] ContainerEntryColumnNames = { "ContainerKey", "Ordinal", "Reference", "Count" };
-        private static readonly string[] LeveledListColumnNames = { "Key", "EditorID", "ChanceNone", "Flags", "GlobalKey" };
+        internal static readonly string[] LeveledListColumnNames = { "Key", "EditorID", "ChanceNone", "Flags", "GlobalKey" };
         private static readonly string[] LeveledNpcColumnNames = { "Key", "EditorID" };
         private static readonly string[] LeveledNpcEntryColumnNames = { "ListKey", "Ordinal", "Reference", "Level", "Count" };
         private static readonly string[] LeveledListEntryColumnNames = { "ListKey", "Ordinal", "Reference", "Level", "Count" };
@@ -1449,7 +1395,7 @@ namespace SkyrimCraftingTool.Model
         private static readonly string[] LeveledListLostColumnNames = { "ListKey", "Reference", "Level", "Count", "LostFrom", "Ambiguous", "AddedBy", "DroppedBy" };
         internal static readonly string[] MagicEffectColumnNames =
             { "Key", "EditorID", "Name", "HasMagnitude", "HasDuration", "HasArea", "CastType", "TargetType",
-              "MagicSkill", "MinimumSkillLevel", "BaseCost" };
+              "MagicSkill", "MinimumSkillLevel", "BaseCost", "Description" };
         private static readonly string[] GlobalColumnNames = { "Key", "EditorID", "Value" };
 
         private static void ApplyRowAndExecute(SqliteCommand cmd, string[] paramNames, object[] values)
@@ -1503,13 +1449,6 @@ namespace SkyrimCraftingTool.Model
             return cmd;
         }
 
-        // Multi-row UPSERT for the 6 "parent" tables (Armor/Weapons/COBJ/Enchantments/Container/
-        // MagicEffects) — columnNames/paramNames only ever list the scanned base columns (never
-        // IsEdited*/Original/*Edited), so the ON CONFLICT DO UPDATE clause built from them can never
-        // touch those columns. That's the whole point: a rescan updates the plugin-derived data and
-        // flips Active back to 1, but never overwrites a user's manual edits. columnNames[0] is always
-        // that table's natural key (Key, or ContainerKey for Container) and is used as the conflict
-        // target. Verified against a real SQLite instance (3.49.1, same as this app) before wiring in.
         internal static SqliteCommand PrepareUpsertBatch(SqliteConnection connection, string table, string[] columnNames, string[] paramNames, int batchSize)
         {
             var columns = string.Join(", ", columnNames) + ", Active";
@@ -1783,12 +1722,6 @@ namespace SkyrimCraftingTool.Model
                 result.MeshOwners.Add(weapOwner);
             }
 
-            // PLACEABLE RECORDS: books, scrolls, misc, soul gems, ammo, food, ingredients, keys.
-            //
-            // Key and name only - these carry nothing else the tool understands, and the single
-            // field the user can edit (the placement) is not scanned at all. One loop per Mutagen
-            // collection because that is how Mutagen exposes them; one ROW SHAPE for all of them,
-            // because WorldItem is one table with a Kind column.
             void AddWorldItems<T>(IEnumerable<T> records, string kind)
                 where T : Mutagen.Bethesda.Skyrim.ISkyrimMajorRecordGetter
             {
@@ -2018,19 +1951,7 @@ namespace SkyrimCraftingTool.Model
             // ENCHANTMENTS
             foreach (var ench in mod.ObjectEffects.Records)
             {
-                // Master-correct, like every other record key in this scan (see the FLST block
-                // below for the same rule spelled out). It used to be the name of the plugin
-                // being READ, and an override therefore produced a SECOND row instead of
-                // replacing the record: measured against the real load order, 117 enchantments
-                // and 542 magic effects existed two or three times over, and the copies
-                // disagreed - USSEP adds the BaseEnchantment link that Bethesda left off the
-                // Articulation tiers, so the same enchantment showed a base on one row and none
-                // on the other. Reported by the user as "die Kinder werden nicht als Kinder
-                // erkannt". Every LINK into this table was master-keyed all along
-                // (Armor.ObjectEffectKey, BaseEnchantmentKey, EnchantmentEffects.MagicEffectKey),
-                // so only the row keys were out of step.
                 string enchKey = KeyFactory.BuildMasterKey(ench.FormKey);
-                var parsedEnch = new ParsedEnchantment();
 
                 // WornRestrictions (FLST). The FormLink is non-null even when it points at nothing —
                 // guard on FormKey.IsNull or every FLST-less enchantment gets listKey "Null|000000"
@@ -2054,21 +1975,24 @@ namespace SkyrimCraftingTool.Model
                     baseEnchKey = $"{bfk.ModKey.FileName}|{bfk.IDString()}";
                 }
 
-                parsedEnch.Values = new object[]
+                var parsedEnch = new ParsedEnchantment
                 {
-                    enchKey,
-                    ench.EditorID ?? "",
-                    ench.Name?.ToString() ?? "",
-                    ench.CastType.ToString(),
-                    ench.TargetType.ToString(),
-                    (float)ench.EnchantmentCost,
-                    listKey,
-                    baseEnchKey,
-                    ench.EnchantType.ToString(),
-                    // The raw dword, not the enum's ToString - see the Enchantments schema comment.
-                    (int)ench.Flags,
-                    ench.ChargeTime,
-                    ench.EnchantmentAmount
+                    Values = new object[]
+                    {
+                        enchKey,
+                        ench.EditorID ?? "",
+                        ench.Name?.ToString() ?? "",
+                        ench.CastType.ToString(),
+                        ench.TargetType.ToString(),
+                        (float)ench.EnchantmentCost,
+                        listKey,
+                        baseEnchKey,
+                        ench.EnchantType.ToString(),
+                        // The raw dword, not the enum's ToString - see the Enchantments schema comment.
+                        (int)ench.Flags,
+                        ench.ChargeTime,
+                        ench.EnchantmentAmount
+                    }
                 };
 
                 // Effects
@@ -2136,17 +2060,12 @@ namespace SkyrimCraftingTool.Model
                         // Every entry, whatever it points at. Only about a quarter of a container's
                         // entries are leveled lists; the rest are items, and those are exactly what
                         // "where does this item already appear" has to be able to find.
+                        // Which of them are leveled lists is decided in the write phase - see
+                        // allContainerLvli.
                         parsedContainer.EntryRows.Add(new object[]
                         {
                             containerKey, ordinal++, refKey, entry.Item.Count,
                         });
-
-                        // Check whether the LVLI exists
-                        var lvliRecord = _formIDDB.GetByKey(refKey);
-                        if (lvliRecord != null && lvliRecord.Type == "LVLi")
-                        {
-                            parsedContainer.LvliRows.Add(new object[] { containerKey, refKey, lvliRecord.Name });
-                        }
                     }
                 }
 
@@ -2249,21 +2168,6 @@ namespace SkyrimCraftingTool.Model
                 result.LeveledNpcs.Add(parsedList);
             }
 
-            // GLOBALS
-            //
-            // Only interesting because a leveled list can take its chance-none from one instead of
-            // from a fixed number: 223 lists in the real load order do, across 125 different globals,
-            // and without a name they are unpickable and unreadable ("Skyrim.esm|0F258D" tells the
-            // user nothing).
-            //
-            // The VALUE is scanned too, and that matters for the calculator: a list with a global has
-            // no fixed chance at all, so the only honest number to compute with is what the global
-            // holds right now in the load order. It is a starting value - quests and scripts change
-            // it while playing - which is why the window says where the number came from.
-            //
-            // GLOB is one record with three payload shapes (float, int, short). Mutagen models them
-            // as separate types, so the value is read through the getter interfaces rather than a
-            // common property - there is none.
             foreach (var glob in mod.Globals.Records)
             {
                 float? value = glob switch
@@ -2316,16 +2220,14 @@ namespace SkyrimCraftingTool.Model
 
                     // What makes one effect of a spell "costlier" than another, and so decides the
                     // spell's school. See SpellCategory.
-                    (double)mgef.BaseCost
+                    (double)mgef.BaseCost,
+
+                    // The in-game description, placeholders (<mag>, <dur>, ...) left as they are.
+                    // NULL rather than "" when the record has none, like the perk descriptions.
+                    string.IsNullOrWhiteSpace(mgef.Description?.String) ? (object)DBNull.Value : mgef.Description.String.Trim()
                 });
             }
 
-            // NPCs (Prio 8 / N-P1, docs/NPC-Plan.md)
-            //
-            // Read, not edited: this fills the base columns only, the shadow columns are the user's.
-            // Everything with a SkyPatcher operation is stored the way the patch string wants it -
-            // the AI values as their tokens, the skills under their token names - so nothing further
-            // down the chain has to translate.
             foreach (var npc in mod.Npcs.Records)
             {
                 string npcKey = KeyFactory.BuildMasterKey(npc.FormKey);
@@ -2646,10 +2548,8 @@ namespace SkyrimCraftingTool.Model
                 result.LeveledSpellCatalogueRows.Add(new object[]
                 { KeyFactory.BuildMasterKey(lvsp.FormKey), lvsp.EditorID ?? "" });
 
-            foreach (var perk in mod.Perks.Records)
-                result.PerkCatalogueRows.Add(new object[]
-                { KeyFactory.BuildMasterKey(perk.FormKey), perk.EditorID ?? "", perk.Name?.ToString() ?? "" });
-
+            // Perks are not read here: formid.db is the one perk list (Perks table, with game name,
+            // description and skill tree). An NpcPerkCatalogue copy lived here until 2026-11-07.
 
             return result;
         }

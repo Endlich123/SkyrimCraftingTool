@@ -3,19 +3,21 @@ namespace SkyrimCraftingTool.Model;
 public static class GlobalState
 {
     // paths
-    public static string GameDataPath { get; private set; }
-    public static string ModDirectoryPath { get; private set; }
-    public static string PluginsFilePath { get; private set; }
+    public static string GameDataPath { get; private set; } = "";
+    public static string ModDirectoryPath { get; private set; } = "";
+    public static string PluginsFilePath { get; private set; } = "";
 
     // MO2's profiles\<profile>\modlist.txt, empty for every other manager. Read by the scan to
     // decide which copy of a duplicated plugin file wins - see Services/PluginPathPicker.
-    public static string ModListFilePath { get; private set; }
+    public static string ModListFilePath { get; private set; } = "";
 
     public static ModManagerKind ManagerKind { get; private set; } = ModManagerKind.Unknown;
 
-    public static ToolPaths Tool { get; private set; }
+    // Set by Initialize at startup, before anything reads it. Only unit tests that never call
+    // Initialize see null, which is why the stores read it as Tool?.InputFolder.
+    public static ToolPaths Tool { get; private set; } = null!;
 
-    public static SkyrimPaths Skyrim { get; private set; }
+    public static SkyrimPaths? Skyrim { get; private set; }
 
     public static void Initialize(FolderSettings settings)
     {

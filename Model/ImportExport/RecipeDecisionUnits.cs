@@ -6,18 +6,6 @@ using System.Linq;
 
 namespace SkyrimCraftingTool.Model
 {
-    // TE-2: the two per-item recipe decisions of the Items tab, which no export carried before.
-    //
-    //   MainRecipe     which recipe of a kind the editor shows (MainRecipeStore)
-    //   RecipeRemoved  which of a mod's recipes the user took out of the game (RemovalStore, Recipe)
-    //
-    // Both are keyed by the ITEM, not by a recipe, and both are a SET of rows per item - so one DTO
-    // carries an item's whole set and an import replaces it. That is what "use the file version" in
-    // the conflict window means for every other unit too: the file's state wins, not a merge of it.
-    //
-    // Neither has an IsEdited flag. The decision IS the row (see RemovalStore): no row, no edit, and
-    // nothing exported. Undoing every decision on one machine therefore does not undo them on another
-    // by import - the same limit every unit has with a reset.
     internal abstract class ItemDecisionUnit : ExportUnit
     {
         protected abstract string DbTable { get; }
@@ -138,8 +126,6 @@ namespace SkyrimCraftingTool.Model
             return result;
         }
 
-        // The decision may name one of the user's own recipes, whose Key the same import just
-        // changed (ResolveUserCobjKeys).
         internal override void FollowKeys(SqliteConnection connection, IReadOnlyList<EditedItemDto> items, ImportKeyMap map, List<string> notes)
         {
             foreach (var item in items)

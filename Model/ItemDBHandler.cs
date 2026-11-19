@@ -107,17 +107,6 @@ namespace SkyrimCraftingTool.Model
             }
         }
 
-        // EnsureSchema/CreateTables were previously only ever run inside PutIntoDataBank (a full
-        // scan) - fine for columns added via AddColumnIfMissing (a SELECT against a missing column
-        // just returns nothing meaningful), but the new *_Original snapshot tables are WRITTEN to by
-        // SaveCOBJConditions/SaveEnchantmentEffects/SaveWornRestrictionKeywords the moment a user
-        // edits a condition/effect/keyword. On an existing item.db from before those tables existed,
-        // that write would throw "no such table" the first time - reproduced and confirmed while
-        // testing this feature (an un-rescanned DB left over from before this schema was added,
-        // opened by a normal app launch that never runs PutIntoDataBank at all). Both methods are
-        // idempotent (IF NOT EXISTS / column-exists checks), so running them here on every cache load
-        // is a no-op once a DB is current - this just guarantees a normal launch (not just a rescan)
-        // brings an older item.db up to date before anything can be edited.
         private void EnsureDatabaseSchema()
         {
             if (!File.Exists(ItemdbPath)) return;
@@ -136,16 +125,18 @@ namespace SkyrimCraftingTool.Model
             // below, so these 10 independent table reads can run concurrently without any race —
             // this is what actually keeps the (now single-threaded-by-lock) cache build fast, since
             // the per-plugin Parallel.ForEach in CacheManager can no longer parallelize the load itself.
-            List<ArmorRecord> armor = null;
-            List<WeaponRecord> weapons = null;
-            List<COBJRecord> cobj = null;
-            List<COBJConditionRecord> cobjConditions = null;
-            List<EnchantmentRecord> enchantments = null;
-            List<EnchantmentEffectRecord> enchantmentEffects = null;
-            Dictionary<string, List<string>> wornRestrictionKeywords = null;
-            List<ContainerRecord> containerRecords = null;
-            List<ContainerLVLIRecord> containerLvli = null;
-            List<MagicEffectsRecords> magicEffects = null;
+            // Every one is replaced inside Parallel.Invoke, which rethrows if any load fails; the
+            // empty starting values are never read.
+            List<ArmorRecord> armor = [];
+            List<WeaponRecord> weapons = [];
+            List<COBJRecord> cobj = [];
+            List<COBJConditionRecord> cobjConditions = [];
+            List<EnchantmentRecord> enchantments = [];
+            List<EnchantmentEffectRecord> enchantmentEffects = [];
+            Dictionary<string, List<string>> wornRestrictionKeywords = new();
+            List<ContainerRecord> containerRecords = [];
+            List<ContainerLVLIRecord> containerLvli = [];
+            List<MagicEffectsRecords> magicEffects = [];
 
             System.Threading.Tasks.Parallel.Invoke(
                 () => armor = LoadArmor(),
@@ -715,11 +706,6 @@ namespace SkyrimCraftingTool.Model
                 connection.Open();
                 using var transaction = connection.BeginTransaction();
 
-                // Callers (ResetCraftingRecipeEdits/ResetTemperRecipeEdits) call this unconditionally
-                // whenever the user resets a recipe, even if Conditions specifically were never
-                // touched - in which case COBJ_Conditions_Original was never populated, and blindly
-                // restoring "from" it would DELETE the still-pristine live conditions and replace them
-                // with nothing. Bail out here if there's nothing to revert.
                 using (var checkCmd = connection.CreateCommand())
                 {
                     checkCmd.Transaction = transaction;
@@ -1030,7 +1016,8 @@ namespace SkyrimCraftingTool.Model
                     HasDuration,
                     HasArea,
                     CastType,
-                    TargetType
+                    TargetType,
+                    Description
                 FROM MagicEffects WHERE Active = 1;";
 
             using var reader = cmd.ExecuteReader();
@@ -1045,7 +1032,8 @@ namespace SkyrimCraftingTool.Model
                     HasDuration = reader.GetBoolean(4),
                     HasArea = reader.GetBoolean(5),
                     CastType = reader.GetString(6),
-                    TargetType = reader.GetString(7)
+                    TargetType = reader.GetString(7),
+                    Description = reader.IsDBNull(8) ? "" : reader.GetString(8)
                 });
             }
 
@@ -1332,7 +1320,6 @@ namespace SkyrimCraftingTool.Model
             _ => throw new ArgumentOutOfRangeException(nameof(table), table, "not a placement table"),
         };
 
-        // Every record whose placement is the user's, across all three tables.
         public static HashSet<string> EditedPlacementKeys()
         {
             var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1365,8 +1352,6 @@ namespace SkyrimCraftingTool.Model
             using var connection = new ItemDbConnection(ConnString);
             connection.Open();
             using var cmd = connection.CreateCommand();
-            // Only a row whose placement IS the user's - a reset of an untouched record must not move
-            // its LastChanged, which the import compares against.
             cmd.CommandText = $"UPDATE {table} SET IsEditedContainerString = NULL, IsEdited = {stillEdited}, LastChanged = @now WHERE Key = @k AND IsEditedContainerString IS NOT NULL";
             cmd.Parameters.AddWithValue("@now", NowIso());
             cmd.Parameters.AddWithValue("@k", key);
@@ -1538,18 +1523,6 @@ namespace SkyrimCraftingTool.Model
 
 
 
-        // -------------------------------------------------
-        // COBJ: SAVE (auto save for Insert/Update)
-        // -------------------------------------------------
-        // NOT based on rec.Original: that column stays 0 forever in the DB for every user-created
-        // recipe (see InsertCOBJ's comment - it's the "protect from rescan sweep" marker, not an
-        // "already inserted" flag). rec.Original only gets flipped to 1 in-memory, on the exact same
-        // object, right after InsertCOBJ runs. Any code path that re-reads a user-created recipe from
-        // the DB (e.g. bulk-apply hydrating a multi-selected item that already has a real recipe but
-        // was never individually clicked before) gets back a fresh COBJRecord with Original==0 again,
-        // even though the row already exists - trusting that field here made SaveCOBJ try to
-        // re-INSERT it and crash with "UNIQUE constraint failed: COBJ.Key". Asking the DB directly
-        // whether the key exists is correct regardless of where rec came from.
         public void SaveCOBJ(COBJRecord rec)
         {
             if (CobjKeyExists(rec.Key))
@@ -1565,7 +1538,7 @@ namespace SkyrimCraftingTool.Model
         // condition revert isn't safe on the current schema (SaveCOBJConditions destructively
         // overwrites the base rows, so there's no pristine copy left to revert to).
         // -------------------------------------------------
-        public COBJRecord GetOriginalCOBJ(string key)
+        public COBJRecord? GetOriginalCOBJ(string key)
         {
             using var connection = new ItemDbConnection(ConnString);
             connection.Open();
@@ -1601,16 +1574,6 @@ namespace SkyrimCraftingTool.Model
         public void ResetCOBJEdits(string key)
             => ResetEditShadows("COBJ", CobjShadowColumns, key);
 
-        // -------------------------------------------------
-        // COBJ: Delete (only ever valid for a user-created recipe - Original stays 0 forever for
-        // those, see InsertCOBJ's comment, precisely because a plugin-original recipe must survive a
-        // rescan/export untouched). ResetCOBJEdits alone only clears the shadow edit columns, leaving
-        // the just-created row behind - Original == 0 is what protects it from the normal inactive
-        // sweep on rescan, so without this the row sits in the DB forever and still gets patched into
-        // the ESP as a near-empty COBJ despite the user having "reset" it. Callers (ResetCrafting/
-        // TemperRecipeEdits) must check GetOriginalCOBJ(key).Original == 0 before calling this; the
-        // Original == 1 check here is a second guard so a bug there can never delete a real recipe.
-        // -------------------------------------------------
         public void DeleteCOBJ(string key)
         {
             try
@@ -1716,19 +1679,6 @@ namespace SkyrimCraftingTool.Model
             return rec;
         }
 
-        // A new breakdown recipe: the item goes on the INGREDIENT side, and what it produces is
-        // chosen by the user afterwards.
-        //
-        // Deliberately NOT a third branch of CreateNewCOBJRecordForItem. That method derives its
-        // workbench from isTemper + IsArmor and always sets CreatedItem to the item itself - both
-        // of which are exactly wrong here. Threading a third kind through it would have turned one
-        // bool into an enum across the save handlers and the preset apply path for no gain; a
-        // breakdown recipe simply is a different shape.
-        //
-        // CreatedItemKey stays EMPTY on purpose. There is no sensible guess ("iron armour melts
-        // into iron" is wrong as often as it is right, and mod materials have no convention at
-        // all), and the ESP builder already skips an entry with no created item and says so in the
-        // report, so an unfinished row cannot produce a broken record.
         public COBJRecord CreateNewBreakdownRecordForItem(ItemNodeVM item, string workbenchKeywordKey)
         {
             // Same shared counter as CreateNewCOBJRecordForItem.
@@ -1757,7 +1707,7 @@ namespace SkyrimCraftingTool.Model
             using var cmd = connection.CreateCommand();
             cmd.CommandText = "SELECT COUNT(*) FROM COBJ WHERE Key = @key";
             cmd.Parameters.AddWithValue("@key", key);
-            var count = (long)cmd.ExecuteScalar();
+            var count = Convert.ToInt64(cmd.ExecuteScalar());
             return count > 0;
         }
 
@@ -1785,13 +1735,13 @@ namespace SkyrimCraftingTool.Model
                 ? connectionStringOrPath
                 : $"Data Source={connectionStringOrPath}";
 
-        public static ArmorRecord GetOriginalArmor(string key) => GetOriginalArmorFrom(ConnString, key);
+        public static ArmorRecord? GetOriginalArmor(string key) => GetOriginalArmorFrom(ConnString, key);
 
         // Split from the method above only so a test can point it at a prepared database: these two
         // read by column INDEX, and an index that drifts out of step with the SELECT is invisible
         // until an item is clicked. It happened - adding ObjectEffectKey to the reader without adding
         // it to the query threw on every armor selection.
-        internal static ArmorRecord GetOriginalArmorFrom(string connectionString, string key)
+        internal static ArmorRecord? GetOriginalArmorFrom(string connectionString, string key)
         {
             using var connection = new SqliteConnection(Normalize(connectionString));
             connection.Open();
@@ -1824,9 +1774,9 @@ namespace SkyrimCraftingTool.Model
             };
         }
 
-        public static WeaponRecord GetOriginalWeapon(string key) => GetOriginalWeaponFrom(ConnString, key);
+        public static WeaponRecord? GetOriginalWeapon(string key) => GetOriginalWeaponFrom(ConnString, key);
 
-        internal static WeaponRecord GetOriginalWeaponFrom(string connectionString, string key)
+        internal static WeaponRecord? GetOriginalWeaponFrom(string connectionString, string key)
         {
             using var connection = new SqliteConnection(Normalize(connectionString));
             connection.Open();
@@ -1936,15 +1886,6 @@ namespace SkyrimCraftingTool.Model
         public static void UpdateEnchantmentName(string key, string name)
             => UpdateField("Enchantments", "IsEditedName", key, name);
 
-        // An earlier version of this wrote to "IsEditedEditorID", a column that was never in the
-        // schema, and threw the moment it was called. It is back, but writing the BASE column - and
-        // that is the point, not an oversight: a shadow column exists to hold an override next to a
-        // scanned value, and only records the user created may be renamed. Those have no scanned
-        // value underneath, so there is nothing to shadow.
-        //
-        // The Original = 0 guard is in the SQL rather than only at the call site: it is the one
-        // thing that must hold no matter who calls this, since renaming a plugin's record would
-        // quietly disagree with every other tool reading that plugin.
         public static void UpdateEnchantmentEditorId(string key, string editorId)
         {
             try
@@ -1992,9 +1933,6 @@ namespace SkyrimCraftingTool.Model
         public static void UpdateEnchantmentAmount(string key, int amount)
             => UpdateField("Enchantments", "IsEditedEnchantmentAmount", key, amount);
 
-        // Base column, and only on a user-created record - the same shape as EditorID above and for
-        // the same reason: SkyPatcher has no enchantType operation, so this is only ever reachable
-        // for records the generated ESP writes from scratch. The guard is in the SQL.
         public static void UpdateEnchantmentEnchantType(string key, string enchantType)
         {
             try
@@ -2022,7 +1960,7 @@ namespace SkyrimCraftingTool.Model
         // Enchantment: Reset (Name + Cost - CastType/TargetType/WornRestrictionListKey aren't
         // directly user-editable anywhere in the UI today)
         // -------------------------------------------------
-        public static EnchantmentRecord GetOriginalEnchantment(string key)
+        public static EnchantmentRecord? GetOriginalEnchantment(string key)
         {
             using var connection = new ItemDbConnection(ConnString);
             connection.Open();
@@ -2058,14 +1996,6 @@ namespace SkyrimCraftingTool.Model
         // Enchantment: anlegen und löschen (Original = 0)
         // -------------------------------------------------
 
-        // A brand-new enchantment, keyed under the tool's own pseudo-plugin exactly like a
-        // user-created recipe. It exists in no plugin - the generated ESP is what brings it into the
-        // game - so the row carries Original = 0 and the scan leaves it alone.
-        //
-        // CastType/TargetType stay EMPTY on purpose. They are not a question to put to the user:
-        // measured against the real load order, 1,893 of 1,895 effect rows agree with their
-        // enchantment's cast type and 1,894 of 1,895 with its target type. The first effect added
-        // decides both (see EnchantmentMenuVM.AddEffectCommand).
         public static EnchantmentRecord CreateEnchantment(string editorId, string name)
         {
             string key = AllocateUserEnchantmentKey();
@@ -2313,11 +2243,6 @@ namespace SkyrimCraftingTool.Model
                 conn.Open();
                 using var transaction = conn.BeginTransaction();
 
-                // ResetEnchantmentCommand calls this unconditionally whenever the user resets an
-                // enchantment, even if Effects specifically were never touched - in which case
-                // EnchantmentEffects_Original was never populated, and blindly restoring "from" it
-                // would DELETE the still-pristine live effects and replace them with nothing. Bail
-                // out here if there's nothing to revert - see ResetCOBJConditions' identical guard.
                 using (var checkCmd = new SqliteCommand("SELECT EffectsEdited FROM Enchantments WHERE Key = @key", conn, transaction))
                 {
                     checkCmd.Parameters.AddWithValue("@key", enchantmentKey);
@@ -2426,8 +2351,6 @@ namespace SkyrimCraftingTool.Model
             return Convert.ToInt32(cmd.ExecuteScalar());
         }
 
-        // Live (not "original") content of one FLST — used to populate the keyword panel right after
-        // the user attaches an enchantment to an existing list via the picker.
         public static List<string> GetWornRestrictionKeywordsForList(string listKey)
         {
             var list = new List<string>();
@@ -2444,15 +2367,6 @@ namespace SkyrimCraftingTool.Model
             return list;
         }
 
-        // Every FLST the scan found members for, with those member keys — the assignable set for the
-        // worn-restriction-list picker (the tool never creates new FLSTs, only attaches an
-        // enchantment to one that already exists in the load order).
-        //
-        // IsEdited says the user has hand-edited this list's contents (WornRestrictionListState).
-        // The picker needs it for two reasons: a list the user deliberately emptied has NO rows in
-        // WornRestrictionKeywords at all and would otherwise vanish from the dropdown, and a
-        // user-curated list must not be dropped by the picker's "members must look like keywords"
-        // heuristic.
         public static List<(string ListKey, List<string> KeywordKeys, bool IsEdited)> GetKnownWornRestrictionLists()
         {
             var result = new List<(string, List<string>, bool)>();
@@ -2512,12 +2426,6 @@ namespace SkyrimCraftingTool.Model
                 conn.Open();
                 using var transaction = conn.BeginTransaction();
 
-                // ResetEnchantmentCommand calls this unconditionally whenever the user resets an
-                // enchantment that has a WornRestrictionListKey, even if the list content was never
-                // touched - in which case WornRestrictionKeywords_Original was never populated, and
-                // blindly restoring "from" it would DELETE the still-pristine live keywords and
-                // replace them with nothing. Bail out here if there's nothing to revert - see
-                // ResetCOBJConditions' identical guard. E3: gated on the per-list state flag.
                 using (var checkCmd = new SqliteCommand("SELECT IsEdited FROM WornRestrictionListState WHERE ListKey = @key", conn, transaction))
                 {
                     checkCmd.Parameters.AddWithValue("@key", listKey);

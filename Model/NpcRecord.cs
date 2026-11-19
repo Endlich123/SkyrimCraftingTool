@@ -195,8 +195,6 @@ namespace SkyrimCraftingTool.Model
         // the offset stays visible rather than being folded into the value.
         public int Offset { get; set; }
 
-        // What the scan read, against Value above, which may be the user.s. Same reason as
-        // NpcScannedValues: the change marker and the reset both need the original.
         public int ScannedValue { get; set; }
     }
 }

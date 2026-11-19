@@ -6,12 +6,6 @@ using System.Linq;
 
 namespace SkyrimCraftingTool.Model
 {
-    // TE-3: the Spells tab's export unit (docs/TabExport-Plan.md). Shaped like the enchantment
-    // export it sits next to - a scanned spell carries its shadow columns and, when the effects were
-    // edited, the whole effect list; a user-created spell carries its whole row (UserRecords).
-    //
-    // Effects travel in Rows["Effects"], the generic child-list slot, not in a sixth dedicated
-    // property next to EffectRows.
     public partial class ItemDBHandler
     {
         internal const string SpellEffectRowsName = "Effects";
@@ -19,7 +13,7 @@ namespace SkyrimCraftingTool.Model
         private static readonly string[] SpellEffectColumns =
             { "MagicEffectKey", "EditorID", "Name", "Magnitude", "Duration", "Area" };
 
-        internal static List<EditedItemDto> GetEditedSpells(SqliteConnection connection, ExportScope scope, string scopeValue)
+        internal static List<EditedItemDto> GetEditedSpells(SqliteConnection connection, ExportScope scope, string? scopeValue)
         {
             // No Spells table, no spell edits - see GetEditedNpcs.
             if (!UserRecords.TableExists(connection, "Spells")) return new List<EditedItemDto>();
@@ -29,9 +23,6 @@ namespace SkyrimCraftingTool.Model
 
             using (var cmd = connection.CreateCommand())
             {
-                // Flags, not LastChanged - same reasoning as GetEditedEnchantments. Original = 0
-                // always exports: a spell the user created is new content whether or not it was
-                // touched again after.
                 cmd.CommandText = $@"SELECT Key, LastChanged, EffectsEdited, Name, Original,
                         {string.Join(", ", editedCols)}
                     FROM Spells
@@ -49,7 +40,7 @@ namespace SkyrimCraftingTool.Model
                     {
                         int ordinal = 5 + i;
                         if (!reader.IsDBNull(ordinal))
-                            dto.Fields[editedCols[i]] = Convert.ToString(reader.GetValue(ordinal), CultureInfo.InvariantCulture);
+                            dto.Fields[editedCols[i]] = Convert.ToString(reader.GetValue(ordinal), CultureInfo.InvariantCulture) ?? "";
                     }
                     rows.Add((key, effectsEdited, own, dto));
                 }

@@ -25,9 +25,6 @@ namespace SkyrimCraftingTool.Model
         public List<ExtraModule> Extras { get; set; } = new();
     }
 
-    // What the old slot presets could do besides values and recipes (user, 2026-10-20: "its own
-    // building block"): an enchantment with its charge, and leveled-list placements. Chosen in the
-    // build box like addons - never pre-filled, it is always a deliberate pick.
     public class ExtraModule
     {
         public string Name { get; set; } = "";
@@ -51,16 +48,8 @@ namespace SkyrimCraftingTool.Model
         public string Name { get; set; } = "";
         public string ArmorType { get; set; } = "";
 
-        // Set totals for a piece whose material is unknown (user, 2026-10-20: most clothing and
-        // many light mod armors carry no material the pre-fill knows). Values only - no recipe and
-        // no material keyword, those cannot be guessed. Null = no fallback: armor keeps its values,
-        // clothing gets 0.
         public SetTotals? FallbackTotals { get; set; }
 
-        // Recipes for the same case (user, 2026-10-20: "then clothing can get recipes too"). Used
-        // per kind when the item has no material, or its material lists nothing for that kind. An
-        // empty material list = no fallback for that kind. Scaled by the slot factors like any
-        // material recipe.
         public MaterialRecipe FallbackCraft { get; set; } = new();
         public MaterialRecipe FallbackTemper { get; set; } = new();
         public MaterialRecipe FallbackBreakdown { get; set; } = new();
@@ -219,16 +208,8 @@ namespace SkyrimCraftingTool.Model
         public List<string> OnlyPlugins { get; set; } = new();
         public List<string> ExcludePlugins { get; set; } = new();
 
-        // Other addons (by name) that come along whenever this one is in - picked automatically or
-        // by hand (user, 2026-10-21: "Premium" -> "Rich"). The way to chain addons WITHOUT giving
-        // Premium the Rich keyword: an addon's keywords are also its trigger, so that would have
-        // handed Premium to every item that already carries ClothingRich.
         public List<string> AlsoAddons { get; set; } = new();
 
-        // Picked automatically only when ALL of these addons are in as well (user, 2026-10-25:
-        // "Top T" = Top + Transparent - a rule's addon list only means "one of"). Without a keyword,
-        // name or EditorID trigger of its own, the requirement itself picks it. Picking by hand
-        // ignores it, like OnlySlots and OnlyPlugins.
         public List<string> RequiresAddons { get; set; } = new();
 
         // Multipliers for the values the engine COMPUTES (material totals x slot share) - e.g.
@@ -243,9 +224,6 @@ namespace SkyrimCraftingTool.Model
         // Weapon catalogs only (the class is shared): multiplies the computed damage.
         public double DamageFactor { get; set; } = 1;
 
-        // Ingredients ADDED to the recipe the material or type gives (user, 2026-10-20: the
-        // material x slot factor already scales; an addon adds on top). A flat amount per piece,
-        // not scaled by the slot. Only added to a recipe that exists - an addon never creates one.
         public List<IngredientEntry> CraftAdditions { get; set; } = new();
         public List<IngredientEntry> TemperAdditions { get; set; } = new();
 
@@ -286,8 +264,6 @@ namespace SkyrimCraftingTool.Model
         public List<string> Keywords { get; set; } = new();
     }
 
-    // What one item is assigned: the dry-run pre-fills it, the user may correct it, the engine
-    // turns it into values. Names refer to the catalog entries.
     public class ModularSelection
     {
         public string TypeName { get; set; } = "";

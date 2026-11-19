@@ -19,7 +19,7 @@ namespace SkyrimCraftingTool.Model
         public int Duration { get; set; }
         public int Area { get; set; }
 
-        public List<MagicEffectsRecords> AllMagicEffects { get; set; }
+        public List<MagicEffectsRecords>? AllMagicEffects { get; set; }
 
         // The magic SCHOOL this effect belongs to, and the skill tier it sits at. Read-only here:
         // both are properties of the shared MGEF record, so changing one would change the effect in

@@ -4,6 +4,7 @@ using Mutagen.Bethesda.Plugins.Order;
 using Mutagen.Bethesda.Skyrim;
 using System.Diagnostics;
 using System.IO;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace SkyrimCraftingTool.Model
@@ -12,6 +13,9 @@ namespace SkyrimCraftingTool.Model
     {
         private string FormIDFolder => Path.Combine(GlobalState.Tool.InputFolder, "FormID");
         private string FormIDdbPath => Path.Combine(FormIDFolder, "formid.db");
+
+        public static string DefaultPath =>
+            Path.Combine(GlobalState.Tool?.InputFolder ?? "", "FormID", "formid.db");
 
         // ============================
         //            CACHE
@@ -51,17 +55,15 @@ namespace SkyrimCraftingTool.Model
         private void LoadCacheCore()
         {
             _cache = new List<FormIDRecord>();
-            _cache.AddRange(LoadTable("Keywords", "Keyword"));
-            _cache.AddRange(LoadTable("Materials", "Material"));
-            _cache.AddRange(LoadTable("Perks", "Perk"));
+            _cache.AddRange(LoadTable(FormIDdbPath, "Keywords", "Keyword"));
+            _cache.AddRange(LoadTable(FormIDdbPath, "Perks", "Perk"));
             _cache.AddRange(LoadQuestsWithStages());
-            _cache.AddRange(LoadTable("LVLi", "LVLi"));
 
             // FormLists was added after the other name tables. formid.db is fully DROP+CREATEd on
             // every scan, so it's present after any rescan — but an un-rescanned db from before this
             // change has no FormLists table and LoadTable would throw "no such table". Degrade to no
             // FLST names until the next scan (same spirit as LoadQuestsWithStages' catch).
-            try { _cache.AddRange(LoadTable("FormLists", "FormList")); }
+            try { _cache.AddRange(LoadTable(FormIDdbPath, "FormLists", "FormList")); }
             catch (SqliteException) { }
 
             // Dictionary lookup, not a linear scan: GetByKey is called once per container item across
@@ -102,7 +104,7 @@ namespace SkyrimCraftingTool.Model
         // Same as LoadTable("Quests", "Quest") plus the Stages column parsed onto FormIDRecord.Stages.
         private List<FormIDRecord> LoadQuestsWithStages()
         {
-            var list = LoadTable("Quests", "Quest");
+            var list = LoadTable(FormIDdbPath, "Quests", "Quest");
 
             // Name is the EditorID, and a quest does not have to have one: 9 of 7,660 on the real
             // modlist (2026-10-24) don't - script-only quests of overlay/makeup mods and two CC plugins.
@@ -135,15 +137,15 @@ namespace SkyrimCraftingTool.Model
                     if (reader.IsDBNull(1)) continue;
                     if (!byKey.TryGetValue(reader.GetString(0), out var rec)) continue;
 
-                    var stages = reader.GetString(1)
-                        .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                        .Select(s => int.TryParse(s.Trim(), out var v) ? v : (int?)null)
-                        .Where(v => v.HasValue)
-                        .Select(v => v!.Value)
-                        .ToList();
+                    var stages = ParseStagesColumn(reader.GetString(1));
+                    if (stages.Count == 0) continue;
 
-                    if (stages.Count > 0)
-                        rec.Stages = stages;
+                    rec.Stages = stages.Select(s => s.Index).ToList();
+                    var texts = stages
+                        .Where(s => !string.IsNullOrEmpty(s.Text))
+                        .ToDictionary(s => s.Index, s => s.Text!);
+                    if (texts.Count > 0)
+                        rec.StageTexts = texts;
                 }
             }
             catch (SqliteException)
@@ -170,7 +172,7 @@ namespace SkyrimCraftingTool.Model
                 using var connection = new SqliteConnection($"Data Source={FormIDdbPath}");
                 connection.Open();
                 using var cmd = connection.CreateCommand();
-                cmd.CommandText = "SELECT Key, Name FROM FormLists;";
+                cmd.CommandText = $"SELECT Key, {EditorIdColumn(connection, "FormLists")} FROM FormLists;";
                 using var reader = cmd.ExecuteReader();
                 while (reader.Read())
                 {
@@ -186,30 +188,43 @@ namespace SkyrimCraftingTool.Model
             return map;
         }
 
-        private List<FormIDRecord> LoadTable(string table, string type)
+        // One name table, whole. Static so the item.db side can read perks without an instance (see
+        // ReadPerks). FormIDRecord.Name is the EditorID - it always was; the in-game name is FullName.
+        //
+        // A formid.db from before 2026-11-07 has Key + Name (= EditorID) only. It is rebuilt on the next
+        // scan; until then it reads as before, without game names, descriptions or skills.
+        private static List<FormIDRecord> LoadTable(string dbPath, string table, string type)
         {
             var list = new List<FormIDRecord>();
 
-            using var connection = new SqliteConnection($"Data Source={FormIDdbPath}");
+            using var connection = new SqliteConnection($"Data Source={dbPath}");
             connection.Open();
 
+            var columns = Columns(connection, table);
+            string Optional(string column) => columns.Contains(column) ? column : "NULL";
+
             using var cmd = connection.CreateCommand();
-            cmd.CommandText = $"SELECT Key, Name FROM {table};";
+            cmd.CommandText =
+                $"SELECT Key, {EditorIdColumn(columns)}, " +
+                $"{(columns.Contains("EditorID") ? Optional("Name") : "NULL")}, " +
+                $"{Optional("Description")}, {Optional("Skill")} FROM {table};";
 
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
                 var key = reader.GetString(0);
-                var name = reader.GetString(1);
 
                 var parts = key.Split('|');
                 string plugin = parts[0];
-                string formID = parts[1];
+                string formID = parts.Length > 1 ? parts[1] : "";
 
                 list.Add(new FormIDRecord
                 {
                     Key = key,
-                    Name = name,
+                    Name = reader.IsDBNull(1) ? "" : reader.GetString(1),
+                    FullName = reader.IsDBNull(2) ? "" : reader.GetString(2),
+                    Description = reader.IsDBNull(3) ? "" : reader.GetString(3),
+                    Skill = reader.IsDBNull(4) ? "" : reader.GetString(4),
                     Plugin = plugin,
                     FormID = formID,
                     Type = type
@@ -218,6 +233,41 @@ namespace SkyrimCraftingTool.Model
 
             return list;
         }
+
+        // Every perk with its game name, description and skill tree, read straight from the file. For
+        // the item.db readers (NPC tab, NPC groups, Spells tab), which have no FormIDDBHandler instance.
+        // Empty when there is no formid.db yet - no scan has run.
+        public static List<FormIDRecord> ReadPerks(string? dbPath = null)
+        {
+            var path = dbPath ?? DefaultPath;
+            if (!File.Exists(path)) return new List<FormIDRecord>();
+
+            try { return LoadTable(path, "Perks", "Perk"); }
+            catch (SqliteException ex)
+            {
+                AppLogger.LogWarning($"formid.db: perks could not be read ({ex.Message})");
+                return new List<FormIDRecord>();
+            }
+        }
+
+        private static HashSet<string> Columns(SqliteConnection connection, string table)
+        {
+            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = $"PRAGMA table_info({table});";
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read()) set.Add(reader.GetString(1));
+            return set;
+        }
+
+        // The column that holds the EditorID: "EditorID" since 2026-11-07, "Name" before. A table that
+        // does not exist answers "Name", so the SELECT still fails with "no such table" - which the
+        // FormLists caller relies on.
+        private static string EditorIdColumn(HashSet<string> columns)
+            => columns.Contains("EditorID") ? "EditorID" : "Name";
+
+        public static string EditorIdColumn(SqliteConnection connection, string table)
+            => EditorIdColumn(Columns(connection, table));
 
 
         // ============================
@@ -241,23 +291,21 @@ namespace SkyrimCraftingTool.Model
             CreateTables(connection);
 
             using var insertKeyword = PrepareInsert(connection, "Keywords");
-            using var insertMaterial = PrepareInsert(connection, "Materials");
-            using var insertPerk = PrepareInsert(connection, "Perks");
-            using var insertQuest = PrepareQuestInsert(connection);
-            using var insertLVLI = PrepareInsert(connection, "LVLi");
+            using var insertPerk = PrepareInsert(connection, "Perks", "Skill");
+            using var insertQuest = PrepareInsert(connection, "Quests", "Stages");
             using var insertFormList = PrepareInsert(connection, "FormLists");
 
             using var transaction = connection.BeginTransaction();
             insertKeyword.Transaction = transaction;
-            insertMaterial.Transaction = transaction;
             insertPerk.Transaction = transaction;
             insertQuest.Transaction = transaction;
-            insertLVLI.Transaction = transaction;
             insertFormList.Transaction = transaction;
 
             // Parse phase runs in parallel across plugins; the write phase below stays sequential
             // (see ItemDBHandler.PutIntoDataBank for the same split). PrepareInsert uses
-            // "INSERT OR IGNORE" — the FIRST row written for a given key wins — so results are
+            // "INSERT OR REPLACE" — the LAST row written for a given key wins, i.e. the winning
+            // override (until 2026-11-07 it was the first, the record's origin: harmless for EditorIDs,
+            // wrong for the names and perk descriptions an overhaul rewrites) — so results are
             // written into an array indexed by plugin position (not a ConcurrentBag), keeping write
             // order identical to allgamePathfromDB's load order regardless of parse thread timing.
             // Never the tool's own output - see KeyFactory.IsOwnOutputPlugin.
@@ -272,30 +320,44 @@ namespace SkyrimCraftingTool.Model
                 parsedPlugins[i] = ParsePluginForFormIdDB(pluginFiles[i]);
             });
 
+            // Which skill tree each perk sits in - needs every plugin, because the tree (AVIF), the
+            // perk and the next rank can come from three different ones.
+            var perkSkills = BuildPerkSkills(parsedPlugins);
+
             // Write phase: strictly sequential — do not parallelize SQLite writes.
             foreach (var parsed in parsedPlugins)
             {
-                foreach (var (key, name) in parsed.Keywords) ApplyKeyNameAndExecute(insertKeyword, key, name);
-                foreach (var (key, name) in parsed.Materials) ApplyKeyNameAndExecute(insertMaterial, key, name);
-                foreach (var (key, name) in parsed.Perks) ApplyKeyNameAndExecute(insertPerk, key, name);
-                foreach (var (key, name, stages) in parsed.Quests) ApplyQuestRowAndExecute(insertQuest, key, name, stages);
-                foreach (var (key, name) in parsed.LVLi) ApplyKeyNameAndExecute(insertLVLI, key, name);
-                foreach (var (key, name) in parsed.FormLists) ApplyKeyNameAndExecute(insertFormList, key, name);
+                foreach (var row in parsed.Keywords) Write(insertKeyword, row);
+                foreach (var row in parsed.Perks)
+                    Write(insertPerk, row, perkSkills.TryGetValue(row.Key, out var skill) ? skill : null);
+                foreach (var (row, stages) in parsed.Quests) Write(insertQuest, row, stages);
+                foreach (var row in parsed.FormLists) Write(insertFormList, row);
             }
 
             transaction.Commit();
             InvalidateCache();
         }
 
+        // One row of any name table. Name (the in-game FULL name) and Description are optional: a
+        // keyword, a leveled list or a form list has neither, and only perks carry a description.
+        private readonly record struct NameRow(string Key, string EditorId, string? Name, string? Description);
+
         private sealed class ParsedFormIdPluginData
         {
-            public List<(string key, string name)> Keywords = new();
-            public List<(string key, string name)> Materials = new();
-            public List<(string key, string name)> Perks = new();
-            public List<(string key, string name, string stages)> Quests = new();
-            public List<(string key, string name)> LVLi = new();
-            public List<(string key, string name)> FormLists = new();
+            public List<NameRow> Keywords = new();
+            public List<NameRow> Perks = new();
+            public List<(NameRow row, string stages)> Quests = new();
+            public List<NameRow> FormLists = new();
+
+            // For the perk's skill tree (BuildPerkSkills): the next rank of each perk, and each AVIF
+            // tree with the perks it lists.
+            public List<(string perk, string? nextPerk)> PerkRanks = new();
+            public List<(string key, string name, List<string> perks)> SkillTrees = new();
         }
+
+        private static string KeyOf(FormKey formKey) => $"{formKey.ModKey.FileName}|{formKey.ID:X6}";
+
+        private static string? Text(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
 
         // Pure parsing — no DB access — so this is safe to call concurrently from Parallel.ForEach.
         private ParsedFormIdPluginData ParsePluginForFormIdDB(string fullPath)
@@ -305,76 +367,136 @@ namespace SkyrimCraftingTool.Model
                 fullPath, SkyrimRelease.SkyrimSE, Services.PluginReadParams.ForScan());
 
             foreach (var kw in mod.Keywords.Records)
-                result.Keywords.Add(($"{kw.FormKey.ModKey.FileName}|{kw.FormKey.ID:X6}", kw.EditorID));
+                result.Keywords.Add(new NameRow(KeyOf(kw.FormKey), kw.EditorID ?? "", null, null));
 
-            // "Materials" for us = anything a COBJ recipe can list as an ingredient. MISC covers
-            // ingots/leather/etc., but vanilla + mods also use INGR (Daedra Heart, salt, …), AMMO
-            // (arrows/bolts), SLGM (soul gems) and occasionally ALCH (food/potions). Without these,
-            // such ingredients don't resolve and get flagged as dead references.
-            foreach (var misc in mod.MiscItems.Records)
-                result.Materials.Add(($"{misc.FormKey.ModKey.FileName}|{misc.FormKey.ID:X6}", misc.EditorID));
-
-            // Non-MISC records get a " (TYPE)" suffix so they can be told apart in the material
-            // picker (MISC, the common case, stays clean). Cosmetic only - the Key is what's stored.
-            foreach (var ingr in mod.Ingredients.Records)
-                result.Materials.Add(($"{ingr.FormKey.ModKey.FileName}|{ingr.FormKey.ID:X6}", $"{ingr.EditorID} (INGR)"));
-
-            foreach (var ammo in mod.Ammunitions.Records)
-                result.Materials.Add(($"{ammo.FormKey.ModKey.FileName}|{ammo.FormKey.ID:X6}", $"{ammo.EditorID} (AMMO)"));
-
-            foreach (var slgm in mod.SoulGems.Records)
-                result.Materials.Add(($"{slgm.FormKey.ModKey.FileName}|{slgm.FormKey.ID:X6}", $"{slgm.EditorID} (SLGM)"));
-
-            foreach (var alch in mod.Ingestibles.Records)
-                result.Materials.Add(($"{alch.FormKey.ModKey.FileName}|{alch.FormKey.ID:X6}", $"{alch.EditorID} (ALCH)"));
+            // No Materials (MISC, INGR, AMMO, SLGM, ALCH) since 2026-11-07: they are item.db WorldItem
+            // rows, editable there (placement), and the material pickers read them from there with the
+            // kind as a field (CacheManager.ToMaterial) instead of " (INGR)" in the name.
 
             foreach (var perk in mod.Perks.Records)
-                result.Perks.Add(($"{perk.FormKey.ModKey.FileName}|{perk.FormKey.ID:X6}", perk.EditorID));
-
-            foreach (var quest in mod.Quests.Records)
             {
-                var stages = string.Join(",", quest.Stages
-                    .Select(s => s.Index)
-                    .Distinct()
-                    .OrderBy(i => i));
-                result.Quests.Add(($"{quest.FormKey.ModKey.FileName}|{quest.FormKey.ID:X6}", quest.EditorID, stages));
+                string key = KeyOf(perk.FormKey);
+                result.Perks.Add(new NameRow(key, perk.EditorID ?? "", Text(perk.Name?.String), Text(perk.Description?.String)));
+
+                var next = perk.NextPerk.IsNull ? null : KeyOf(perk.NextPerk.FormKey);
+                result.PerkRanks.Add((key, next));
             }
 
-            foreach (var lvi in mod.LeveledItems.Records)
-                result.LVLi.Add(($"{lvi.FormKey.ModKey.FileName}|{lvi.FormKey.ID:X6}", lvi.EditorID));
+            // A perk does not know its skill - the tree does. Every actor value with a perk tree:
+            // the 18 skills, the Werewolf and Vampire Lord trees, and whatever a mod adds this way.
+            foreach (var av in mod.ActorValueInformation.Records)
+            {
+                var perks = (av.PerkTree ?? Enumerable.Empty<IActorValuePerkNodeGetter>())
+                    .Where(n => !n.Perk.IsNull)
+                    .Select(n => KeyOf(n.Perk.FormKey))
+                    .ToList();
+
+                result.SkillTrees.Add((KeyOf(av.FormKey), Text(av.Name?.String) ?? av.EditorID ?? KeyOf(av.FormKey), perks));
+            }
+
+            foreach (var quest in mod.Quests.Records)
+                result.Quests.Add((new NameRow(KeyOf(quest.FormKey), quest.EditorID ?? "", Text(quest.Name?.String), null), StagesColumn(quest)));
 
             // Every FLST in the plugin — not just enchant-referenced ones (decision #1). Members are
             // scanned into item.db by ItemDBHandler; this table is only the FLST's own identity/name.
             foreach (var fl in mod.FormLists.Records)
-                result.FormLists.Add(($"{fl.FormKey.ModKey.FileName}|{fl.FormKey.ID:X6}", fl.EditorID));
+                result.FormLists.Add(new NameRow(KeyOf(fl.FormKey), fl.EditorID ?? "", null, null));
 
             return result;
         }
 
-        private static void ApplyKeyNameAndExecute(SqliteCommand cmd, string key, string name)
+        // The Quests.Stages column: since 2026-11-08 a JSON array of {Index, Text}, the text being the
+        // stage's journal entries (several when the stage has conditional variants). Before that a
+        // plain "0,10,20" list - ParseStagesColumn reads both. Localized texts come from the
+        // .DLSTRINGS in the BSAs, same read parameters as the names (PluginReadParams).
+        internal sealed record StageRow(int Index, string? Text);
+
+        internal static string StagesColumn(IQuestGetter quest)
         {
-            cmd.Parameters["@key"].Value = key;
-            cmd.Parameters["@name"].Value = name ?? "";
-            cmd.ExecuteNonQuery();
+            var rows = quest.Stages
+                .GroupBy(s => (int)s.Index)
+                .OrderBy(g => g.Key)
+                .Select(g =>
+                {
+                    var texts = g.SelectMany(s => s.LogEntries)
+                        .Select(e => e.Entry?.String?.Trim())
+                        .Where(t => !string.IsNullOrEmpty(t))
+                        .Distinct()
+                        .ToList();
+                    return new StageRow(g.Key, texts.Count > 0 ? string.Join("\n\n", texts) : null);
+                })
+                .ToList();
+            return JsonSerializer.Serialize(rows);
         }
 
-        // Quests carry an extra comma-separated stage-index list (see FormIDRecord.Stages).
-        private static SqliteCommand PrepareQuestInsert(SqliteConnection connection)
+        internal static List<StageRow> ParseStagesColumn(string value)
         {
-            var cmd = new SqliteCommand(
-                "INSERT OR IGNORE INTO Quests (Key, Name, Stages) VALUES (@key, @name, @stages)",
-                connection);
-            cmd.Parameters.Add("@key", SqliteType.Text);
-            cmd.Parameters.Add("@name", SqliteType.Text);
-            cmd.Parameters.Add("@stages", SqliteType.Text);
-            return cmd;
+            var trimmed = value.TrimStart();
+            if (trimmed.StartsWith('['))
+            {
+                try { return JsonSerializer.Deserialize<List<StageRow>>(trimmed) ?? new(); }
+                catch (JsonException) { return new(); }
+            }
+
+            return value.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => int.TryParse(s.Trim(), out var v) ? new StageRow(v, null) : null)
+                .Where(r => r != null)
+                .Select(r => r!)
+                .ToList();
         }
 
-        private static void ApplyQuestRowAndExecute(SqliteCommand cmd, string key, string name, string stages)
+        // Perk key -> the skill tree(s) it sits in, "Smithing" or "One-handed, Two-handed" in the rare
+        // case of a perk in two trees. The winning version of every tree and every perk counts - perk
+        // overhauls rebuild the trees - so the last plugin wins, as in the write phase.
+        //
+        // The tree lists the FIRST rank only; the others hang off it through NextPerk (Strong Back 1 ->
+        // 2 -> ...), so the chain is followed. A perk in no tree gets nothing: NPC perks, hidden helper
+        // perks, abilities - a player cannot pick those, which is worth seeing in itself.
+        private static Dictionary<string, string> BuildPerkSkills(IEnumerable<ParsedFormIdPluginData> parsedPlugins)
         {
-            cmd.Parameters["@key"].Value = key;
-            cmd.Parameters["@name"].Value = name ?? "";
-            cmd.Parameters["@stages"].Value = stages ?? "";
+            var plugins = parsedPlugins.Where(p => p != null).ToList();
+            return BuildPerkSkills(plugins.SelectMany(p => p.PerkRanks), plugins.SelectMany(p => p.SkillTrees));
+        }
+
+        // Inputs in load order; a later entry for the same key replaces an earlier one.
+        internal static Dictionary<string, string> BuildPerkSkills(
+            IEnumerable<(string perk, string? nextPerk)> perkRanks,
+            IEnumerable<(string key, string name, List<string> perks)> skillTrees)
+        {
+            var next = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+            var trees = new Dictionary<string, (string name, List<string> perks)>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var (perk, nextPerk) in perkRanks) next[perk] = nextPerk;
+            foreach (var (key, name, perks) in skillTrees) trees[key] = (name, perks);
+
+            var skills = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var (name, perks) in trees.Values.OrderBy(t => t.name, StringComparer.OrdinalIgnoreCase))
+            {
+                foreach (var root in perks)
+                {
+                    // Guarded: a mod that links a rank back to an earlier one would loop forever.
+                    var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    for (string? perk = root; perk != null && seen.Add(perk); perk = next.GetValueOrDefault(perk))
+                    {
+                        if (!skills.TryGetValue(perk, out var list)) skills[perk] = list = new List<string>();
+                        if (!list.Contains(name, StringComparer.OrdinalIgnoreCase)) list.Add(name);
+                    }
+                }
+            }
+
+            return skills.ToDictionary(kv => kv.Key, kv => string.Join(", ", kv.Value), StringComparer.OrdinalIgnoreCase);
+        }
+
+        // extra = the table's own extra column (Perks: Skill, Quests: Stages), when it has one.
+        private static void Write(SqliteCommand cmd, NameRow row, string? extra = null)
+        {
+            cmd.Parameters["@key"].Value = row.Key;
+            cmd.Parameters["@editorId"].Value = row.EditorId ?? "";
+            cmd.Parameters["@name"].Value = (object?)row.Name ?? DBNull.Value;
+            cmd.Parameters["@description"].Value = (object?)row.Description ?? DBNull.Value;
+            if (cmd.Parameters.Contains("@extra"))
+                cmd.Parameters["@extra"].Value = (object?)extra ?? DBNull.Value;
             cmd.ExecuteNonQuery();
         }
 
@@ -384,10 +506,10 @@ namespace SkyrimCraftingTool.Model
             cmd.CommandText =
             @"
                 DROP TABLE IF EXISTS Keywords;
-                DROP TABLE IF EXISTS Materials;
+                DROP TABLE IF EXISTS Materials;   -- not recreated since 2026-11-07 (WorldItem in item.db)
                 DROP TABLE IF EXISTS Perks;
                 DROP TABLE IF EXISTS Quests;
-                DROP TABLE IF EXISTS LVLi;
+                DROP TABLE IF EXISTS LVLi;   -- not recreated since 2026-11-07; dropped so an old file loses it
                 DROP TABLE IF EXISTS FormLists;
             ";
             cmd.ExecuteNonQuery();
@@ -396,52 +518,32 @@ namespace SkyrimCraftingTool.Model
         private void CreateTables(SqliteConnection connection)
         {
             using var cmd = connection.CreateCommand();
-            cmd.CommandText =
-            @"
-                CREATE TABLE Keywords (
-                Key TEXT PRIMARY KEY COLLATE NOCASE,
-                Name TEXT NOT NULL
-            );
+            const string common =
+                "Key TEXT PRIMARY KEY COLLATE NOCASE, EditorID TEXT NOT NULL, Name TEXT, Description TEXT";
 
-            CREATE TABLE Materials (
-                Key TEXT PRIMARY KEY COLLATE NOCASE,
-                Name TEXT NOT NULL
-            );
-
-            CREATE TABLE Perks (
-                Key TEXT PRIMARY KEY COLLATE NOCASE,
-                Name TEXT NOT NULL
-            );
-
-            CREATE TABLE Quests (
-                Key TEXT PRIMARY KEY COLLATE NOCASE,
-                Name TEXT NOT NULL,
-                Stages TEXT
-            );
-
-            CREATE TABLE LVLi(
-                Key TEXT PRIMARY KEY COLLATE NOCASE,
-                Name TEXT NOT NULL
-            );
-
-            CREATE TABLE FormLists (
-                Key TEXT PRIMARY KEY COLLATE NOCASE,
-                Name TEXT NOT NULL
-            );
+            cmd.CommandText = $@"
+                CREATE TABLE Keywords  ({common});
+                CREATE TABLE Perks     ({common}, Skill TEXT);
+                CREATE TABLE Quests    ({common}, Stages TEXT);
+                CREATE TABLE FormLists ({common});
             ";
 
             cmd.ExecuteNonQuery();
         }
 
 
-        private SqliteCommand PrepareInsert(SqliteConnection connection, string table)
+        private static SqliteCommand PrepareInsert(SqliteConnection connection, string table, string? extraColumn = null)
         {
-            var cmd = new SqliteCommand(
-                $"INSERT OR IGNORE INTO {table} (Key, Name) VALUES (@key, @name)",
-                connection);
+            string columns = "Key, EditorID, Name, Description" + (extraColumn != null ? $", {extraColumn}" : "");
+            string values = "@key, @editorId, @name, @description" + (extraColumn != null ? ", @extra" : "");
+
+            var cmd = new SqliteCommand($"INSERT OR REPLACE INTO {table} ({columns}) VALUES ({values})", connection);
 
             cmd.Parameters.Add("@key", SqliteType.Text);
+            cmd.Parameters.Add("@editorId", SqliteType.Text);
             cmd.Parameters.Add("@name", SqliteType.Text);
+            cmd.Parameters.Add("@description", SqliteType.Text);
+            if (extraColumn != null) cmd.Parameters.Add("@extra", SqliteType.Text);
 
             return cmd;
         }

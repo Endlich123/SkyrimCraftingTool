@@ -2,14 +2,6 @@ using System.Collections.Generic;
 
 namespace SkyrimCraftingTool.Model
 {
-    // An NPC group: a NAMED FILTER SET, which is the work unit of the NPC patcher
-    // (G2, docs/NPC-Gruppen-Plan.md section 4). A single NPC is a group with no predicate and one
-    // add-override, so there is one editor and one rule builder rather than two.
-    //
-    // THE ONE RULE BEHIND THIS SHAPE: membership is COMPUTED, never stored. A stored member list
-    // goes stale on the next rescan - a new mod adds 17 bandits, and a saved change reaches NPCs
-    // nobody ever looked at (section 8). What is stored is the predicate, the hand corrections, and
-    // - separately, and only for the diff - a snapshot of what the user last confirmed.
     public sealed class NpcGroup
     {
         // 0 until the store has written the row: NpcGroup.Id is an INTEGER PRIMARY KEY, so SQLite
@@ -18,12 +10,8 @@ namespace SkyrimCraftingTool.Model
 
         public string Name { get; set; } = "";
 
-        // "auto" for a group the seeder made, "user" for one the user made. The seeder may re-seed
-        // its own groups after a scan; it must never touch a user's.
         public string Origin { get; set; } = NpcGroupOrigin.User;
 
-        // Which auto rule produced this group, kept so a re-seed can recognise its own work
-        // (section 7). Empty for a user group.
         public string Seed { get; set; } = "";
 
         public int SortOrder { get; set; }

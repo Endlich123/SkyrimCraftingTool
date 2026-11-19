@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace SkyrimCraftingTool.Model
 {
@@ -60,11 +61,6 @@ namespace SkyrimCraftingTool.Model
         // ContainerSelectionVM.BuildString/LoadFromString, see ContainerStringBuilder/Parser).
         public FieldValue<string> Container { get; set; } = new() { Value = "{}" };
 
-        // WHICH enchantment the matching items get, as Plugin|FormID - empty means "none".
-        //
-        // Deliberately here and NOT in the multi-select bulk editor (user, 2026-09-16): patching ten
-        // items rarely means giving them all the same enchantment, but a preset for legendary
-        // end-game items is exactly the case where that sameness is the point.
         public FieldValue<string> Enchantment { get; set; } = new() { Value = "" };
 
         // HOW MUCH charge (EAMT) those items get - the item's own field, not the enchantment's,
@@ -85,7 +81,7 @@ namespace SkyrimCraftingTool.Model
     public class FieldValue<T>
     {
         public bool Enabled { get; set; }
-        public T Value { get; set; }
+        public T? Value { get; set; }
     }
 
     public class RecipeConfig
@@ -101,11 +97,63 @@ namespace SkyrimCraftingTool.Model
         public int Count { get; set; }
     }
 
+    // One recipe condition inside a preset. The same fields as COBJConditionRecord minus the row
+    // identity - see there for what each one holds.
+    //
+    // The last four arrived 2026-11-09. Before, a preset carried only type/target/value/run-on, so
+    // "GetLevel < 20" came out of a preset as the type's default operator and an OR pair as AND -
+    // the loss COBJConditionRecord's operator/flags columns were added to stop (2026-10-23).
+    // Null when unset and then left out of the JSON: preset files written before stay valid, and
+    // a plain HasPerk does not grow four empty lines.
+    //
+    // Copy through Clone / FromRecord / ToRecord, never field by field: four places did that, and
+    // each one would have dropped the next field added here.
     public class ConditionEntry
     {
         public string ConditionType { get; set; } = "";
         public string Target { get; set; } = "";
         public string Value { get; set; } = "";
         public string RunOn { get; set; } = "";
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? CompareOperator { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Flags { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? RunOnRef { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Extra { get; set; }
+
+        public ConditionEntry Clone() => (ConditionEntry)MemberwiseClone();
+
+        public static ConditionEntry FromRecord(COBJConditionRecord rec) => new()
+        {
+            ConditionType = rec.ConditionType ?? "",
+            Target = rec.Target ?? "",
+            Value = rec.Value ?? "",
+            RunOn = rec.RunOn ?? "",
+            CompareOperator = NullIfEmpty(rec.CompareOperator),
+            Flags = NullIfEmpty(rec.Flags),
+            RunOnRef = NullIfEmpty(rec.RunOnRef),
+            Extra = NullIfEmpty(rec.Extra),
+        };
+
+        public COBJConditionRecord ToRecord(string cobjKey = "") => new()
+        {
+            COBJKey = cobjKey,
+            ConditionType = ConditionType ?? "",
+            Target = Target ?? "",
+            Value = Value ?? "",
+            RunOn = RunOn ?? "",
+            CompareOperator = CompareOperator ?? "",
+            Flags = Flags ?? "",
+            RunOnRef = RunOnRef ?? "",
+            Extra = Extra ?? "",
+        };
+
+        private static string? NullIfEmpty(string? s) => string.IsNullOrEmpty(s) ? null : s;
     }
 }

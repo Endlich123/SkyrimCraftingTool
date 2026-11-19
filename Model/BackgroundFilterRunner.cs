@@ -2,7 +2,7 @@
 {
     public sealed class BackgroundFilterRunner<TInput, TResult>
     {
-        private CancellationTokenSource _cts;
+        private CancellationTokenSource? _cts;
 
         public void Run(
             TInput input,

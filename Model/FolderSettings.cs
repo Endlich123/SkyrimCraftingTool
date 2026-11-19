@@ -5,9 +5,9 @@ namespace SkyrimCraftingTool.Model;
 
 public class FolderSettings
 {
-    public string GameDataPath { get; set; }
-    public string ModDirectoryPath { get; set; }
-    public string PluginsFilePath { get; set; }
+    public string GameDataPath { get; set; } = "";
+    public string ModDirectoryPath { get; set; } = "";
+    public string PluginsFilePath { get; set; } = "";
 
     // Which manager the setup is built around. Written as a NAME, not a number, so settings.json
     // stays readable and a bug report can be understood without decoding it.
@@ -21,7 +21,7 @@ public class FolderSettings
     // MO2 only: profiles\<profile>\modlist.txt. It is the mod PRIORITY, and the only thing that can
     // say which copy of a duplicated plugin file MO2 actually loads. Empty for every other manager,
     // where the question does not arise because deployment already resolved it.
-    public string ModListFilePath { get; set; }
+    public string ModListFilePath { get; set; } = "";
 
     // Portable: lives next to the app (same base as ToolPaths' Input/Output), not under %AppData%.
     // No migration from the old %AppData% location on purpose - a stale copy there could silently
@@ -36,7 +36,16 @@ public class FolderSettings
             throw new FileNotFoundException("Settings file not found.", path);
 
         string json = File.ReadAllText(path);
-        return System.Text.Json.JsonSerializer.Deserialize<FolderSettings>(json);
+        var settings = System.Text.Json.JsonSerializer.Deserialize<FolderSettings>(json)
+            ?? throw new InvalidDataException($"Settings file is empty: {path}");
+
+        // An explicit null in the file (Save writes one for any path that was null) overrides the
+        // "" default, so the paths are normalised here.
+        settings.GameDataPath ??= "";
+        settings.ModDirectoryPath ??= "";
+        settings.PluginsFilePath ??= "";
+        settings.ModListFilePath ??= "";
+        return settings;
     }
 
     public void Save()

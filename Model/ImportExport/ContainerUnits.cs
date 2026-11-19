@@ -57,9 +57,6 @@ namespace SkyrimCraftingTool.Model
             if (uid.Length > 0) (dto.Refs ??= new Dictionary<string, string>())["Key"] = uid;
         }
 
-        // ... and at import, point the DTO at this machine's copy. Not here: the DTO is made to point
-        // nowhere, so the probe reports it as "not present locally" rather than writing the decision
-        // onto whatever list of the user's happens to have the file's key.
         internal const string Unresolved = "?unresolved";
 
         internal static void FollowOwnKey(SqliteConnection connection, EditedItemDto dto, ImportKeyMap map, List<string> notes, string what)
@@ -267,9 +264,6 @@ namespace SkyrimCraftingTool.Model
             // An edit that changes nothing is no row - LeveledListEditStore.Save's rule.
             if (chance == null && (mode.Length == 0 || mode == nameof(CalcFlagMode.Unchanged))) return false;
 
-            // No mode in the file means none was stored - NULL, as LeveledListEditStore writes it for a
-            // chance-only edit, not "Unchanged" (which reads the same but is not the same row; found in
-            // the user's import test, 2026-10-17).
             ContainerUnitHelpers.Exec(connection, transaction, @"
                 INSERT INTO LeveledListEdit (ListKey, ChanceNone, CalcFlagMode, LastChanged) VALUES (@k, @c, @m, @t)
                 ON CONFLICT(ListKey) DO UPDATE SET ChanceNone = @c, CalcFlagMode = @m, LastChanged = @t",

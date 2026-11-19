@@ -130,13 +130,6 @@ namespace SkyrimCraftingTool.Model
             textBox.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
         }
 
-        // Parses text as a number (empty / garbage / NaN / Infinity -> Min), clamps into [Min, Max]
-        // (Max is additionally capped at int.MaxValue for Integer mode), and renders it back.
-        //
-        // `allowEmpty` leaves a blank box blank instead of filling it with Min - see the attached
-        // property above. Garbage is still cleared to empty rather than to Min: on a field where
-        // empty is a meaning of its own, that is the one answer that cannot be mistaken for a value
-        // the user chose.
         public static string NormalizeAndClamp(
             string? text, NumericMode mode, double min, double max, bool allowEmpty = false)
         {

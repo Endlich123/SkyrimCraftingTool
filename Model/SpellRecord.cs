@@ -21,13 +21,13 @@ namespace SkyrimCraftingTool.Model
         // Plugin|FormID
         public string Key { get; set; } = "";
 
-        public event PropertyChangedEventHandler PropertyChanged;
-        private void OnPropertyChanged([CallerMemberName] string name = null)
+        public event PropertyChangedEventHandler? PropertyChanged;
+        private void OnPropertyChanged([CallerMemberName] string? name = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
         // Raised so a view model can autosave an edit made straight against this record. Wired in
         // S-P3; the display-only tab leaves it unsubscribed.
-        public event Action<string> FieldChanged;
+        public event Action<string>? FieldChanged;
 
         private string _editorId = "";
         public string EditorID
@@ -55,11 +55,6 @@ namespace SkyrimCraftingTool.Model
             }
         }
 
-        // Spell / Disease / Power / LesserPower / Ability / Poison / Addiction / Voice.
-        //
-        // READ-ONLY on a scanned record, and not for want of trying: SkyPatcher has no operation for
-        // it. It is also the tree's grouping level, so changing it would move the record under the
-        // user mid-edit - the same pair of reasons that makes CastType read-only on an enchantment.
         public string SpellType { get; set; } = "";
 
         private string _castType = "";
@@ -151,8 +146,6 @@ namespace SkyrimCraftingTool.Model
             set { if (_isEdited != value) { _isEdited = value; OnPropertyChanged(); } }
         }
 
-        // False for a spell the user created in the tool: it exists in no plugin and leaves through
-        // the generated ESP rather than as a SkyPatcher rule.
         public bool IsOriginal { get; set; } = true;
 
         public bool IsUserCreated => !IsOriginal;

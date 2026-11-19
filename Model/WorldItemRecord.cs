@@ -1,12 +1,5 @@
 namespace SkyrimCraftingTool.Model
 {
-    // A record that can be PLACED and nothing else: a book, a scroll, a misc item, a soul gem, ammo,
-    // food, an ingredient, a key.
-    //
-    // DELIBERATELY NOT A STRIPPED-DOWN ArmorRecord. It carries a key, a name, what kind of thing it
-    // is, and the one field the user can edit. No stats, no keywords, no recipe - not because those
-    // were left out for later, but because the tool has nothing to say about them. That is what makes
-    // carrying eight more record types cheap.
     public class WorldItemRecord
     {
         // Plugin|FormID
@@ -27,5 +20,21 @@ namespace SkyrimCraftingTool.Model
         public string ScannedContainerString { get; set; } = "{}";
 
         public string Display => string.IsNullOrWhiteSpace(Name) ? EditorID : Name;
+
+        // The kinds a recipe can take as an ingredient - the material pickers' catalogue. Exactly what
+        // formid.db's Materials table held (MISC, SLGM, AMMO, ALCH, INGR; 6.332 rows on the real load
+        // order, row for row the same) until that copy went on 2026-11-07. Books, scrolls and keys are
+        // left out because they were left out then; adding one here is all it takes.
+        public static readonly IReadOnlySet<string> IngredientKinds =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Misc", "SoulGem", "Ammo", "Food", "Ingredient" };
+
+        // One of a kind, for a suffix or a filter chip ("IngotIron  · Misc"). The sub-tab titles are
+        // the plurals of these (WorldContentVM.Plural).
+        public static string KindLabel(string? kind) => kind switch
+        {
+            null or "" => "",
+            "SoulGem" => "Soul gem",
+            _ => kind,
+        };
     }
 }

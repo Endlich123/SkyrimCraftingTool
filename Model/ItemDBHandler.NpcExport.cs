@@ -7,26 +7,6 @@ using System.Linq;
 
 namespace SkyrimCraftingTool.Model
 {
-    // TE-4: the NPCs tab's export unit (docs/TabExport-Plan.md).
-    //
-    // An NPC is always a scanned record - the tool creates none - so there is no identity question
-    // for the NPC itself. What travels:
-    //
-    //   Fields               the shadow columns (IsEdited<X> for every NpcEditStore.EditableColumns)
-    //   Rows["Skills"]       skill edits (IsEditedValue), when SkillsEdited
-    //   Rows["Factions"]     the whole faction list, when FactionsEdited
-    //   Rows["Spells"|"Perks"|"Items"]
-    //                        the three N-P3 lists, all three together, when ListsEdited - they are
-    //                        snapshotted together (NpcEditStore.SnapshotAllListsOnce), so they travel
-    //                        together too
-    //
-    // A spell in an NPC's list may be one the user created; that row carries the spell's Uid as
-    // "SpellKeyUid" (the row-level form of EditedItemDto.Refs), and FollowNpcRefs resolves it. The same
-    // for an own leveled list in the item list ("ItemKeyUid") and as the death item (TE-6).
-    //
-    // The import mirrors NpcEditStore's writers step for step - snapshot once, replace wholesale,
-    // set the flag - but inside the import's single transaction, which the store's own methods
-    // (one connection each) cannot join.
     public partial class ItemDBHandler
     {
         internal const string NpcSkillRows = "Skills";
@@ -51,7 +31,7 @@ namespace SkyrimCraftingTool.Model
         private static string Invariant(object value) =>
             Convert.ToString(value, CultureInfo.InvariantCulture) ?? "";
 
-        internal static List<EditedItemDto> GetEditedNpcs(SqliteConnection connection, ExportScope scope, string scopeValue)
+        internal static List<EditedItemDto> GetEditedNpcs(SqliteConnection connection, ExportScope scope, string? scopeValue)
         {
             // A database without the NPC tables (one from before them, or a test fixture) has no NPC
             // edits - not an error that should take the other tabs' units down with it.
@@ -127,8 +107,6 @@ namespace SkyrimCraftingTool.Model
             return rows;
         }
 
-        // The two NPC lists that can name a record the user created, and where that record lives.
-        // A row carries the record's Uid in <KeyColumn>Uid. (Rows name, key column, table, wording, tab.)
         private static readonly (string Rows, string KeyColumn, string Table, string What, string Tab)[] NpcOwnRefs =
         {
             (NpcSpellRows, "SpellKey", "Spells", "spells is a spell", "Spells"),
@@ -157,10 +135,6 @@ namespace SkyrimCraftingTool.Model
             }
         }
 
-        // An NPC's spell or item that is one of the user's own records: this machine's copy, by Uid.
-        // Not here means the file's Key may well be a different record of this machine's, so the row
-        // (or the death item field) is held back and the summary says which tab to import first -
-        // the same rule as an item's enchantment.
         internal static void FollowNpcRefs(SqliteConnection connection, IEnumerable<EditedItemDto> items, ImportKeyMap map, List<string> notes)
         {
             var list = items.ToList();

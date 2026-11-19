@@ -12,8 +12,6 @@ namespace SkyrimCraftingTool.Model
         // Nothing local to attach to - usually the owning plugin is not installed. Skipped.
         Missing,
 
-        // Nothing local, but the DTO carries everything needed to create it (a user-created
-        // record). Applied without a conflict check.
         Create,
 
         // Present locally and never edited here. Applied without a conflict check.
@@ -22,9 +20,6 @@ namespace SkyrimCraftingTool.Model
         // Present locally and edited here at LocalLastChanged. Compared against the file.
         Edited,
 
-        // For records with no timestamp to compare (NPC groups, TE-5): the unit compared the
-        // CONTENT instead. Identical is skipped as equal; Differs is always a conflict - with no
-        // time to say which side is newer, the user decides.
         Identical,
         Differs,
     }
@@ -65,16 +60,8 @@ namespace SkyrimCraftingTool.Model
         // Runs inside the import's single transaction; a throw rolls back the whole import.
         internal abstract bool Apply(SqliteConnection connection, SqliteTransaction transaction, EditedItemDto item);
 
-        // Import, step 1 of 2, before anything is probed: a unit whose records carry a locally
-        // handed-out Key (the user's own recipes, later own leveled lists) settles that Key here -
-        // rewriting item.Key - and records every change in the map.
         internal virtual void ResolveKeys(SqliteConnection connection, IReadOnlyList<EditedItemDto> items, ImportKeyMap map) { }
 
-        // Import, step 2 of 2: a unit that POINTS at such a record rewrites its references through
-        // the map. Runs after every unit's ResolveKeys, so the order of units does not matter.
-        //
-        // `notes` collects what the summary should tell the user - a reference that could not be
-        // resolved, say. They are shown, never fatal.
         internal virtual void FollowKeys(SqliteConnection connection, IReadOnlyList<EditedItemDto> items, ImportKeyMap map, List<string> notes) { }
 
         public override string ToString() => Table;

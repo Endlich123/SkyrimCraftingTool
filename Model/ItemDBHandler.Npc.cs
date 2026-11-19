@@ -25,15 +25,6 @@ namespace SkyrimCraftingTool.Model
             return LoadNpcsFrom(ItemdbPath);
         }
 
-        // The path is a parameter so this can be run against a throwaway database in a test.
-        // THE REASON IT IS: a SELECT and the indexes that read it are two lists that have to agree,
-        // and nothing checks that they do. Adding a column to the reader without adding it to the
-        // query compiles perfectly and throws "ordinal 4" on the first click - which is exactly what
-        // happened here, for the second time in this codebase (see OriginalRecordReadTests for the
-        // first). NpcLoadTests now reads every field back and compares it with what was written.
-        // editedOnly is for the patch generator, which only cares about records the user touched.
-        // A flag on the one query rather than a second copy of it: a SELECT and the indexes that
-        // read it are two lists that have to agree, and two SELECTs would be four.
         internal static List<NpcRecord> LoadNpcsFrom(string dbPath, bool editedOnly = false)
         {
             var npcs = new List<NpcRecord>();
@@ -56,9 +47,6 @@ namespace SkyrimCraftingTool.Model
 
             using (var cmd = connection.CreateCommand())
             {
-                // The shadow-column contract, the same one Armor and Weapons are read through: the
-                // base column is what the scan found, IsEdited<X> is what the user set, and the
-                // user's value only counts while the record is actually flagged as edited.
                 cmd.CommandText = @"
                     SELECT
                         Key,
@@ -109,9 +97,6 @@ namespace SkyrimCraftingTool.Model
                         Aggression, Confidence, Assistance, Morality, Mood,
                         CombatStyleKey, CrimeFactionKey,
 
-                        -- Which lists the user has taken over. The snapshot tables cannot answer
-                        -- that on their own: a list that is EMPTY in the plugins snapshots to no
-                        -- rows, which looks exactly like no snapshot at all.
                         FactionsEdited, ListsEdited,
 
                         -- What SkyPatcher's EditorID filters see (the defining plugin's EditorID).
@@ -299,10 +284,6 @@ namespace SkyrimCraftingTool.Model
                     }
                 }
 
-                // Nobody has edited these lists, so the live rows ARE what the scan found. Decided
-                // by the flag, not by whether the snapshot table happened to have rows: a list the
-                // plugins left empty snapshots to nothing, and copying the live rows in that case
-                // would present the user.s own additions as the plugin.s.
                 foreach (var npc in npcs)
                     if (!listsEdited.Contains(npc.Key))
                         copyLiveIntoScanned(npc);
@@ -332,26 +313,6 @@ namespace SkyrimCraftingTool.Model
             return npcs;
         }
 
-        // Key -> readable name for everything an NPC points at. Six catalogue tables plus three
-        // that already existed for other reasons: NPC names (for the template link), leveled lists
-        // (death item) and armor (skin).
-        //
-        // An NPC's template usually points at a leveled character rather than another NPC, and those
-        // are not scanned - the key is then all there is to show, which is what NpcLabels does with
-        // an unresolved key. Better than a dash: a dash would claim there is nothing there.
-        // Both public entry points migrate first. The startup cache already does this, so on a
-        // normal launch it is a no-op - but "the NPC tab happens to be opened after the cache was
-        // built" is an ordering assumption, not a guarantee, and this is the third time a column
-        // added late has thrown at a reader that trusted one. It costs one connection on a tab the
-        // user opens by hand; the alternative costs a crash on an item.db from before the column.
-        // The levelled character lists, as list key -> the keys of what it holds, in list order.
-        //
-        // For NpcStatResolver: 1.650 NPCs take their stats from one of these, and the list's contents
-        // are what turns "no single value" into a range over the candidates. Entries may point at
-        // another LVLN - stored as they stand, followed by the reader.
-        //
-        // Small enough to load whole: measured on the real load order, the lists and their entries are
-        // a fraction of what the NPC tables weigh.
         internal static Dictionary<string, List<string>> LoadLeveledNpcsFrom(string dbPath)
         {
             var byList = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
@@ -475,8 +436,17 @@ namespace SkyrimCraftingTool.Model
             Fill(labels.Spells, "Spells", "SELECT Key, EditorID, Name FROM Spells WHERE Active = 1;");
             Fill(labels.Shouts, "Shouts", "SELECT Key, EditorID, Name FROM Shouts WHERE Active = 1;");
             Fill(labels.LeveledSpells, "LeveledSpells", "SELECT Key, EditorID FROM LeveledSpells WHERE Active = 1;");
-            Fill(labels.Perks, "NpcPerkCatalogue", "SELECT Key, EditorID, Name FROM NpcPerkCatalogue WHERE Active = 1;");
             Fill(labels.Weapons, "Weapons", "SELECT Key, EditorID, Name FROM Weapons WHERE Active = 1;");
+
+            // Perks from formid.db, the one perk list - with game name, description and skill tree for
+            // the pickers' tooltips. Same label rule as above: EditorID first.
+            foreach (var perk in FormIDDBHandler.ReadPerks())
+            {
+                labels.PerkRecords[perk.Key] = perk;
+                labels.Perks[perk.Key] = !string.IsNullOrEmpty(perk.Name) ? perk.Name
+                                       : !string.IsNullOrEmpty(perk.FullName) ? perk.FullName
+                                       : perk.Key;
+            }
 
             return labels;
         }

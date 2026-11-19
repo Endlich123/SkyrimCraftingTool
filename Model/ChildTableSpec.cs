@@ -1,14 +1,5 @@
 namespace SkyrimCraftingTool.Model
 {
-    // One description of a child-row table: what it hangs off, which flag says it has been edited,
-    // where its pre-edit snapshot lives, and what a row is made of.
-    //
-    // Three tables work this way - a recipe's conditions, an enchantment's effects, an FLST's
-    // members - and all three follow the same rule: the first edit freezes the pristine rows into
-    // the matching _Original table, and Reset restores from there. That rule used to be written out
-    // by hand at every writer, six times over, and it was got wrong twice: the enchantment import
-    // and later the recipe import each destroyed the user's scanned data, months apart, in exactly
-    // the same way. See docs/ImportExport-Analyse.md (B2, IE-3/IE-4).
     internal sealed class ChildTableSpec
     {
         // The record these rows belong to, and the flag on it that means "already edited once".
@@ -27,10 +18,6 @@ namespace SkyrimCraftingTool.Model
 
         public string ColumnList => string.Join(", ", Columns);
 
-        // Where this unit's rows sit on an exported record, as the thing itself rather than its
-        // count: an EMPTY list is a payload - it says "the user removed them all" - and only null
-        // means "this export never carried them". Reading Count here is what made a cleared list
-        // indistinguishable from an untouched one and dropped the removal on the floor (B1).
         public System.Func<EditedItemDto, object?> Payload { get; init; } = _ => null;
     }
 
@@ -72,9 +59,6 @@ namespace SkyrimCraftingTool.Model
             KeyColumn = "SpellKey",
             Columns = new[] { "SpellKey", "MagicEffectKey", "EditorID", "Name", "Magnitude", "Duration", "Area" },
 
-            // No Payload: spells have no import/export yet, and null is exactly the right answer
-            // for "this export never carried them" - an empty list would mean "the user removed them
-            // all", which is the distinction that lost a cleared list once already.
         };
 
         // E3: the FLST's edit flag lives on its own state table, not on the enchantments that

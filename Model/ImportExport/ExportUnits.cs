@@ -64,11 +64,8 @@ namespace SkyrimCraftingTool.Model
             return local == null ? ImportTarget.Missing : ImportTarget.FromLastChanged(local as string);
         }
 
-        // A field that may point at one of the user's own records, and where that record lives.
-        // Label and Tab only word the note when the record is missing here.
         internal sealed record OwnRecordRef(string Field, string TargetTable, string Label, string Tab);
 
-        // At export: the Uid of every user-created record a DTO's fields point at (UserRecords §3).
         internal static void AnnotateRefs(SqliteConnection connection, IEnumerable<EditedItemDto> items, IReadOnlyList<OwnRecordRef> refs)
         {
             foreach (var item in items)
@@ -114,7 +111,6 @@ namespace SkyrimCraftingTool.Model
 
         private sealed class ArmorOrWeaponsUnit : ExportUnit
         {
-            // The item's enchantment may be one the user created (TE-3).
             private static readonly OwnRecordRef[] Refs =
             {
                 new("IsEditedObjectEffectKey", "Enchantments", "enchantment", "Enchantments"),
@@ -228,7 +224,6 @@ namespace SkyrimCraftingTool.Model
                 => UserRecords.ResolveRecordKeys(connection, Table, items, map);
         }
 
-        // An NPC is always a scanned record; its spell list may name spells the user created.
         private sealed class NpcUnit : ExportUnit
         {
             public override string Table => "Npc";

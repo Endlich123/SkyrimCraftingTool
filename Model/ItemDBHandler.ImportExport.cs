@@ -16,15 +16,15 @@ namespace SkyrimCraftingTool.Model
 
         private static string SafeStr(SqliteDataReader reader, int ordinal) => reader.IsDBNull(ordinal) ? "" : reader.GetString(ordinal);
 
-        private static string BuildScopeWhere(ExportScope scope, string scopeValue, SqliteCommand cmd)
+        private static string BuildScopeWhere(ExportScope scope, string? scopeValue, SqliteCommand cmd)
         {
             switch (scope)
             {
                 case ExportScope.Item:
-                    cmd.Parameters.AddWithValue("@scopeKey", scopeValue);
+                    cmd.Parameters.AddWithValue("@scopeKey", scopeValue ?? "");
                     return " AND Key = @scopeKey";
                 case ExportScope.Plugin:
-                    cmd.Parameters.AddWithValue("@scopePrefix", scopeValue + "|%");
+                    cmd.Parameters.AddWithValue("@scopePrefix", (scopeValue ?? "") + "|%");
                     return " AND Key LIKE @scopePrefix";
                 default:
                     return "";
@@ -33,10 +33,10 @@ namespace SkyrimCraftingTool.Model
 
         // Whole-database facade over every unit (ExportUnits.All). The tabs call the overloads that
         // take their own unit list - see TabExportModule.
-        public List<EditedItemDto> GetEditedItems(ExportScope scope, string scopeValue = null)
+        public List<EditedItemDto> GetEditedItems(ExportScope scope, string? scopeValue = null)
             => GetEditedItems(ExportUnits.All, scope, scopeValue);
 
-        public List<EditedItemDto> GetEditedItems(IEnumerable<ExportUnit> units, ExportScope scope, string scopeValue = null)
+        public List<EditedItemDto> GetEditedItems(IEnumerable<ExportUnit> units, ExportScope scope, string? scopeValue = null)
         {
             var items = new List<EditedItemDto>();
             using var connection = new ItemDbConnection(ConnString);
@@ -50,7 +50,7 @@ namespace SkyrimCraftingTool.Model
 
         // Same arrays the reset + import-whitelist paths use — one source of truth per table for
         // "which IsEdited* shadow columns exist" (they used to be spelled out three times).
-        internal static List<EditedItemDto> GetEditedArmorOrWeapons(SqliteConnection connection, string table, string[] editedColumns, ExportScope scope, string scopeValue)
+        internal static List<EditedItemDto> GetEditedArmorOrWeapons(SqliteConnection connection, string table, string[] editedColumns, ExportScope scope, string? scopeValue)
         {
             var result = new List<EditedItemDto>();
             using var cmd = connection.CreateCommand();
@@ -71,21 +71,15 @@ namespace SkyrimCraftingTool.Model
                 {
                     int ordinal = 3 + i;
                     if (!reader.IsDBNull(ordinal))
-                        dto.Fields[editedColumns[i]] = reader.GetValue(ordinal).ToString();
+                        dto.Fields[editedColumns[i]] = reader.GetValue(ordinal).ToString() ?? "";
                 }
                 result.Add(dto);
             }
             return result;
         }
 
-        internal static List<EditedItemDto> GetEditedCOBJ(SqliteConnection connection, ExportScope scope, string scopeValue)
+        internal static List<EditedItemDto> GetEditedCOBJ(SqliteConnection connection, ExportScope scope, string? scopeValue)
         {
-            // The last column list in this file that was still written out by hand, and the last
-            // place a new editable COBJ field could be forgotten. Both halves come from
-            // CobjShadowColumns now: the shadow columns, and the base columns they shadow
-            // ("IsEditedName" -> "Name"), which a user-created row exports in place of the diff.
-            // ImportExportRoundTripTests walks the same array, so a fifth field that never reaches
-            // this SELECT fails the build instead of quietly vanishing on export.
             string[] shadowCols = CobjShadowColumns;
             string[] baseCols = shadowCols.Select(c => c.Substring("IsEdited".Length)).ToArray();
 
@@ -97,11 +91,6 @@ namespace SkyrimCraftingTool.Model
             var rows = new List<(string Key, bool ConditionsEdited, EditedItemDto Dto)>();
             using (var cmd = connection.CreateCommand())
             {
-                // Same LastChanged-vs-flag rationale as GetEditedArmorOrWeapons. ResetCOBJEdits /
-                // ResetCOBJConditions clear IsEdited / ConditionsEdited but leave LastChanged set.
-                // Original=0 (user-created) is always an edit — it's new content that must export
-                // even if some path ever cleared its IsEdited (a reset of a user recipe deletes the
-                // row, so it can't be a stale pristine Original=0 here).
                 cmd.CommandText = $@"SELECT Key, LastChanged, Original, ConditionsEdited, Name,
                         {string.Join(", ", baseCols)},
                         {string.Join(", ", shadowCols)}
@@ -156,10 +145,6 @@ namespace SkyrimCraftingTool.Model
             return result;
         }
 
-        // ---------------------------------------------------
-        // Identity of a user-created recipe (TE-2) - see UserRecords
-        // ---------------------------------------------------
-
         internal static bool HasColumn(SqliteConnection connection, string table, string column)
             => UserRecords.HasColumn(connection, table, column);
 
@@ -193,7 +178,7 @@ namespace SkyrimCraftingTool.Model
             return rows;
         }
 
-        internal static List<EditedItemDto> GetEditedEnchantments(SqliteConnection connection, ExportScope scope, string scopeValue)
+        internal static List<EditedItemDto> GetEditedEnchantments(SqliteConnection connection, ExportScope scope, string? scopeValue)
         {
             var rows = new List<(string Key, bool EffectsEdited, bool Own, EditedItemDto Dto)>();
 
@@ -202,14 +187,6 @@ namespace SkyrimCraftingTool.Model
 
             using (var cmd = connection.CreateCommand())
             {
-                // Flags, not LastChanged: the reset paths clear the flags but leave LastChanged
-                // non-null, so LastChanged means "ever touched incl. resets" — wrong for "what to
-                // export". Matches the tree's edited badge. E3: KeywordsEdited dropped — worn-
-                // restriction-list content is its own export unit (GetEditedWornRestrictionLists).
-                //
-                // Original = 0 (TE-3): a user-created enchantment is new content and always exports,
-                // edited flag or not - created and never touched again is still something the
-                // other machine does not have. Same rule as GetEditedCOBJ.
                 cmd.CommandText = $@"SELECT Key, LastChanged, EffectsEdited,
                         Name, Original,
                         {string.Join(", ", editedCols)}
@@ -228,7 +205,7 @@ namespace SkyrimCraftingTool.Model
                     {
                         int ordinal = 5 + i;
                         if (!reader.IsDBNull(ordinal))
-                            dto.Fields[editedCols[i]] = reader.GetValue(ordinal).ToString();
+                            dto.Fields[editedCols[i]] = reader.GetValue(ordinal).ToString() ?? "";
                     }
 
                     rows.Add((key, effectsEdited, own, dto));
@@ -259,7 +236,7 @@ namespace SkyrimCraftingTool.Model
         // E3: worn-restriction-list content edits export as their own unit, keyed by ListKey. One
         // DTO per edited FLST (WornRestrictionListState.IsEdited=1) — not one per enchantment that
         // points at it.
-        internal static List<EditedItemDto> GetEditedWornRestrictionLists(SqliteConnection connection, ExportScope scope, string scopeValue)
+        internal static List<EditedItemDto> GetEditedWornRestrictionLists(SqliteConnection connection, ExportScope scope, string? scopeValue)
         {
             // Scope by plugin/item filters Armor/Weapon/COBJ/Enchantment keys; an FLST list key
             // doesn't fit that model, so edited lists are only included for a full ("All") export.
@@ -304,9 +281,9 @@ namespace SkyrimCraftingTool.Model
                     ["MagicEffectKey"] = SafeStr(reader, 0),
                     ["EditorID"] = SafeStr(reader, 1),
                     ["Name"] = SafeStr(reader, 2),
-                    ["Magnitude"] = reader.IsDBNull(3) ? "0" : reader.GetValue(3).ToString(),
-                    ["Duration"] = reader.IsDBNull(4) ? "0" : reader.GetValue(4).ToString(),
-                    ["Area"] = reader.IsDBNull(5) ? "0" : reader.GetValue(5).ToString(),
+                    ["Magnitude"] = reader.IsDBNull(3) ? "0" : (reader.GetValue(3).ToString() ?? ""),
+                    ["Duration"] = reader.IsDBNull(4) ? "0" : (reader.GetValue(4).ToString() ?? ""),
+                    ["Area"] = reader.IsDBNull(5) ? "0" : (reader.GetValue(5).ToString() ?? ""),
                 });
             }
             return rows;
@@ -365,9 +342,6 @@ namespace SkyrimCraftingTool.Model
             using var connection = new ItemDbConnection(ConnString);
             connection.Open();
 
-            // Keys first, all units, then references - see ExportUnit.ResolveKeys / FollowKeys.
-            // Before the probe on purpose: a user-created recipe whose Key belongs to someone
-            // else's recipe here must be probed (and later applied) under its new Key.
             var perUnit = fileItems
                 .Where(i => i != null && byTable.ContainsKey(i.Table ?? ""))
                 .GroupBy(i => byTable[i.Table])
@@ -544,7 +518,7 @@ namespace SkyrimCraftingTool.Model
         // purpose: static field initialisers run in textual declaration order, which is unspecified
         // once this class is split across partial-class files — a plain initialiser could otherwise
         // read the arrays before they exist.
-        private static Dictionary<string, HashSet<string>> _allowedImportFields;
+        private static Dictionary<string, HashSet<string>>? _allowedImportFields;
         private static Dictionary<string, HashSet<string>> AllowedImportFields =>
             _allowedImportFields ??= new()
             {
@@ -606,9 +580,6 @@ namespace SkyrimCraftingTool.Model
             bool exists = RowExists(connection, transaction, "COBJ", item.Key);
             bool wrote = false;
 
-            // The output count was exported for a user-created row from the start (it is one of
-            // CobjShadowColumns' base columns) but never written back - every imported own recipe
-            // came out producing one. Absent in older files -> 1, the column's default.
             object createdCount = int.TryParse(item.Fields.GetValueOrDefault("CreatedObjectCount", ""), out var n) && n > 0 ? n : 1;
             bool hasUid = !string.IsNullOrEmpty(item.Uid) && HasColumn(connection, "COBJ", "Uid");
 
@@ -717,8 +688,6 @@ namespace SkyrimCraftingTool.Model
             bool wrote;
             if (item.Original == 0)
             {
-                // TE-3: a user-created enchantment is recreated from its whole row (UserRecords) -
-                // created here if this machine does not have it, under the Key ResolveKeys settled.
                 wrote = UserRecords.WriteRow(connection, transaction, "Enchantments", item, item.LastChanged);
                 if (!wrote) return false;
             }

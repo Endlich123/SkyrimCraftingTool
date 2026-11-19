@@ -5,24 +5,6 @@ using System.Globalization;
 
 namespace SkyrimCraftingTool.Model
 {
-    // ONE counter for the keys of every record the user creates: recipes, enchantments, spells.
-    //
-    // WHY ONE. A tool key ("SkyrimCraftingTool.esp|<hex>") is turned into an ESP FormID by
-    // PatchFormIdMap, and that map is keyed by the tool key ALONE - not by record type. Before this,
-    // enchantments and spells each counted up from 0x1000 in their own table, so the first own spell
-    // and the first own enchantment were both "SkyrimCraftingTool.esp|001001" and both got FormID
-    // 0x800 in the same ESP: two records under one FormID, one of them broken in the game. Measured
-    // 2026-10-17 (a spell and an enchantment, both -> 0x800). The comment that called it harmless
-    // "because the map is per record type" was wrong; UserLeveledListStore's was right.
-    //
-    // Own leveled lists keep their own range from 0x800000 (UserLeveledListStore.KeyBaseline), so
-    // this counter stays below it and never looks above it.
-    //
-    // THE FLOOR. A new recipe lives only in its view model until it is saved, so the database cannot
-    // be the only memory of what was handed out - two new recipes before a save would otherwise get
-    // the same key. Every key issued raises a process-wide floor, and the next one is above both the
-    // floor and everything stored. A key is therefore also never handed out twice after a delete,
-    // which the patch's FormID map would otherwise read as the deleted record coming back.
     internal static class UserKeyAllocator
     {
         internal const int RecordBaseline = 0x1000;
@@ -32,10 +14,6 @@ namespace SkyrimCraftingTool.Model
         private static readonly object Gate = new();
         private static int _lastIssued;
 
-        // A bulk run (preset patch over a load order) creates thousands of recipes. Each key used to
-        // scan every user key in four tables again - quadratic, and most of a 155 s write phase
-        // (2026-10-22). Inside a batch the tables are scanned once; after that _lastIssued is the
-        // truth, since nothing else issues keys while the batch runs.
         private static int _batchDepth;
         private static bool _batchScanned;
 

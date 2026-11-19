@@ -6,21 +6,6 @@ using System.Linq;
 
 namespace SkyrimCraftingTool.Model
 {
-    // TE-5: the NPC groups tab's export unit (docs/TabExport-Plan.md §6.2).
-    //
-    // WHAT TRAVELS IS THE DEFINITION, never the members: membership is computed from the predicate on
-    // every read (NpcGroupResolver), so a member list would be stale on the other machine before it
-    // arrived. The member SNAPSHOT is not exported either - it records what the user confirmed HERE,
-    // and an imported group shows as unconfirmed until it is confirmed THERE.
-    //
-    // IDENTITY. The local Id means nothing elsewhere. An auto group is its Seed - seeding is additive
-    // and never creates a second group for a known seed (NpcGroupVM.Seed), so the same seed on both
-    // sides IS the same group. A user group is its Name. The DTO Key spells that out:
-    // "auto|EncBandit03" or "user|My bandits", which also files them under Exports\NpcGroups\auto\
-    // and \user\.
-    //
-    // NO TIMESTAMP. NpcGroup has no LastChanged, so the conflict check compares CONTENT: identical is
-    // skipped, different is a conflict the user decides (ImportTargetState.Identical / Differs).
     internal sealed class NpcGroupUnit : ExportUnit
     {
         internal const string PredicateRows = "Predicates";
@@ -62,8 +47,6 @@ namespace SkyrimCraftingTool.Model
                 var dto = ToDto(group);
                 dto.LastChanged = ItemDBHandler.NowIso();
 
-                // A spell or item the group adds or removes may be one the user created: an own spell,
-                // or an own leveled list (TE-6).
                 foreach (var row in dto.Rows![ListRows])
                 {
                     var table = OwnTableFor(row["Kind"]);
@@ -103,8 +86,6 @@ namespace SkyrimCraftingTool.Model
 
         // ---- import ----
 
-        // A group's spell that is one of the user's own: this machine's copy, by Uid, or the row is
-        // left out with a note - the same rule as an NPC's spell list (TE-4).
         internal override void FollowKeys(SqliteConnection connection, IReadOnlyList<EditedItemDto> items, ImportKeyMap map, List<string> notes)
         {
             foreach (var item in items)
@@ -212,15 +193,12 @@ namespace SkyrimCraftingTool.Model
                 }
                 else
                 {
-                    // Position stays where the user put it on this machine.
                     cmd.CommandText = "UPDATE NpcGroup SET Name = @name, Notes = @notes, Active = @active WHERE Id = @id";
                     cmd.Parameters.AddWithValue("@id", id.Value);
                     cmd.ExecuteNonQuery();
                 }
             }
 
-            // The snapshot stays: it is what the user confirmed here, and if the imported definition
-            // reaches other NPCs the drift report is exactly what should say so.
             var rows = item.Rows ?? new Dictionary<string, List<Dictionary<string, string>>>();
             List<Dictionary<string, string>> Of(string n) => rows.GetValueOrDefault(n) ?? new List<Dictionary<string, string>>();
 

@@ -15,7 +15,7 @@
         public int Duration { get; set; }
         public int Area { get; set; }
 
-        public List<MagicEffectsRecords> AllMagicEffects { get; set; }
+        public List<MagicEffectsRecords>? AllMagicEffects { get; set; }
     }
 }
 

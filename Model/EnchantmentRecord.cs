@@ -10,10 +10,6 @@ namespace SkyrimCraftingTool.Model
         // Plugin|FormID
         public string Key { get; set; } = "";
 
-        // Editable only for records the user created (see EnchantmentMenuVM.CanEditEditorId): a
-        // scanned record's EditorID belongs to its plugin, and there is no shadow column to hold an
-        // override anyway. Notifies like Name does, and for the same two reasons - the tree row
-        // binds straight to this, so a rename shows up there without rebuilding the tree.
         private string _editorId = "";
         public string EditorID
         {
@@ -29,10 +25,10 @@ namespace SkyrimCraftingTool.Model
 
         // Raises FieldChanged so EnchantmentMenuVM can autosave edits made directly against this
         // record (the EnchantmentView binds straight to it, with no wrapping ViewModel in between).
-        public event Action<string> FieldChanged;
+        public event Action<string>? FieldChanged;
 
-        public event PropertyChangedEventHandler PropertyChanged;
-        private void OnPropertyChanged([CallerMemberName] string name = null)
+        public event PropertyChangedEventHandler? PropertyChanged;
+        private void OnPropertyChanged([CallerMemberName] string? name = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
         // Set from Enchantments.LastChanged at load, flipped true on the first live edit. Drives the
@@ -44,13 +40,6 @@ namespace SkyrimCraftingTool.Model
             set { if (_isEdited != value) { _isEdited = value; OnPropertyChanged(); } }
         }
 
-        // Both notifications, and they do different jobs:
-        //   OnPropertyChanged -> tells the bound TextBox to redisplay. Only matters when the value
-        //     is written PROGRAMMATICALLY (Reset), because a user keystroke already updates the box
-        //     itself. Without it, "Reset Changes" wrote the pristine value into the model but the
-        //     detail view kept showing the edited text until the tab was switched.
-        //   FieldChanged -> the autosave hook (EnchantmentMenuVM unsubscribes it around Reset so
-        //     reverting doesn't immediately re-save as a fresh edit).
         private string _name = "";
         public string Name
         {
@@ -179,8 +168,6 @@ namespace SkyrimCraftingTool.Model
 
         public string TargetType { get; set; } = "";
 
-        // Plugin|FormID of the FLST. Set programmatically (keyword-list edits), not directly by the
-        // user — keep it a plain setter so a selection switch can't trigger a phantom save.
         public string WornRestrictionListKey { get; set; } = "";
 
         // Plugin|FormID of the ENCH this ObjectEffect inherits from (magnitude/duration tier

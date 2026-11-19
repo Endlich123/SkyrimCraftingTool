@@ -14,13 +14,6 @@ namespace SkyrimCraftingTool.Model
     // Split out of ItemDBHandler.cs purely for navigability - no logic changed.
     public partial class ItemDBHandler
     {
-        // CreateTables() only CREATE TABLE IF NOT EXISTS's; this method ALTER TABLEs in any column
-        // a table is still missing, via ADD COLUMN with a DEFAULT. Idempotent, safe on every scan —
-        // deliberately not a DROP+rebuild, since that would wipe every IsEdited*/Original value (the
-        // only place manual user edits live) and destroy user-created COBJ recipes (Original=0,
-        // never present in any scanned plugin) on every single rescan.
-        // Internal seam for the schema tests: a column added to a table that already exists only
-        // ever arrives through here, and forgetting it fails on a user.s database, not in a build.
         internal static void EnsureSchemaForTests(SqliteConnection connection) => EnsureSchema(connection);
 
         private static void EnsureSchema(SqliteConnection connection)
@@ -35,10 +28,7 @@ namespace SkyrimCraftingTool.Model
             // wrote the value before. The real numbers arrive with the next scan.
             AddColumnIfMissing(connection, "COBJ", "CreatedObjectCount", "INTEGER NOT NULL DEFAULT 1");
             AddColumnIfMissing(connection, "COBJ", "IsEditedCreatedObjectCount", "TEXT");
-            // Identity of a user-created recipe across machines (TE-2, docs/TabExport-Plan.md §6.4).
-            // NULL until the recipe is first exported - see ItemDBHandler.EnsureCobjUid.
             AddColumnIfMissing(connection, "COBJ", "Uid", "TEXT");
-            // Same identity for the other two kinds of record the user creates (TE-3).
             AddColumnIfMissing(connection, "Enchantments", "Uid", "TEXT");
             AddColumnIfMissing(connection, "Spells", "Uid", "TEXT");
             AddColumnIfMissing(connection, "Armor", "ArmorType", "TEXT");
@@ -57,10 +47,6 @@ namespace SkyrimCraftingTool.Model
             // BaseEnchantment (ENCH inherited from) — read-only scan value, drives the "derived" tree
             // tag + base-only filter. No shadow column: not user-editable.
             AddColumnIfMissing(connection, "Enchantments", "BaseEnchantmentKey", "TEXT");
-            // Original = 0 means "the user made this one" — it exists in no plugin, and the generated
-            // ESP is what brings it into the game. Same flag and the same meaning as COBJ's, including
-            // the consequence: the scan must never mark such a row inactive, because no plugin will
-            // ever produce it again (see MarkInactiveExcept's extraWhere in the scan).
             AddColumnIfMissing(connection, "Enchantments", "Original", "INTEGER NOT NULL DEFAULT 1");
 
             // The remaining ENIT fields. They stay NULL on an existing database until the next scan
@@ -86,19 +72,11 @@ namespace SkyrimCraftingTool.Model
             // in load order; see the lost-entry block in ItemDBHandler.Scan.cs.
             AddColumnIfMissing(connection, "LeveledListLostEntry", "AddedBy", "TEXT");
             AddColumnIfMissing(connection, "LeveledListLostEntry", "DroppedBy", "TEXT");
-            // Original = 0: a leveled list the user created in the tool (docs/LeveledList-Create-Plan.md,
-            // L-P1). Same flag and the same consequence as on COBJ and Enchantments - the scan must
-            // never mark such a row inactive, because no plugin will ever produce it again.
             AddColumnIfMissing(connection, "LeveledList", "Original", "INTEGER NOT NULL DEFAULT 1");
             AddColumnIfMissing(connection, "LeveledList", "Uid", "TEXT");
             AddColumnIfMissing(connection, "Container", "Active", "INTEGER NOT NULL DEFAULT 1");
             AddColumnIfMissing(connection, "MagicEffects", "Active", "INTEGER NOT NULL DEFAULT 1");
 
-            // LastChanged/LastPatched are only meaningful on the 4 tables with live IsEdited* tracking.
-            // LastChanged is set by every user-edit write path (UpdateField, SaveCOBJConditions,
-            // SaveEnchantmentEffects, SaveWornRestrictionKeywords, CreateNewCOBJRecordForItem) and is
-            // deliberately excluded from the UPSERT column lists below so a rescan never touches it.
-            // LastPatched is a schema placeholder for a future patch-export feature — not written yet.
             foreach (var table in new[] { "Armor", "Weapons", "COBJ", "Enchantments" })
             {
                 AddColumnIfMissing(connection, table, "LastChanged", "TEXT");
@@ -122,12 +100,6 @@ namespace SkyrimCraftingTool.Model
                 AddColumnIfMissing(connection, table, "ObjectEffectKey", "TEXT");
                 AddColumnIfMissing(connection, table, "IsEditedObjectEffectKey", "TEXT");
 
-                // The item's own charge pool (EAMT), and the reason it is here rather than on the
-                // enchantment: measured in xEdit by the user, an item needs its OWN enchant amount
-                // for a maximum charge - without it the enchantment is linked but the weapon cannot
-                // be recharged. objectEffect alone was never the whole story.
-                //
-                // INTEGER: the record field is a whole number of charge points.
                 AddColumnIfMissing(connection, table, "EnchantAmount", "INTEGER");
                 AddColumnIfMissing(connection, table, "IsEditedEnchantAmount", "INTEGER");
             }
@@ -198,6 +170,10 @@ namespace SkyrimCraftingTool.Model
             AddColumnIfMissing(connection, "MagicEffects", "MinimumSkillLevel", "INTEGER");
             AddColumnIfMissing(connection, "MagicEffects", "BaseCost", "REAL");
 
+            // The in-game description (DNAM), for the picker tooltip (2026-11-08). Filled by the next
+            // scan; NULL until then.
+            AddColumnIfMissing(connection, "MagicEffects", "Description", "TEXT");
+
             // The Spells tab (docs/Spells-Plan.md). Spells shipped long before it, as a bare name
             // catalogue for the NPC spell lists - so every existing database has the table with four
             // columns and needs the rest added rather than created.
@@ -253,10 +229,6 @@ namespace SkyrimCraftingTool.Model
         // a plain launch without one.)
         private static void RepairBlankWornRestrictionEdits(SqliteConnection connection)
         {
-            // Nothing to repair on a brand-new database: this runs (via EnsureSchema) BEFORE
-            // CreateTables, so none of these tables exist yet. Without the early-out the whole batch
-            // throws on the first missing table and every fresh install writes an alarming-looking
-            // ERROR into the log - noise in exactly the place where a new user's bug report is read.
             if (!TableExists(connection, "Enchantments") ||
                 !TableExists(connection, "WornRestrictionKeywords"))
             {
@@ -702,22 +674,6 @@ namespace SkyrimCraftingTool.Model
                     LastPatched TEXT
                 );
 
-                -- Records that can be PLACED and nothing else: books, scrolls, misc, soul gems,
-                -- ammo, food/potions, ingredients, keys.
-                --
-                -- ONE TABLE WITH A KIND COLUMN, NOT EIGHT TABLES. Everything about them is identical
-                -- - a key, a name, and the one field the user can edit - and eight copies would mean
-                -- eight entries in the shadow-column list, eight import whitelists and eight chances
-                -- to forget one. The sub-tabs filter on Kind; the database does not care.
-                --
-                -- ONE EDITABLE FIELD, AND THAT IS THE WHOLE POINT. These carry no stats the tool
-                -- understands and no recipe, so the entire dirty-state/reset/export/import apparatus
-                -- hangs off ContainerString alone. That is what makes them cheap to carry: they are
-                -- not stripped-down armor, they are a key with a placement.
-                --
-                -- Most of them were already being read into formid.db's Materials table for the
-                -- recipe ingredient picker - but that file is dropped and rebuilt on every scan, so
-                -- nothing editable could ever live there. Here it can.
                 CREATE TABLE IF NOT EXISTS WorldItem (
                     Key TEXT PRIMARY KEY COLLATE NOCASE,
                     EditorID TEXT NOT NULL,
@@ -788,11 +744,6 @@ namespace SkyrimCraftingTool.Model
                     FOREIGN KEY (COBJKey) REFERENCES COBJ(Key)
                 );
 
-                -- Lazily-populated, permanently-frozen snapshot of a COBJ's conditions as they
-                -- looked right before the first user edit (see SaveCOBJConditions) - COBJ_Conditions
-                -- itself is destructively DELETE+INSERTed on every save, so there is nothing else to
-                -- revert to once the user has edited a condition. No Id/IsEdited* columns: this table
-                -- is only ever bulk-replaced per COBJKey, never updated in place.
                 CREATE TABLE IF NOT EXISTS COBJ_Conditions_Original (
                     COBJKey TEXT NOT NULL COLLATE NOCASE,
                     ConditionType TEXT NOT NULL,
@@ -986,41 +937,6 @@ namespace SkyrimCraftingTool.Model
                     PRIMARY KEY (ListKey, Ordinal)
                 );
 
-                -- Entries that USED to be in a list and are not in the winning version any more.
-                --
-                -- A leveled list is one record, so a plugin that touches it overrides the whole
-                -- thing. Whatever an earlier plugin had added is then simply gone from the game -
-                -- silently, with nothing in the record to say it ever happened. That is the problem
-                -- a Bashed Patch exists to solve.
-                --
-                -- This table does NOT try to solve it. It records what fell out, so it can be shown;
-                -- nothing here is ever written to a patch on its own. The reason is that the cause
-                -- is not knowable: a plugin that drops an entry may be a patch removing it on
-                -- purpose, or may simply have clobbered it, and the record looks identical either
-                -- way. Guessing would mean silently undoing someone's deliberate fix. So the tool
-                -- reports and the user decides.
-                --
-                -- Keyed by (ListKey, Reference), not by ordinal: the question is which ITEM is
-                -- missing from this list, and an entry has no identity of its own (see
-                -- LeveledListEntry above). Level and Count are the values it had where it was last
-                -- seen, so restoring one can put it back as it was. LostFrom names that plugin.
-                --
-                -- THREE PLUGINS, AND THEY ARE THREE DIFFERENT QUESTIONS. AddedBy put the entry into
-                -- the list, LostFrom is the last version that still had it, DroppedBy is the version
-                -- right after that - the one that did not carry it forward. LostFrom alone was what
-                -- this table used to offer, and it is the least useful of the three: a tester read
-                -- it as the plugin that removed the entry, which is exactly what it is not.
-                --
-                -- DroppedBy still is not an accusation. The schema comment above holds: dropping an
-                -- entry may be deliberate, and the record looks identical either way. It names who,
-                -- never why.
-                --
-                -- Ambiguous marks the one guess in here. An entry can have stood in SEVERAL
-                -- overridden versions at DIFFERENT levels or counts, and only one set can be put
-                -- back. The value kept is the one from the version closest to the winner, on the
-                -- reasoning that it is the state the game came nearest to having - but it is a
-                -- choice, not a fact, and a row that had to make it says so rather than presenting
-                -- a guess as a reading.
                 CREATE TABLE IF NOT EXISTS LeveledListLostEntry (
                     ListKey TEXT NOT NULL COLLATE NOCASE,
                     Reference TEXT NOT NULL COLLATE NOCASE,
@@ -1033,8 +949,6 @@ namespace SkyrimCraftingTool.Model
                     PRIMARY KEY (ListKey, Reference)
                 );
 
-                -- The user's answer to the table above: put this one back.
-                --
                 -- Separate from LeveledListLostEntry because they are different kinds of fact. That
                 -- one is scanned and the scan rewrites it wholesale on every run; this is a decision
                 -- and must outlive any number of rescans. Same split as LeveledList vs
@@ -1087,11 +1001,6 @@ namespace SkyrimCraftingTool.Model
                     PRIMARY KEY (ListKey, Reference)
                 );
 
-                -- The same decision for a container, and containers had nothing of the kind before.
-                --
-                -- ContainerEntry holds what the scan found and is rewritten wholesale on every run;
-                -- this holds what the user decided and must outlive any number of rescans. Same split
-                -- as LeveledList vs LeveledListEdit, and as the two tables above.
                 CREATE TABLE IF NOT EXISTS ContainerRemovedEntry (
                     ContainerKey TEXT NOT NULL COLLATE NOCASE,
                     Reference TEXT NOT NULL COLLATE NOCASE,
@@ -1129,22 +1038,6 @@ namespace SkyrimCraftingTool.Model
                     PRIMARY KEY (ItemKey, Kind)
                 );
 
-                -- What the USER changed about a list, kept strictly apart from what was scanned.
-                --
-                -- Same split as everywhere else in this schema: LeveledList above holds the load
-                -- order as it is, this holds the edit on top of it. Nothing here is ever written by
-                -- a scan, so a rescan can replace the scanned values without touching a single
-                -- decision the user made, and a reset is a DELETE rather than a guess at what the
-                -- original was.
-                --
-                -- NULL means not-edited per column, which is why neither has a default: a list
-                -- whose chance was changed but whose flags were left alone must emit one operation,
-                -- not two. A row with both columns NULL is deleted rather than kept.
-                --
-                -- These properties belong to the WHOLE list, unlike a placement: changing them
-                -- changes the odds for every mod feeding that list. That is the user's decision to
-                -- make (2026-09-15), and the calculator in the list window is what makes it an
-                -- informed one - it shows the new number while the value is being typed.
                 CREATE TABLE IF NOT EXISTS LeveledListEdit (
                     ListKey TEXT PRIMARY KEY COLLATE NOCASE,
                     ChanceNone INTEGER,
@@ -1152,21 +1045,6 @@ namespace SkyrimCraftingTool.Model
                     LastChanged TEXT
                 );
 
-                -- Where one of the user's OWN leveled lists goes (docs/LeveledList-Create-Plan.md,
-                -- L-P6): into another leveled list, or into a container.
-                --
-                -- A decision, not scanned data - same split as LeveledListEdit above, and for the
-                -- same reason: it has to outlive any number of rescans. The list itself is a row in
-                -- LeveledList with Original = 0; this table only says where it hangs.
-                --
-                -- TargetKind is 'LeveledList' or 'Container', and decides which SkyPatcher patcher
-                -- the rule goes to: addOnceToLLs under filterByLLs, or addOnceToContainers under
-                -- filterByContainers. Level only means anything for a list - a container hands out
-                -- what it holds, at no level.
-                --
-                -- Keyed (ListKey, TargetKey): one list hangs in one target once. addOnce would
-                -- refuse a second copy at runtime anyway, so a second row could only ever be a
-                -- second, different level that never reaches the game.
                 CREATE TABLE IF NOT EXISTS UserLeveledListTarget (
                     ListKey TEXT NOT NULL COLLATE NOCASE,
                     TargetKey TEXT NOT NULL COLLATE NOCASE,
@@ -1193,21 +1071,6 @@ namespace SkyrimCraftingTool.Model
                 );
 
 
-                -- ===================================================================
-                -- NPCs (Prio 8 / N-P1, docs/NPC-Plan.md)
-                -- ===================================================================
-                --
-                -- One row per NPC record. Same shadow-column contract as Armor/Weapons: the base
-                -- column is what the scan read, IsEdited<X> is what the user set, and a rescan
-                -- overwrites only the base one. Read back with
-                -- CASE WHEN IsEdited = 1 AND IsEditedX IS NOT NULL THEN IsEditedX ELSE X END.
-                --
-                -- Which columns have a shadow twin is a decision, not an oversight: only fields
-                -- SkyPatcher can actually change are editable. CombatStyleKey, CrimeFactionKey,
-                -- TemplateKey and EnergyLevel are scanned and shown but have no
-                -- operation - they would need an ESP override of the NPC record, which this patcher
-                -- avoids because 65 % of NPCs carry FaceGen data an override would freeze
-                -- (NPC-Plan.md section 1 and 3.2).
                 CREATE TABLE IF NOT EXISTS Npc (
                     Key TEXT PRIMARY KEY COLLATE NOCASE,
                     EditorID TEXT NOT NULL,
@@ -1654,20 +1517,8 @@ namespace SkyrimCraftingTool.Model
                     Active INTEGER NOT NULL DEFAULT 1
                 );
 
-                CREATE TABLE IF NOT EXISTS NpcPerkCatalogue (
-                    Key TEXT PRIMARY KEY COLLATE NOCASE,
-                    EditorID TEXT,
-                    Name TEXT,
-                    Active INTEGER NOT NULL DEFAULT 1
-                );
+                DROP TABLE IF EXISTS NpcPerkCatalogue;
 
-                -- The tree groups by class, and memberships are read per faction; both run over
-                -- every NPC, so both get an index rather than a scan of 6.580 rows.
-                --
-                -- A FactionRule table lived here until 2026-09-17 and went with the faction view
-                -- (docs/NPC-Plan.md section 12). It is not dropped: a database that already has one
-                -- keeps it, empty and unread, rather than this code deleting a user's table on the
-                -- next launch.
                 CREATE INDEX IF NOT EXISTS idx_Npc_ClassKey ON Npc(ClassKey);
                 CREATE INDEX IF NOT EXISTS idx_NpcFactions_FactionKey ON NpcFactions(FactionKey);
 
@@ -1727,12 +1578,8 @@ namespace SkyrimCraftingTool.Model
                     Id          INTEGER PRIMARY KEY,
                     Name        TEXT NOT NULL,
 
-                    -- 'auto' for a group the seeder produced, 'user' for one the user made. A re-seed
-                    -- after a scan may replace its own groups; it must never touch a user's.
                     Origin      TEXT NOT NULL,
 
-                    -- Which auto rule produced it, so a re-seed can recognise its own work
-                    -- (section 7). NULL for a user group.
                     Seed        TEXT,
 
                     SortOrder   INTEGER NOT NULL DEFAULT 0,
@@ -1792,10 +1639,6 @@ namespace SkyrimCraftingTool.Model
                     PRIMARY KEY (GroupId, Kind, TargetKey, Mode)
                 );
 
-                -- The rescan diff, and nothing else. Written when the user CONFIRMS a group, and held
-                -- against the freshly computed membership after the next scan so the report can name
-                -- what changed: ""Bandit Stufe 3: 54 -> 71, 17 new from XYZ.esp"" (section 8). It is not
-                -- the group's member list - see the note on NpcGroup above.
                 CREATE TABLE IF NOT EXISTS NpcGroupMemberSnapshot (
                     GroupId     INTEGER NOT NULL,
                     NpcKey      TEXT NOT NULL COLLATE NOCASE,
@@ -1827,6 +1670,9 @@ namespace SkyrimCraftingTool.Model
                     MagicSkill TEXT,
                     MinimumSkillLevel INTEGER,
                     BaseCost REAL,
+
+                    -- The in-game description (DNAM), with the game's <mag>/<dur>/<area> placeholders.
+                    Description TEXT,
 
                     Active INTEGER NOT NULL DEFAULT 1
                 );
@@ -1977,12 +1823,6 @@ namespace SkyrimCraftingTool.Model
                     PRIMARY KEY (MeshId, ShapeIdx)
                 );
 
-                -- Which build of the NIF reader produced the rows in MeshGeom. One row, one number.
-                --
-                -- MeshGeom is a cache of a PARSE, so a fix to the parser makes its contents wrong rather
-                -- than merely old, and nothing in the data says so: the SSE normals were decoded as
-                -- signed bytes for two stages and came out about 0,97 long, which reads as rounding
-                -- noise. Without this counter the fix would only reach a user who happens to rescan.
                 CREATE TABLE IF NOT EXISTS MeshParser (
                     OnlyRow INTEGER PRIMARY KEY CHECK (OnlyRow = 0),
                     Version INTEGER NOT NULL
@@ -2001,8 +1841,6 @@ namespace SkyrimCraftingTool.Model
         //    order, and invisible to a length check.
         private const int MeshParserVersion = 2;
 
-        // Throws away geometry a previous build of the parser wrote. Costs one parse per mesh the user
-        // actually opens afterwards (0,83 ms), and nothing for the meshes they never look at.
         private static void DiscardGeometryFromOlderParser(SqliteConnection connection)
         {
             // This runs in the migration pass, which is handed databases in every state the tool has

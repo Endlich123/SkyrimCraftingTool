@@ -7,17 +7,6 @@ using System.Windows.Threading;
 
 namespace SkyrimCraftingTool.Model;
 
-// Timings for the performance work (docs/Performance-Plan.md, P-P0): what took how long, on the
-// user's own machine and load order, written to Logs\perf.log.
-//
-// WHY A FILE OF ITS OWN: the Stopwatch timings that existed went to Debug.WriteLine, which a release
-// build never shows anyone - so not one number ever came back from the large modlists where the lags
-// are. error.log is for errors; mixing hundreds of timing lines into it would bury them.
-//
-// ONLY WHAT IS SLOW. Anything under the threshold is not written at all, so on a small modlist the
-// file stays practically empty and on a large one it lists exactly the places worth looking at.
-//
-// Logging never throws: a timing that cannot be written is a lost number, not a crash.
 public static class PerfLog
 {
     public const double DefaultThresholdMs = 150;
@@ -37,15 +26,6 @@ public static class PerfLog
     // failed is still a slow step, and the error itself goes to error.log as always.
     public static PerfScope Measure(string what) => new(what);
 
-    // From now until WPF has laid out and RENDERED what the current work produces.
-    //
-    // Call it BEFORE the work: the clock starts here, and a dispatcher callback at ContextIdle stops
-    // it - that priority only runs once the work on the UI thread is done and the frame is drawn. A
-    // tab switch measured only to the end of the method misses the part the user actually waits for:
-    // building and laying out the view.
-    //
-    // Without a dispatcher (tests, or before the app is up) there is no rendering to wait for, and
-    // the time is written straight away.
     public static void UntilRendered(string what)
     {
         var clock = Stopwatch.StartNew();
