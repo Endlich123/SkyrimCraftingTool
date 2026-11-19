@@ -27,13 +27,20 @@ namespace SkyrimCraftingTool.Services.SavePipline
 
         public Task HandleAsync(SaveRequest r)
         {
-            var item = r.Item;
+            if (r.Item is not { } item) return Task.CompletedTask;
 
             bool created = false;
             if (!item.HasTemperRecipe)
             {
                 item.CreateTemperRecipe();
                 created = true;
+            }
+
+            // CreateTemperRecipe does nothing for an item that is not attached to the main view.
+            if (!item.HasTemperRecipe)
+            {
+                AppLogger.LogWarning($"TemperSaveHandler: no recipe could be created for item {item.Key} - {r.FieldName} not saved.");
+                return Task.CompletedTask;
             }
 
             var rec = item.TemperRecipe.Record;

@@ -32,7 +32,7 @@ namespace SkyrimCraftingTool.Services.SavePipline
 
         public Task HandleAsync(SaveRequest r)
         {
-            var rec = r.Recipe;
+            if (r.Recipe is not { } rec) return Task.CompletedTask;
 
             // Zero objects out is not a recipe, and a 0 reaching the ESP would turn a working
             // recipe into one that silently gives nothing. Clamped here as well as in the DB layer

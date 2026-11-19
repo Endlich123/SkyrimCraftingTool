@@ -36,7 +36,7 @@ namespace SkyrimCraftingTool.Services.SavePipline
 
         public Task HandleAsync(SaveRequest r)
         {
-            var item = r.Item;
+            if (r.Item is not { } item) return Task.CompletedTask;
 
             switch (r.FieldName)
             {

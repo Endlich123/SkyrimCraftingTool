@@ -36,7 +36,7 @@ namespace SkyrimCraftingTool.Services.SavePipline
 
         public Task HandleAsync(SaveRequest r)
         {
-            var ench = r.Enchantment;
+            if (r.Enchantment is not { } ench) return Task.CompletedTask;
 
             switch (r.FieldName)
             {
@@ -45,9 +45,6 @@ namespace SkyrimCraftingTool.Services.SavePipline
                     _cache.UpdateEnchantmentName(ench.Key, ench.Name);
                     break;
 
-                // Only reaches a user-created record - ItemDBHandler enforces that in the SQL.
-                // No cache counterpart: CacheManager's enchantment updates are all empty stubs, and
-                // adding a sixth one would only look like it did something.
                 case nameof(EnchantmentRecord.EditorID):
                     _service.UpdateEnchantmentEditorId(ench.Key, ench.EditorID);
                     break;
@@ -91,12 +88,22 @@ namespace SkyrimCraftingTool.Services.SavePipline
                     break;
 
                 case "Effects":
+                    if (r.Effects == null)
+                    {
+                        AppLogger.LogWarning($"EnchantmentSaveHandler: Effects request for {ench.Key} without effects - not saved.");
+                        break;
+                    }
                     var effects = r.Effects.Select(vm => vm.Model).ToList();
                     _service.SaveEnchantmentEffects(ench.Key, effects);
                     _cache.SaveEnchantmentEffects(ench.Key, effects);
                     break;
 
                 case "WornRestrictionKeywords":
+                    if (r.SelectedWornRestrictionKeywords == null)
+                    {
+                        AppLogger.LogWarning($"EnchantmentSaveHandler: keyword request for {ench.Key} without keywords - not saved.");
+                        break;
+                    }
                     var keywords = r.SelectedWornRestrictionKeywords.ToList();
                     _service.SaveEnchantmentWornRestrictionKeywords(ench.WornRestrictionListKey, keywords);
                     _cache.SaveEnchantmentWornRestrictionKeywords(ench.WornRestrictionListKey, keywords);
