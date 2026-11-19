@@ -6,19 +6,6 @@ using System.Linq;
 
 namespace SkyrimCraftingTool.ViewModel
 {
-    // A condition the tool scans and writes back faithfully, but does not let the user edit.
-    //
-    // Two kinds land here:
-    //   - ConditionCatalog.ReadOnly types (EPTemperingItemIsEnchanted, HasSpell, ...). Every
-    //     field is stored, so these round-trip exactly.
-    //   - ConditionCatalog.Unsupported ones, where only the function name survived the scan.
-    //
-    // Before this existed the scan simply discarded both, which is how 69% of all COBJ conditions
-    // went missing - the recipe editor showed an incomplete list and an ESP override wrote that
-    // incomplete list back into the game.
-    //
-    // It deliberately carries the raw record fields rather than parsed ones: nothing may be lost
-    // between load and save, and there is no editor that would need them parsed.
     public sealed class ReadOnlyConditionViewModel : BaseConditionViewModel
     {
         public string RawConditionType { get; set; } = "";
@@ -93,9 +80,6 @@ namespace SkyrimCraftingTool.ViewModel
 
         public bool IsUnsupported => ConditionCatalog.IsUnsupported(RawConditionType);
 
-        // Belt and braces for the UI: the row is visually covered by a read-only banner, but a
-        // keyboard user could still tab into the hidden Type picker. Pinning the value here means
-        // even that cannot turn a preserved condition into an editable one and lose its parameter.
         public override CustomConditionType Type
         {
             get => CustomConditionType.ReadOnly;

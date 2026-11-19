@@ -17,13 +17,6 @@ namespace SkyrimCraftingTool.ViewModel
             set => SetProperty(ref _isSelected, value);
         }
 
-        // "The scanned load order already has this item in this container" - a completely different
-        // statement from IsSelected, which means "the patch will put it there".
-        //
-        // They are two states and never one: an item can already sit in a chest without the user
-        // having selected it, and can be selected for a chest it has never been in. Merging them
-        // would either claim the patch adds something it does not touch, or hide a placement that
-        // already exists. Read-only, refreshed when the selected item changes or a rescan runs.
         private bool _alreadyContainsItem;
         public bool AlreadyContainsItem
         {

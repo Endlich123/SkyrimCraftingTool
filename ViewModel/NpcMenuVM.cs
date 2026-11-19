@@ -35,6 +35,10 @@ namespace SkyrimCraftingTool.ViewModel
         // The item tab's plugin list, read on every build: a scan replaces it.
         private readonly Func<IReadOnlyList<PluginInfo>>? _loadOrder;
         private List<NpcTreeNodeVM> _allRoots = new();
+
+        // Open plugin/class branches for the session. The tree on screen is always a filtered copy,
+        // rebuilt by every filter change - see TreeExpansion.
+        private readonly TreeExpansion _treeExpansion = new();
         private bool _loaded;
 
         public NpcMenuVM(Services.IItemService? items = null, Services.NpcEditStore? edits = null,
@@ -438,9 +442,24 @@ namespace SkyrimCraftingTool.ViewModel
             set { if (SetProperty(ref _perkSearchText, value ?? "")) OnPropertyChanged(nameof(FilteredPerks)); }
         }
 
+        // Matches the EditorID, the game name and the skill tree - "smithing" lists the tree - and the
+        // skill chips in the dropdown (PerkFilter).
         public IEnumerable<FormIDRecord> FilteredPerks =>
-            AllPerkChoices.Where(p => string.IsNullOrWhiteSpace(PerkSearchText)
-                                   || p.Name.Contains(PerkSearchText, StringComparison.OrdinalIgnoreCase));
+            AllPerkChoices.Where(p => p.Matches(PerkSearchText) && PerkFilter.Passes(p));
+
+        // The skill-tree chips of the perk picker. Shared by the NPC list's and the detail panel's box,
+        // which show the same FilteredPerks.
+        private PickerFilter? _perkFilter;
+        public PickerFilter PerkFilter
+        {
+            get
+            {
+                if (_perkFilter != null) return _perkFilter;
+                _perkFilter = new PickerFilter(() => AllPerkChoices);
+                _perkFilter.Changed += () => OnPropertyChanged(nameof(FilteredPerks));
+                return _perkFilter;
+            }
+        }
 
         private FormIDRecord? _selectedPerkToAdd;
         public FormIDRecord? SelectedPerkToAdd
@@ -689,7 +708,10 @@ namespace SkyrimCraftingTool.ViewModel
                 .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            AllPerkChoices = Catalogue(labels.Perks);
+            // The full formid.db rows, not just key + label: the picker shows the skill tree and the
+            // tooltip the description.
+            AllPerkChoices = labels.PerkChoices().ToList();
+            _perkFilter?.EnsureSource(AllPerkChoices);
 
             // An inventory line can point at anything. Armour, weapons and leveled lists are what
             // this database knows by name; anything else would show as its key, which is not a
@@ -713,8 +735,6 @@ namespace SkyrimCraftingTool.ViewModel
             step.Dispose();
         }
 
-        // Called after a scan. Does not re-read on the spot - the user may not be on this tab, and
-        // reading 6.580 records to throw them away again would just make every scan slower.
         public void Invalidate()
         {
             _loaded = false;
@@ -747,7 +767,7 @@ namespace SkyrimCraftingTool.ViewModel
                 npc.ItemsChanged = (n, items) => _edits?.SaveItems(n.Key, items);
             }
 
-            _allRoots = NpcTreeNodeVM.Build(list, _loadOrder?.Invoke());
+            _allRoots = NpcTreeNodeVM.Build(list, _loadOrder?.Invoke(), _treeExpansion);
             BuildTemplateIndex(list);
 
             NpcCount = _allRoots.Sum(r => r.NpcCount);
@@ -780,18 +800,6 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
-        // --------------------
-        // Templates
-        // --------------------
-        //
-        // WHY THEY LIVE HERE AND NOT IN A VIEW OF THEIR OWN (docs/NPC-Plan.md §12): a template IS an
-        // NPC record. 1.073 of the 1.372 templates in the load order are ordinary NPCs this tab
-        // already holds, so the Templates tab shows the same view models over the same editor - an
-        // edit made in one tab is the edit the other one shows, with no second copy to drift.
-        //
-        // The first cut of this was an inheritance TREE, which the user could not use: what is
-        // wanted is all of them, listed and editable, plus a way to get from an NPC to the record
-        // that actually decides its values.
         private readonly Dictionary<string, NpcNodeVM> _byKey = new(StringComparer.OrdinalIgnoreCase);
 
         // Every NPC that something inherits from, biggest first - the number is why anyone opens
@@ -892,9 +900,6 @@ namespace SkyrimCraftingTool.ViewModel
         // showing the record that was open before, which reads as "the button did nothing".
         public event Action? TemplateOpened;
 
-        // THE LINK THE USER ASKED FOR: from an NPC to the record that actually decides its values.
-        // Selects the template AND moves to the tab that lists templates - for 4.039 NPCs the record
-        // that matters is not the one they opened.
         public ICommand OpenTemplateCommand => new RelayCommand(() =>
         {
             var npc = SelectedNpc;

@@ -69,16 +69,6 @@ namespace SkyrimCraftingTool.ViewModel
         public bool IsEditorIdRenamed => _record.IsEditorIdRenamed;
         public string Name => _record.Name;
         public string ShortName => _record.ShortName;
-        // WHAT THE SCREEN CALLS "edited": does this record actually differ from what the scan read.
-        //
-        // NOT the IsEdited flag on the row, which is a different thing: that flag is set the moment
-        // anything calls a setter and is never taken back, so a value written and written again
-        // unchanged leaves the record marked for good. Reported as a template going orange just from
-        // being opened through the template link, and the flag is why: something in the editor wrote
-        // a value back on the way past, the value was identical, and the badge stayed.
-        //
-        // The flag still has its job - it is what the database and the patch generator read to find
-        // the rows worth looking at. It is simply not what the user is being shown.
         public bool IsEdited => HasAnyEdit;
 
         // The raw flag. Nothing on screen reads it - it is here so the tests can show that the two
@@ -140,10 +130,10 @@ namespace SkyrimCraftingTool.ViewModel
 
         // Set by whoever owns this NPC (the tab). Not a service reference: this view model is built
         // by the hundred in tests, and a nullable callback keeps it constructible without a database.
-        public Action<NpcNodeVM, string, object>? FieldChanged { get; set; }
+        public Action<NpcNodeVM, string, object?>? FieldChanged { get; set; }
         public Action<NpcNodeVM, string, int?>? SkillChanged { get; set; }
 
-        private void Persist(string column, object value)
+        private void Persist(string column, object? value)
         {
             _record.IsEdited = true;
             FieldChanged?.Invoke(this, column, value);
@@ -445,12 +435,6 @@ namespace SkyrimCraftingTool.ViewModel
             return true;
         }
 
-        // The five AI tokens (aggression, confidence, assistance, morality, mood) are drop-downs over
-        // fixed lists with NO empty entry - an empty value is never something the user picked. But
-        // WPF writes null into a ComboBox's SelectedItem binding when the detail view swaps its
-        // content (another NPC, a reset, a tab change), and SetLinkField turned that null into "" and
-        // saved it as an edit. Found 2026-10-17: right after a Reset, all five came back as "" on
-        // the NPC that had been open. Null or empty is therefore "no selection", never a value.
         private bool SetAiToken(string current, string value, string column) =>
             !string.IsNullOrEmpty(value) && SetLinkField(current, value, column);
 
@@ -623,9 +607,6 @@ namespace SkyrimCraftingTool.ViewModel
 
         private void BuildFlagRows()
         {
-            // pclevelmult is deliberately not offered here: it is the Level block's checkbox, and
-            // having the same switch in two places lets the user set it twice with different
-            // answers - the record would then get both setPcLevelMult and setFlags for one thing.
             foreach (var name in NpcFlagNames.All.Where(n => n != "pclevelmult"))
             {
                 var row = new NpcFlagRowVM(name, NpcFlagNames.Parse(new[] { name }));
@@ -704,7 +685,10 @@ namespace SkyrimCraftingTool.ViewModel
 
             PerkRows.Clear();
             foreach (var perk in _record.Perks.OrderBy(p => _labels.Perk(p.PerkKey), StringComparer.OrdinalIgnoreCase))
-                PerkRows.Add(new NpcPerkRowVM(perk, _labels.Perk(perk.PerkKey), IsScannedPerk(perk.PerkKey)));
+                PerkRows.Add(new NpcPerkRowVM(perk, _labels.Perk(perk.PerkKey), IsScannedPerk(perk.PerkKey))
+                {
+                    ToolTip = _labels.PerkToolTip(perk.PerkKey),
+                });
 
             ItemRows.Clear();
             foreach (var item in _record.Items.OrderBy(i => _labels.Item(i.ItemKey), StringComparer.OrdinalIgnoreCase))
@@ -1246,6 +1230,10 @@ namespace SkyrimCraftingTool.ViewModel
         public int Rank { get; }
         public string DisplayName { get; }
         public bool IsFromPlugin { get; }
+
+        // Game name, skill tree, key, description - see INpcLabels.PerkToolTip. The key alone
+        // until a scan has filled formid.db's perk columns.
+        public string ToolTip { get; init; } = "";
 
         // Every perk can be removed since N-P6 - but one from the plugins costs an ESP override of
         // the whole record, because there is no perksToRemove operation. The row says which it is so

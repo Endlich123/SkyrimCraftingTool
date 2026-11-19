@@ -9,21 +9,6 @@ using SkyrimCraftingTool.Services.PatchGen;
 
 namespace SkyrimCraftingTool.ViewModel
 {
-    // The group editor (G4, docs/NPC-Gruppen-Plan.md section 6).
-    //
-    // Three properties carry this screen, and all three are about making a bad group VISIBLE rather
-    // than asking the user to know in advance:
-    //
-    //   * THE "IS" COLUMN SHOWS THE SPREAD. "Health 222 - 238" is a group worth editing, "Health
-    //     35 - 497" is four tiers in one bucket - and nobody has to decide which beforehand.
-    //   * THE RULE PREVIEW IS ALWAYS VISIBLE, including what the rule cannot carry.
-    //   * "(without a group)" IS ITSELF A ROW WITH A NUMBER. Nothing hides.
-    //
-    // The numbers behind the spread come from NpcStatResolver, not from the records: 61,4 % of NPCs
-    // take their stats from a template, and a spread over those stored fields would be a spread over
-    // numbers the game never reads.
-    // The other half of this class is in NpcGroupVM.Membership.cs: the filter editor and the by-hand
-    // member picking, which is what turns a new empty group into a group with NPCs in it.
     public sealed partial class NpcGroupVM : ViewModelBase, ITutorialHost
     {
         private readonly IItemService? _items;
@@ -122,8 +107,6 @@ namespace SkyrimCraftingTool.ViewModel
             step.Dispose();
         }
 
-        // A scan rewrites the NPC tables, so whatever is on screen is stale. Dropped rather than
-        // re-read - the user is usually not on this tab when a scan finishes.
         public void Invalidate()
         {
             _loaded = false;
@@ -434,13 +417,6 @@ namespace SkyrimCraftingTool.ViewModel
             foreach (var (field, label, read) in StatFields)
                 Values.Add(BuildRow(group, members, field, label, read));
 
-            // ALL EIGHTEEN SKILLS, always, in their own block below the attributes. The first version
-            // added them one at a time through a picker to keep the table short; the user asked for the
-            // full list instead, and with a separator between the two blocks it reads fine - every row
-            // is one line, the pane scrolls, and a skill with no value simply shows its spread.
-            //
-            // Ordered by what a skill does to an NPC, not by the skill menu: the weapon and armour
-            // skills decide a fight, so they are the ones at the top where they get seen.
             foreach (var skill in NpcSkillNames.ByEffect)
             {
                 SkillValues.Add(BuildRow(group, members, skill, NpcSkillNames.Label(skill),
@@ -555,11 +531,6 @@ namespace SkyrimCraftingTool.ViewModel
 
         // ---- commands --------------------------------------------------------------------------
 
-        // Section 7's pre-fill. ADDITIVE ON PURPOSE: a group already present under the same seed is
-        // left exactly as it is, including a name or a value the user changed. Refreshing an existing
-        // auto group's predicate after a scan is the rescan's job (G6), where the change can be shown
-        // before it is applied - doing it here would quietly rewrite groups somebody had already
-        // edited.
         public void Seed()
         {
             if (_npcs.Count == 0) return;
@@ -663,17 +634,11 @@ namespace SkyrimCraftingTool.ViewModel
             RefreshDetailBody();
         }
 
-        // Section 8: the snapshot is what the user has CONFIRMED this group contains, and the rescan diff
-        // reports every difference from it by name. Until then the group counts as unchecked - which is
-        // why this is a button and not something that happens on every resolve. A snapshot that refreshed
-        // itself would agree with the new membership every time and the diff would never report anything.
         public void Confirm()
         {
             var group = _selectedGroup?.Group;
             if (group == null) return;
 
-            // A group that was never saved has no Id to hang a snapshot on. Saving first rather than
-            // refusing: from where the user stands they pressed a button on a group that exists.
             if (group.Id <= 0) Persist(group);
             if (group.Id <= 0) return;
 
@@ -769,9 +734,6 @@ namespace SkyrimCraftingTool.ViewModel
             private set => _name = value;
         }
 
-        // Settable, because an edit to the group's own definition moves it. Rebuilding the whole list
-        // instead would reset the selection to the top and throw the user out of the group they are
-        // editing - see NpcGroupVM.RefreshMembership.
         private int _memberCount;
         public int MemberCount
         {

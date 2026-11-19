@@ -6,22 +6,12 @@ using SkyrimCraftingTool.Services;
 
 namespace SkyrimCraftingTool.ViewModel
 {
-    // The Container/LeveledList tab.
-    //
-    // WHY IT IS ITS OWN TAB AND NOT A PANEL IN THE ITEM VIEW: this is where the tool stops being
-    // purely additive. Every other screen adds something of the user's on top of the load order;
-    // here they delete entries other mods put there. When those operations were first looked at and
-    // turned down, the condition written down for ever offering them was "a clearly separated area,
-    // marked as changing things for every mod, not next to the level slider". This tab is that area.
-    //
-    // The two sub-tabs ask the same question of different things, so they are two instances of one
-    // view model rather than two view models (see OwnerContentsVM).
     public sealed class WorldContentVM : ViewModelBase, ITutorialHost
     {
         // MainContentVM supplies the armor and weapon rows AND the container catalogue, because both
         // already live there and a second copy of either would be a second truth. The placement
         // sub-tabs show its ItemNodeVM instances, not new ones - see PlacementListVM.
-        public WorldContentVM(MainContentVM content, IItemService itemService, string dbPath = null,
+        public WorldContentVM(MainContentVM content, IItemService itemService, string? dbPath = null,
                               IImportExportService? importExportService = null)
         {
             // The contents panes can take a placement back out, and a placement lives in the ITEM
@@ -34,8 +24,6 @@ namespace SkyrimCraftingTool.ViewModel
 
                 bool Match(IPlaceable p) => string.Equals(p.Key, itemKey, StringComparison.OrdinalIgnoreCase);
 
-                // The placement sub-tabs first: a world item has no other home, and whatever the
-                // user was just working in is loaded.
                 foreach (var tab in Placements ?? new List<PlacementListVM>())
                     foreach (var row in tab.Rows)
                         if (Match(row)) return row;
@@ -77,8 +65,6 @@ namespace SkyrimCraftingTool.ViewModel
                     EnsureLoaded();
                 });
 
-            // Which records carry a placement of the user's - "only edited" and the reset, one query
-            // over the three tables (ItemDBHandler.EditedPlacementKeys).
             HashSet<string> EditedPlacements() =>
                 itemService?.EditedPlacementKeys() ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -112,6 +98,10 @@ namespace SkyrimCraftingTool.ViewModel
             UserLeveledListStore.Changed += () =>
             {
                 foreach (var p in Placements) p.Invalidate();
+
+                // Hanging a list on one of these two sub-tabs changes what the other one shows.
+                Containers.MarkContentsStale();
+                LeveledLists.MarkContentsStale();
             };
         }
 
@@ -130,7 +120,7 @@ namespace SkyrimCraftingTool.ViewModel
         {
             var containers = content?.AllContainers ?? new List<ContainerRecord>();
 
-            return (itemService?.LoadWorldItems() ?? new List<WorldItemRecord>())
+            return itemService.LoadWorldItems()
                 .Where(r => string.Equals(r.Kind, kind, StringComparison.OrdinalIgnoreCase))
                 .OrderBy(r => r.Display, StringComparer.CurrentCultureIgnoreCase)
                 .Select(r => (IPlaceable)new WorldItemNodeVM(r, containers, itemService))
@@ -189,11 +179,8 @@ namespace SkyrimCraftingTool.ViewModel
             _ => false,
         };
 
-        // Only the sub-tab in front of the user is read. Both together are tens of thousands of rows
-        // on a real load order, and nobody opens this tab to look at both at once.
         public void EnsureLoaded()
         {
-            // Only the sub-tab in front of the user. Together these are tens of thousands of rows.
             switch (Tabs.ElementAtOrDefault(SelectedTabIndex))
             {
                 case OwnerContentsVM owner: owner.EnsureLoaded(); break;
@@ -213,8 +200,6 @@ namespace SkyrimCraftingTool.ViewModel
             return true;
         }
 
-        // A scan rewrites both sets of rows, so whatever is held here is stale. Dropped rather than
-        // re-read, like the NPC tab: the user is usually somewhere else when a scan finishes.
         public void Invalidate()
         {
             Containers.Invalidate();

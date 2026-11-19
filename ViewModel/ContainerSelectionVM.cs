@@ -19,12 +19,6 @@ namespace SkyrimCraftingTool.ViewModel
 
         private readonly List<ContainerRecord> _allContainers;
 
-        // Raised whenever an LVLi slider of a selected container changes its level. The sliders bind
-        // straight to LVLiEntryVM.Level, so without this nobody would know to rebuild the owner's
-        // ContainerString - and a level that never reaches the string is a level that never gets
-        // saved or patched. PresetSlotNodeVM already did exactly this subscribing by hand; it is
-        // here now so the item editor gets it too, instead of the view's code-behind guessing at
-        // which mouse gesture counts as "the user changed something".
         public event Action? LevelChanged;
 
         public ContainerSelectionVM(List<ContainerRecord> allContainers)

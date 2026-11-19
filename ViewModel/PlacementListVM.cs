@@ -9,19 +9,6 @@ using SkyrimCraftingTool.Services;
 
 namespace SkyrimCraftingTool.ViewModel
 {
-    // One placement sub-tab of the Container/LeveledList tab: a list of records on the left, the
-    // shared container panel on the right.
-    //
-    // A HOST FOR Styles/ContainerPlacementPanel.xaml. That panel asks its DataContext for nine
-    // things plus a PlacementTarget, and MainContentVM answers the same nine - which is exactly what
-    // lets one piece of markup serve the item editor and this tab without a second copy.
-    //
-    // ARMOR AND WEAPONS SHOW THE VERY SAME ItemNodeVM INSTANCES the item tree holds, not new ones.
-    // The user asked for these to be duplicated here, and duplicating the PRESENTATION is fine;
-    // duplicating the STATE would not be. Two view models over one record would carry two dirty
-    // flags and two ContainerStrings, and only one of them would ever be saved - while presets,
-    // which write a placement through PresetFile.Container, would update the copy nobody is looking
-    // at.
     public sealed class PlacementListVM : ViewModelBase, IMultiSelectTree
     {
         private readonly Func<IReadOnlyList<IPlaceable>> _source;
@@ -188,11 +175,6 @@ namespace SkyrimCraftingTool.ViewModel
             OnPropertyChanged(nameof(FilteredTree));
         }
 
-        // --- Only edited, and the reset (user, 2026-10-17) ---
-        //
-        // "Edited" is read from the DATABASE, not from the rows: an armor or weapon only knows its
-        // scanned placement once its details were opened in the item tab, so a flag on the view model
-        // would miss every item nobody clicked this session. One query over three tables.
         private readonly Func<HashSet<string>> _editedPlacementKeys;
         private HashSet<string> _edited = new(StringComparer.OrdinalIgnoreCase);
 
@@ -239,10 +221,6 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
-        // The record in hand, or every picked one. NOT narrowed to the edited set: an armor's
-        // placement is saved through the item tab's debounced pipeline, so a placement made a moment
-        // ago may not be in the database yet. The reset flushes that first (MainContentVM), and the
-        // database only touches a row whose placement IS the user's (ItemDBHandler.ResetPlacement).
         private List<IPlaceable> ResetTargets() =>
             (IsBulk ? PickedRows.Select(r => r.Row) : _selectedPlaceable == null ? Enumerable.Empty<IPlaceable>() : new[] { _selectedPlaceable })
                 .ToList();
@@ -252,8 +230,6 @@ namespace SkyrimCraftingTool.ViewModel
 
         public RelayCommand ResetPlacementCommand { get; }
 
-        // Several records at once asks first: it throws away placements the user may have built one
-        // by one, and there is no undo behind it.
         internal async Task ResetPlacementAsync(bool confirm = true)
         {
             var targets = ResetTargets();
@@ -470,16 +446,6 @@ namespace SkyrimCraftingTool.ViewModel
         private BulkPlacementTemplateVM BulkTarget =>
             _bulkTarget ??= new BulkPlacementTemplateVM(_containers());
 
-        // --- "Already in your load order" (read-only) ---
-        //
-        // The same answer the item editor gives (MainContentVM.UpdateAllContainerSelectionFlags), and
-        // the same strict split from the user's own placement: a badge says the GAME has it there, a
-        // tick says the PATCH will put it there. Worth more here than over there - this tab also
-        // places books, scrolls and the rest, which sit in leveled lists far more often than armor.
-        //
-        // Cached per record for the same reason as in MainContentVM (~3 ms a lookup, and every
-        // container toggle comes back through RefreshContainerFlags); dropped with every reload,
-        // which is what a rescan ends in.
         private readonly Dictionary<string, IReadOnlyList<Placement>> _existingPlacementCache
             = new(StringComparer.OrdinalIgnoreCase);
 
@@ -506,10 +472,6 @@ namespace SkyrimCraftingTool.ViewModel
             return found;
         }
 
-        // --- Lists whose own properties the user changed ---
-        //
-        // The way back to them, as in the item editor. The set is cached in LeveledListEditStore, so
-        // asking on every selection change costs nothing.
         public int ChangedListCount => LeveledListEditStore.EditedKeys().Count;
 
         public bool HasChangedLists => ChangedListCount > 0;
@@ -713,8 +675,6 @@ namespace SkyrimCraftingTool.ViewModel
         public string Key => Row.Key;
         public string Display => Row.Display;
 
-        // The placement is the user's - drives the marker in the tree and "only edited". Set by
-        // PlacementListVM from the database, see RefreshEdited there.
         private bool _isEdited;
         public bool IsEdited
         {

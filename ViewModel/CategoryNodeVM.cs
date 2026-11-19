@@ -2,16 +2,9 @@
 
 namespace SkyrimCraftingTool.ViewModel
 {
-    public class CategoryNodeVM : ViewModelBase
+    public class CategoryNodeVM : ExpandableNodeVM
     {
-        public string CategoryName { get; set; }
-
-        private bool _isExpanded;
-        public bool IsExpanded
-        {
-            get => _isExpanded;
-            set => SetProperty(ref _isExpanded, value);
-        }
+        public string CategoryName { get; set; } = "";
 
         public ObservableCollection<ItemNodeVM> Items { get; set; }
             = new ObservableCollection<ItemNodeVM>();
@@ -37,12 +30,13 @@ namespace SkyrimCraftingTool.ViewModel
         /// <summary>
         /// Filters this category. pluginMatched = true when the plugin already matches the search text.
         /// </summary>
-        public CategoryNodeVM FilterReference(string text, bool pluginMatches, bool onlyEdited = false)
+        public CategoryNodeVM? FilterReference(string text, bool pluginMatches, bool onlyEdited = false)
         {
             bool categoryMatches = string.IsNullOrWhiteSpace(text) ||
                                    CategoryName.Contains(text, StringComparison.OrdinalIgnoreCase);
 
             var filtered = new CategoryNodeVM { CategoryName = this.CategoryName };
+            CopyExpansionTo(filtered);
 
             foreach (var item in Items)
             {

@@ -93,15 +93,6 @@ namespace SkyrimCraftingTool.ViewModel
                 ? $"from level {Level}"
                 : $"from level {Level}, {Count}x";
 
-        // "The scanned load order already has this item in this list" - the same read-only mark the
-        // container rows carry, and the same reason for keeping it apart from IsSelected: checked
-        // means the patch will add the item, marked means it is in there already. Both at once is a
-        // normal state (the user re-adds an item at a different level), and one flag could not say
-        // that.
-        //
-        // This is where the leveled-list half of "already in your load order" becomes visible. It
-        // cannot be shown in the container list itself, because 86% of all leveled lists hang in no
-        // container at all - they only appear here, under a container the user opened.
         private bool _alreadyContainsItem;
         public bool AlreadyContainsItem
         {
@@ -109,12 +100,6 @@ namespace SkyrimCraftingTool.ViewModel
             set => SetProperty(ref _alreadyContainsItem, value);
         }
 
-        // "You changed this list's own properties" - chance or calculation, not a placement.
-        //
-        // A third state next to IsSelected and AlreadyContainsItem, and the last blind spot of the
-        // three: a changed chance left no trace anywhere in the container tab, so the only way to
-        // find your own edits again was the patch report or opening every list. Set when the row is
-        // built and refreshed when the list window closes, which is the only place it can change.
         private bool _isListEdited;
         public bool IsListEdited
         {
@@ -136,8 +121,6 @@ namespace SkyrimCraftingTool.ViewModel
         // where to keep the placement made there - see ContainerEntryVM.GetOrAddNested.
         public ContainerEntryVM? OwnerContainer { get; set; }
 
-        // A list the container does not hold itself, but reaches through one of the lists it does.
-        // Only ever a row because the user placed something into it (or has its window open).
         public bool IsNested { get; init; }
 
         public string NestedTooltip => IsNested

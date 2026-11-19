@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,9 +16,9 @@ namespace SkyrimCraftingTool.ViewModel
 {
     public class ItemNodeVM : ViewModelBase, IPlaceable
     {
-        private readonly IKeywordService _keywordService;
+        private readonly IKeywordService? _keywordService;
 
-        public MainContentVM Main { get; }
+        public MainContentVM? Main { get; }
 
         // flag
         public bool IsLoading { get; set; }
@@ -84,9 +85,9 @@ namespace SkyrimCraftingTool.ViewModel
         private CollectionViewSource? _keywordViewSource;
         private CollectionViewSource? _selectedKeywordViewSource;
 
-        private CancellationTokenSource _searchDebounce;
+        private CancellationTokenSource? _searchDebounce;
 
-        public string Key { get; set; }
+        public string Key { get; set; } = "";
 
         // Multi-selection in the TreeView (Ctrl/Shift click), independent of TreeViewItem.IsSelected -
         // see MainContentVM.HandleItemNodeClick.
@@ -225,6 +226,7 @@ namespace SkyrimCraftingTool.ViewModel
 
         public ICommand ToggleContainerCommand => new RelayCommand<string>(key =>
         {
+            if (string.IsNullOrEmpty(key)) return;
             ContainerSelection.ToggleContainer(key);
             ContainerString = ContainerSelection.BuildString();
             NotifyFieldChanged(nameof(ContainerString));
@@ -266,27 +268,16 @@ namespace SkyrimCraftingTool.ViewModel
             OnPropertyChanged(nameof(BuildBox));
         }
 
-        // Create recipe helpers used by save pipeline handlers. Whichever field the user touched
-        // first is exactly what triggers this call (see Crafting/TemperSaveHandler's
-        // "if (!item.HasCraftingRecipe) item.CreateCraftingRecipe();" guard) - CraftingRecipe's setter
-        // below unconditionally re-derives CraftingWorkbenchKey/CraftingPerkKey/CraftingIngredients/
-        // CraftingConditions from rec, so without seeding rec from whatever's already live on this
-        // item first, it would wipe out the very edit that caused this method to run in the first
-        // place (e.g. picking a Workbench, or adding the first Ingredient/Condition, would silently
-        // revert to CreateNewCOBJRecordForItem's empty/default stub the moment the debounced autosave
-        // fires).
         public void CreateCraftingRecipe()
         {
-            var rec = Main?.ItemService.CreateNewCOBJRecordForItem(this, false);
-            if (rec == null) return;
+            var main = Main;
+            if (main == null) return;
+            var rec = main.ItemService.CreateNewCOBJRecordForItem(this, false);
 
             if (!string.IsNullOrEmpty(CraftingWorkbenchKey))
                 rec.WorkbenchKeywordKey = CraftingWorkbenchKey;
             if (!string.IsNullOrEmpty(CraftingPerkKey))
                 rec.PerkKey = CraftingPerkKey;
-            // Skip not-yet-filled rows (the "+" button adds an empty row the user picks a material
-            // into next) - otherwise a bare "*1" gets persisted and comes back on reload as a ghost
-            // ingredient with a blank material. Mirrors PresetRecipeVM.SyncIngredientsAndNotify.
             var craftIngredientKeys = CraftingIngredients
                 .Where(i => !string.IsNullOrEmpty(i.Key))
                 .GroupBy(i => i.Key)
@@ -299,29 +290,20 @@ namespace SkyrimCraftingTool.ViewModel
             if (craftConditions.Count > 0)
                 rec.Conditions = craftConditions;
 
-            CraftingRecipe = new COBJNodeVM(this, rec, Main.FormIdService, false);
+            var recipe = new COBJNodeVM(this, rec, main.FormIdService, false);
+            CraftingRecipe = recipe;
             // The new COBJNodeVM rebuilt its IngredientEntryVMs from rec.IngredientKeys without a
             // material catalog - wire it now, exactly like the load path does, so the material
             // ComboBox isn't empty until the next restart.
-            Main.InitializeRecipeIngredients(CraftingRecipe!.Ingredients);
+            main.InitializeRecipeIngredients(recipe.Ingredients);
             MarkCraftingRecipeUserCreated(true);
             // Baseline the change tracking against the just-created state so per-field "changed"
             // markers work from here on (a fresh recipe otherwise had no snapshot -> Is*Changed
             // always false). _craftingRecipeIsUserCreated still marks the whole recipe as new.
             CaptureCraftingOriginalSnapshot(rec.WorkbenchKeywordKey, rec.IngredientKeys, rec.Conditions);
-            Main.RegisterNewRecipe(rec);
+            main.RegisterNewRecipe(rec);
         }
 
-        // The vanilla gate every temper recipe carries (5,537 of 5,840 on the real modlist):
-        // "item is not enchanted, OR the player has Arcane Blacksmith". Without it an enchanted item
-        // - including one the user just gave an enchantment here - can be tempered by anyone.
-        //
-        // Only when the recipe has neither half yet. If it already holds HasPerk Arcane Blacksmith,
-        // adding the pair in front would AND that perk onto every item, enchanted or not.
-        // The item carries an enchantment, but its temper recipe has neither half of the gate. 303 of
-        // the 5,840 temper recipes on the real modlist have none - harmless while the item was plain,
-        // not once the user enchants it. Only reported, never added: it would change another mod's
-        // recipe without being asked.
         public bool TemperRecipeLacksArcaneBlacksmithGate =>
             !string.IsNullOrWhiteSpace(ObjectEffectKey)
             && HasTemperRecipe
@@ -348,8 +330,9 @@ namespace SkyrimCraftingTool.ViewModel
 
         public void CreateTemperRecipe()
         {
-            var rec = Main?.ItemService.CreateNewCOBJRecordForItem(this, true);
-            if (rec == null) return;
+            var main = Main;
+            if (main == null) return;
+            var rec = main.ItemService.CreateNewCOBJRecordForItem(this, true);
 
             if (!string.IsNullOrEmpty(TemperWorkbenchKey))
                 rec.WorkbenchKeywordKey = TemperWorkbenchKey;
@@ -368,12 +351,13 @@ namespace SkyrimCraftingTool.ViewModel
             if (temperConditions.Count > 0)
                 rec.Conditions = temperConditions;
 
-            TemperRecipe = new COBJNodeVM(this, rec, Main.FormIdService, true);
-            Main.InitializeRecipeIngredients(TemperRecipe!.Ingredients);
+            var recipe = new COBJNodeVM(this, rec, main.FormIdService, true);
+            TemperRecipe = recipe;
+            main.InitializeRecipeIngredients(recipe.Ingredients);
             MarkTemperRecipeUserCreated(true);
             // See CreateCraftingRecipe: baseline against the just-created state.
             CaptureTemperOriginalSnapshot(rec.WorkbenchKeywordKey, rec.IngredientKeys, rec.Conditions);
-            Main.RegisterNewRecipe(rec);
+            main.RegisterNewRecipe(rec);
         }
 
         // Show what this item actually looks like.
@@ -433,7 +417,7 @@ namespace SkyrimCraftingTool.ViewModel
             if (Main?.ImportExport != null) await Main.ImportExport.ImportBundleAsync(Key, Name);
         });
 
-        private string _name;
+        private string _name = "";
         public string Name
         {
             get => _name;
@@ -448,7 +432,7 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
-        private string _editorID;
+        private string _editorID = "";
         public string EditorID
         {
             get => _editorID;
@@ -538,9 +522,9 @@ namespace SkyrimCraftingTool.ViewModel
         /// </summary>
         public IEnumerable<KeywordSelectionVM> SelectedKeywords => _selectedKeywords;
 
-        public List<FormIDRecord> AllAvailablePerks { get; private set; }
-        public List<FormIDRecord> AllAvailableKeywords { get; private set; }
-        public List<FormIDRecord> AllAvailableWorkbenches { get; private set; }
+        public List<FormIDRecord> AllAvailablePerks { get; private set; } = new();
+        public List<FormIDRecord> AllAvailableKeywords { get; private set; } = new();
+        public List<FormIDRecord> AllAvailableWorkbenches { get; private set; } = new();
         public List<FormIDRecord> AllAvailableQuests { get; private set; } = new();
 
         public IEnumerable<FormIDRecord> FilteredQuests => AllAvailableQuests;
@@ -599,6 +583,7 @@ namespace SkyrimCraftingTool.ViewModel
         }
 
 
+        [MemberNotNullWhen(true, nameof(CraftingRecipe))]
         public bool HasCraftingRecipe => CraftingRecipe != null;
 
         public ObservableCollection<IngredientEntryVM> CraftingIngredients
@@ -647,12 +632,6 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
-        // --------------------
-        // Condition change tracking: keeps autosave firing when a single
-        // condition's properties change, and swaps the concrete VM type
-        // when the user changes the "Type" combo box (WPF DataTemplates
-        // are selected by concrete CLR type, not by the Type enum value).
-        // --------------------
         private void SubscribeConditionEvents(ObservableCollection<BaseConditionViewModel> collection)
         {
             if (collection == null) return;
@@ -673,7 +652,7 @@ namespace SkyrimCraftingTool.ViewModel
             collection.CollectionChanged -= OnConditionsCollectionChanged;
         }
 
-        private void OnConditionsCollectionChanged(object sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        private void OnConditionsCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
         {
             if (e.OldItems != null)
                 foreach (BaseConditionViewModel condition in e.OldItems)
@@ -703,20 +682,23 @@ namespace SkyrimCraftingTool.ViewModel
         // user-edited - and, worse, silently undo a just-completed Reset - from nothing more than
         // scrolling a recipe's Conditions into view. Any real perk/quest selection still reaches here
         // via the PerkFormKey/QuestFormKey change those setters also raise.
-        private static bool IsConditionUiOnlyProperty(string propertyName) => propertyName is
+        private static bool IsConditionUiOnlyProperty(string? propertyName) => propertyName is
             nameof(PerkConditionViewModel.PerkSearchText)
             or nameof(PerkConditionViewModel.SelectedPerk)
             or nameof(QuestStageConditionViewModel.SelectedQuest)
             or nameof(ItemCountConditionViewModel.SearchText)
             or nameof(ItemCountConditionViewModel.SelectedItem)
             or nameof(ItemCountConditionViewModel.Matches)
-            or nameof(QuestCurrentStageConditionViewModel.StagesHint)
+            or nameof(QuestCurrentStageConditionViewModel.StageOptions)
+            or nameof(QuestCurrentStageConditionViewModel.StageToolTip)
+            // Echo of ComparisonValue, which is the edit that counts.
+            or nameof(QuestCurrentStageConditionViewModel.StageText)
             // OR-group drawing, recomputed whenever the list or a flag changes (ConditionGroups.Apply).
             or nameof(BaseConditionViewModel.GroupPosition)
             or nameof(BaseConditionViewModel.Connector)
             or nameof(BaseConditionViewModel.IsDanglingOr);
 
-        private void OnConditionPropertyChanged(object sender, PropertyChangedEventArgs e)
+        private void OnConditionPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
             if (_isReplacingConditionType) return;
             if (sender is not BaseConditionViewModel condition) return;
@@ -744,7 +726,7 @@ namespace SkyrimCraftingTool.ViewModel
             return null;
         }
 
-        private string GetConditionsFieldName(object collection) =>
+        private string GetConditionsFieldName(object? collection) =>
             ReferenceEquals(collection, _temperConditions)
                 ? nameof(TemperConditions)
                 : nameof(CraftingConditions);
@@ -754,11 +736,8 @@ namespace SkyrimCraftingTool.ViewModel
             var index = collection.IndexOf(oldCondition);
             if (index < 0) return;
 
-            var newCondition = CreateConditionViewModel(oldCondition.Type);
-
-            // Carry over whatever makes sense across condition types.
-            newCondition.RunOnPlayer = oldCondition.RunOnPlayer;
-            try { newCondition.ComparisonValue = oldCondition.ComparisonValue; } catch { /* not all values are meaningful across types */ }
+            // Carries over run-on, value and the OR flag - see ConditionFactory.
+            var newCondition = ConditionFactory.ForTypeChange(oldCondition);
 
             _isReplacingConditionType = true;
             try
@@ -785,19 +764,6 @@ namespace SkyrimCraftingTool.ViewModel
             if (!IsLoading)
                 NotifyFieldChanged(GetConditionsFieldName(collection));
         }
-
-        private static BaseConditionViewModel CreateConditionViewModel(CustomConditionType type) => type switch
-        {
-            CustomConditionType.HasPerk => new PerkConditionViewModel(),
-            CustomConditionType.GetIsSex => new SexConditionViewModel(),
-            CustomConditionType.GetActorValue => new ActorValueConditionViewModel(),
-            CustomConditionType.GetLevel => new LevelConditionViewModel(),
-            CustomConditionType.GetStageDone => new QuestStageConditionViewModel(),
-            CustomConditionType.GetItemCount => new ItemCountConditionViewModel(),
-            CustomConditionType.EPTemperingItemIsEnchanted => new TemperEnchantedConditionViewModel(),
-            CustomConditionType.GetStage => new QuestCurrentStageConditionViewModel(),
-            _ => new PerkConditionViewModel()
-        };
 
 
         // --------------------
@@ -836,7 +802,7 @@ namespace SkyrimCraftingTool.ViewModel
             !string.IsNullOrEmpty(TemperWorkbenchKey)
             && Main?.References is { } r && !r.IsActive(TemperWorkbenchKey);
 
-        public FormIDRecord _selectedWorkbench;
+        public FormIDRecord? _selectedWorkbench;
         public FormIDRecord? SelectedWorkbench
         {
             get => _selectedWorkbench;
@@ -844,7 +810,7 @@ namespace SkyrimCraftingTool.ViewModel
             {
                 if (SetProperty(ref _selectedWorkbench, value))
                 {
-                    CraftingWorkbenchKey = value?.Key;
+                    CraftingWorkbenchKey = value?.Key ?? "";
                     if (value != null && string.IsNullOrEmpty(CraftingWorkbenchSearchText))
                         CraftingWorkbenchSearchText = value.Name;
                 }
@@ -882,9 +848,7 @@ namespace SkyrimCraftingTool.ViewModel
         }
 
         public IEnumerable<FormIDRecord> FilteredCraftingPerks =>
-            AllAvailablePerks.Where(p =>
-                string.IsNullOrWhiteSpace(CraftingPerkSearchText)
-                || p.Name.Contains(CraftingPerkSearchText, StringComparison.OrdinalIgnoreCase));
+            AllAvailablePerks.Where(p => p.Matches(CraftingPerkSearchText));
 
         private string _craftingPerkKey = "";
         public string CraftingPerkKey
@@ -943,6 +907,7 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
+        [MemberNotNullWhen(true, nameof(TemperRecipe))]
         public bool HasTemperRecipe => TemperRecipe != null;
 
         public ObservableCollection<IngredientEntryVM> TemperIngredients
@@ -961,20 +926,6 @@ namespace SkyrimCraftingTool.ViewModel
         public string TemperEditorID =>
             TemperRecipe?.Key ?? "(no temper recipe)";
 
-        // Recipes that CONSUME this item, rather than create it - breakdown at the smelter or the
-        // tanning rack, plus the variant-conversion recipes outfit mods ship.
-        //
-        // A LIST, not a slot, and that is measured rather than assumed: on the author's modlist 15
-        // armours have a breakdown at BOTH benches and 143 have more than one consuming recipe. A
-        // single value would hide the rest, which is the same trap the craft side still has with
-        // FirstOrDefault (see docs/TODO.md).
-        //
-        // Filled by MainContentVM.LoadSelectedItemDetails.
-        //
-        // ONE recipe is shown, the first, exactly like Crafting and Temper do with their own
-        // FirstOrDefault. The full list is kept because swapping which one is "main" and deleting
-        // the others is the planned multi-recipe window - that feature is meant to cover every
-        // recipe type at once instead of this section growing a second shape of its own.
         private ObservableCollection<BreakdownRecipeVM> _breakdownRecipes = new();
 
         public ObservableCollection<BreakdownRecipeVM> BreakdownRecipes
@@ -994,9 +945,6 @@ namespace SkyrimCraftingTool.ViewModel
         public List<COBJRecord> AllTemperRecipes { get; set; } = new();
         public List<COBJRecord> AllBreakdownRecipes { get; set; } = new();
 
-        // The ones the user took out. They stay in the All* lists above so the window can show them
-        // struck through with a Restore button - a removal is a decision, and the decision is
-        // undoable.
         public IReadOnlyCollection<string> RemovedRecipeKeys { get; set; } = Array.Empty<string>();
 
         public int OtherCraftingCount => System.Math.Max(0, AllCraftingRecipes.Count - 1);
@@ -1176,9 +1124,7 @@ namespace SkyrimCraftingTool.ViewModel
         }
 
         public IEnumerable<FormIDRecord> FilteredTemperPerks =>
-            AllAvailablePerks.Where(p =>
-                string.IsNullOrWhiteSpace(TemperPerkSearchText)
-                || p.Name.Contains(TemperPerkSearchText, StringComparison.OrdinalIgnoreCase));
+            AllAvailablePerks.Where(p => p.Matches(TemperPerkSearchText));
 
         // --------------------
         // Commands
@@ -1332,6 +1278,7 @@ namespace SkyrimCraftingTool.ViewModel
                     }
 
                     OnPropertyChanged(nameof(SelectedEnchantment));
+                    OnPropertyChanged(nameof(ObjectEffectSummary));
                     OnPropertyChanged(nameof(IsObjectEffectChanged));
                     OnPropertyChanged(nameof(HasAnyChanges));
                     // The jump button lives or dies with this value: "(no enchantment)" has nothing
@@ -1369,7 +1316,6 @@ namespace SkyrimCraftingTool.ViewModel
             get => _enchantmentSearchText;
             set
             {
-                // The user typing is the only thing allowed to move the search text on its own.
                 if (_isSyncingEnchantmentPicker) return;
 
                 if (SetProperty(ref _enchantmentSearchText, value ?? ""))
@@ -1384,10 +1330,39 @@ namespace SkyrimCraftingTool.ViewModel
                 OnPropertyChanged(nameof(FilteredEnchantments));
         }
 
-        public IEnumerable<FormIDRecord> FilteredEnchantments =>
-            AvailableEnchantments.Where(e =>
-                string.IsNullOrWhiteSpace(EnchantmentSearchText)
-                || e.Name.Contains(EnchantmentSearchText, StringComparison.OrdinalIgnoreCase));
+        public IEnumerable<FormIDRecord> FilteredEnchantments
+        {
+            get
+            {
+                var selected = SelectedEnchantment;
+                var filter = _enchantmentFilter;
+
+                return AvailableEnchantments.Where(e =>
+                    // The pick and "(no enchantment)" are never hidden by a chip: a ComboBox whose
+                    // SelectedItem leaves its list drops the line's text (see PickerFilter).
+                    (ReferenceEquals(e, selected) || string.IsNullOrEmpty(e.Key) || filter == null || filter.Passes(e))
+                    && (string.IsNullOrWhiteSpace(EnchantmentSearchText)
+                        || e.Name.Contains(EnchantmentSearchText, StringComparison.OrdinalIgnoreCase)));
+            }
+        }
+
+        // Armor / Weapon / Staff / Other (EnchantmentChoices). Built the first time the dropdown
+        // opens, not per item up front. The "(no enchantment)" row is left out of the count, or it
+        // would stand as a "(none)" chip of its own.
+        private PickerFilter? _enchantmentFilter;
+        public PickerFilter EnchantmentFilter
+        {
+            get
+            {
+                if (_enchantmentFilter != null) return _enchantmentFilter;
+
+                _enchantmentFilter = new PickerFilter(
+                    () => AvailableEnchantments.Where(e => !string.IsNullOrEmpty(e.Key)),
+                    EnchantmentChoices.GroupOrder);
+                _enchantmentFilter.Changed += () => OnPropertyChanged(nameof(FilteredEnchantments));
+                return _enchantmentFilter;
+            }
+        }
 
         // The picker binds to the record, the item stores the key. An enchantment whose plugin left
         // the load order has no record here - the box then falls back to the synthetic "none" entry
@@ -1411,20 +1386,20 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
-        public string ObjectEffectSummary => string.IsNullOrWhiteSpace(ObjectEffectKey)
-            ? "No enchantment."
-            : ObjectEffectKey;
+        // The closed box's tooltip: the same text as the row in the dropdown (name, category, key,
+        // effects). A key whose enchantment is not in the catalogue shows the key alone.
+        public string ObjectEffectSummary
+        {
+            get
+            {
+                if (string.IsNullOrWhiteSpace(ObjectEffectKey)) return "No enchantment.";
 
-        // --- The item's own charge pool (EAMT) ---
-        //
-        // The other half of an enchanted item, and the half that was missing here. Pointing
-        // objectEffect at an enchantment links the effect; the charge the item can hold is this
-        // field, on the item's own record. Measured in xEdit by the user: without it there is no
-        // maximum charge and the weapon cannot be recharged - which is how a tester ended up with a
-        // bow that carried soul trap and could not be refilled.
-        //
-        // Right next to the enchantment picker on purpose: the two only make sense together, and
-        // splitting them across the panel is what made the missing half invisible in the first place.
+                var record = AvailableEnchantments.FirstOrDefault(
+                    e => string.Equals(e.Key, ObjectEffectKey, StringComparison.OrdinalIgnoreCase));
+                return record?.ToolTipText ?? ObjectEffectKey;
+            }
+        }
+
         private int _enchantAmount;
         public int EnchantAmount
         {
@@ -1440,26 +1415,6 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
-        // --- Sprungmarke: vom Item zu seiner Verzauberung (Prio 9) ---
-        //
-        // The Items tab ASSIGNS an enchantment, the Enchantments tab EDITS it. That split is
-        // deliberate, but it was only ever stated in a tooltip nobody opens - this is the same
-        // sentence said as a button.
-        //
-        // Resolvability is checked against AllAvailableEnchantments rather than by asking the other
-        // tab: both are built from the same scanned catalogue, so a key that has a row here has a
-        // leaf over there, and this view model stays ignorant of the tabs around it. A key that
-        // somehow slips through is caught on the far side, which greys nothing out but reports
-        // instead of moving to an empty tree.
-        // --- IPlaceable: the same item, shown in the placement sub-tabs of the Container tab ---
-        //
-        // The SAME instance the tree holds, never a copy. Two view models over one record would keep
-        // two dirty flags and two ContainerStrings, and a preset writing a placement
-        // (PresetFile.Container) would land on whichever one the user is not looking at.
-        //
-        // Placement is written the way the item editor writes it - through ContainerString, which is
-        // a tracked field with a save handler, change marker and reset behind it. Nothing new, just
-        // the same route reached from another screen.
         public string Display => string.IsNullOrWhiteSpace(Name) ? EditorID : Name;
 
         public void CommitPlacement() => ContainerString = ContainerSelection.BuildString();
@@ -1486,9 +1441,6 @@ namespace SkyrimCraftingTool.ViewModel
             if (Main != null) await Main.ResetItemPlacementAsync(this);
         }
 
-        // Shows the scanned placement without saving it as a fresh edit (IsLoading), then re-asks
-        // whether anything else on the item is still the user's. Without the details loaded there is
-        // no snapshot to ask, and the badge keeps what the tree was built with until the next load.
         internal void ApplyResetPlacement(string scannedContainerString)
         {
             IsLoading = true;
@@ -1757,9 +1709,6 @@ namespace SkyrimCraftingTool.ViewModel
             Main?.NavigateToItem(key);
         });
 
-        // Keeps ArmorType in step when the user picks an armour-class keyword. This runs as a
-        // normal, visible edit - the dropdown moves, the changed-marker lights up, reset undoes it -
-        // so it is a sensible default the user can override, not a hidden rewrite.
         private void ApplyArmorTypeFromKeyword()
         {
             if (!IsArmor) return;
@@ -1789,8 +1738,8 @@ namespace SkyrimCraftingTool.ViewModel
                 _ = Main.PersistFieldAsync(this, nameof(ArmorType));
         }
 
-        private SlotVM _selectedSlot;
-        public SlotVM SelectedSlot
+        private SlotVM? _selectedSlot;
+        public SlotVM? SelectedSlot
         {
             get => _selectedSlot;
             set
@@ -1798,7 +1747,7 @@ namespace SkyrimCraftingTool.ViewModel
                 if (SetProperty(ref _selectedSlot, value))
                 {
                     if (value != null)
-                        BodySlotMask = value.Flag; // explizite User-Aktion
+                        BodySlotMask = value.Flag;
                 }
             }
         }
@@ -1918,7 +1867,7 @@ namespace SkyrimCraftingTool.ViewModel
         // whatever ArmorCache/WeaponCache happened to hold when this session loaded the item) is what
         // makes the changed-field highlighting and the Reset button survive an app restart.
         private bool _hasOriginalSnapshot;
-        private string _originalName;
+        private string _originalName = "";
         private int _originalValue;
         private float _originalWeight;
         private float _originalArmorRating;
@@ -1932,12 +1881,12 @@ namespace SkyrimCraftingTool.ViewModel
         private float _originalStagger;
         private int _originalCritDamage;
         private float _originalCritPercentMult;
-        private string _originalContainerString;
+        private string _originalContainerString = "";
         private List<string> _originalSelectedKeywordKeys = new();
 
         public void CaptureOriginalSnapshot(string name, int value, float weight, float armorRating,
-            uint bodySlotMask, int damage, float speed, float reach, float stagger, string containerString, List<string> keywordKeys,
-            string armorType = "", string objectEffectKey = "", int enchantAmount = 0, int critDamage = 0, float critPercentMult = 0f)
+            uint bodySlotMask, int damage, float speed, float reach, float stagger, string containerString, List<string>? keywordKeys,
+            string? armorType = "", string? objectEffectKey = "", int enchantAmount = 0, int critDamage = 0, float critPercentMult = 0f)
         {
             _originalName = name;
             _originalValue = value;
@@ -2058,8 +2007,8 @@ namespace SkyrimCraftingTool.ViewModel
         // OnKeywordPropertyChanged) so applying the reverted values doesn't immediately re-save them
         // as a fresh edit.
         public void ApplyResetValues(string name, int value, float weight, float armorRating,
-            uint bodySlotMask, int damage, float speed, float reach, float stagger, string containerString, List<string> keywordKeys,
-            string armorType = "", string objectEffectKey = "", int enchantAmount = 0, int critDamage = 0, float critPercentMult = 0f)
+            uint bodySlotMask, int damage, float speed, float reach, float stagger, string containerString, List<string>? keywordKeys,
+            string? armorType = "", string? objectEffectKey = "", int enchantAmount = 0, int critDamage = 0, float critPercentMult = 0f)
         {
             IsLoading = true;
 
@@ -2108,12 +2057,12 @@ namespace SkyrimCraftingTool.ViewModel
         // DELETE+INSERTed on every save and has no shadow-column protection of its own.
         // --------------------
         private bool _hasCraftingSnapshot;
-        private string _originalCraftingWorkbenchKey;
+        private string _originalCraftingWorkbenchKey = "";
         private List<string> _originalCraftingIngredientKeys = new();
         private List<string> _originalCraftingConditionKeys = new();
 
         private bool _hasTemperSnapshot;
-        private string _originalTemperWorkbenchKey;
+        private string _originalTemperWorkbenchKey = "";
         private List<string> _originalTemperIngredientKeys = new();
         private List<string> _originalTemperConditionKeys = new();
 
@@ -2193,11 +2142,6 @@ namespace SkyrimCraftingTool.ViewModel
             OnPropertyChanged(nameof(HasTemperChanges));
         }
 
-        // Called after a user-created recipe (no plugin origin) gets fully deleted instead of merely
-        // reset (see MainContentVM.ResetCraftingRecipeEdits/ResetTemperRecipeEdits). Without dropping
-        // the snapshot, HasCraftingChanges/HasTemperChanges would keep comparing the now-empty
-        // Workbench/Ingredients/Conditions against the deleted recipe's stub values and immediately
-        // re-enable the just-used Reset button.
         public void ClearCraftingSnapshot()
         {
             _hasCraftingSnapshot = false;
@@ -2239,9 +2183,6 @@ namespace SkyrimCraftingTool.ViewModel
             !StringListsEqual(CraftingIngredients.Select(i => $"{i.Key}*{i.Count}").ToList(), _originalCraftingIngredientKeys);
         public bool IsCraftingConditionsChanged => _hasCraftingSnapshot &&
             !StringListsEqual(CurrentCraftingConditionKeys, _originalCraftingConditionKeys);
-        // _craftingRecipeIsUserCreated alone is enough to enable Reset: a user-created recipe is
-        // always fully deletable regardless of whether any individual field was touched after
-        // creation (see MainContentVM.ResetCraftingRecipeEdits).
         public bool HasCraftingChanges => _craftingRecipeIsUserCreated || IsCraftingWorkbenchChanged || IsCraftingIngredientsChanged || IsCraftingConditionsChanged;
 
         public bool IsTemperWorkbenchChanged => _hasTemperSnapshot && TemperWorkbenchKey != _originalTemperWorkbenchKey;
@@ -2263,13 +2204,6 @@ namespace SkyrimCraftingTool.ViewModel
         public bool TemperRecipeMissingIngredients =>
             HasTemperRecipe && !TemperIngredients.Any(i => !string.IsNullOrEmpty(i.Key));
 
-        // --- "No recipe yet" hint (inline, empty section only) ---
-        // Both sections stay fully usable on an item that has no recipe at all: the COBJ row is
-        // created on the next save, from whatever the user touches first - either green "+"
-        // (Conditions or Materials) and, for Crafting, also picking a Workbench (see
-        // CraftingSaveHandler/TemperSaveHandler, which call CreateCraftingRecipe/CreateTemperRecipe
-        // while HasXRecipe is still false). A tester reported that this isn't discoverable by
-        // fiddling alone, so the empty section spells it out.
         public bool CraftingRecipeAbsent => !HasCraftingRecipe;
 
         public bool TemperRecipeAbsent => !HasTemperRecipe;
@@ -2428,6 +2362,10 @@ namespace SkyrimCraftingTool.ViewModel
             _keywordViewSource = null;
             _selectedKeywordViewSource = null;
 
+            // Without a MainContentVM there is no container catalogue; the constructors that have
+            // one replace this.
+            ContainerSelection = new ContainerSelectionVM(new List<ContainerRecord>());
+
             AddIngredientCommand = new RelayCommand(AddCraftingIngredient);
             RemoveIngredientCommand = new RelayCommand<IngredientEntryVM>(RemoveCraftingIngredient);
 
@@ -2521,7 +2459,7 @@ namespace SkyrimCraftingTool.ViewModel
         // --------------------
         // Slot Mask Sync
         // --------------------
-        private void SlotSelectionChanged(object sender, EventArgs e)
+        private void SlotSelectionChanged(object? sender, EventArgs e)
         {
             if (_isSyncingSlots) return;
 
@@ -2691,13 +2629,13 @@ namespace SkyrimCraftingTool.ViewModel
         {
             var newEntry = new IngredientEntryVM(this, false);
 
-            newEntry.InitializeMaterials(Main.AllAvailableMaterials);
+            if (Main != null) newEntry.InitializeMaterials(Main.AllAvailableMaterials);
 
             CraftingIngredients.Add(newEntry);
             NotifyFieldChanged(nameof(CraftingIngredients));
         }
 
-        private void RemoveCraftingIngredient(IngredientEntryVM ing)
+        private void RemoveCraftingIngredient(IngredientEntryVM? ing)
         {
             if (ing == null) return;
 
@@ -2714,13 +2652,13 @@ namespace SkyrimCraftingTool.ViewModel
         {
             var newEntry = new IngredientEntryVM(this, true);
 
-            newEntry.InitializeMaterials(Main.AllAvailableMaterials);
+            if (Main != null) newEntry.InitializeMaterials(Main.AllAvailableMaterials);
 
             TemperIngredients.Add(newEntry);
             NotifyFieldChanged(nameof(TemperIngredients));
         }
 
-        private void RemoveTemperIngredient(IngredientEntryVM ing)
+        private void RemoveTemperIngredient(IngredientEntryVM? ing)
         {
             if (TemperRecipe == null || ing == null)
                 return;
@@ -2746,7 +2684,7 @@ namespace SkyrimCraftingTool.ViewModel
             NotifyFieldChanged(nameof(CraftingConditions));
         }
 
-        private void RemoveCraftingCondition(BaseConditionViewModel condition)
+        private void RemoveCraftingCondition(BaseConditionViewModel? condition)
         {
             if (condition == null) return;
             ConditionGroups.Remove(CraftingConditions, condition);   // keeps the OR groups around it intact
@@ -2760,7 +2698,7 @@ namespace SkyrimCraftingTool.ViewModel
             NotifyFieldChanged(nameof(TemperConditions));
         }
 
-        private void RemoveTemperCondition(BaseConditionViewModel condition)
+        private void RemoveTemperCondition(BaseConditionViewModel? condition)
         {
             if (condition == null) return;
             ConditionGroups.Remove(TemperConditions, condition);

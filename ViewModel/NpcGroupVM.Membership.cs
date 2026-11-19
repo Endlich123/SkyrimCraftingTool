@@ -415,9 +415,6 @@ namespace SkyrimCraftingTool.ViewModel
 
         // ---- the refresh after an edit --------------------------------------------------------------------
 
-        // Not RebuildGroups: that one rebuilds every row and resets the selection to the top, which would
-        // throw the user out of the group they are editing on every keystroke. Only the two counts that can
-        // have moved are touched - this group's, and the one row that is not a group.
         private void RefreshMembership()
         {
             if (_selectedGroup?.Group != null)

@@ -8,20 +8,13 @@ using System.Windows.Input;
 
 namespace SkyrimCraftingTool.ViewModel
 {
-    public class PluginNodeVM : ViewModelBase
+    public class PluginNodeVM : ExpandableNodeVM
     {
-        public string PluginName { get; set; }
+        public string PluginName { get; set; } = "";
 
         // Set by TreeBuilderService at construction (and carried over by FilterReference) — needed to
         // reach Main.ImportExport for the per-plugin Export/Import buttons.
-        public MainContentVM Main { get; set; }
-
-        private bool _isExpanded;
-        public bool IsExpanded
-        {
-            get => _isExpanded;
-            set => SetProperty(ref _isExpanded, value);
-        }
+        public MainContentVM? Main { get; set; }
 
         public ObservableCollection<CategoryNodeVM> Categories { get; set; }
             = new ObservableCollection<CategoryNodeVM>();
@@ -137,12 +130,13 @@ namespace SkyrimCraftingTool.ViewModel
         /// <summary>
         /// Creates a filtered copy of this plugin.
         /// </summary>
-        public PluginNodeVM FilterReference(string text, bool onlyEdited = false)
+        public PluginNodeVM? FilterReference(string text, bool onlyEdited = false)
         {
             bool pluginMatches = string.IsNullOrWhiteSpace(text) ||
                                  PluginName.Contains(text, StringComparison.OrdinalIgnoreCase);
 
             var filtered = new PluginNodeVM { PluginName = this.PluginName, Main = this.Main };
+            CopyExpansionTo(filtered);
 
             foreach (var cat in Categories)
             {

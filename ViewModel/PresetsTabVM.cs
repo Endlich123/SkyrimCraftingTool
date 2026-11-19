@@ -59,9 +59,6 @@ namespace SkyrimCraftingTool.ViewModel
                 WeaponEditor = new ModularCatalogEditorVM(_main, weapons: true);
         }
 
-        // Nothing autosaves on this tab (a half-made rule should not take effect on its own), so
-        // leaving it with edits asks - once per catalog with changes. allowCancel: false on app exit,
-        // where staying is not offered. Returns false when the user chose to stay.
         public bool ConfirmLeave(bool allowCancel = true)
             => ConfirmLeave(weapons: false, allowCancel) && ConfirmLeave(weapons: true, allowCancel);
 

@@ -11,12 +11,6 @@ using SkyrimCraftingTool.Services;
 
 namespace SkyrimCraftingTool.ViewModel
 {
-    // One shape in the preview, as a row the user can switch off.
-    //
-    // Switchable because a NIF is several shapes and some of them are in the way: a sword carries
-    // blood-decal and glow shapes that sit over the blade, armour carries a skin-shaped underlayer.
-    // Measured: 4.427 files hold 11.393 shapes, so roughly two and a half per file, and the extra ones
-    // are usually the effects.
     public sealed class MeshShapeVM : ViewModelBase
     {
         private bool _isVisible = true;
@@ -238,17 +232,6 @@ namespace SkyrimCraftingTool.ViewModel
             set { if (SetProperty(ref _shine, value)) Rebuild(); }
         }
 
-        // Per-pixel normal mapping, which is the whole reason this window stopped using Viewport3D.
-        //
-        // Most of what makes a Skyrim armour look like anything is in the normal map, not the diffuse.
-        // The earlier fixed-function path could not light a surface per pixel, so it shaded the relief
-        // INTO the texture once with a fixed light: the detail showed, but its shading stayed put when
-        // the model turned, which reads as painted-on. Here the surface normal is perturbed per pixel
-        // and the highlight moves with the light, as it does in the game.
-        //
-        // Measured on a thief armour, which is the case the user named: the map changes 360.000 pixels
-        // of a close view by a mean of 5,6 of 255 - leather grain, stitch relief and the woven panel
-        // that the flat version renders as smooth plastic.
         public bool NormalMapping
         {
             get => _normalMapping;

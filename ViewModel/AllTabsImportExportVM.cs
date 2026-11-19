@@ -8,15 +8,6 @@ using System.Windows;
 
 namespace SkyrimCraftingTool.ViewModel
 {
-    // "Export all" / "Import all" in Settings (user, 2026-10-18). NOT a second export system: it runs
-    // the tabs' own exports into the tabs' own folders, and reads back exactly what the tabs' own
-    // imports would read. A file written here is the file the tab's button writes, and the other way
-    // round.
-    //
-    // The one thing it adds is that the import is ONE pass over every tab's units - one preview, one
-    // conflict window, one ImportKeyMap - so a reference between tabs (an item pointing at an own
-    // enchantment that gets a new key on a collision) is remapped in the same run, whatever order the
-    // tab imports would have needed.
     public sealed class AllTabsImportExportVM
     {
         private readonly IImportExportService _service;
@@ -64,40 +55,76 @@ namespace SkyrimCraftingTool.ViewModel
                 Environment.NewLine + Environment.NewLine + string.Join(Environment.NewLine, lines));
         }
 
+        // Two loading screens, not one: reading + comparing, then writing + refreshing. The conflict
+        // dialog sits between them and must not be covered. Both run their work on the UI thread
+        // (blocksUiThread), so the overlay window on its own thread is the one that shows.
         public async Task ImportAsync()
         {
-            var items = ImportExportFlow.ReadAllTabs(Modules);
-            if (items.Count == 0)
+            var units = TabExportModules.AllUnits;
+            ImportPlan plan;
+
+            using (var busy = BusyService.Show("Import all: reading the export files…", blocksUiThread: true))
             {
-                Info("Import", $"No export files found under{Environment.NewLine}{ExportFileStore.ExportsRoot}");
-                return;
+                var items = ImportExportFlow.ReadAllTabs(Modules);
+                if (items.Count == 0)
+                {
+                    busy.Dispose();
+                    Info("Import", $"No export files found under{Environment.NewLine}{ExportFileStore.ExportsRoot}");
+                    return;
+                }
+
+                BusyService.SetMessage("Import all: saving pending edits…");
+                await FlushAllAsync();
+
+                BusyService.SetMessage($"Import all: comparing {items.Count:N0} records…");
+                try
+                {
+                    plan = ImportExportFlow.PreviewImport(_service, units, items);
+                }
+                catch (Exception ex)
+                {
+                    busy.Dispose();
+                    ImportFailed(ex);
+                    return;
+                }
             }
 
-            await FlushAllAsync();
-
-            ImportResult? result;
-            try
-            {
-                result = ImportExportFlow.RunImport(_service, TabExportModules.AllUnits, items);
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogError("Import (all tabs) failed", ex);
-                MessageBox.Show($"Import failed:{Environment.NewLine}{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
-
-            if (result == null)
+            var useFileVersion = ImportExportFlow.ResolveConflicts(plan);
+            if (useFileVersion == null)
                 return; // conflict dialog cancelled - nothing written
 
-            // Each tab on its own: one that fails to re-read must not leave the others stale.
-            foreach (var tab in _tabs)
+            ImportResult result;
+            using (var busy = BusyService.Show("Import all: writing…", blocksUiThread: true))
             {
-                try { await tab.RefreshAfterImportAsync(); }
-                catch (Exception ex) { AppLogger.LogError($"Import (all tabs): refreshing {tab.Module.Folder} failed", ex); }
+                try
+                {
+                    result = _service.ApplyImport(units, plan, useFileVersion);
+                }
+                catch (Exception ex)
+                {
+                    busy.Dispose();
+                    ImportFailed(ex);
+                    return;
+                }
+
+                // Each tab on its own: one that fails to re-read must not leave the others stale.
+                foreach (var tab in _tabs)
+                {
+                    BusyService.SetMessage($"Import all: refreshing {tab.Module.Folder}…");
+                    try { await tab.RefreshAfterImportAsync(); }
+                    catch (Exception ex) { AppLogger.LogError($"Import (all tabs): refreshing {tab.Module.Folder} failed", ex); }
+                }
+
+                await BusyService.UntilDrawnAsync();
             }
 
             Info("Import Complete", ImportExportFlow.SummaryText(result));
+        }
+
+        private static void ImportFailed(Exception ex)
+        {
+            AppLogger.LogError("Import (all tabs) failed", ex);
+            MessageBox.Show($"Import failed:{Environment.NewLine}{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
 
         private async Task FlushAllAsync()

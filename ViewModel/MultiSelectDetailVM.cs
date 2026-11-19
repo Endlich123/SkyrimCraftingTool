@@ -14,25 +14,6 @@ using System.Windows.Input;
 
 namespace SkyrimCraftingTool.ViewModel
 {
-    // Bulk editing for the item multi-selection in the TreeView (see MainContentVM.SelectedItems).
-    // Keywords are additive (add/remove), Container additive. Crafting/Temper are free-form
-    // templates the user builds directly right here (Workbench, Conditions, Ingredients - the same
-    // fields the single-item editor exposes), NOT copied from one of the selected items - a user
-    // explicitly did not want an implicit "pick one item as the source" workflow. Which of those
-    // parts actually get applied is the user's own choice via checkboxes (Workbench/Conditions/
-    // Ingredients for Crafting, Conditions/Ingredients for Temper - no Workbench there, same as the
-    // single-item editor, where the Temper workbench is always auto-derived at COBJ-creation time).
-    // The Conditions/Ingredients template editors below intentionally reuse the exact same property/
-    // command names as ItemNodeVM's single-item editor (FilteredCraftingPerks, FilteredQuests,
-    // AddCraftingConditionCommand, AddIngredientCommand, etc.) so MainContentView.xaml's proven
-    // DataTemplates for them could be copied here verbatim instead of duplicating that UI logic.
-    // Auto-Apply (Presets) is deliberately only a placeholder for now, see MultiSelectDetailView.xaml.
-    //
-    // Performance: Keywords/Container now deliberately mirror the single-item editor's filtering
-    // behavior (ItemNodeVM.KeywordFilter, MainContentVM.LimitedContainerVMs) - without the
-    // relevance/merchant filter, ALL keywords/containers from the entire mod list got rendered here
-    // (several hundred, not virtualized), which caused noticeable lag when expanding and on every
-    // keystroke in the search box.
     public class MultiSelectDetailVM : ViewModelBase
     {
         private readonly MainContentVM _main;
@@ -94,9 +75,6 @@ namespace SkyrimCraftingTool.ViewModel
         private static readonly string[] ArmorPrefixes = { "Armor", "Clothing", "Jewelry", "VendorItemArmor", "Vendor", "Material" };
         private static readonly string[] WeaponPrefixes = { "Weap", "Weapon", "VendorItemWeapon", "Vendor", "Material", "DamageType" };
 
-        // --- Crafting Recipe: free-form template, built by the user ---
-        // Workbench: same catalog/search pattern as ItemNodeVM.FilteredCraftingWorkbenches/
-        // SelectedWorkbench, just sourced from _main instead of a loaded item.
         private string _craftingWorkbenchSearchText = string.Empty;
         public string CraftingWorkbenchSearchText
         {
@@ -196,8 +174,8 @@ namespace SkyrimCraftingTool.ViewModel
         // creates one KIND of object.
         public IReadOnlyList<FormIDRecord> BreakdownBenches => BreakdownRecipeVM.Benches;
 
-        private FormIDRecord _selectedBreakdownBench;
-        public FormIDRecord SelectedBreakdownBench
+        private FormIDRecord? _selectedBreakdownBench;
+        public FormIDRecord? SelectedBreakdownBench
         {
             get => _selectedBreakdownBench;
             set => SetProperty(ref _selectedBreakdownBench, value);
@@ -483,11 +461,8 @@ namespace SkyrimCraftingTool.ViewModel
             var index = collection.IndexOf(oldCondition);
             if (index < 0) return;
 
-            var newCondition = CreateConditionViewModel(oldCondition.Type);
-
-            // Carry over whatever makes sense across condition types - same as the single-item editor.
-            newCondition.RunOnPlayer = oldCondition.RunOnPlayer;
-            try { newCondition.ComparisonValue = oldCondition.ComparisonValue; } catch { /* not all values are meaningful across types */ }
+            // Same carry-over as the single-item editor - see ConditionFactory.
+            var newCondition = ConditionFactory.ForTypeChange(oldCondition);
 
             _isReplacingTemplateConditionType = true;
             try
@@ -507,19 +482,6 @@ namespace SkyrimCraftingTool.ViewModel
                 _isReplacingTemplateConditionType = false;
             }
         }
-
-        private static BaseConditionViewModel CreateConditionViewModel(CustomConditionType type) => type switch
-        {
-            CustomConditionType.HasPerk => new PerkConditionViewModel(),
-            CustomConditionType.GetIsSex => new SexConditionViewModel(),
-            CustomConditionType.GetActorValue => new ActorValueConditionViewModel(),
-            CustomConditionType.GetLevel => new LevelConditionViewModel(),
-            CustomConditionType.GetStageDone => new QuestStageConditionViewModel(),
-            CustomConditionType.GetItemCount => new ItemCountConditionViewModel(),
-            CustomConditionType.EPTemperingItemIsEnchanted => new TemperEnchantedConditionViewModel(),
-            CustomConditionType.GetStage => new QuestCurrentStageConditionViewModel(),
-            _ => new PerkConditionViewModel()
-        };
 
         // The list window, opened for the WHOLE selection. The row carries one level and one amount,
         // and the selected items all receive it - which is what the bulk apply does anyway, so the
@@ -763,7 +725,8 @@ namespace SkyrimCraftingTool.ViewModel
                 // SECOND recipe next to the one already on disk.
                 _main.EnsureItemHydrated(target);
 
-                var bench = IncludeBreakdownBench
+                // No bench picked although the box is ticked: the smelter, as without the box.
+                var bench = IncludeBreakdownBench && SelectedBreakdownBench != null
                     ? SelectedBreakdownBench.Key
                     : BreakdownRecipeVM.SmelterKey;
 
@@ -783,8 +746,7 @@ namespace SkyrimCraftingTool.ViewModel
                     {
                         // The public setter, so the row reaches its record - see the same note in
                         // PresetApplyService.ApplyBreakdown.
-                        var material = _main.AllAvailableMaterials?
-                            .FirstOrDefault(m => string.Equals(m.Key, output.Key, StringComparison.OrdinalIgnoreCase));
+                        var material = _main.FindMaterial(output.Key);
 
                         if (material != null) entry.SelectedMaterial = material;
                         else entry.Key = output.Key;
@@ -945,7 +907,7 @@ namespace SkyrimCraftingTool.ViewModel
                 // from disk - setting Key/MaterialName alone (like a first draft of this method did)
                 // leaves SelectedMaterial/SearchText empty, so the saved Key*Count is correct but the
                 // material ComboBox shows blank/wrong the next time this item's editor is opened.
-                var mat = _main.AllAvailableMaterials.FirstOrDefault(m => m.Key == ing.Key);
+                var mat = _main.FindMaterial(ing.Key);
                 if (mat != null)
                     clone.SetSelectedMaterialSilent(mat);
                 else
@@ -1133,9 +1095,6 @@ namespace SkyrimCraftingTool.ViewModel
         private string _valueText = string.Empty;
         public string ValueText { get => _valueText; set => SetProperty(ref _valueText, value); }
 
-        // CurrentCulture first, InvariantCulture as fallback: on a de-DE machine the user types
-        // "2,5" but may also paste "2.5" — invariant-only silently dropped the whole field from the
-        // apply while the status line still reported success for the others.
         public bool TryParseValue(out double value)
         {
             var text = (_valueText ?? string.Empty).Trim();

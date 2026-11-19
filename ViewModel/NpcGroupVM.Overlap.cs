@@ -190,10 +190,6 @@ namespace SkyrimCraftingTool.ViewModel
             var group = _selectedGroup?.Group;
             if (group == null) return;
 
-            // ITS OWN PREVIOUS ANSWER GOES FIRST. Pressing it twice must recompute, not accumulate: the
-            // other groups may have moved since, and a line that separated them yesterday can be exactly
-            // the line that costs members today. Only lines still marked as its own are dropped - one the
-            // user has since edited belongs to them (NpcGroupClauseRowVM.NowMine).
             int replaced = group.Predicates.RemoveAll(IsAutoExcluded);
 
             var plan = new NpcGroupDeduplicator(_npcs).Plan(
@@ -206,9 +202,6 @@ namespace SkyrimCraftingTool.ViewModel
                 Persist(group);
                 RefreshMembership();
 
-                // The filter editor is rebuilt only on a selection change, so the new lines would not be
-                // on screen until the user clicked away and back - and a button whose result is invisible
-                // reads as a button that did nothing.
                 RebuildClauses(group);
             }
 

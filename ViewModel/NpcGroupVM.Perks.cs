@@ -44,7 +44,10 @@ namespace SkyrimCraftingTool.ViewModel
                 {
                     Perks.Add(new NpcGroupPerkRowVM(
                         entry, _labels.Perk(entry.TargetKey), CountCarrying(members, entry.TargetKey),
-                        members.Count, RemovePerk));
+                        members.Count, RemovePerk)
+                    {
+                        ToolTip = _labels.PerkToolTip(entry.TargetKey),
+                    });
                 }
             }
 
@@ -145,10 +148,32 @@ namespace SkyrimCraftingTool.ViewModel
                 var taken = new HashSet<string>(
                     Perks.Select(p => p.Key), StringComparer.OrdinalIgnoreCase);
 
+                // Matches the EditorID, the game name and the skill tree - "smithing" lists the tree -
+                // and the skill chips in the dropdown (PerkFilter).
+                var filter = PerkFilter;
                 return _labels.PerkChoices()
                     .Where(p => !taken.Contains(p.Key))
-                    .Where(p => string.IsNullOrWhiteSpace(_perkSearchText)
-                                || (p.Name ?? "").Contains(_perkSearchText, StringComparison.OrdinalIgnoreCase));
+                    .Where(p => p.Matches(_perkSearchText) && filter.Passes(p));
+            }
+        }
+
+        // The skill-tree chips of the perk picker, counted over the whole catalogue. Rebuilt when the
+        // labels change (EnsureSource compares the list instance).
+        private PickerFilter? _perkFilter;
+        public PickerFilter PerkFilter
+        {
+            get
+            {
+                if (_perkFilter == null)
+                {
+                    _perkFilter = new PickerFilter(() => _labels.PerkChoices());
+                    _perkFilter.Changed += () => OnPropertyChanged(nameof(PerkChoices));
+                }
+                else
+                {
+                    _perkFilter.EnsureSource(_labels.PerkChoices());
+                }
+                return _perkFilter;
             }
         }
 
@@ -254,6 +279,10 @@ namespace SkyrimCraftingTool.ViewModel
 
         public string Key { get; }
         public string Name { get; }
+
+        // Game name, skill tree, key, description - see INpcLabels.PerkToolTip.
+        public string ToolTip { get; init; } = "";
+
         public int Carrying { get; }
         public int Members { get; }
         public string Have { get; }

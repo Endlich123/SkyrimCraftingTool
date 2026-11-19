@@ -22,7 +22,7 @@ namespace SkyrimCraftingTool.ViewModel
         // work by name, so a switch for an unnameable bit would be a control that does nothing.
         public int Bit { get; }
 
-        public event Action Changed;
+        public event Action? Changed;
 
         private bool _isSet;
         public bool IsSet

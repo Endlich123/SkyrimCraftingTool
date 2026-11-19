@@ -38,9 +38,17 @@ namespace SkyrimCraftingTool.ViewModel
                     OnPropertyChanged(nameof(IsDeadReference));
                     OnPropertyChanged(nameof(AvailableStages));
                     OnPropertyChanged(nameof(HasStageList));
+                    OnPropertyChanged(nameof(StageOptions));
+                    OnPropertyChanged(nameof(StageToolTip));
                 }
             }
         }
+
+        // The stage picker's rows: index plus the stage's journal text (QuestStageOption).
+        public IReadOnlyList<QuestStageOption> StageOptions => QuestStageOption.For(SelectedQuest);
+
+        // The journal text of the chosen stage, as the stage box's tooltip.
+        public string StageToolTip => QuestStageOption.ToolTipFor(SelectedQuest, Stage);
 
         // A quest FormKey is set, but it didn't match anything in the active quest list at load time.
         public bool IsDeadReference => !QuestFormKey.IsNull && SelectedQuest == null;
@@ -55,7 +63,11 @@ namespace SkyrimCraftingTool.ViewModel
         public int Stage
         {
             get => _stage;
-            set => SetProperty(ref _stage, value);
+            set
+            {
+                if (SetProperty(ref _stage, value))
+                    OnPropertyChanged(nameof(StageToolTip));
+            }
         }
 
         public override float ComparisonValue

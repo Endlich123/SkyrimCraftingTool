@@ -5,19 +5,6 @@ using SkyrimCraftingTool.Model;
 
 namespace SkyrimCraftingTool.ViewModel
 {
-    // The half-cost perk of the selected spell, as a pick from the scanned perks (user, 2026-10-18).
-    //
-    // It was a free text box, and that is how "Skyrim.esm|0C44C02323" - ten hex digits, no record at
-    // all - reached the patch as halfCostPerk=Skyrim.esm|C44C02323. halfCostPerk= takes a perk and
-    // nothing else, so the field offers perks and nothing else. "(none)" is first: a spell without a
-    // half-cost perk is the ordinary case.
-    //
-    // Filters as you type, like NpcLinkPickerVM - the catalogue runs to hundreds of perks - and with
-    // the same guard: a filter that hides the selected row makes WPF report SelectedItem = null,
-    // which must not clear the field mid-keystroke.
-    //
-    // A key already stored that is not in the catalogue (typed before this, or from a mod since
-    // removed) is shown as it is, so the user can see what is there and pick a real perk instead.
     public sealed class SpellPerkPickerVM : ViewModelBase
     {
         private readonly Func<IReadOnlyList<PerkChoice>> _catalogue;
@@ -33,13 +20,29 @@ namespace SkyrimCraftingTool.ViewModel
         private IEnumerable<PerkChoice> All =>
             new[] { PerkChoice.None }.Concat(_catalogue() ?? Array.Empty<PerkChoice>());
 
-        // Filtered only by what the user TYPED. The box shows the current perk's name, and filtering
-        // by that would open the list on one row - on a spell without a perk, on "(none)" alone.
-        public IEnumerable<PerkChoice> Options =>
-            IsUntouchedText
-                ? All
-                : All.Where(p => p.Key.Length == 0
-                                 || p.Display.Contains(SearchText, StringComparison.OrdinalIgnoreCase));
+        public IEnumerable<PerkChoice> Options
+        {
+            get
+            {
+                var current = Current;
+                return All.Where(p => p.Key.Length == 0
+                                      || ReferenceEquals(p, current)
+                                      || ((IsUntouchedText || p.Matches(SearchText)) && Filter.Passes(p)));
+            }
+        }
+
+        // The skill-tree chips, counted over the whole perk catalogue.
+        private PickerFilter? _filter;
+        public PickerFilter Filter
+        {
+            get
+            {
+                if (_filter != null) return _filter;
+                _filter = new PickerFilter(() => _catalogue());
+                _filter.Changed += () => OnPropertyChanged(nameof(Options));
+                return _filter;
+            }
+        }
 
         private bool IsUntouchedText =>
             string.IsNullOrWhiteSpace(SearchText)

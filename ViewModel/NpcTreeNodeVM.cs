@@ -15,7 +15,7 @@ namespace SkyrimCraftingTool.ViewModel
     // nesting it under one made a node's count differ from what a rule on it would patch. Factions
     // get their own view instead, where the number shown is the number patched. See
     // docs/NPC-Plan.md §8.
-    public class NpcTreeNodeVM : ViewModelBase
+    public class NpcTreeNodeVM : ExpandableNodeVM
     {
         public NpcTreeNodeVM(string displayName, bool isPlugin)
         {
@@ -35,13 +35,6 @@ namespace SkyrimCraftingTool.ViewModel
         // One list for the TreeView to bind to, because a node has either children or leaves and
         // WPF wants a single ItemsSource.
         public IEnumerable<object> Items => Children.Cast<object>().Concat(Npcs);
-
-        private bool _isExpanded;
-        public bool IsExpanded
-        {
-            get => _isExpanded;
-            set => SetProperty(ref _isExpanded, value);
-        }
 
         // Leaves below this node, at any depth. Shown on the branch because the counts are the whole
         // point of this tree shape: 905 under Skyrim.esm > CombatWarrior1H, 3 under most others.
@@ -66,7 +59,8 @@ namespace SkyrimCraftingTool.ViewModel
                 || string.IsNullOrWhiteSpace(text)
                 || DisplayName.Contains(text, StringComparison.OrdinalIgnoreCase);
 
-            var copy = new NpcTreeNodeVM(DisplayName, IsPlugin) { IsExpanded = IsExpanded };
+            var copy = new NpcTreeNodeVM(DisplayName, IsPlugin);
+            CopyExpansionTo(copy);
 
             foreach (var child in Children)
             {
@@ -108,8 +102,12 @@ namespace SkyrimCraftingTool.ViewModel
         //
         // Plugins in load order, like every other record tree (Services/PluginTreeOrder). Without a
         // load order - tests, or before the first scan - alphabetical.
+        //
+        // `expansion` remembers the open branches across rebuilds and filter copies; null leaves the
+        // nodes with a plain field, as before.
         public static List<NpcTreeNodeVM> Build(IEnumerable<NpcNodeVM> npcs,
-                                                IReadOnlyList<Model.PluginInfo>? loadOrder = null)
+                                                IReadOnlyList<Model.PluginInfo>? loadOrder = null,
+                                                TreeExpansion? expansion = null)
         {
             var roots = new List<NpcTreeNodeVM>();
 
@@ -122,13 +120,19 @@ namespace SkyrimCraftingTool.ViewModel
                         .OrderBy(g => rank(g.Key))
                         .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
             {
-                var pluginNode = new NpcTreeNodeVM(byPlugin.Key, isPlugin: true);
+                var pluginNode = new NpcTreeNodeVM(byPlugin.Key, isPlugin: true)
+                {
+                    Expansion = expansion, ExpansionKey = byPlugin.Key,
+                };
 
                 foreach (var byClass in byPlugin
                             .GroupBy(n => n.ClassDisplay, StringComparer.OrdinalIgnoreCase)
                             .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
                 {
-                    var classNode = new NpcTreeNodeVM(byClass.Key, isPlugin: false);
+                    var classNode = new NpcTreeNodeVM(byClass.Key, isPlugin: false)
+                    {
+                        Expansion = expansion, ExpansionKey = TreeExpansion.Child(byPlugin.Key, byClass.Key),
+                    };
 
                     foreach (var npc in byClass.OrderBy(n => n.DisplayName, StringComparer.OrdinalIgnoreCase))
                         classNode.Npcs.Add(npc);

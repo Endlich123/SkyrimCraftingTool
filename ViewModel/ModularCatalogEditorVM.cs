@@ -40,6 +40,7 @@ namespace SkyrimCraftingTool.ViewModel
         internal IReadOnlyList<FormIDRecord> AllKeywords { get; }
         internal IReadOnlyList<FormIDRecord> AllMaterials { get; }
         internal IReadOnlyList<FormIDRecord> AllPerks { get; }
+        internal IReadOnlyList<FormIDRecord> AllQuests { get; }
         internal IReadOnlyList<FormIDRecord> AllEnchantments { get; }
 
         // The load order's plugin file names, as picker records (Key = Name = file name).
@@ -123,15 +124,19 @@ namespace SkyrimCraftingTool.ViewModel
         public ModularCatalogEditorVM(MainContentVM main, bool weapons = false)
             : this(main.AllAvailableKeywords, main.AllAvailableMaterials, main.AllAvailablePerks, main.AllAvailableWorkbenches,
                    weapons ? ModularCatalogStore.WeaponsRoot : ModularCatalogStore.ArmorRoot, main.AllAvailableEnchantments, main.AllContainers,
-                   main.ActivePlugins.Select(p => p.FileName), weapons)
+                   main.ActivePlugins.Select(p => p.FileName), weapons, main.AllAvailableQuests)
         {
         }
 
         internal ModularCatalogEditorVM(IEnumerable<FormIDRecord>? keywords, IEnumerable<FormIDRecord>? materials,
             IEnumerable<FormIDRecord>? perks, IEnumerable<FormIDRecord>? workbenches, string root,
             IEnumerable<FormIDRecord>? enchantments = null, List<ContainerRecord>? containers = null,
-            IEnumerable<string>? plugins = null, bool weapons = false)
+            IEnumerable<string>? plugins = null, bool weapons = false, IEnumerable<FormIDRecord>? quests = null)
         {
+            // Before anything builds a recipe editor: its condition rows read these.
+            AllQuests = (quests ?? Enumerable.Empty<FormIDRecord>()).ToList();
+            AllPerks = (perks ?? Enumerable.Empty<FormIDRecord>()).ToList();
+
             AllPlugins = (plugins ?? Enumerable.Empty<string>())
                 .Where(p => !string.IsNullOrWhiteSpace(p))
                 .Select(p => new FormIDRecord { Key = p, Name = p })
@@ -178,7 +183,6 @@ namespace SkyrimCraftingTool.ViewModel
 
             AllKeywords = (keywords ?? Enumerable.Empty<FormIDRecord>()).ToList();
             AllMaterials = (materials ?? Enumerable.Empty<FormIDRecord>()).ToList();
-            AllPerks = (perks ?? Enumerable.Empty<FormIDRecord>()).ToList();
             Workbenches = new[] { new FormIDRecord { Key = "", Name = "(none)" } }
                 .Concat(workbenches ?? Enumerable.Empty<FormIDRecord>()).ToList();
 
@@ -493,10 +497,18 @@ namespace SkyrimCraftingTool.ViewModel
 
         // allowFreeText: with nothing selected and no single match, Add takes what was typed - for
         // plugin patterns like "TAWOBA*" that name no single file.
-        public RecordPickerVM(IReadOnlyList<FormIDRecord> all, Action<FormIDRecord> pick, bool allowFreeText = false)
+        // The group chips (skill trees of perks, kinds of materials) over the whole catalogue. A
+        // keyword or workbench list has no groups, and the chip bar then stays hidden.
+        public PickerFilter Filter { get; }
+
+        // excluded: chips that start as "not these" - the material pickers pass CacheManager.GearKinds.
+        public RecordPickerVM(IReadOnlyList<FormIDRecord> all, Action<FormIDRecord> pick, bool allowFreeText = false,
+                              IEnumerable<string>? excluded = null)
         {
             _all = all;
             _pick = pick;
+            Filter = new PickerFilter(() => _all, excluded: excluded);
+            Filter.Changed += Refresh;
             AddCommand = new RelayCommand(() =>
             {
                 var pick = Selected ?? (Matches.Count == 1 ? Matches[0] : null);
@@ -514,11 +526,17 @@ namespace SkyrimCraftingTool.ViewModel
         {
             Matches.Clear();
             var term = _search.Trim();
-            if (term.Length >= 2)
+
+            // A chip alone is a search too: "Smithing" on, nothing typed, lists the Smithing tree.
+            if (term.Length >= 2 || Filter.HasActive)
             {
+                // FormIDRecord.Matches covers the EditorID, the game name and - for perks - the
+                // skill tree ("smithing"); the key is still matched on its own.
                 foreach (var r in _all.Where(r =>
-                             (r.Name?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                             (r.Key?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false)).Take(200))
+                             Filter.Passes(r) &&
+                             (term.Length < 2 ||
+                              r.Matches(term) ||
+                              (r.Key?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false))).Take(200))
                     Matches.Add(r);
             }
             OnPropertyChanged(nameof(HasMatches));
@@ -744,8 +762,12 @@ namespace SkyrimCraftingTool.ViewModel
         }
     }
 
-    // One of Craft / Temper / Breakdown. Conditions: the editor handles HasPerk (by far the common
-    // case); conditions of any other type in the file are kept untouched and counted.
+    // One of Craft / Temper / Breakdown.
+    //
+    // Conditions: the same editor as an item's recipe - every editable type, operator, OR groups -
+    // through the shared ConditionRowTemplate. It used to be a plain perk list, with every other type
+    // only kept and counted; the preset format could not even hold an operator or an OR then
+    // (ConditionEntry, 2026-11-09).
     public sealed class RecipeEditVM : ViewModelBase
     {
         private readonly ModularCatalogEditorVM _owner;
@@ -757,9 +779,20 @@ namespace SkyrimCraftingTool.ViewModel
         public IReadOnlyList<FormIDRecord> Workbenches { get; }
 
         public ObservableCollection<RecipeEntryEditVM> Entries { get; } = new();
-        public ObservableCollection<KeyEntryVM> Perks { get; } = new();
         public RecordPickerVM MaterialPicker { get; }
-        public RecordPickerVM PerkPicker { get; }
+
+        // ---- conditions ----
+        //
+        // The shared Target-cell templates read FilteredCraftingPerks / FilteredQuests and the row's
+        // Remove reads RemoveConditionCommand off the list owner - the names ItemNodeVM,
+        // MultiSelectDetailVM and BreakdownRecipeVM use too (see Styles/ConditionTemplates.xaml).
+        public ObservableCollection<BaseConditionViewModel> Conditions { get; } = new();
+        public IEnumerable<FormIDRecord> FilteredCraftingPerks => _owner.AllPerks;
+        public IEnumerable<FormIDRecord> FilteredQuests => _owner.AllQuests;
+        public System.Windows.Input.ICommand AddConditionCommand { get; }
+        public System.Windows.Input.ICommand RemoveConditionCommand { get; }
+
+        private bool _swappingType;
 
         // breakdown: only the smelter and the tanning rack - the two benches a breakdown recipe can
         // sit at, the same two the item's own breakdown editor offers (BreakdownRecipeVM.Benches).
@@ -776,7 +809,15 @@ namespace SkyrimCraftingTool.ViewModel
                 : owner.Workbenches;
 
             foreach (var e in recipe.Materials) Entries.Add(EntryVM(e));
-            foreach (var c in recipe.Conditions.Where(IsPerk)) Perks.Add(PerkVM(c.Target));
+
+            foreach (var c in recipe.Conditions)
+            {
+                var vm = Services.PresetConditionMapper.ToViewModel(c, owner.AllPerks, owner.AllQuests);
+                vm.PropertyChanged += OnConditionChanged;
+                Conditions.Add(vm);
+            }
+            _lastWritten = Usable();
+            Conditions.CollectionChanged += (_, _) => WriteConditions();
 
             MaterialPicker = new RecordPickerVM(owner.AllMaterials, r =>
             {
@@ -784,15 +825,87 @@ namespace SkyrimCraftingTool.ViewModel
                 _recipe.Materials.Add(entry);
                 Entries.Add(EntryVM(entry));
                 _owner.MarkDirty();
-            });
-            PerkPicker = new RecordPickerVM(owner.AllPerks, r =>
+            }, excluded: Services.CacheManager.GearKinds);
+
+            AddConditionCommand = new RelayCommand(() =>
             {
-                if (_recipe.Conditions.Any(c => IsPerk(c) && ModularCatalogEditorVM.Same(c.Target, r.Key))) return;
-                _recipe.Conditions.Add(new ConditionEntry { ConditionType = "HasPerk", Target = r.Key, Value = "1", RunOn = "Subject" });
-                Perks.Add(PerkVM(r.Key));
-                _owner.MarkDirty();
+                var vm = new PerkConditionViewModel();
+                vm.PropertyChanged += OnConditionChanged;
+                Conditions.Add(vm);
+            });
+            RemoveConditionCommand = new RelayCommand<BaseConditionViewModel>(vm =>
+            {
+                if (vm == null || !Conditions.Contains(vm)) return;
+                vm.PropertyChanged -= OnConditionChanged;
+                ConditionGroups.Remove(Conditions, vm);   // keeps the OR groups around it intact
             });
         }
+
+        private void OnConditionChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (_swappingType || sender is not BaseConditionViewModel vm) return;
+
+            // The OR-group drawing, set by ConditionGroupingBehavior on every layout - not data.
+            if (e.PropertyName is nameof(BaseConditionViewModel.GroupPosition)
+                or nameof(BaseConditionViewModel.Connector)
+                or nameof(BaseConditionViewModel.IsDanglingOr)) return;
+
+            if (e.PropertyName == nameof(BaseConditionViewModel.Type))
+            {
+                int index = Conditions.IndexOf(vm);
+                if (index < 0) return;
+
+                var fresh = ConditionFactory.ForTypeChange(vm);
+                _swappingType = true;
+                try
+                {
+                    vm.PropertyChanged -= OnConditionChanged;
+                    fresh.PropertyChanged += OnConditionChanged;
+                    // Remove + Insert, not the indexer: see ItemNodeVM.ReplaceConditionForTypeChange.
+                    Conditions.RemoveAt(index);
+                    Conditions.Insert(index, fresh);
+                }
+                finally
+                {
+                    _swappingType = false;
+                }
+                WriteConditions();
+                return;
+            }
+
+            WriteConditions();
+        }
+
+        // The rows back into the preset. Only rows that name what they test - a HasPerk without a perk
+        // stays on screen until one is picked, but writes nothing.
+        //
+        // Compared with what the ROWS said last time, not with the file: a condition read from the
+        // file can come back from the editor spelled slightly differently ("" run-on as "Subject"),
+        // and that alone must neither rewrite the preset nor mark the catalogue as changed - nor may
+        // typing in a search box that changes nothing.
+        private List<ConditionEntry> _lastWritten;
+
+        private List<ConditionEntry> Usable() => Conditions
+            .Where(ConditionMapper.HasUsableTarget)
+            .Select(Services.PresetConditionMapper.ToEntry)
+            .ToList();
+
+        private void WriteConditions()
+        {
+            if (_swappingType) return;
+
+            var fresh = Usable();
+            if (SameEntries(fresh, _lastWritten)) return;
+
+            _lastWritten = fresh;
+            _recipe.Conditions.Clear();
+            _recipe.Conditions.AddRange(fresh.Select(c => c.Clone()));
+            _owner.MarkDirty();
+        }
+
+        private static bool SameEntries(List<ConditionEntry> a, List<ConditionEntry> b)
+            => a.Count == b.Count
+            && a.Zip(b).All(p => System.Text.Json.JsonSerializer.Serialize(p.First) == System.Text.Json.JsonSerializer.Serialize(p.Second));
 
         public FormIDRecord? Workbench
         {
@@ -807,28 +920,10 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
-        public string OtherConditions
-        {
-            get
-            {
-                int n = _recipe.Conditions.Count(c => !IsPerk(c));
-                return n == 0 ? "" : $"{n} other condition(s) from the file are kept as they are.";
-            }
-        }
-
-        private static bool IsPerk(ConditionEntry c) => string.Equals(c.ConditionType, "HasPerk", StringComparison.OrdinalIgnoreCase);
-
         private RecipeEntryEditVM EntryVM(MaterialEntry e) => new(e, _owner.MaterialName(e.Key), _owner.MarkDirty, vm =>
         {
             _recipe.Materials.Remove(vm.Model);
             Entries.Remove(vm);
-            _owner.MarkDirty();
-        });
-
-        private KeyEntryVM PerkVM(string key) => new(key, _owner.PerkName(key), vm =>
-        {
-            _recipe.Conditions.RemoveAll(c => IsPerk(c) && ModularCatalogEditorVM.Same(c.Target, vm.Key));
-            Perks.Remove(vm);
             _owner.MarkDirty();
         });
     }
@@ -1331,7 +1426,7 @@ namespace SkyrimCraftingTool.ViewModel
                 list.Add(e);
                 Rows.Add(Row(e));
                 owner.MarkDirty();
-            });
+            }, excluded: Services.CacheManager.GearKinds);
         }
     }
 

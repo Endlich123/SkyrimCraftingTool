@@ -44,8 +44,6 @@ namespace SkyrimCraftingTool.ViewModel
     {
         private readonly MainContentVM _content;
 
-        // The nav row the user can thin out. Items and Settings are not in this list - see
-        // NavTabService for why they are not offered rather than forced on.
         public IReadOnlyList<NavTabToggleVM> NavTabs { get; }
 
         public SettingsVM(MainContentVM content, AllTabsImportExportVM importExport)
@@ -142,7 +140,7 @@ namespace SkyrimCraftingTool.ViewModel
             set
             {
                 if (_content.PatchOutputPath == (value ?? "").Trim()) return;
-                _content.PatchOutputPath = value;
+                _content.PatchOutputPath = value ?? "";
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(EffectivePatchOutputPath));
                 OnPropertyChanged(nameof(IsUsingDefaultOutputPath));
@@ -184,7 +182,6 @@ namespace SkyrimCraftingTool.ViewModel
                 Title = "Select the folder the patch should be written to",
             };
 
-            // Start where the user already points, so re-picking a neighbouring folder is one click.
             var current = EffectivePatchOutputPath;
             if (Directory.Exists(current))
                 dialog.InitialDirectory = current;

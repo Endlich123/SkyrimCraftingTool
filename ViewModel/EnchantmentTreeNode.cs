@@ -14,15 +14,8 @@ namespace SkyrimCraftingTool.ViewModel
     //
     // The base keeps what the tree itself needs at every level. Collections stay typed to it, so
     // TryFindPath, TrySelectInTree and the background filter keep walking one kind of node.
-    public abstract class EnchantmentTreeNode : ViewModelBase
+    public abstract class EnchantmentTreeNode : ExpandableNodeVM
     {
-        private bool _isExpanded;
-        public bool IsExpanded
-        {
-            get => _isExpanded;
-            set => SetProperty(ref _isExpanded, value);
-        }
-
         // Bound two-way to TreeViewItem.IsSelected, which is the only way to move the tree's
         // selection from code - TreeView.SelectedItem is read-only. Used by the "jump to the base
         // enchantment" button; the TreeView clears the previous row by itself when this turns on.
@@ -33,7 +26,7 @@ namespace SkyrimCraftingTool.ViewModel
             set => SetProperty(ref _isSelected, value);
         }
 
-        public string DisplayName { get; set; }
+        public string DisplayName { get; set; } = "";
 
         public ObservableCollection<EnchantmentTreeNode> Children { get; set; } = new();
 
@@ -60,6 +53,12 @@ namespace SkyrimCraftingTool.ViewModel
         // would come back as whatever class the filter happened to construct, and the templates
         // would pick the wrong one - the failure mode the split exists to remove.
         public abstract EnchantmentTreeNode CloneWithoutChildren();
+
+        protected T WithExpansion<T>(T copy) where T : EnchantmentTreeNode
+        {
+            CopyExpansionTo(copy);
+            return copy;
+        }
     }
 
     // A plugin row. Carries no record of its own; its detail panel acts on everything below it.
@@ -68,7 +67,7 @@ namespace SkyrimCraftingTool.ViewModel
         // Back-reference to reach the services, the same way PluginNodeVM holds MainContentVM.
         // MUST be carried by CloneWithoutChildren: the filter hands the TreeView copies, so without
         // it every button on a filtered plugin row would silently do nothing.
-        public EnchantmentMenuVM Menu { get; set; }
+        public EnchantmentMenuVM? Menu { get; set; }
 
         public ICommand ExportPluginCommand => new RelayCommand(async () =>
         {
@@ -101,9 +100,6 @@ namespace SkyrimCraftingTool.ViewModel
             if (Menu != null) await Menu.ResetPluginWornRestrictionListsAsync(DisplayName);
         });
 
-        // Delete is offered only where there is something of the user's to delete - the same rule
-        // the single record's Delete button follows via IsUserCreatedSelected. In practice that is
-        // the tool's own pseudo-plugin, but it is asked, not assumed.
         public bool HasOwnEnchantments => Menu?.PluginHasUserCreatedEnchantments(DisplayName) == true;
 
         public ICommand DeletePluginCommand => new RelayCommand(async () =>
@@ -112,12 +108,11 @@ namespace SkyrimCraftingTool.ViewModel
         });
 
         public override EnchantmentTreeNode CloneWithoutChildren()
-            => new EnchantmentPluginNode
+            => WithExpansion(new EnchantmentPluginNode
             {
                 DisplayName = DisplayName,
-                IsExpanded = IsExpanded,
                 Menu = Menu,
-            };
+            });
     }
 
     // "Weapon Enchantments" / "Armor Enchantments" / "Other". Grouping only - no detail panel, the
@@ -125,23 +120,22 @@ namespace SkyrimCraftingTool.ViewModel
     public sealed class EnchantmentCategoryNode : EnchantmentTreeNode
     {
         public override EnchantmentTreeNode CloneWithoutChildren()
-            => new EnchantmentCategoryNode { DisplayName = DisplayName, IsExpanded = IsExpanded };
+            => WithExpansion(new EnchantmentCategoryNode { DisplayName = DisplayName });
     }
 
     // A single enchantment. The only level that carries a record.
     public sealed class EnchantmentLeafNode : EnchantmentTreeNode
     {
-        public EnchantmentRecord Enchantment { get; set; }
+        public required EnchantmentRecord Enchantment { get; set; }
 
         // The recursion bottoms out here: a leaf has no children, it has a record.
         public override bool HasEditedDescendant => Enchantment?.IsEdited == true;
 
         public override EnchantmentTreeNode CloneWithoutChildren()
-            => new EnchantmentLeafNode
+            => WithExpansion(new EnchantmentLeafNode
             {
                 DisplayName = DisplayName,
-                IsExpanded = IsExpanded,
                 Enchantment = Enchantment,
-            };
+            });
     }
 }

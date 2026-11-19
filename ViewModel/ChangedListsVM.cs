@@ -7,16 +7,6 @@ using SkyrimCraftingTool.Services;
 
 namespace SkyrimCraftingTool.ViewModel
 {
-    // Everything the user has changed about leveled lists themselves, in one place.
-    //
-    // WHY THIS EXISTS: a changed chance used to leave no trace outside the patch report. The list
-    // looked untouched in the container tab, and finding your own edits again meant opening every
-    // list you might have touched. That is a poor deal for the only non-additive thing this tool
-    // writes - these edits reach every mod feeding the list, so they are exactly the ones you want
-    // to be able to review and take back.
-    //
-    // Reset is per list and immediate, because that is what taking one back means: the row is gone
-    // from the table, the patch stops writing a rule, and the list is the load order's again.
     public sealed class ChangedListsVM : ViewModelBase
     {
         private readonly string? _dbPath;
@@ -57,8 +47,6 @@ namespace SkyrimCraftingTool.ViewModel
             Load();
         }
 
-        // Kept deliberately unconfirmed: nothing is lost that the user cannot set again in the
-        // window they set it in, and every row is listed right there while they press it.
         private void ResetAll()
         {
             foreach (var row in Rows.ToList())

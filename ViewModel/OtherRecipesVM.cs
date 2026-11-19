@@ -24,8 +24,6 @@ namespace SkyrimCraftingTool.ViewModel
         public bool CanMakeMain => !IsMain && !IsRemoved;
         public bool CanRemove => !IsRemoved;
 
-        // What the remove button will actually do, spelled out - the two cases behave very
-        // differently and the user should not have to know which one they are in.
         public string RemoveHint => IsUserCreated
             ? "Deletes this recipe. It was created here, so nothing in the game brings it back."
             : "Takes this recipe out of the game. The patch writes a deleted-record override for it.";
@@ -55,7 +53,7 @@ namespace SkyrimCraftingTool.ViewModel
     {
         private readonly ItemNodeVM _item;
         private readonly RecipeKind _kind;
-        private readonly MainContentVM _main;
+        private readonly MainContentVM? _main;
 
         public string Title { get; }
         public ObservableCollection<OtherRecipeVM> Rows { get; } = new();
@@ -170,9 +168,6 @@ namespace SkyrimCraftingTool.ViewModel
                 ? $"{record.CreatedObjectCount}x {NameOf(record.CreatedItemKey)}"
                 : DescribeIngredients(record);
 
-        // ReferenceLookup is a value type, so it cannot be null-conditionalled; an unresolved one
-        // comes back with Found = false and a null Name. The raw key beats a blank cell - it is
-        // what the user would search for.
         private string WorkbenchNameOf(string key)
         {
             if (string.IsNullOrWhiteSpace(key)) return "(none)";

@@ -14,7 +14,7 @@ namespace SkyrimCraftingTool.ViewModel
     {
         public EnchantmentEffectRecord Model { get; }
 
-        public MagicEffectsRecords SelectedMagicEffect
+        public MagicEffectsRecords? SelectedMagicEffect
         {
             get => _selectedMagicEffect;
             set
@@ -84,10 +84,14 @@ namespace SkyrimCraftingTool.ViewModel
 
         private void ApplyMagicEffectRules()
         {
+            // A cleared selection leaves the effect as it is: there is no effect to take values from,
+            // and wiping the key would drop the effect from the enchantment on the next save.
+            if (SelectedMagicEffect is not { } effect) return;
+
             // Update model key
-            Model.MagicEffectKey = SelectedMagicEffect?.Key;
-            Model.Name = SelectedMagicEffect.Name;
-            Model.EditorID = SelectedMagicEffect.EditorID;
+            Model.MagicEffectKey = effect.Key;
+            Model.Name = effect.Name;
+            Model.EditorID = effect.EditorID;
 
             // Magnitude
             if (!AllowsMagnitude)
@@ -108,11 +112,11 @@ namespace SkyrimCraftingTool.ViewModel
             OnPropertyChanged(nameof(Model));
         }
 
-        public event PropertyChangedEventHandler PropertyChanged;
-        private void OnPropertyChanged([CallerMemberName] string name = null)
+        public event PropertyChangedEventHandler? PropertyChanged;
+        private void OnPropertyChanged([CallerMemberName] string? name = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
-        private MagicEffectsRecords _selectedMagicEffect;
+        private MagicEffectsRecords? _selectedMagicEffect;
     }
 
 }

@@ -29,7 +29,7 @@ namespace SkyrimCraftingTool.ViewModel
 
         public string DisplayName => $"{Name} (Slot {Bit + 30})";
 
-        public event EventHandler SelectionChanged;
+        public event EventHandler? SelectionChanged;
 
         public ICommand ToggleSelectedCommand { get; }
 

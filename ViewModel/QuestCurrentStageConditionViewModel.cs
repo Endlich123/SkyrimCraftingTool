@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
 using SkyrimCraftingTool.Model;
@@ -42,7 +43,8 @@ namespace SkyrimCraftingTool.ViewModel
                     if (value != null)
                         QuestFormKey = KeyFactory.ParseFormKey(value.Key);
                     OnPropertyChanged(nameof(IsDeadReference));
-                    OnPropertyChanged(nameof(StagesHint));
+                    OnPropertyChanged(nameof(StageOptions));
+                    OnPropertyChanged(nameof(StageToolTip));
                 }
             }
         }
@@ -50,17 +52,41 @@ namespace SkyrimCraftingTool.ViewModel
         // A quest is set, but it is not in the active quest list (its plugin is disabled or gone).
         public bool IsDeadReference => !QuestFormKey.IsNull && SelectedQuest == null;
 
-        // The stages the quest defines, as a hint next to the picker - the value is typed in the
-        // Value column, where the operator sits too.
-        public string StagesHint => SelectedQuest?.Stages is { Count: > 0 } s
-            ? "Stages: " + string.Join(", ", s)
-            : "";
+        // The stage box next to the quest - a second way into the Value column, nothing of its own:
+        // picking a stage writes the Value, typing a Value shows in the box. The operator stays in
+        // the row, so ">= 20" still reads "at least stage 20".
+        public IReadOnlyList<QuestStageOption> StageOptions => QuestStageOption.For(SelectedQuest);
+
+        public string StageToolTip => QuestStageOption.ToolTipFor(SelectedQuest, ComparisonValue);
+
+        // The box's text, bound on every keystroke so a picked stage reaches the Value box at once.
+        // Not raised back while it is being typed into - "1." would turn into "1" under the caret.
+        private bool _typingStage;
+        public string StageText
+        {
+            // Invariant, like the Value box's binding (WPF converts with en-US unless told otherwise).
+            get => ComparisonValue.ToString(CultureInfo.InvariantCulture);
+            set
+            {
+                if (!float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var v))
+                    return;
+
+                _typingStage = true;
+                try { ComparisonValue = v; }
+                finally { _typingStage = false; }
+            }
+        }
 
         private float _stage = 10f;
         public override float ComparisonValue
         {
             get => _stage;
-            set => SetProperty(ref _stage, value);
+            set
+            {
+                if (!SetProperty(ref _stage, value)) return;
+                if (!_typingStage) OnPropertyChanged(nameof(StageText));
+                OnPropertyChanged(nameof(StageToolTip));
+            }
         }
 
         public override ConditionFloat ToMutagenCondition()

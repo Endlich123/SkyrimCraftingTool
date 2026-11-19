@@ -17,13 +17,13 @@ namespace SkyrimCraftingTool.ViewModel
     // pre-import UI value straight back over what was just imported.
     public sealed class TabImportExportVM
     {
-        private readonly IImportExportService _service;
+        private readonly IImportExportService? _service;
         private readonly Func<Task> _flushPendingSaves;
         private readonly Func<Task> _refreshAfterImport;
 
         public TabImportExportVM(
             TabExportModule module,
-            IImportExportService service,
+            IImportExportService? service,
             Func<Task>? flushPendingSaves = null,
             Func<Task>? refreshAfterImport = null)
         {
@@ -37,6 +37,11 @@ namespace SkyrimCraftingTool.ViewModel
         }
 
         public TabExportModule Module { get; }
+
+        // Only test setups build a tab without the service; there the error ends up in the same
+        // catch as any other export/import failure.
+        private IImportExportService RequireService()
+            => _service ?? throw new InvalidOperationException("No import/export service attached to this tab.");
 
         // The tab toolbar's two buttons: everything this tab has, in both directions.
         public RelayCommand ExportCommand { get; }
@@ -93,7 +98,7 @@ namespace SkyrimCraftingTool.ViewModel
         {
             try
             {
-                return _service.GetEditedItems(Module.Units, scope, scopeValue);
+                return RequireService().GetEditedItems(Module.Units, scope, scopeValue);
             }
             catch (Exception ex)
             {
@@ -144,7 +149,7 @@ namespace SkyrimCraftingTool.ViewModel
                 }
             }
 
-            ExportFile file;
+            ExportFile? file;
             try
             {
                 file = ExportFileStore.ReadFile(path);
@@ -171,33 +176,64 @@ namespace SkyrimCraftingTool.ViewModel
                 return;
             }
 
-            await _flushPendingSaves();
+            // Same two loading screens as AllTabsImportExportVM.ImportAsync, with the conflict dialog
+            // between them.
+            ImportPlan plan;
+            using (var busy = BusyService.Show("Import: saving pending edits…", blocksUiThread: true))
+            {
+                await _flushPendingSaves();
 
-            ImportResult? result;
-            try
-            {
-                result = ImportExportFlow.RunImport(_service, Module, items);
+                BusyService.SetMessage($"Import: comparing {items.Count:N0} {Plural}…");
+                try
+                {
+                    plan = ImportExportFlow.PreviewImport(RequireService(), Module.Units, items.Where(Module.Accepts).ToList());
+                }
+                catch (Exception ex)
+                {
+                    busy.Dispose();
+                    ImportFailed(ex);
+                    return;
+                }
             }
-            catch (Exception ex)
-            {
-                AppLogger.LogError($"Import ({Module.Folder}) failed", ex);
-                Error($"Import failed:{Environment.NewLine}{ex.Message}");
+
+            var useFileVersion = ImportExportFlow.ResolveConflicts(plan);
+            if (useFileVersion == null)
                 return;
-            }
 
-            if (result == null)
-                return; // user cancelled the conflict dialog — conflicting records left untouched
+            ImportResult result;
+            using (var busy = BusyService.Show("Import: writing…", blocksUiThread: true))
+            {
+                try
+                {
+                    result = RequireService().ApplyImport(Module.Units, plan, useFileVersion);
+                }
+                catch (Exception ex)
+                {
+                    busy.Dispose();
+                    ImportFailed(ex);
+                    return;
+                }
 
-            try
-            {
-                await _refreshAfterImport();
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogError($"Import ({Module.Folder}) refresh failed", ex);
+                BusyService.SetMessage("Import: refreshing the tab…");
+                try
+                {
+                    await _refreshAfterImport();
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.LogError($"Import ({Module.Folder}) refresh failed", ex);
+                }
+
+                await BusyService.UntilDrawnAsync();
             }
 
             Info("Import Complete", ImportExportFlow.SummaryText(result));
+        }
+
+        private void ImportFailed(Exception ex)
+        {
+            AppLogger.LogError($"Import ({Module.Folder}) failed", ex);
+            Error($"Import failed:{Environment.NewLine}{ex.Message}");
         }
 
         // For AllTabsImportExportVM, which runs every tab's flush and refresh around ONE import.

@@ -13,9 +13,9 @@ namespace SkyrimCraftingTool.ViewModel
         public SpellEffectRecord Model { get; }
 
         // Raised on every committed change. The view model debounces and writes.
-        public event Action Changed;
+        public event Action? Changed;
 
-        public SpellEffectVM(SpellEffectRecord model, SpellEffectRecord original)
+        public SpellEffectVM(SpellEffectRecord model, SpellEffectRecord? original)
         {
             Model = model;
             _original = original;
@@ -23,7 +23,7 @@ namespace SkyrimCraftingTool.ViewModel
 
         // What the scan had. Kept beside the live value so a row can say it has been changed
         // without asking the database on every keystroke.
-        private readonly SpellEffectRecord _original;
+        private readonly SpellEffectRecord? _original;
 
         public string Label => Model.Label;
         public string MagicEffectKey => Model.MagicEffectKey;
@@ -43,11 +43,11 @@ namespace SkyrimCraftingTool.ViewModel
         public bool AllowsDuration => _catalogue?.HasDuration ?? true;
         public bool AllowsArea => _catalogue?.HasArea ?? true;
 
-        private MagicEffectsRecords _catalogue;
+        private MagicEffectsRecords? _catalogue;
 
-        internal MagicEffectsRecords Catalogue => _catalogue;
+        internal MagicEffectsRecords? Catalogue => _catalogue;
 
-        internal void AttachCatalogue(MagicEffectsRecords entry)
+        internal void AttachCatalogue(MagicEffectsRecords? entry)
         {
             _catalogue = entry;
             OnPropertyChanged(nameof(AllowsMagnitude));
@@ -94,8 +94,6 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
-        // Differs from what the scan found. Per FIELD rather than per row, so the window can mark
-        // the one number the user actually moved instead of lighting up the whole line.
         public bool IsMagnitudeEdited => _original != null && Math.Abs(_original.Magnitude - Model.Magnitude) > 0.0001f;
         public bool IsDurationEdited => _original != null && _original.Duration != Model.Duration;
         public bool IsAreaEdited => _original != null && _original.Area != Model.Area;

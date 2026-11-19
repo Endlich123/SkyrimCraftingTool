@@ -48,6 +48,12 @@ namespace SkyrimCraftingTool.ViewModel
         // (the mod it came from is disabled/removed).
         public bool IsDeadReference => !PerkFormKey.IsNull && SelectedPerk == null;
 
+        // The skill-tree chips of this condition's perk box. The list itself is the item's catalogue,
+        // shared by every condition; the chips are this condition's own, applied in the view by
+        // PickerOptionsConverter (which also keeps SelectedPerk in the list). UI state only - never
+        // read by ConditionMapper, so a chip is no edit.
+        public PickerFilter PerkFilter { get; } = new PickerFilter();
+
         private string _perkSearchText = string.Empty;
         public string PerkSearchText
         {

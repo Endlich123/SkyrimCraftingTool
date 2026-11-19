@@ -13,14 +13,6 @@ namespace SkyrimCraftingTool.ViewModel
     // the multi-select - the list treats them alike, and so does the arithmetic.
     public sealed record PlacementSubject(string Key, string Name);
 
-    // One container that rolls this list, with the chance of the item coming out of one restock of
-    // it. ChanceText is pre-formatted because the sorting needs the number and the row needs the
-    // text, and formatting in a converter would put the same rule in two places.
-    //
-    // IsDirect and Via say HOW the container gets here: it either holds this very list, or it holds
-    // another one that leads to it. Worth showing, because it is the difference between "this chest
-    // is stocked from your list" and "this chest is stocked from a list that happens to contain
-    // yours somewhere below" - and with 120 containers reaching one list, most are the latter.
     public sealed record ContainerReachVM(
         string Name, double Chance, string ChanceText, bool IsDirect, string Via)
     {
@@ -40,16 +32,6 @@ namespace SkyrimCraftingTool.ViewModel
         public override string ToString() => Label;
     }
 
-    // The detail window behind a leveled list in the Container section.
-    //
-    // THREE things live here, and keeping them apart is most of the design:
-    //   * what the LIST is - its contents, and its chance and flags. Editable since 2026-09-15, and
-    //     that is a different kind of edit from the rest of this tool: chanceNone and the calc flags
-    //     belong to the whole list, so changing them changes the odds for every mod feeding it.
-    //   * what THIS ITEM gets - level and amount. A placement the patch adds, and nobody else's.
-    //   * what any of it MEANS - the calculator. It recomputes on every change, and that is the
-    //     whole point: the user asked for the number to be here rather than in the dry-run, because
-    //     "by the time it is in the dry-run it is too late".
     public sealed class LeveledListEditorVM : ViewModelBase
     {
         // Null when nothing is being placed: a list opened on its own (the lost-entry report, the
@@ -65,13 +47,6 @@ namespace SkyrimCraftingTool.ViewModel
 
         public bool CanPlace => _entry != null;
 
-        // The placement half for a list one level further down, or null when this window places
-        // nothing. The new window places into the SAME container row the user came through: the
-        // container is the way the list is reached, and the rule is written per list either way.
-        //
-        // The row may be created here, at level 0, so the window has something to bind to. Whoever
-        // shows the window hands it back to ReleaseNested afterwards, which takes it out again if
-        // nothing was placed.
         public LeveledListEditorVM? ForNested(string listKey, string listName)
         {
             var nested = _entry?.OwnerContainer?.GetOrAddNested(listKey, listName);
@@ -104,10 +79,6 @@ namespace SkyrimCraftingTool.ViewModel
 
         public bool IsMultiItem => Subjects.Count > 1;
 
-        // The representative the calculator reports on. Every subject is added at the same level and
-        // amount, so they all have the same chance - except one that is already in the list, which
-        // addOnce leaves alone. Picking a subject that will actually be added keeps the headline
-        // number true for the items the user is placing.
         private PlacementSubject? Representative =>
             Subjects.FirstOrDefault(s => !_scanned.Any(
                 e => string.Equals(e.Reference, s.Key, StringComparison.OrdinalIgnoreCase)))
@@ -131,13 +102,9 @@ namespace SkyrimCraftingTool.ViewModel
 
         public string ListName { get; }
 
-        // What the scan found, kept as the reference point for "has the user changed anything".
         public int ScannedChanceNone { get; }
         public string ScannedFlags { get; }
 
-        // The scanned contents, untouched. Contents below is this plus what the patch will add, and
-        // the two have to stay separable: "already in the game" and "you asked for it" are opposite
-        // statements, and AlreadyInList must only ever answer the first one.
         private readonly IReadOnlyList<LeveledListEntryInfo> _scanned;
 
         private readonly IReadOnlyList<PlacementLookup.PlannedPlacement> _plannedByOthers;
@@ -145,10 +112,6 @@ namespace SkyrimCraftingTool.ViewModel
 
         public ObservableCollection<LeveledListEntryInfo> Contents { get; } = new();
 
-        // Items that used to be in this list and are not in the winning version any more. Read-only
-        // and deliberately inert: nothing here reaches a patch by itself. The tool cannot tell a
-        // deliberate removal from a collision, so it reports and the user decides - see
-        // LeveledListLostEntry in the schema.
         public ObservableCollection<LostEntryVM> LostEntries { get; } = new();
 
         public bool HasLostEntries => LostEntries.Count > 0;
@@ -259,8 +222,6 @@ namespace SkyrimCraftingTool.ViewModel
 
             _scanned = info?.Entries ?? Array.Empty<LeveledListEntryInfo>();
 
-            // Which of them the user has already put back, so the block opens showing what is
-            // still outstanding rather than offering a decision that was already made.
             var restored = LeveledListRestoreStore.RestoredKeys(ListKey, dbPath);
             foreach (var lost in info?.LostEntries ?? Array.Empty<LeveledListLostEntryInfo>())
             {
@@ -280,10 +241,6 @@ namespace SkyrimCraftingTool.ViewModel
 
             _plannedByOthers = planned.Where(p => !subjectKeys.Contains(p.ItemKey)).ToList();
 
-            // The subjects' OWN saved placements, which only matter in the multi-select: there the
-            // row is a template that has not been applied yet, so an item may already be lined up
-            // for this list from its own editor. In the single-item editor the row IS the item's
-            // live state, and a stale saved value would contradict the checkbox in front of the user.
             _plannedBySubjects = IsMultiItem
                 ? planned.Where(p => subjectKeys.Contains(p.ItemKey)).ToList()
                 : new List<PlacementLookup.PlannedPlacement>();
@@ -358,21 +315,6 @@ namespace SkyrimCraftingTool.ViewModel
             set => ChanceNone = (int)Math.Round(value);
         }
 
-        // --- The chance from a global variable: SHOWN, never edited ---
-        //
-        // A leveled list can take its chance-none from a GLOB instead of from a fixed number, and 223
-        // lists in the load order do. The stored number is then dead weight - parked at 100 in 209 of
-        // those cases - and the game reads the global, which quests and scripts move during play:
-        // PCIllusionAdept sits at 100 until the player reaches Illusion 50, which is how spell tomes
-        // of a tier appear in shops only once you are good enough.
-        //
-        // POINTING A LIST AT A DIFFERENT GLOBAL WAS BUILT AND THEN TAKEN BACK OUT (2026-09-16, the
-        // user's call). It works, but it is a footgun with a narrow use: choosing one couples a list
-        // to unrelated game state, the value shown is only a starting value, and SkyPatcher can set a
-        // global but never remove one - so the edit is a one-way door. No user has asked for it.
-        //
-        // What stays is the reading, and it has to: without it the calculator reports "this list
-        // never gives anything" for every gated list in the load order.
         public string ScannedGlobalKey { get; }
 
         private readonly GlobalInfo? _governingGlobal;
@@ -569,9 +511,6 @@ namespace SkyrimCraftingTool.ViewModel
             "This works out the chance of one object coming out of this list. Pick the object it is about - "
             + "tick a row in the contents, or open this list from the item you are placing.";
 
-        // What the box says about itself while it is closed. Three facts, because a collapsed panel
-        // that says nothing is a panel nobody opens: how much is in the list, how often it hands out
-        // nothing, and whether you have changed it.
         public string HeaderLine
         {
             get
@@ -611,9 +550,6 @@ namespace SkyrimCraftingTool.ViewModel
                 .Select(p => new PendingPlacement(ListKey, p.ItemKey, p.Level, p.Count))
                 .ToList();
 
-            // Every selected item, not just the representative: from the multi-select this row places
-            // all of them at once, and each one is a slot in the same draw. Counting one would make
-            // the number look better the more items the user selects, which is backwards.
             if (CanPlace && IsPlaced)
                 foreach (var subject in Subjects)
                     pending.Add(new PendingPlacement(ListKey, subject.Key, Level, Count));
@@ -665,10 +601,6 @@ namespace SkyrimCraftingTool.ViewModel
                     level, count, IsList: false, IsPlanned: true));
             }
 
-            // Entries the user put back. Shown here for the same reason a placement is: the question
-            // this box answers is "what will come out of this list", and a restoration is part of
-            // that answer the moment it is made. Marked IsPlanned like any other pending addition -
-            // it is not in the game yet, the next patch is what puts it there.
             foreach (var lost in LostEntries.Where(e => e.IsRestored))
             {
                 if (_scanned.Any(e => string.Equals(e.Reference, lost.Reference, StringComparison.OrdinalIgnoreCase)))
@@ -746,8 +678,6 @@ namespace SkyrimCraftingTool.ViewModel
 
         private string FlagsInEffect()
         {
-            // What the flags will BE after this edit, expressed the way the record writes them, so
-            // the hint above describes the state the user is looking at rather than the scanned one.
             var mode = FlagModeEdit == CalcFlagMode.Unchanged
                 ? LeveledListFlags.FromRecord(ScannedFlags)
                 : FlagModeEdit;
@@ -880,14 +810,6 @@ namespace SkyrimCraftingTool.ViewModel
                         missAll *= 1 - result.Chance;
                     }
 
-                    // A container with a zero chance is kept, not dropped. It still answers the
-                    // question in the heading - who rolls this list - and dropping it is how this
-                    // panel came to claim "nowhere" about a list the user had just picked out of a
-                    // container. A dash rather than "0%": nothing is coming out of it yet, and a
-                    // percentage suggests a computation where there is simply no placement.
-                    // Which way in: the container either holds this list, or holds another one that
-                    // leads to it. Named, not just flagged - "via LItemBlacksmithArmor75" says where
-                    // the chain actually enters, which is the next thing anyone asks.
                     bool direct = reach.Entries.Any(
                         e => string.Equals(e.ListKey, ListKey, StringComparison.OrdinalIgnoreCase));
 
@@ -943,10 +865,6 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
-        // Is the item ALREADY in this list, without the patch? Against the SCANNED entries only -
-        // Contents also carries the rows the patch will add, and counting those would turn "you
-        // placed it here" into "the game already has it", which is the one confusion this window
-        // exists to prevent.
         public bool AlreadyInList =>
             _scanned.Any(e => string.Equals(e.Reference, ItemKey, StringComparison.OrdinalIgnoreCase));
 
@@ -963,9 +881,6 @@ namespace SkyrimCraftingTool.ViewModel
 
                 if (already == 0) return "Not in this list yet.";
 
-                // From the multi-select this is the useful shape of the answer: the patch silently
-                // skips the ones that are already there, so the count is what the user needs, not a
-                // yes/no about a single item.
                 if (IsMultiItem)
                     return $"{already} of {Subjects.Count} are already in this list. The patch skips those - " +
                            "an item is only added if the list does not already contain it.";
@@ -976,13 +891,6 @@ namespace SkyrimCraftingTool.ViewModel
         }
     }
 
-    // One row of the History block: something an override took out, and whether the user has decided
-    // to put it back.
-    //
-    // NO ACTION OF ITS OWN. A button per row was the first shape and it does not survive contact
-    // with the real data: one list measured lost 47 entries, and answering that one row at a time is
-    // 47 decisions for what is usually a single one ("this mod pruned the list, put it all back" or
-    // "leave it"). The rows are selectable instead and the action sits once, below them.
     public sealed class LostEntryVM : ViewModelBase, IOwnerPaneRow
     {
         private readonly LeveledListLostEntryInfo _lost;

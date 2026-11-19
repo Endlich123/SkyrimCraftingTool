@@ -21,7 +21,7 @@ namespace SkyrimCraftingTool.ViewModel
     // and leveled lists, IPlaceable for the placement tabs. What a leaf looks like comes from each
     // view's own HierarchicalDataTemplate.ItemTemplate rather than from a DataType-keyed template,
     // which is also why IPlaceable being an interface does not matter here.
-    public sealed class PluginGroupNodeVM : ViewModelBase
+    public sealed class PluginGroupNodeVM : ExpandableNodeVM
     {
         public PluginGroupNodeVM(string pluginName, IEnumerable<object> rows)
         {
@@ -33,37 +33,12 @@ namespace SkyrimCraftingTool.ViewModel
 
         public ObservableCollection<object> Rows { get; }
 
-        private bool _isExpanded;
-        public bool IsExpanded
-        {
-            get => _isExpanded;
-            set => SetProperty(ref _isExpanded, value);
-        }
-
-        // Grouping lives here rather than in each sub-tab: both kinds key their rows the same way,
-        // and two copies of this would drift apart the moment one of them gets a sort.
-        //
-        // LOAD ORDER, like the item tree. It was alphabetical at first, on the reasoning that these
-        // view models see nothing but the rows' keys and that handing each one the plugin list ties
-        // a tab to the scanner for the sake of row order. That trade was wrong: the order a load
-        // order is read in IS the information - which mod overrides which - and a tool that shows
-        // the same plugins in two different orders on two screens makes the reader translate
-        // between them.
-        //
-        // `loadOrder` is the plugin file names as the game loads them, ranked by the rule every
-        // record tree shares (Services/PluginTreeOrder). A plugin not in it - a Creation Club master,
-        // above all - sits after the vanilla masters rather than vanishing: a key whose plugin is
-        // not in plugins.txt is exactly the row someone is looking for. Without a list it stays
-        // alphabetical, which is what the tests and any caller that has no scanner get.
-        //
-        // ALWAYS COLLAPSED. There used to be an `expanded` flag here, set by the filtered tree so a
-        // search would not leave its matches hidden inside closed plugin rows. The user's own
-        // reading of it (2026-10-12) is the one that counts: on a real load order that opens every
-        // plugin at the first keystroke, and the item tree - the one they read first - never did.
-        // Whoever wants a node open sets IsExpanded on it; see PluginTree.Filter.
+        // `expansion`: the open plugins, kept across regrouping - see TreeExpansion. Null = a plain
+        // field per node, as before.
         public static List<PluginGroupNodeVM> Group<T>(
             IEnumerable<T> rows, Func<T, string> keyOf,
-            IReadOnlyList<string>? loadOrder = null)
+            IReadOnlyList<string>? loadOrder = null,
+            TreeExpansion? expansion = null)
         {
             // No list, no order: every plugin ranks the same and the name decides.
             Func<string, int> rank = loadOrder == null || loadOrder.Count == 0
@@ -74,7 +49,10 @@ namespace SkyrimCraftingTool.ViewModel
                 .GroupBy(r => PluginOf(keyOf(r)), StringComparer.OrdinalIgnoreCase)
                 .OrderBy(g => rank(g.Key))
                 .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
-                .Select(g => new PluginGroupNodeVM(g.Key, g.Cast<object>()))
+                .Select(g => new PluginGroupNodeVM(g.Key, g.Cast<object>())
+                {
+                    Expansion = expansion, ExpansionKey = g.Key,
+                })
                 .ToList();
         }
 

@@ -8,10 +8,6 @@ namespace SkyrimCraftingTool.ViewModel
 {
     public class IngredientEntryVM : ViewModelBase
     {
-        // Nullable: a free-form template row (see MultiSelectDetailVM's Crafting/Temper Recipe
-        // template, built directly by the user instead of copied from an item) isn't owned by any
-        // ItemNodeVM yet - NotifyParent() below is simply a no-op for those until the row gets
-        // cloned onto a real target item.
         private readonly ItemNodeVM? _parentItem;
         private readonly bool _isTemper;
 
@@ -32,17 +28,17 @@ namespace SkyrimCraftingTool.ViewModel
             _onChanged = onChanged;
         }
 
-        private string _key;
-        private string _materialName;
+        private string? _key;
+        private string? _materialName;
         // Default 1 so a freshly added ingredient row always starts at amount 1 (matches
         // PresetIngredientEntryVM). Load paths (COBJNodeVM) set Count explicitly from the record,
         // so this only ever applies to brand-new rows added via the "+" button.
         private int _count = 1;
-        private FormIDRecord _selectedMaterial;
-        private string _searchText;
-        private ICollectionView _localMaterialsView;
+        private FormIDRecord? _selectedMaterial;
+        private string _searchText = "";
+        private ICollectionView? _localMaterialsView;
 
-        public string Key
+        public string? Key
         {
             get => _key;
             set
@@ -118,7 +114,7 @@ namespace SkyrimCraftingTool.ViewModel
             OnPropertyChanged(nameof(IsDeadReference));
         }
 
-        public string MaterialName
+        public string? MaterialName
         {
             get => _materialName;
             set
@@ -154,9 +150,9 @@ namespace SkyrimCraftingTool.ViewModel
         // Built on first read - that is, when a ComboBox actually shows it. A filtered view over every
         // material of the load order, per ingredient row, was 8.8 s of a 74 s preset patch over
         // 18,867 items whose rows nobody looks at (profile 2026-10-22).
-        private List<FormIDRecord> _allMaterials;
+        private List<FormIDRecord>? _allMaterials;
 
-        public ICollectionView LocalMaterialsView
+        public ICollectionView? LocalMaterialsView
         {
             get
             {
@@ -167,7 +163,7 @@ namespace SkyrimCraftingTool.ViewModel
         }
 
 
-        public FormIDRecord SelectedMaterial
+        public FormIDRecord? SelectedMaterial
         {
             get => _selectedMaterial;
             set
@@ -206,13 +202,11 @@ namespace SkyrimCraftingTool.ViewModel
                 _parentItem.NotifyFieldChanged(nameof(ItemNodeVM.CraftingIngredients));
         }
 
-        public void SetSelectedMaterialSilent(FormIDRecord value)
+        public void SetSelectedMaterialSilent(FormIDRecord? value)
         {
             _selectedMaterial = value;
             _key = value?.Key;
             _materialName = value?.Name;
-            // Keep the editable ComboBox's text box in sync - without this it shows blank for a
-            // silently-set material until the user interacts with it.
             _searchText = value?.Name ?? "";
 
             OnPropertyChanged(nameof(SelectedMaterial));
@@ -229,7 +223,24 @@ namespace SkyrimCraftingTool.ViewModel
             if (allMaterials == null) return;
             _allMaterials = allMaterials;
             _localMaterialsView = null;
+            _materialFilter?.EnsureSource(_allMaterials);
             OnPropertyChanged(nameof(LocalMaterialsView));
+        }
+
+        // The kind chips of this row's material dropdown. Per row, like the view: each row filters on
+        // its own. Built lazily - the chips are counted when a dropdown first shows them, not for the
+        // thousands of rows a preset patch creates and nobody opens (see LocalMaterialsView).
+        private PickerFilter? _materialFilter;
+        public PickerFilter MaterialFilter
+        {
+            get
+            {
+                if (_materialFilter != null) return _materialFilter;
+                // Armor and weapon start excluded - see CacheManager.GearKinds.
+                _materialFilter = new PickerFilter(() => _allMaterials, excluded: Services.CacheManager.GearKinds);
+                _materialFilter.Changed += RefreshMaterialFilter;
+                return _materialFilter;
+            }
         }
 
         private ICollectionView BuildMaterialsView(List<FormIDRecord> allMaterials)
@@ -249,12 +260,20 @@ namespace SkyrimCraftingTool.ViewModel
                 if (IsUsedBySibling(mat.Key))
                     return false;
 
+                // The kind chips in the dropdown (Misc, Food, Soul gem ...). After the own-pick check
+                // above on purpose: a chip must never hide what the row holds. The property, not the
+                // field: the filter starts with armor and weapons excluded, and must apply even before
+                // the chip bar has asked for it. Creating it is cheap - its chips are counted lazily.
+                if (!MaterialFilter.Passes(mat))
+                    return false;
+
                 // Not actively searching (box just shows the current pick, or is empty): show all.
                 if (string.IsNullOrWhiteSpace(SearchText) ||
                     (SelectedMaterial != null && SearchText == SelectedMaterial.Name))
                     return true;
 
-                return mat.Name.Contains(SearchText, System.StringComparison.OrdinalIgnoreCase);
+                // EditorID, game name and kind ("food", "soul gem") - see FormIDRecord.Matches.
+                return mat.Matches(SearchText);
             };
             return view;
         }

@@ -6,18 +6,6 @@ using SkyrimCraftingTool.Services;
 
 namespace SkyrimCraftingTool.ViewModel
 {
-    // Every leveled list that lost entries to an override, in one place.
-    //
-    // WHY THIS EXISTS: the History block inside a list only helps someone who already opened that
-    // list, and lists are reached through an item that happens to sit in one. On a real load order
-    // that leaves 155 affected lists that nobody would ever open by chance - the information was
-    // built and then unreachable.
-    //
-    // NOTHING HERE IS A DEFECT LIST. A plugin that drops an entry may be a patch removing it on
-    // purpose; the record looks identical either way, and the biggest cases measured are exactly
-    // that (one list pruned from 26 vanilla spell tomes to 5, another from 55 Daedric weapons to
-    // 8 - both deliberate redesigns). So this reports and the user decides, and the wording has to
-    // keep saying so.
     public sealed class LostListsVM : ViewModelBase
     {
         private readonly string? _dbPath;

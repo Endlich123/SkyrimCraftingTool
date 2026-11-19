@@ -31,9 +31,6 @@ namespace SkyrimCraftingTool.ViewModel
             CollapseAllCommand = new RelayCommand(() => ExpandAll(false));
             ExpandAllCommand = new RelayCommand(() => ExpandAll(true));
 
-            // No flush: the spell editors commit synchronously on focus loss (see the note on the
-            // save path below), so nothing is pending by the time a toolbar button is clicked.
-            // The half-cost perk is a pick from the scanned perks, never free text (user, 2026-10-18).
             HalfCostPerkPicker = new SpellPerkPickerVM(() => _perkChoices, () => IsHalfCostPerkEdited);
 
             ImportExport = new TabImportExportVM(TabExportModules.Spells, importExportService,
@@ -81,9 +78,12 @@ namespace SkyrimCraftingTool.ViewModel
             BuildTree();
         }
 
+        // Open branches for the session: BuildTree throws every node away (create, delete, reset).
+        private readonly TreeExpansion _treeExpansion = new();
+
         public void BuildTree()
         {
-            string previouslySelected = SelectedSpell?.Key;
+            string? previouslySelected = SelectedSpell?.Key;
 
             TreeItems.Clear();
             _allSpells = _spells.GetAllSpells();
@@ -97,7 +97,11 @@ namespace SkyrimCraftingTool.ViewModel
 
             foreach (var pluginGroup in grouped)
             {
-                var pluginNode = new SpellPluginNode { DisplayName = pluginGroup.Key, Menu = this };
+                var pluginNode = new SpellPluginNode
+                {
+                    DisplayName = pluginGroup.Key, Menu = this,
+                    Expansion = _treeExpansion, ExpansionKey = pluginGroup.Key,
+                };
 
                 // Grouped the way the game's magic menu files them (docs/Spells-Plan.md): the five
                 // schools for plain spells - by their costliest effect - then Powers, Shouts,
@@ -107,7 +111,11 @@ namespace SkyrimCraftingTool.ViewModel
                              .OrderBy(g => SpellCategory.Order(g.Key))
                              .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
                 {
-                    var typeNode = new SpellTypeNode { DisplayName = typeGroup.Key };
+                    var typeNode = new SpellTypeNode
+                    {
+                        DisplayName = typeGroup.Key,
+                        Expansion = _treeExpansion, ExpansionKey = TreeExpansion.Child(pluginGroup.Key, typeGroup.Key),
+                    };
 
                     foreach (var spell in typeGroup.OrderBy(s => s.Label, StringComparer.OrdinalIgnoreCase))
                         typeNode.Children.Add(new SpellLeafNode { DisplayName = spell.Label, Spell = spell });
@@ -120,8 +128,6 @@ namespace SkyrimCraftingTool.ViewModel
 
             ApplyFilter();
 
-            // Keep the record the user was looking at, if it is still there. A rescan that silently
-            // moves the selection is a rescan that loses someone's place.
             if (!string.IsNullOrEmpty(previouslySelected))
             {
                 var leaf = FindLeaf(previouslySelected);
@@ -137,8 +143,8 @@ namespace SkyrimCraftingTool.ViewModel
 
         // Whatever row the tree has, at any level - the detail panel picks its template from this
         // object's TYPE, so it is deliberately untyped.
-        private object _selectedNode;
-        public object SelectedNode
+        private object? _selectedNode;
+        public object? SelectedNode
         {
             get => _selectedNode;
             set
@@ -151,8 +157,8 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
-        private SpellRecord _selectedSpell;
-        public SpellRecord SelectedSpell
+        private SpellRecord? _selectedSpell;
+        public SpellRecord? SelectedSpell
         {
             get => _selectedSpell;
             private set
@@ -185,10 +191,8 @@ namespace SkyrimCraftingTool.ViewModel
 
         // What the scan found for the selected spell, read once per selection. Drives the
         // changed-marking beside each field without a query per keystroke.
-        private SpellRecord _originalSpell;
+        private SpellRecord? _originalSpell;
 
-        // Which fields the user has moved. Each one has a SkyPatcher operation behind it - see
-        // ISpellService.
         public bool IsNameEdited => Differs(_originalSpell?.Name, _selectedSpell?.Name);
         public bool IsCastTypeEdited => Differs(_originalSpell?.CastType, _selectedSpell?.CastType);
         public bool IsHalfCostPerkEdited => Differs(_originalSpell?.HalfCostPerkKey, _selectedSpell?.HalfCostPerkKey);
@@ -207,7 +211,7 @@ namespace SkyrimCraftingTool.ViewModel
             IsNameEdited || IsCastTypeEdited || IsHalfCostPerkEdited ||
             IsBaseCostEdited || IsChargeTimeEdited || IsFlagsEdited;
 
-        private static bool Differs(string a, string b)
+        private static bool Differs(string? a, string? b)
             => a != null && b != null && !string.Equals(a, b, StringComparison.Ordinal);
 
         // The four values SkyPatcher's castType operation accepts, spelled as it spells them.
@@ -303,12 +307,6 @@ namespace SkyrimCraftingTool.ViewModel
             RaiseTreeEditedFlags();
         }
 
-        // ===================================================================
-        // spells of the user's own (S-P6)
-        // ===================================================================
-
-        // True when the selected record is one the user created here. Drives the extra editors: the
-        // fields SkyPatcher cannot write are reachable on a record the ESP builds from scratch.
         public bool IsUserCreatedSelected => _selectedSpell?.IsUserCreated == true;
 
         // The other half, as its own property rather than an inverting converter: a row shows ONE
@@ -373,8 +371,6 @@ namespace SkyrimCraftingTool.ViewModel
                 return;
             }
 
-            // A filter that hides the target would land the jump on an invisible row. Clearing it is
-            // the honest way out: the user asked to be taken THERE, not somewhere near.
             var path = new List<SpellTreeNode>();
             if (!TryFindPath(FilteredTree, target.Spell, path))
             {
@@ -441,27 +437,22 @@ namespace SkyrimCraftingTool.ViewModel
             BuildTree();
         });
 
-        // The fields that have no SkyPatcher operation, written straight to the base column.
-        //
-        // SEPARATE FROM THE SHADOW PATH ON PURPOSE. A shadow column means "the scan owns the base
-        // value and this is the user's override"; here the user owns the record outright, so there
-        // is nothing to shadow and a shadow would just be a second copy to keep in step.
         public string UserSpellType
         {
             get => _selectedSpell?.SpellType ?? "";
-            set => WriteUserField("SpellType", value, v => _selectedSpell.SpellType = v);
+            set => WriteUserField("SpellType", value, (spell, v) => spell.SpellType = v);
         }
 
         public string UserTargetType
         {
             get => _selectedSpell?.TargetType ?? "";
-            set => WriteUserField("TargetType", value, v => _selectedSpell.TargetType = v);
+            set => WriteUserField("TargetType", value, (spell, v) => spell.TargetType = v);
         }
 
         public string UserDescription
         {
             get => _selectedSpell?.Description ?? "";
-            set => WriteUserField("Description", value, v => _selectedSpell.Description = v);
+            set => WriteUserField("Description", value, (spell, v) => spell.Description = v);
         }
 
         public string UserEditorId
@@ -484,12 +475,12 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
-        private void WriteUserField(string column, string value, Action<string> apply)
+        private void WriteUserField(string column, string value, Action<SpellRecord, string> apply)
         {
             var spell = _selectedSpell;
             if (spell == null || !spell.IsUserCreated) return;
 
-            apply(value ?? "");
+            apply(spell, value ?? "");
             _spells.UpdateUserSpellField(spell.Key, column, value ?? "");
 
             spell.IsEdited = true;
@@ -528,8 +519,6 @@ namespace SkyrimCraftingTool.ViewModel
                 spell.FieldChanged += OnSpellFieldChanged;
             }
 
-            // The record stays marked while its EFFECTS are still the user's - added or removed
-            // effects included (SelectedEffectsEdited).
             spell.IsEdited = SelectedEffectsEdited;
 
             BuildFlagRows();
@@ -596,8 +585,8 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
-        private MagicEffectsRecords _selectedMagicEffectToAdd;
-        public MagicEffectsRecords SelectedMagicEffectToAdd
+        private MagicEffectsRecords? _selectedMagicEffectToAdd;
+        public MagicEffectsRecords? SelectedMagicEffectToAdd
         {
             get => _selectedMagicEffectToAdd;
             set
@@ -761,8 +750,6 @@ namespace SkyrimCraftingTool.ViewModel
 
             _spells.SaveSpellEffects(spell.Key, spell.Effects.ToList());
 
-            // The record is the user's now. Set here rather than read back from the database so the
-            // tree badge appears as the number is typed rather than after the next reload.
             spell.IsEdited = true;
 
             OnPropertyChanged(nameof(SelectedEffectsEdited));
@@ -787,7 +774,6 @@ namespace SkyrimCraftingTool.ViewModel
             foreach (var effect in restored) spell.Effects.Add(effect);
             BuildEffectRows();
 
-            // Still edited if its FIELDS are the user's.
             spell.IsEdited = SelectedFieldsEdited;
 
             OnPropertyChanged(nameof(SelectedEffectsEdited));
@@ -808,12 +794,6 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
-        // The flags of the selected spell, by name, with the unnamed bits shown as bits.
-        //
-        // NOT THROUGH AN ENUM, and this is the one place the reason is visible to the user: three
-        // bits that 415 spells in a real load order actually set have no name in Mutagen's enum at
-        // all. Printed as "0x40000" they are at least present; parsed through an enum they would
-        // simply not be there.
         public string SelectedFlagNames
         {
             get
@@ -832,7 +812,7 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
-        private SpellLeafNode FindLeaf(string key)
+        private SpellLeafNode? FindLeaf(string key)
         {
             foreach (var root in TreeItems)
             {
@@ -841,7 +821,7 @@ namespace SkyrimCraftingTool.ViewModel
             }
             return null;
 
-            SpellLeafNode Search(SpellTreeNode node)
+            SpellLeafNode? Search(SpellTreeNode node)
             {
                 if (node is SpellLeafNode leaf &&
                     string.Equals(leaf.Spell?.Key, key, StringComparison.OrdinalIgnoreCase))
@@ -940,7 +920,7 @@ namespace SkyrimCraftingTool.ViewModel
                 if (kept != null) FilteredTree.Add(kept);
             }
 
-            SpellTreeNode Keep(SpellTreeNode node)
+            SpellTreeNode? Keep(SpellTreeNode node)
             {
                 if (node is SpellLeafNode leaf)
                 {

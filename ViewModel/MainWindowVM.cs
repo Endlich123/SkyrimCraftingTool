@@ -29,8 +29,8 @@ namespace SkyrimCraftingTool.ViewModel
         public SettingsVM SettingsVM { get; }
 
         // Current view
-        private object _currentView;
-        public object CurrentView
+        private object? _currentView;
+        public object? CurrentView
         {
             get => _currentView;
             set
@@ -50,12 +50,6 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
-        // --- Which tabs the nav row shows ---
-        //
-        // The row is wide, and most sessions only use part of it. Which tabs are hidden is the
-        // user's choice, kept by NavTabService; Items and Settings are not offered as toggles at
-        // all, so there is no setting that can leave someone with no way back to their items or to
-        // this very preference.
         public bool ShowEnchantments => Services.NavTabService.IsVisible(Services.NavTab.Enchantments);
         public bool ShowSpells => Services.NavTabService.IsVisible(Services.NavTab.Spells);
         public bool ShowNpcs => Services.NavTabService.IsVisible(Services.NavTab.Npcs);
@@ -171,9 +165,6 @@ namespace SkyrimCraftingTool.ViewModel
             // exactly like a button that does nothing.
             NpcVM.TemplateOpened += () => CurrentView = TemplateVM;
 
-            // "Jump to enchantment" on an item (Prio 9). View first, then the target - same order as
-            // the template link above, and for the same reason: switching afterwards would leave the
-            // user looking at the item tab while the other tab silently changed underneath.
             ContentVM.EnchantmentJumpRequested += key =>
             {
                 CurrentView = EnchantVM;
@@ -211,9 +202,6 @@ namespace SkyrimCraftingTool.ViewModel
                 using (PerfLog.Measure("After load: preset reference data"))
                     PresetsVM.RefreshReferenceData();
             };
-            // A scan rewrites the NPC tables, so whatever the tab is holding is stale. Dropped
-            // rather than re-read: the user is usually not on that tab when a scan finishes.
-            // The shared NPC records first: the scan rewrote the tables they came from.
             ContentVM.DataLoaded += () => sharedNpcs.Clear();
             ContentVM.DataLoaded += () => NpcVM.Invalidate();
             // The group tables survive a scan - a predicate is not scanned data - but the MEMBERS a

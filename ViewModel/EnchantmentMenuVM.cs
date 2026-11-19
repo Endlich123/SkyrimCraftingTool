@@ -57,7 +57,7 @@ namespace SkyrimCraftingTool.ViewModel
         // WornRestrictionKeywords revert via the lazy _Original snapshot tables (see
         // Model/ItemDBHandler.cs's COBJ_Conditions_Original schema comment for the pattern).
         private bool _hasEnchantmentSnapshot;
-        private string _originalEnchantmentName;
+        private string _originalEnchantmentName = "";
         private float _originalEnchantmentCost;
         private int _originalFlags;
         private float _originalChargeTime;
@@ -70,7 +70,7 @@ namespace SkyrimCraftingTool.ViewModel
         public ObservableCollection<EnchantmentTreeNode> TreeItems { get; } = new();
         public ObservableCollection<EnchantmentRecord> Enchantments { get; } = new();
 
-        private EnchantmentRecord _selectedEnchantment;
+        private EnchantmentRecord? _selectedEnchantment;
         private List<PluginInfo> _activePlugins;
 
         // Key -> EditorID for every scanned enchantment, so the read-only "Base:" line in the detail
@@ -86,7 +86,7 @@ namespace SkyrimCraftingTool.ViewModel
         // MagicEffects loaded once
         public List<MagicEffectsRecords> AllMagicEffects { get; private set; } = new();
 
-        public EnchantmentRecord SelectedEnchantment
+        public EnchantmentRecord? SelectedEnchantment
         {
             get => _selectedEnchantment;
             set
@@ -192,6 +192,9 @@ namespace SkyrimCraftingTool.ViewModel
                 .OrderBy(m => m.Name)
                 .ToList();
 
+            // A rescan brings a new catalogue: recount the chips (only once they exist).
+            _magicEffectFilter?.EnsureSource(AllMagicEffects);
+
             // Clears the selection (and, via its setter, unsubscribes/cleans up EffectVMs) so we
             // don't keep pointing at EnchantmentRecord instances a rescan/import may have replaced —
             // but remember which one so it can be re-selected against the fresh records below.
@@ -202,16 +205,6 @@ namespace SkyrimCraftingTool.ViewModel
             RecomputeEditedEnchantmentCount();
             RefreshWornRestrictionListChoices();
 
-            // Re-select the same enchantment (now a fresh record instance) so an import or rescan is
-            // reflected in the detail panel straight away instead of blanking it — otherwise the user
-            // has to hunt for and re-click the row to see that anything happened.
-            //
-            // Through SelectedNode, not SelectedEnchantment: the detail panel is a ContentPresenter
-            // over the NODE now. Setting only the record would leave the view model pointing at an
-            // enchantment while the panel showed nothing - which is exactly what "blanking it" above
-            // was written to prevent. The nodes here are the ones the tree holds: BuildEnchantmentTree
-            // ends in UpdateEnchantmentFilteredTree(TreeItems), so at this moment both lists carry
-            // the same instances, before any filter makes copies of them.
             if (!string.IsNullOrEmpty(previouslySelectedKey))
             {
                 var leaf = FindEnchantmentLeaf(previouslySelectedKey);
@@ -232,8 +225,8 @@ namespace SkyrimCraftingTool.ViewModel
         //
         // SelectedEnchantment stays the single source of truth for the editor itself (snapshot,
         // EffectVMs, every command), so it is derived here rather than bound to in parallel.
-        private object _selectedNode;
-        public object SelectedNode
+        private object? _selectedNode;
+        public object? SelectedNode
         {
             get => _selectedNode;
             set
@@ -246,7 +239,7 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
-        private EnchantmentLeafNode FindEnchantmentLeaf(string key)
+        private EnchantmentLeafNode? FindEnchantmentLeaf(string key)
         {
             foreach (var root in TreeItems)
             {
@@ -255,7 +248,7 @@ namespace SkyrimCraftingTool.ViewModel
             }
             return null;
 
-            static EnchantmentLeafNode Search(EnchantmentTreeNode node, string key)
+            static EnchantmentLeafNode? Search(EnchantmentTreeNode node, string key)
             {
                 if (node is EnchantmentLeafNode leaf &&
                     string.Equals(leaf.Enchantment.Key, key, StringComparison.OrdinalIgnoreCase))
@@ -285,14 +278,8 @@ namespace SkyrimCraftingTool.ViewModel
 
         private static readonly WornRestrictionListChoice NoneChoice = new("", "(none)");
 
-        // FLST Plugin|FormID -> EditorID, from the formid.db FormLists name table. Rebuilt in
-        // RefreshWornRestrictionListChoices; used for both the picker labels and the "FLST: …" info
-        // line so the user sees a real list name, not a raw FormID.
         private Dictionary<string, string> _flstNameByKey = new(StringComparer.OrdinalIgnoreCase);
 
-        // Human-facing FLST label: the EditorID when we have it, the raw Plugin|FormID only as a
-        // last resort (no rescan yet, or the record genuinely has no EditorID). The key is a
-        // debugging detail, not something to put in front of the user.
         private string FlstDisplay(string listKey)
             => _flstNameByKey.TryGetValue(listKey, out var n) && !string.IsNullOrWhiteSpace(n)
                 ? n
@@ -346,21 +333,16 @@ namespace SkyrimCraftingTool.ViewModel
 
                 var resolved = memberKeys
                     .Select(k => nameByKey.GetValueOrDefault(k))
-                    .Where(n => !string.IsNullOrEmpty(n))
+                    .OfType<string>()
+                    .Where(n => n.Length > 0)
                     .ToList();
 
-                // A worn-restriction FLST's members are keywords. E3 scans every FLST in the load
-                // order, so without this the picker fills up with perk/spell/misc lists whose
-                // "(key, key, key)" preview is meaningless here. Keep a list only if its members
-                // mostly resolve as keywords — but never hide the one this enchantment already uses,
-                // nor one the user has hand-curated (which may legitimately be empty by now).
                 if (!isCurrent && !isUserEdited && (memberKeys.Count == 0 || resolved.Count * 2 < memberKeys.Count))
                     continue;
 
                 string label;
                 if (memberKeys.Count == 0)
                 {
-                    // Only reachable for a list the user emptied on purpose (see the guard above).
                     label = $"{FlstDisplay(listKey)}  (empty)";
                 }
                 else
@@ -436,7 +418,7 @@ namespace SkyrimCraftingTool.ViewModel
         public bool ShowWornRestrictions => ShouldShowWornRestrictions(_selectedEnchantment);
 
         // Static so the rule can be tested without standing a whole view model up behind it.
-        internal static bool ShouldShowWornRestrictions(EnchantmentRecord ench)
+        internal static bool ShouldShowWornRestrictions(EnchantmentRecord? ench)
         {
             if (ench == null) return false;
 
@@ -648,8 +630,6 @@ namespace SkyrimCraftingTool.ViewModel
                 return;
             }
 
-            // A filter that hides the target would land the jump on an invisible row. Clearing it is
-            // the honest way out: the user asked to be taken there, not to be taken somewhere near.
             var path = new List<EnchantmentTreeNode>();
             if (!TryFindPath(EnchantementFilteredTree, target.Enchantment, path))
             {
@@ -658,10 +638,6 @@ namespace SkyrimCraftingTool.ViewModel
 
                 if (!TryFindPath(EnchantementFilteredTree, target.Enchantment, path))
                 {
-                    // The record is in TreeItems (FindEnchantmentLeaf found it) but not in the tree
-                    // on screen even with every filter off. Nothing sensible is left to do, and
-                    // saying so beats leaving the user on whatever row was open before - which is
-                    // what the discarded return value of TrySelectInTree used to do.
                     IssueHub.Current.Report(new AppIssue(
                         AppIssueSeverity.Warning,
                         $"Enchantment {key} could not be shown in the tree.",
@@ -742,21 +718,6 @@ namespace SkyrimCraftingTool.ViewModel
             var path = new List<EnchantmentTreeNode>();
             if (!TryFindPath(roots, record, path)) return false;
 
-            // Deselect the previous row HERE, in the model.
-            //
-            // This used to be left to the control: "the TreeView clears the previously selected row
-            // on its own, and the two-way binding carries that back into its node". True - while a
-            // TreeView is attached to these nodes. It is NOT attached when the jump arrives from
-            // another tab: MainWindowVM switches CurrentView, but the ContentControl builds the
-            // enchantment view in a later layout pass, so at this moment nothing is listening.
-            //
-            // Two nodes then carry IsSelected = true, and when the TreeView finally materialises it
-            // takes the first container it realises - usually the stale one, because it sits
-            // earlier in the tree. That is the "jump does not always land on the right enchantment"
-            // the user saw: right when nothing had been selected before, wrong once it had.
-            //
-            // After the path is found, not before: a jump with no target must leave the tree as it
-            // was rather than clearing the selection on its way out.
             ClearSelection(roots);
 
             // Ancestors first - a TreeViewItem whose parent is collapsed was never realised, and an
@@ -918,7 +879,7 @@ namespace SkyrimCraftingTool.ViewModel
             var original = ench != null ? _enchantmentService.GetOriginalEnchantment(ench.Key) : null;
 
             _hasEnchantmentSnapshot = original != null;
-            _originalEnchantmentName = original?.Name;
+            _originalEnchantmentName = original?.Name ?? "";
             _originalEnchantmentCost = original?.EnchantmentCost ?? 0f;
             _originalFlags = original?.Flags ?? 0;
             _originalChargeTime = original?.ChargeTime ?? 0f;
@@ -991,14 +952,6 @@ namespace SkyrimCraftingTool.ViewModel
             _hasEnchantmentSnapshot && _selectedEnchantment != null
             && _selectedEnchantment.Flags != _originalFlags;
 
-        // Per BIT, not per field. Flags is one int in the database, but the user sees two check
-        // boxes - and marking both because one of them moved points at the wrong one half the time.
-        // Each box answers for its own bit; IsEnchantmentFlagsChanged above stays the field-level
-        // answer that HasEnchantmentChanges and the reset path need.
-        // Static so the rule can be tested without standing up the view model, the same seam
-        // ShouldShowWornRestrictions uses. Masking both sides matters: comparing the whole int would
-        // light up BOTH boxes as soon as either bit moved, and comparing the raw bit values would
-        // miss that 0x04 and 0x00 are "the same bit, different state".
         internal static bool FlagBitDiffers(int current, int original, int bit)
             => (current & bit) != (original & bit);
 
@@ -1045,11 +998,6 @@ namespace SkyrimCraftingTool.ViewModel
             var ench = _selectedEnchantment;
             if (ench == null || !_hasEnchantmentSnapshot) return;
 
-            // Reset never deletes - Delete is its own button, right next to this one. For a record
-            // the user created that means "back to how it was created": no effects, the name it was
-            // given, cost 0. The bug worth naming is what used to happen instead: the wipe below ran
-            // first and GetOriginalEnchantment then returned null for it, so the restore bailed out
-            // halfway and the panel kept showing values the database no longer held.
             if (ench.IsUserCreated)
             {
                 ResetUserEnchantmentToCreatedState(ench);
@@ -1065,10 +1013,6 @@ namespace SkyrimCraftingTool.ViewModel
             ench.EnchantmentCost = original.EnchantmentCost;
             ench.WornRestrictionListKey = original.WornRestrictionListKey;
 
-            // The rest of ENIT. ResetEnchantmentEdits above already cleared their shadow columns, so
-            // the database is right either way - but without these three the panel kept showing the
-            // edited numbers until the user selected something else and came back. Everything the
-            // shadow columns cover has to be restored here, or the two drift apart.
             ench.Flags = original.Flags;
             ench.ChargeTime = original.ChargeTime;
             ench.EnchantmentAmount = original.EnchantmentAmount;
@@ -1139,9 +1083,6 @@ namespace SkyrimCraftingTool.ViewModel
             get => _magicEffectSearchText;
             set
             {
-                // Only the user typing moves the search text on its own. The ComboBox also writes
-                // here - the Text binding is TwoWay - including the empty string it produces by
-                // itself while its ItemsSource is being swapped.
                 if (_isSyncingMagicEffectPicker) return;
 
                 if (SetProperty(ref _magicEffectSearchText, value ?? ""))
@@ -1155,15 +1096,12 @@ namespace SkyrimCraftingTool.ViewModel
                 OnPropertyChanged(nameof(FilteredMagicEffects));
         }
 
-        private MagicEffectsRecords _selectedMagicEffectToAdd;
-        public MagicEffectsRecords SelectedMagicEffectToAdd
+        private MagicEffectsRecords? _selectedMagicEffectToAdd;
+        public MagicEffectsRecords? SelectedMagicEffectToAdd
         {
             get => _selectedMagicEffectToAdd;
             set
             {
-                // Same trap as the item's enchantment picker: an editable ComboBox whose filtered
-                // rows no longer contain the selection reports null. Taken at face value the Add
-                // button would go dead the moment the user types.
                 if (value == null) return;
                 if (!SetProperty(ref _selectedMagicEffectToAdd, value)) return;
 
@@ -1210,7 +1148,22 @@ namespace SkyrimCraftingTool.ViewModel
         }
 
         public IEnumerable<MagicEffectsRecords> FilteredMagicEffects =>
-            AddableMagicEffects(AllMagicEffects, EffectVMs.Select(vm => vm.Model.MagicEffectKey), MagicEffectSearchText);
+            AddableMagicEffects(AllMagicEffects, EffectVMs.Select(vm => vm.Model.MagicEffectKey), MagicEffectSearchText,
+                MagicEffectFilter, _selectedMagicEffectToAdd);
+
+        // The cast/target chips (MagicEffectsRecords.EnchantGroupOf), counted over the whole
+        // catalogue. Nothing preselected - see the note there on why.
+        private PickerFilter? _magicEffectFilter;
+        public PickerFilter MagicEffectFilter
+        {
+            get
+            {
+                if (_magicEffectFilter != null) return _magicEffectFilter;
+                _magicEffectFilter = new PickerFilter(() => AllMagicEffects, MagicEffectsRecords.EnchantGroupOrder);
+                _magicEffectFilter.Changed += () => OnPropertyChanged(nameof(FilteredMagicEffects));
+                return _magicEffectFilter;
+            }
+        }
 
         // What may still be added, and why anything is excluded at all: EnchantmentEffects has
         // PRIMARY KEY(EnchantmentKey, MagicEffectKey), so one enchantment can carry a given effect
@@ -1218,8 +1171,13 @@ namespace SkyrimCraftingTool.ViewModel
         // values - that shape simply cannot be stored here (see ByMgef in EnchantmentRuleBuilder for
         // the same limitation on the emitting side), so the picker hides what is already in the list
         // rather than letting the save silently drop it.
+        //
+        // chips/pick: the cast/target chips, and the current pick, which stays in the list whatever
+        // the chips say - an editable ComboBox whose SelectedItem leaves its ItemsSource drops it and
+        // clears the line (the bug described at SelectedMagicEffectToAdd).
         internal static IEnumerable<MagicEffectsRecords> AddableMagicEffects(
-            IEnumerable<MagicEffectsRecords> catalogue, IEnumerable<string> alreadyUsedKeys, string search)
+            IEnumerable<MagicEffectsRecords> catalogue, IEnumerable<string> alreadyUsedKeys, string search,
+            PickerFilter? chips = null, MagicEffectsRecords? pick = null)
         {
             var used = new HashSet<string>(
                 (alreadyUsedKeys ?? Enumerable.Empty<string>()).Where(k => !string.IsNullOrEmpty(k)),
@@ -1240,6 +1198,9 @@ namespace SkyrimCraftingTool.ViewModel
                     || (m.EditorID ?? "").Contains(search, StringComparison.OrdinalIgnoreCase)
                     || (m.Name ?? "").Contains(search, StringComparison.OrdinalIgnoreCase)
                     || (m.Key ?? "").Contains(search, StringComparison.OrdinalIgnoreCase));
+
+            if (chips != null)
+                hits = hits.Where(m => ReferenceEquals(m, pick) || chips.Passes(m));
 
             return hits.ToList();
         }
@@ -1268,11 +1229,6 @@ namespace SkyrimCraftingTool.ViewModel
             effectVm.PropertyChanged += OnEffectPropertyChanged;
             EffectVMs.Add(effectVm);
 
-            // Was ein neu angelegtes Enchantment IST, entscheidet sein erster Effekt - nicht eine
-            // Frage an den Anwender. Gemessen an der echten Ladereihenfolge stimmen 1.893 von 1.895
-            // Effektzeilen im CastType mit ihrem Enchantment überein und 1.894 von 1.895 im
-            // TargetType. ConstantEffect/Self ist die Rüstungsform, FireAndForget/Touch die einer
-            // Waffe; davon hängt auch ab, in welchem Zweig des Baums der Record landet.
             bool adoptedType = ench.IsUserCreated && string.IsNullOrEmpty(ench.CastType) && EffectVMs.Count == 1;
             if (adoptedType)
             {
@@ -1385,8 +1341,6 @@ namespace SkyrimCraftingTool.ViewModel
             var children = CurrentChildren;
             if (children.Count == 0) return;
 
-            // The panel's live effect list is the truth here, not the record's - the user may have
-            // added a block seconds ago.
             parent.Effects = new ObservableCollection<EnchantmentEffectRecord>(EffectVMs.Select(vm => vm.Model));
 
             var byKey = AllMagicEffects.ToDictionary(m => m.Key, StringComparer.OrdinalIgnoreCase);
@@ -1516,7 +1470,7 @@ namespace SkyrimCraftingTool.ViewModel
             });
         }
 
-        private void OnEffectPropertyChanged(object sender, PropertyChangedEventArgs e)
+        private void OnEffectPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
             if (e.PropertyName != nameof(EnchantmentEffectViewModel.Magnitude)
                 && e.PropertyName != nameof(EnchantmentEffectViewModel.Duration)
@@ -1541,7 +1495,7 @@ namespace SkyrimCraftingTool.ViewModel
             });
         }
 
-        private void OnGlobalKeywordsCollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
+        private void OnGlobalKeywordsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
             if (e.OldItems != null)
                 foreach (KeywordSelectionVM kw in e.OldItems)
@@ -1552,7 +1506,7 @@ namespace SkyrimCraftingTool.ViewModel
                     kw.PropertyChanged += OnGlobalKeywordPropertyChanged;
         }
 
-        private void OnGlobalKeywordPropertyChanged(object sender, PropertyChangedEventArgs e)
+        private void OnGlobalKeywordPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
             if (e.PropertyName != nameof(KeywordSelectionVM.IsSelected)) return;
             if (_isUpdatingKeywordSelection) return;
@@ -1768,7 +1722,7 @@ namespace SkyrimCraftingTool.ViewModel
         }
 
 
-        private EnchantmentTreeNode FilterPluginNode(EnchantmentTreeNode root, string search, bool onlyEdited, bool onlyBase, IReadOnlySet<string> editedLists)
+        private EnchantmentTreeNode? FilterPluginNode(EnchantmentTreeNode root, string search, bool onlyEdited, bool onlyBase, IReadOnlySet<string> editedLists)
         {
             bool searching = search.Length > 0;
 
@@ -1890,6 +1844,9 @@ namespace SkyrimCraftingTool.ViewModel
         }
 
         // --- Build Tree ---
+        // Open branches for the session, across rebuilds and filter copies - see TreeExpansion.
+        private readonly TreeExpansion _treeExpansion = new();
+
         public void BuildEnchantmentTree()
         {
             TreeItems.Clear();
@@ -1917,12 +1874,21 @@ namespace SkyrimCraftingTool.ViewModel
                 {
                     DisplayName = pluginGroup.Key,
                     Menu = this,
+                    Expansion = _treeExpansion,
+                    ExpansionKey = pluginGroup.Key,
                 };
 
-                var weaponNode = new EnchantmentCategoryNode { DisplayName = "Weapon Enchantments" };
-                var armorNode = new EnchantmentCategoryNode { DisplayName = "Armor Enchantments" };
-                var staffNode = new EnchantmentCategoryNode { DisplayName = "Staff Enchantments" };
-                var otherNode = new EnchantmentCategoryNode { DisplayName = "Other" };
+                EnchantmentCategoryNode Category(string name) => new()
+                {
+                    DisplayName = name,
+                    Expansion = _treeExpansion,
+                    ExpansionKey = TreeExpansion.Child(pluginGroup.Key, name),
+                };
+
+                var weaponNode = Category("Weapon Enchantments");
+                var armorNode = Category("Armor Enchantments");
+                var staffNode = Category("Staff Enchantments");
+                var otherNode = Category("Other");
 
                 foreach (var ench in pluginGroup.OrderBy(e => e.Name))
                 {
@@ -2021,9 +1987,6 @@ namespace SkyrimCraftingTool.ViewModel
                 return;
             }
 
-            // Reset does not delete - Delete is its own button on this panel. Records the user
-            // created are reset to the empty state they were created in, the same as the single
-            // record's Reset does; removing them is the Delete button's job.
             var (scanned, own) = SplitForReset(edited);
 
             var question =
@@ -2103,9 +2066,6 @@ namespace SkyrimCraftingTool.ViewModel
                 "Reset worn-restriction lists", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
         }
 
-        // Deletes every enchantment of this plugin that the user created. Only ever offered where
-        // there are any, which in practice means the tool's own pseudo-plugin - see
-        // KeyFactory.UserPluginName.
         internal async Task DeletePluginEnchantmentsAsync(string plugin)
         {
             await FlushPendingSavesAsync();

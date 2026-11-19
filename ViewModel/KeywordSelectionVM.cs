@@ -4,8 +4,8 @@ namespace SkyrimCraftingTool.ViewModel
 {
     public class KeywordSelectionVM : ViewModelBase
     {
-        public string Key { get; set; }
-        public string Name { get; set; }
+        public string Key { get; set; } = "";
+        public string Name { get; set; } = "";
 
         private bool _isSelected;
         public bool IsSelected
@@ -15,10 +15,6 @@ namespace SkyrimCraftingTool.ViewModel
         }
 
         private bool _isReadOnlyOverride = false;
-        /// <summary>
-        /// Read-only flag for keywords that should not be changed by the user.
-        /// True when: keyword is WeapType* OR was blocked by rules (e.g. Armor slots)
-        /// </summary>
         public bool IsReadOnly
         {
             get
@@ -45,7 +41,7 @@ namespace SkyrimCraftingTool.ViewModel
             });
         }
 
-        public KeywordSelectionVM(string key, string name, bool isSelected = false, Action<KeywordSelectionVM> onSelectedChanged = null)
+        public KeywordSelectionVM(string key, string name, bool isSelected = false, Action<KeywordSelectionVM>? onSelectedChanged = null)
         {
             Key = key;
             Name = name;

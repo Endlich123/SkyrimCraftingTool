@@ -20,7 +20,7 @@ namespace SkyrimCraftingTool.ViewModel
         private readonly IKeywordService _keywordService;
         private readonly ITreeBuilderService _treeBuilder;
         private readonly ISaveRequestService _saveRequestService;
-        private readonly IImportExportService _importExportService;
+        private readonly IImportExportService? _importExportService;
 
         // --- Helpers ---
         private readonly Debouncer _debouncer = new();
@@ -42,18 +42,18 @@ namespace SkyrimCraftingTool.ViewModel
         internal IFileService FileService => _fileService;
         internal IFormIdService FormIdService => _formIdService;
         internal IKeywordService KeywordService => _keywordService;
-        internal IImportExportService ImportExportService => _importExportService;
+        internal IImportExportService? ImportExportService => _importExportService;
 
         // --- State ---
         private bool _isInitialized;
         private bool _isInitializing;
-        private Task _initializationTask;
+        private Task? _initializationTask;
 
         // Raised after the item DB has (re)loaded successfully — both from the initial auto-load
         // and from a full rescan. Other VMs built from the same DB (e.g. EnchantmentMenuVM, whose
         // tree/plugin list otherwise only ever reflected what existed at app-startup, before any
         // scan had run) subscribe to this to know when to refresh themselves.
-        public event Action DataLoaded;
+        public event Action? DataLoaded;
 
         // "Show this enchantment in the Enchantments tab" (Prio 9). Raised by the item detail's
         // jump button; MainWindowVM switches the view and hands the key to EnchantVM.
@@ -61,7 +61,7 @@ namespace SkyrimCraftingTool.ViewModel
         // An event rather than a reference to EnchantVM, following NpcMenuVM.TemplateOpened: this
         // view model knows nothing about the other tabs, and the one place that knows about all of
         // them is the one that owns them.
-        public event Action<string> EnchantmentJumpRequested;
+        public event Action<string>? EnchantmentJumpRequested;
 
         internal void RequestEnchantmentJump(string key)
         {
@@ -71,9 +71,9 @@ namespace SkyrimCraftingTool.ViewModel
 
         public List<PluginInfo> ActivePlugins { get; private set; } = new();
 
-        private object _selectedNode;
+        private object? _selectedNode;
         private ItemNodeVM? _subscribedItemForContainerSelection;
-        public object SelectedNode
+        public object? SelectedNode
         {
             get => _selectedNode;
             set
@@ -153,9 +153,6 @@ namespace SkyrimCraftingTool.ViewModel
             SelectedNode = SelectedItems.Count == 1 ? SelectedItems[0] : null;
         }
 
-        // Called from MainContentView's native TreeView.SelectedItemChanged handler whenever the user
-        // navigates via single-select semantics (plugin/category clicks, arrow keys) after having
-        // multi-selected items - see the comment there for why this needs to run first.
         internal void ClearMultiSelection() => Pick.Clear();
 
         // --- Guided tour (Tutorials/items.json) ---
@@ -166,10 +163,6 @@ namespace SkyrimCraftingTool.ViewModel
             _ => false,
         };
 
-        // The detail steps need an armor on screen. One the user already has open is kept - the tour
-        // then explains their own item; otherwise the Iron Cuirass, which every load order has, and
-        // failing that the first armor in the tree. Only what the tree currently shows counts: an item
-        // hidden by the search box would be selected with nothing in the tree to show for it.
         private bool SelectTutorialExample()
         {
             if (SelectedNode is ItemNodeVM { IsArmor: true }) return true;
@@ -226,11 +219,12 @@ namespace SkyrimCraftingTool.ViewModel
         // rebuild after a (re)scan so they reflect the current AllAvailableKeywords/AllContainers.
         private void RebuildMultiSelectVM() => MultiSelectVM = new MultiSelectDetailVM(this);
 
-        // Order = tree order (plugin -> category -> item), not the actually visible Y position:
-        // IsExpanded on plugin/category nodes isn't currently bound to the TreeViewItem (Collapse-All
-        // only works because ApplyFilter rebuilds the containers entirely), so there's no reliable
-        // "currently collapsed" state to query. Because of this, a Shift range can also select
-        // currently-collapsed items.
+        // Which plugin and category branches are open, for the whole session - see TreeExpansion.
+        // Lives here and not on the nodes, which a filter run or reload replaces.
+        internal TreeExpansion TreeExpansion { get; } = new();
+
+        // Order = tree order (plugin -> category -> item), not the actually visible Y position, so a
+        // Shift range can also select items inside collapsed branches.
         private List<ItemNodeVM> GetFlatItemNodes()
         {
             var result = new List<ItemNodeVM>();
@@ -298,6 +292,11 @@ namespace SkyrimCraftingTool.ViewModel
         {
             if (edited) EditedItemCount++;
             else if (EditedItemCount > 0) EditedItemCount--;   // its setter raises the ancestors' dots
+            // Only "only edited" can hide or show an item over this - the search text does not look at
+            // the edited state. Without it the tree stays as it is: a filter run rebuilds every row,
+            // and with them went the scroll position and the selection highlight.
+            if (!_showOnlyEditedItems) return;
+
             // keep the "only edited" view in sync - in a bulk run once at the end: per item it started
             // ~4,200 filter timers per preset patch, and one that ran out during a slow item could swap
             // the tree under the running loop (2026-10-22).
@@ -361,9 +360,6 @@ namespace SkyrimCraftingTool.ViewModel
 
         private readonly Dictionary<string, uint> _liveSlotMasks = new(StringComparer.OrdinalIgnoreCase);
 
-        // From ItemNodeVM.BodySlotMask on every user-side change (edit, preset, reset).
-        // Only a value the cache does not have yet is kept - building the tree sets every armor's
-        // slots once, and those need no overlay.
         internal void NoteSlotMask(string key, uint mask)
         {
             if (string.IsNullOrWhiteSpace(key)) return;
@@ -605,7 +601,14 @@ namespace SkyrimCraftingTool.ViewModel
         public Dictionary<string, ArmorRecord> ArmorCache { get; } = new();
         public Dictionary<string, WeaponRecord> WeaponCache { get; } = new();
         public Dictionary<string, FormIDRecord> KeywordCache { get; } = new();
-        public Dictionary<string, FormIDRecord> MaterialCache { get; } = new();
+        // Every material by key - THE lookup for "which material is this ingredient key". The pickers'
+        // list (AllAvailableMaterials) is a List, and FirstOrDefault over it walked the whole list per
+        // ingredient - per item, in a preset run over thousands - which mattered once armor and weapons
+        // joined it (6,332 -> ~45,000 entries, 2026-11-09). NOCASE, like the keys everywhere else.
+        public Dictionary<string, FormIDRecord> MaterialCache { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        internal FormIDRecord? FindMaterial(string? key)
+            => !string.IsNullOrEmpty(key) && MaterialCache.TryGetValue(key, out var m) ? m : null;
         public Dictionary<string, List<COBJRecord>> RecipeCacheByCreatedItem { get; } = new();
         public Dictionary<string, List<COBJConditionRecord>> COBJConditionCache { get; } = new();
 
@@ -623,12 +626,10 @@ namespace SkyrimCraftingTool.ViewModel
         //
         // The first entry is a synthetic "no enchantment", because taking one off is a legitimate
         // choice and a second button for it would be a worse way to say the same thing.
-        public List<FormIDRecord> AllAvailableEnchantments { get; private set; } = new();
+        public List<FormIDRecord> AllAvailableEnchantments { get; internal set; } = new();
 
         public const string NoEnchantmentKey = "";
 
-        // Named, not blank: an empty row in a dropdown reads as "nothing here yet", and this is a
-        // deliberate choice the user can make.
         public static FormIDRecord NoEnchantmentChoice()
             => new() { Key = NoEnchantmentKey, Name = "(no enchantment)" };
 
@@ -664,9 +665,6 @@ namespace SkyrimCraftingTool.ViewModel
                 {
                     OnPropertyChanged(nameof(FilteredContainers));
 
-                    // The summary counts how many existing placements the current list cannot show,
-                    // so switching the list changes the sentence. Leaving it stale would tell the
-                    // user to switch to a view they are already in.
                     UpdateAllContainerSelectionFlags(_subscribedItemForContainerSelection);
                 }
             }
@@ -744,7 +742,7 @@ namespace SkyrimCraftingTool.ViewModel
         // the item's ContainerSelection. Exactly what the two container commands already act on -
         // SelectedNode when it happens to be an item - so this is that rule written down once
         // instead of repeated in every binding.
-        public ItemNodeVM PlacementTarget => SelectedNode as ItemNodeVM;
+        public ItemNodeVM? PlacementTarget => SelectedNode as ItemNodeVM;
 
         // The armor / weapon rows for the Container tab's placement sub-tabs.
         //
@@ -793,10 +791,10 @@ namespace SkyrimCraftingTool.ViewModel
             IItemService itemService,
             IFileService fileService,
             IFormIdService formIdService,
-            ICacheManager cacheManager = null,
-            ITreeBuilderService treeBuilder = null,
-            IKeywordService keywordService = null,
-            IImportExportService importExportService = null)
+            ICacheManager? cacheManager = null,
+            ITreeBuilderService? treeBuilder = null,
+            IKeywordService? keywordService = null,
+            IImportExportService? importExportService = null)
         {
             _itemService = itemService;
             _fileService = fileService;
@@ -821,6 +819,7 @@ namespace SkyrimCraftingTool.ViewModel
             ScanModsCommand = new RelayCommand(async () => await ExecuteFullScanAsync());
             ToggleContainerForSelectedItemCommand = new RelayCommand<string>(key =>
             {
+                if (string.IsNullOrEmpty(key)) return;
                 if (SelectedNode is ItemNodeVM item)
                 {
                     item.ContainerSelection.ToggleContainer(key);
@@ -923,7 +922,7 @@ namespace SkyrimCraftingTool.ViewModel
         public Task LoadInitialDataAsync()
         {
             if (_isInitialized)
-                return _initializationTask;
+                return _initializationTask ?? Task.CompletedTask;
 
             _isInitialized = true;
             _isInitializing = true;
@@ -1049,9 +1048,6 @@ namespace SkyrimCraftingTool.ViewModel
                 return;
             }
 
-            // Keep a copy on disk before showing the dialog: the ACTION NEEDED / NOTE blocks and the
-            // full warning list are the most useful part of a bug report, and a window the user has
-            // already closed is not recoverable. Picked up by DiagnosticsReport.
             BusyService.SetMessage("Generating patch: writing the report…");
             Services.PatchGen.PatchReportText.SaveLastRun(report, options.OutputRoot);
             var text = Services.PatchGen.PatchReportText.Render(report, options.OutputRoot, forFile: false);
@@ -1377,8 +1373,8 @@ namespace SkyrimCraftingTool.ViewModel
             // on every other way out.
             var busy = BusyService.Show("Scanning: saving pending edits…");
 
-            List<PluginInfo> activePlugins = null;
-            List<PluginInfo> treePlugins = null;
+            List<PluginInfo>? activePlugins = null;
+            List<PluginInfo>? treePlugins = null;
             ScanReport? report = null;
 
             try
@@ -1484,7 +1480,8 @@ namespace SkyrimCraftingTool.ViewModel
 
                 sw.Restart();
                 BusyService.SetMessage("Scanning: rebuilding the item tree…");
-                await BuildTreeFromCacheAsync(treePlugins ?? activePlugins);
+                await BuildTreeFromCacheAsync(treePlugins ?? activePlugins
+                    ?? throw new InvalidOperationException("The scan finished without a plugin list."));
                 Log($"Tree rebuild DONE in {sw.ElapsedMilliseconds} ms");
                 PerfLog.Record("Scan: rebuild the item tree", sw);
 
@@ -1628,13 +1625,7 @@ namespace SkyrimCraftingTool.ViewModel
             {
                 var filtered = plugin.FilterReference(text, _showOnlyEditedItems);
                 if (filtered != null)
-                {
-                    filtered.IsExpanded = plugin.IsExpanded;
-                    foreach (var cat in filtered.Categories)
-                        cat.IsExpanded = cat.IsExpanded; 
-
-                    FilteredTree.Add(filtered);
-                }
+                    FilteredTree.Add(filtered);   // open/closed comes along through TreeExpansion
             }
         }
 
@@ -1668,25 +1659,9 @@ namespace SkyrimCraftingTool.ViewModel
                 FilteredTree.Add(n);
         }
 
-        // --- "Already in your load order" (read-only) ---
-        //
-        // What the scanned game already holds, shown next to what the patch will add - and kept
-        // strictly apart from it. A container the user selected and a container that already holds
-        // the item look the same in a list and mean the opposite; ContainerEntryVM carries the two
-        // as separate states for exactly that reason.
-        //
-        // Only DIRECT container hits are marked. An item that sits in a leveled list which hangs in
-        // five containers would otherwise mark five containers plus the list, and 86 % of all 4,312
-        // leveled lists hang in no container at all - the tree would claim placements nobody made.
-        // Those go into the summary line instead, where they can be counted without being located.
         private readonly Dictionary<string, IReadOnlyList<Services.Placement>> _existingPlacementCache
             = new(StringComparer.OrdinalIgnoreCase);
 
-        // --- Lists whose own properties the user changed ---
-        //
-        // Counted here so the container section can offer the way back to them. Refreshed whenever
-        // the selection changes, which is often enough to be current and cheap enough not to matter -
-        // the underlying set is cached in the store.
         public int ChangedListCount => Services.LeveledListEditStore.EditedKeys().Count;
 
         public string ChangedListsButtonText => ChangedListCount == 1
@@ -1726,10 +1701,6 @@ namespace SkyrimCraftingTool.ViewModel
             View.ModularDryRunWindow.Show(System.Windows.Application.Current?.MainWindow, this));
 
 
-        // Reset for the whole items view (user, 2026-10-22: with the dry run every item can be built,
-        // so the way back must not be "one plugin at a time"). Every edited item the tree shows now -
-        // unfiltered that is the whole load order - through the same ItemNodeVM.ResetAllChanges the
-        // item, multi-select and plugin Reset buttons use.
         public RelayCommand ResetAllItemsCommand => new(async () =>
         {
             // A pending debounced save has to land first, or it re-marks a just-reset item (see
@@ -1860,8 +1831,6 @@ namespace SkyrimCraftingTool.ViewModel
         {
             if (item == null) return "";
 
-            // Counted against the rows the user is actually looking at: everything the lookup found
-            // minus what the current list can show. The standard view lists merchants only.
             int visible = (ShowExpertContainers ? AllContainerVMs : LimitedContainerVMs)
                 .Count(vm => heldCounts.ContainsKey(vm.ContainerKey));
 
@@ -1968,29 +1937,12 @@ namespace SkyrimCraftingTool.ViewModel
             // appears 19 times, "Fortify Block" exists as Base plus tiers 01 to 06. A list of names
             // cannot tell a base effect from its tiers, which is exactly the choice being made here.
             // EditorID first, so the tiers of one effect sort together.
+            // Since 2026-11-08 also the category (suffix + chips) and the effects' in-game text for the
+            // tooltip - see EnchantmentChoices.
             var enchantments = ItemService?.GetAllEnchantments() ?? new List<EnchantmentRecord>();
+            var magicEffects = ItemService?.SearchByType("MagicEffect")?.OfType<MagicEffectsRecords>();
 
-            // Two records can still share an EditorID across plugins - measured, exactly two pairs
-            // do, each a Skyrim.esm record and a Dawnguard.esm one. Only those get their plugin
-            // appended: putting it on all 632 would be noise for the 630 that read fine without it.
-            var ambiguous = enchantments
-                .GroupBy(EnchantmentLabel, StringComparer.OrdinalIgnoreCase)
-                .Where(g => g.Count() > 1)
-                .Select(g => g.Key)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            AllAvailableEnchantments = new List<FormIDRecord> { NoEnchantmentChoice() };
-            AllAvailableEnchantments.AddRange(
-                enchantments
-                    .Select(e =>
-                    {
-                        var label = EnchantmentLabel(e);
-                        if (ambiguous.Contains(label))
-                            label += $"  [{KeyFactory.SplitMasterKey(e.Key).master}]";
-
-                        return new FormIDRecord { Key = e.Key, Name = label };
-                    })
-                    .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase));
+            AllAvailableEnchantments = EnchantmentChoices.Build(enchantments, magicEffects);
 
             _referenceResolver.Rebuild(
                 AllAvailableKeywords, AllAvailableMaterials, AllAvailableWorkbenches,
@@ -2004,8 +1956,6 @@ namespace SkyrimCraftingTool.ViewModel
             _existingPlacementCache.Clear();
             ExistingPlacementSummary = "";
 
-            // Same reasoning for the "changed by you" marks: a rescan rebuilds the lists those edits
-            // point at, and an edit whose list left the load order stops counting.
             Services.LeveledListEditStore.InvalidateCache();
             Services.PlacementLookup.InvalidateListNames();
             RefreshChangedListCount();
@@ -2154,30 +2104,6 @@ namespace SkyrimCraftingTool.ViewModel
                 list.Add(rec);
         }
 
-        // The BREAKDOWN recipes for this item: the ones at the smelter or the tanning rack that
-        // consume it.
-        //
-        // An earlier version listed EVERY recipe consuming the item, including the
-        // variant-conversion recipes outfit mods ship, shown read-only. In the running UI that was
-        // simply confusing - a Steel Circlet showed a greyed "CraftingSmithingForge gives 1x
-        // <raw key>" line, which is a crafting recipe for a DIFFERENT item (the Steel Armored
-        // Circlet) and belongs to that item's own Crafting section. Those are gone from here.
-        //
-        // Scanned on demand instead of kept as a second index, deliberately. A
-        // _cobjByIngredient dictionary would have to be maintained on every recipe edit - and an
-        // ingredient edit is exactly what changes which items a recipe consumes, so the index would
-        // go stale in the one case it exists for. One pass over the recipe lists that are already
-        // in memory is ~5k key comparisons on a large modlist, which is nothing next to the
-        // thousands of KeywordSelectionVMs this same method builds a few lines below.
-        //
-        // Breakdown recipes come first: they are what the section is for. The rest - the
-        // variant-conversion recipes outfit mods ship, which on the author's modlist outnumber the
-        // real breakdowns - follow, because "which recipe eats this item" is the useful question
-        // either way.
-        // --- Bulk runs (preset patch, reset all) ---
-        // Two lookups that are fine for one clicked item are not for 19,000 (perf.log 2026-10-22):
-        // every item scanned all ~20,000 recipes for breakdowns that consume it, and every new recipe
-        // key scanned every user key stored so far. Inside BeginBulk both are done once.
         private int _bulkDepth;
         private bool _treeFlagsPending;
         private bool _filterPending;
@@ -2542,9 +2468,9 @@ namespace SkyrimCraftingTool.ViewModel
         {
             item.IsLoading = true;
 
-            ArmorRecord armor = null;
-            WeaponRecord weapon = null;
-            List<string> activeKeywords = null;
+            ArmorRecord? armor;
+            WeaponRecord? weapon;
+            List<string>? activeKeywords = null;
 
             if (ArmorCache.TryGetValue(item.Key, out armor))
             {
@@ -2586,11 +2512,6 @@ namespace SkyrimCraftingTool.ViewModel
 
             if (RecipeCacheByCreatedItem.TryGetValue(item.Key, out var recipes))
             {
-                // Recipes the user took out are gone from the editor's point of view: they only
-                // still exist so the patch can write a Deleted override for them.
-                // The All* lists keep the REMOVED recipes too - the "other recipes" window shows
-                // them struck through with a Restore button, so a removal stays undoable. Only the
-                // choice of what the editor shows skips them.
                 var removed = RemovalStore.RemovedKeys(RemovalScope.Recipe, item.Key);
                 item.RemovedRecipeKeys = removed;
 
@@ -2797,20 +2718,6 @@ namespace SkyrimCraftingTool.ViewModel
             item.ApplyResetPlacement(scanned);
         }
 
-        // Reverts the item's Crafting/Temper recipe Workbench + Ingredients + Conditions back to the
-        // pristine plugin-scanned values, same shape as ResetItemEdits above. Conditions revert via
-        // ResetCOBJConditions, which restores COBJ_Conditions from the lazily-snapshotted
-        // COBJ_Conditions_Original table (see Model/ItemDBHandler.cs's schema comment there).
-        // Removes a recipe entirely - from the DB (when a row exists), from both caches and from the
-        // item's ViewModel - instead of restoring it to some earlier state. Used by both reset paths
-        // for the two cases where there is nothing to restore TO: a user-created recipe
-        // (rowExists: true, Original == 0 - never in any plugin, so the only honest "undo" is
-        // deletion) and a recipe with no DB row at all (rowExists: false - ViewModel-only, so
-        // there's nothing to delete either, just state to clear).
-        //
-        // Clearing the snapshot is the part that matters for the Reset button: without it,
-        // _craftingRecipeIsUserCreated / _hasCraftingSnapshot keep HasCraftingChanges true and the
-        // item stays stuck as "edited" with a button that no longer does anything.
         private void DropRecipeFromViewModel(ItemNodeVM item, string key, bool isTemper, bool rowExists)
         {
             if (rowExists)
@@ -2942,7 +2849,7 @@ namespace SkyrimCraftingTool.ViewModel
             {
                 ingVM.InitializeMaterials(AllAvailableMaterials);
 
-                var mat = AllAvailableMaterials.FirstOrDefault(m => m.Key == ingVM.Key);
+                var mat = FindMaterial(ingVM.Key);
                 if (mat != null)
                     ingVM.SetSelectedMaterialSilent(mat);
                 else if (!string.IsNullOrEmpty(ingVM.Key))

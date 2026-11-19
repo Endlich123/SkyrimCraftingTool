@@ -8,23 +8,8 @@ using SkyrimCraftingTool.Services;
 
 namespace SkyrimCraftingTool.ViewModel
 {
-    // One recipe that CONSUMES the selected item.
-    //
-    // Every other recipe in this tool is found through the item it CREATES
-    // (RecipeCacheByCreatedItem). A breakdown recipe has the item on the ingredient side and
-    // produces a MISC record the item tree does not even carry, so it is the first recipe type
-    // found the other way round - see docs/TODO.md.
-    //
-    // EDITABLE ONLY WHEN IT IS ACTUALLY A BREAKDOWN. The same list also holds the
-    // variant-conversion recipes outfit mods ship (on the author's modlist those outnumber the real
-    // breakdowns - a Silver Ring is consumed by one smelter recipe and 31 forge ones). Those are
-    // ordinary crafting recipes for ANOTHER item, and that item's own Crafting section already
-    // edits them. Offering a second editor here would mean two screens writing the same record.
     public sealed class BreakdownRecipeVM : ViewModelBase
     {
-        // CraftingSmelter and CraftingTanningRack, read out of the author's own formid.db rather
-        // than typed from memory - the two tempering keywords were once swapped that way and cost a
-        // tester an evening (see ItemDBHandler.CreateNewCOBJRecordForItem).
         public const string SmelterKey = "Skyrim.esm|0A5CCE";
         public const string TanningRackKey = "Skyrim.esm|07866A";
 
@@ -32,10 +17,6 @@ namespace SkyrimCraftingTool.ViewModel
             string.Equals(workbenchKey, SmelterKey, StringComparison.OrdinalIgnoreCase)
             || string.Equals(workbenchKey, TanningRackKey, StringComparison.OrdinalIgnoreCase);
 
-        // The two benches the section owns. Not derived from the item: whether a piece belongs in
-        // the furnace or on the tanning rack cannot be told from its record - ArmorType says
-        // nothing about leather vs. metal, and keywords are a lottery on modded armour. So the user
-        // picks, from exactly two options.
         public static IReadOnlyList<FormIDRecord> Benches { get; } = new List<FormIDRecord>
         {
             new() { Key = SmelterKey, Name = "Smelter" },
@@ -44,10 +25,10 @@ namespace SkyrimCraftingTool.ViewModel
 
         private readonly string _itemKey;
         private readonly IFormIdService _formIds;
-        private readonly Action<COBJRecord> _save;
-        private readonly Action<BreakdownRecipeVM> _delete;
-        private readonly Action<BreakdownRecipeVM> _reset;
-        private readonly Action<string, List<COBJConditionRecord>> _saveConditions;
+        private readonly Action<COBJRecord>? _save;
+        private readonly Action<BreakdownRecipeVM>? _delete;
+        private readonly Action<BreakdownRecipeVM>? _reset;
+        private readonly Action<string, List<COBJConditionRecord>>? _saveConditions;
 
         // ONE DEBOUNCER PER ROW, and that is not incidental. Debouncer keeps a single pending
         // action per instance, so a shared one would let an edit on recipe B cancel the still
@@ -99,8 +80,8 @@ namespace SkyrimCraftingTool.ViewModel
         // Instance view of Benches, because a DataTemplate binds against the row, not the type.
         public IReadOnlyList<FormIDRecord> AvailableBenches => Benches;
 
-        private FormIDRecord _selectedBench;
-        public FormIDRecord SelectedBench
+        private FormIDRecord? _selectedBench;
+        public FormIDRecord? SelectedBench
         {
             get => _selectedBench;
             set
@@ -117,9 +98,6 @@ namespace SkyrimCraftingTool.ViewModel
 
         public string WorkbenchName => FriendlyWorkbench(Record.WorkbenchKeywordKey, _formIds);
 
-        // How many of the SELECTED item one run eats. Read-only here: it is the ingredient side,
-        // and it is what made this recipe show up in the list at all - letting the user edit it
-        // away would make the row delete itself under their hands. Its own decision, later.
         public int ConsumedCount { get; }
 
         // The other ingredients, if any. Empty for the usual single-input breakdown, which is why
@@ -135,8 +113,6 @@ namespace SkyrimCraftingTool.ViewModel
         public int OutputCount => Record.CreatedObjectCount;
         public string OutputSummary => $"{OutputCount}x {OutputName}";
 
-        // A row the user started and has not finished. Worth saying out loud: until an output is
-        // picked the ESP builder skips the record and only mentions it in the patch report.
         public bool IsIncomplete => IsBreakdown && string.IsNullOrWhiteSpace(Record.CreatedItemKey);
 
         public ICommand DeleteCommand { get; }
@@ -219,8 +195,40 @@ namespace SkyrimCraftingTool.ViewModel
             OnPropertyChanged(nameof(AreConditionsChanged));
         }
 
-        private void OnConditionChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
-            => NotifyConditionsChanged();
+        // The Type picker only changes an enum on the same view model; the Target editor is chosen by
+        // the CLR type. Without the swap, HasPerk turned into GetLevel kept the perk editor and was
+        // saved as "GetLevel" with a perk as its target - a broken condition in the ESP. The other
+        // condition lists (item, multi-selection, preset editor) swapped already.
+        private bool _swappingType;
+
+        private void OnConditionChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (_swappingType) return;
+
+            if (e.PropertyName == nameof(BaseConditionViewModel.Type) && sender is BaseConditionViewModel old)
+            {
+                int index = Conditions.IndexOf(old);
+                if (index >= 0)
+                {
+                    var fresh = ConditionFactory.ForTypeChange(old);
+                    _swappingType = true;
+                    try
+                    {
+                        old.PropertyChanged -= OnConditionChanged;
+                        fresh.PropertyChanged += OnConditionChanged;
+                        // Remove + Insert, not the indexer: see ItemNodeVM.ReplaceConditionForTypeChange.
+                        Conditions.RemoveAt(index);
+                        Conditions.Insert(index, fresh);
+                    }
+                    finally
+                    {
+                        _swappingType = false;
+                    }
+                }
+            }
+
+            NotifyConditionsChanged();
+        }
 
         private void NotifyConditionsChanged()
         {
@@ -275,17 +283,17 @@ namespace SkyrimCraftingTool.ViewModel
             _changed?.Invoke();
         }
 
-        private readonly Action _changed;
+        private readonly Action? _changed;
 
         public BreakdownRecipeVM(
             COBJRecord record,
             string itemKey,
             IFormIdService formIds,
-            Action<COBJRecord> save = null,
-            Action<BreakdownRecipeVM> delete = null,
-            Action<BreakdownRecipeVM> reset = null,
-            Action changed = null,
-            Action<string, List<COBJConditionRecord>> saveConditions = null)
+            Action<COBJRecord>? save = null,
+            Action<BreakdownRecipeVM>? delete = null,
+            Action<BreakdownRecipeVM>? reset = null,
+            Action? changed = null,
+            Action<string, List<COBJConditionRecord>>? saveConditions = null)
         {
             Record = record;
             _itemKey = itemKey;
@@ -425,7 +433,7 @@ namespace SkyrimCraftingTool.ViewModel
             return NameOf(key, formIds);
         }
 
-        private static string NameOf(string key, IFormIdService formIds)
+        private static string NameOf(string? key, IFormIdService formIds)
         {
             if (string.IsNullOrWhiteSpace(key)) return "(pick a material)";
 

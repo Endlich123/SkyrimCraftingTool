@@ -7,16 +7,6 @@ using SkyrimCraftingTool.Services;
 
 namespace SkyrimCraftingTool.ViewModel
 {
-    // The panel for ONE of the user's own leveled lists, in the Leveled lists sub-tab
-    // (docs/LeveledList-Create-Plan.md, L-P2 and L-P6): its name, deleting it, and where it hangs.
-    //
-    // NOT WHAT IS IN IT. That arrives the way it arrives in every list - an item's Container tab,
-    // under a container this list hangs in - and the contents pane below already shows it, because a planned
-    // placement is a planned placement whichever list it goes into. A second way in from here would
-    // be a second truth about the same entries.
-    //
-    // Its own view model rather than more of OwnerContentsVM: that one is shared with the Containers
-    // sub-tab, and none of this means anything for a container.
     public sealed class OwnListEditorVM : ViewModelBase
     {
         private readonly string? _dbPath;

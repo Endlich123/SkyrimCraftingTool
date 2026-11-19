@@ -8,17 +8,10 @@ using SkyrimCraftingTool.Services;
 
 namespace SkyrimCraftingTool.ViewModel
 {
-    // One sub-tab of the Container/LeveledList tab: a tree of owners on the left, the contents of the
-    // selected one on the right, with rows the user can take out again.
-    //
-    // ONE VIEW MODEL FOR BOTH KINDS, parameterised by RemovalScope. Containers and leveled lists ask
-    // exactly the same question here - what is in this thing, and what do I want gone - and the only
-    // differences are the words on screen and which table the decision lands in. A second copy of
-    // this file would be the six copied condition templates all over again.
     public sealed class OwnerContentsVM : ViewModelBase, IMultiSelectTree
     {
         private readonly RemovalScope _scope;
-        private readonly string _dbPath;
+        private readonly string? _dbPath;
 
         // How to reach the live view model of an item that has a placement here, if there is one.
         // Supplied by the owner (WorldContentVM) rather than looked up: this tab has no business
@@ -26,7 +19,7 @@ namespace SkyrimCraftingTool.ViewModel
         // the database row" - see UnPlace.
         private readonly Func<string, IPlaceable?>? _findPlaceable;
 
-        public OwnerContentsVM(RemovalScope scope, string dbPath = null, Func<string, IPlaceable?>? findPlaceable = null,
+        public OwnerContentsVM(RemovalScope scope, string? dbPath = null, Func<string, IPlaceable?>? findPlaceable = null,
                                Func<IReadOnlyList<string>>? loadOrder = null)
         {
             _scope = scope;
@@ -85,9 +78,31 @@ namespace SkyrimCraftingTool.ViewModel
 
         public void EnsureLoaded()
         {
-            if (_loaded) return;
+            if (_loaded)
+            {
+                if (_contentsStale) ReloadPickedContents();
+                return;
+            }
+
             _loaded = true;
             Reload();
+        }
+
+        // An own list was hung somewhere or taken off from the other sub-tab. The rows stay, only
+        // what the picked owner shows is out of date, so it is read again on the next visit. Not
+        // Invalidate: that also drops the pick, and this runs while one of the two panes is in front.
+        private bool _contentsStale;
+
+        public void MarkContentsStale() => _contentsStale = true;
+
+        private void ReloadPickedContents()
+        {
+            _contentsStale = false;
+
+            LoadContents();
+
+            _ownListEditor = null;      // its targets are the part that changed
+            RefreshOwnListEditor();
         }
 
         // Dropped rather than refreshed after a scan, same as the NPC tab: the rows are scanned data
@@ -151,9 +166,6 @@ namespace SkyrimCraftingTool.ViewModel
             OnPropertyChanged(nameof(RemovalCountText));
             OnPropertyChanged(nameof(HasRemovals));
 
-            // Keep the user where they were if the row survived the reload. Only the single pick is
-            // restored: re-picking several would have to re-read all of them, and a reload happens
-            // when the data underneath changed.
             if (!string.IsNullOrEmpty(previous))
                 PickOnly(Owners.FirstOrDefault(
                     o => string.Equals(o.Key, previous, StringComparison.OrdinalIgnoreCase)));
@@ -190,18 +202,8 @@ namespace SkyrimCraftingTool.ViewModel
             OnPropertyChanged(nameof(FilteredTree));
         }
 
-        // --- Only edited, and the reset (user, 2026-10-17) ---
-        //
-        // "Edited" = this tab's own decisions about the owner: objects taken out, entries put back,
-        // a list's chance or flags (OwnerDecisionStore). Placements of items INTO it are not counted
-        // - they are the item's, with their own filter and reset on the placement sub-tabs.
         private HashSet<string> _edited = new(StringComparer.OrdinalIgnoreCase);
 
-        // REFILTERS ONLY WHEN THE SET CHANGED. This runs on every pick (a chance edit tells nobody,
-        // so the markers are re-read there), and refiltering rebuilds the tree's nodes - in the middle
-        // of the click that is changing the pick. With "only edited" on, every click then behaved as
-        // if Ctrl were held (user, 2026-10-17). A pick does not change which owners are edited, so it
-        // no longer touches the tree.
         private void RefreshEdited()
         {
             var previous = _edited;
@@ -226,8 +228,6 @@ namespace SkyrimCraftingTool.ViewModel
             }
         }
 
-        // An own list counts as the user's too - it is the one kind of row here no plugin defines,
-        // and "show me what is mine" should find it.
         private bool _onlyEdited;
         public bool OnlyEdited
         {
@@ -277,9 +277,6 @@ namespace SkyrimCraftingTool.ViewModel
             AfterDecisionChanged();
         }
 
-        // The single pick, for the header and for restoring the user's place after a reload. Set from
-        // the pick and not the other way round: the contents are loaded from PickedOwners, which is
-        // one owner in the ordinary case and several when the user asked for several.
         private OwnerRowVM? _selectedOwner;
         public OwnerRowVM? SelectedOwner
         {
@@ -287,9 +284,6 @@ namespace SkyrimCraftingTool.ViewModel
             private set => SetProperty(ref _selectedOwner, value);
         }
 
-        // One owner, picked from code - the reload's "put the user back where they were". Goes
-        // through the pick so there is one path into LoadContents and no second way to get the
-        // selection and the contents out of step.
         public void PickOnly(OwnerRowVM? owner)
         {
             if (owner == null)
@@ -365,11 +359,6 @@ namespace SkyrimCraftingTool.ViewModel
 
         public bool IsMultiOwner => PickedOwners.Count > 1;
 
-        // --- The user's own lists (docs/LeveledList-Create-Plan.md, L-P2) ---
-        //
-        // Only in the Leveled lists sub-tab. A container cannot be made here - the generated ESP
-        // writes lists, and only an empty one: what goes into it is a SkyPatcher rule like
-        // everything else.
         public bool CanCreateList => !IsContainer;
 
         public ICommand CreateListCommand => new RelayCommand(CreateList);
@@ -404,8 +393,6 @@ namespace SkyrimCraftingTool.ViewModel
                 Category: "leveledlist"));
         }
 
-        // The panel for the picked list, if it is one of the user's own - one pick only, because
-        // renaming or placing several lists at once is not a question anyone asked.
         private OwnListEditorVM? _ownListEditor;
 
         public OwnListEditorVM? OwnListEditor => _ownListEditor;
@@ -430,28 +417,9 @@ namespace SkyrimCraftingTool.ViewModel
 
             OnPropertyChanged(nameof(OwnListEditor));
             OnPropertyChanged(nameof(HasOwnListEditor));
+            OnPropertyChanged(nameof(HasSectionNote));
         }
 
-        // --- One list, two sections ---
-        //
-        // The contents and the History used to be two boxes, and the two halves of one question kept
-        // having to be read against each other: an entry the user removed sat struck through in the
-        // first box, while an entry an override removed sat in the second. Both mean "this does not
-        // come out of here", and they now sit in the same place.
-        //
-        // The two rules that make it one view rather than two lists stacked up:
-        //
-        //   Remove something that the LOAD ORDER put here  -> it moves down into the history.
-        //   Remove something YOU put here                  -> it is simply gone; you never lost it.
-        //   Put something back from the history            -> it moves up into the list.
-        //
-        // Which is also why there are two buttons and not four: "put back" covers undoing your own
-        // removal and restoring what an override dropped, because from the list's point of view
-        // those are the same thing happening.
-        //
-        // Rows holds both kinds - OwnedEntryVM for an object in the thing, LostEntryVM for one an
-        // override dropped - and the view groups it by Section. Contents and History stay as the two
-        // honest collections underneath; Rows is how they are shown.
         public ObservableCollection<object> Rows { get; } = new();
 
         public string SectionIn => IsContainer ? "In this container" : "In this list";
@@ -463,6 +431,10 @@ namespace SkyrimCraftingTool.ViewModel
               + "hanging in it lost to an override. Tick and use the buttons to move rows between the two."
             : "The lower section is what is not in it: entries you took out, and entries an override "
               + "dropped. Tick and use the buttons to move rows between the two.";
+
+        // Own lists have no lower section to explain: no override drops anything from them, and an
+        // entry taken out is simply dropped again.
+        public bool HasSectionNote => !(PickedOwners.Count > 0 && PickedOwners.All(o => o.IsOwn));
 
         private void RebuildRows()
         {
@@ -617,8 +589,8 @@ namespace SkyrimCraftingTool.ViewModel
                 Contents.Add(vm);
             }
 
-            // Entries the user put back after an override dropped them. Marked apart from a plain
-            // addition: same effect on the game, different thing to read months later.
+            AddOwnListsHangingHere(owner, byReference);
+
             foreach (var lost in History.Where(h => h.IsRestored))
             {
                 if (byReference.TryGetValue(lost.Reference, out var existing))
@@ -643,6 +615,38 @@ namespace SkyrimCraftingTool.ViewModel
                 WatchSelection(vm);
 
                 byReference[lost.Reference] = vm;
+                Contents.Add(vm);
+            }
+        }
+
+        private void AddOwnListsHangingHere(OwnerRowVM owner, Dictionary<string, OwnedEntryVM> byReference)
+        {
+            var kind = IsContainer ? UserListTargetKind.Container : UserListTargetKind.LeveledList;
+
+            var targets = UserLeveledListStore.ReadAllTargets(_dbPath)
+                .Where(t => t.Kind == kind && string.Equals(t.TargetKey, owner.Key, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (targets.Count == 0) return;
+
+            var names = UserLeveledListStore.ReadAll(_dbPath)
+                .ToDictionary(l => l.Key, l => l.EditorId, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var target in targets)
+            {
+                if (byReference.ContainsKey(target.ListKey)) continue;
+
+                var name = names.TryGetValue(target.ListKey, out var n) ? n : target.ListKey;
+
+                var vm = new OwnedEntryVM(
+                    new OwnedEntry(target.ListKey, name, 0, 0, IsList: true, IsRemoved: false),
+                    owner.Key, hasLevel: !IsContainer);
+
+                vm.SelectionSize = 1;
+                vm.AddPlanned(new OwnedOccurrence(target.Level, target.Count, OwnedOrigin.Planned));
+
+                WatchSelection(vm);
+
+                byReference[target.ListKey] = vm;
                 Contents.Add(vm);
             }
         }
@@ -823,22 +827,21 @@ namespace SkyrimCraftingTool.ViewModel
         // Acts on the ticked rows rather than one at a time: pruning a chest is usually several
         // decisions in a row, and the restore flow in the list window set the precedent.
 
-        // Out of the list, into the history - except for what the user put there themselves, which
-        // is simply dropped. You cannot have lost something you added.
         public ICommand RemoveSelectedCommand => new RelayCommand(async () => await RemoveSelectedAsync());
 
         internal async Task RemoveSelectedAsync()
         {
             foreach (var row in Contents.Where(r => r.IsSelected && !r.IsRemoved).ToList())
             {
-                // NOTHING THE LOAD ORDER PUT HERE: there is no removal to record, only the user's
-                // own addition to undo. A removeFromLLs rule for something this same patch adds
-                // would be the tool arguing with itself.
                 if (row.IsReaddedOnly || row.IsPlacedOnly)
                 {
                     // Put back after an override dropped it: the restoration goes, and the entry is
                     // a loss again in the lower section.
                     if (row.IsReaddedOnly) UndoRestore(row.Reference);
+
+                    // An own list: it hangs here through its target, and no item carries that.
+                    else if (row.IsList && SelectedOwner != null)
+                        UserLeveledListStore.RemoveTarget(row.Reference, SelectedOwner.Key, _dbPath);
 
                     // Placed from an item's own tab: the placement lives in THAT item's
                     // ContainerString, so that is what gets edited.
@@ -864,8 +867,6 @@ namespace SkyrimCraftingTool.ViewModel
             AfterDecisionChanged();
         }
 
-        // Back into the list, from either side of the history: a removal of the user's own is taken
-        // back, an entry an override dropped is put back at the level and amount it last had.
         public ICommand PutBackSelectedCommand => new RelayCommand(() =>
         {
             // Not restricted to fully removed rows: a row marked in three of four owners is not
@@ -899,19 +900,6 @@ namespace SkyrimCraftingTool.ViewModel
             AfterDecisionChanged();
         });
 
-        // Take this owner back out of the item's placement.
-        //
-        // THROUGH THE ITEM'S OWN VIEW MODEL WHERE THERE IS ONE. An ARMO/WEAP row on these tabs is
-        // the item tree's own ItemNodeVM - it carries the dirty state and the save pipeline for that
-        // record, and writing the database row behind its back would let it save the old placement
-        // back later. Only when nothing is loaded does the store write the row itself.
-        //
-        // Either way the string is transformed by the same ContainerPlacementEditor, which is where
-        // the rule lives - including the trap that makes this more than a delete (see that file).
-        // AWAITED, and that is the whole reason this is async. An item's placement is saved through
-        // the tracked-field pipeline, which DEBOUNCES: the write had not landed yet when this pane
-        // re-read the database straight afterwards, so the row the user had just removed came back
-        // and the placement looked unremovable. SetPlacementAsync goes past the debouncer.
         private async Task UnPlace(string itemKey)
         {
             var owner = SelectedOwner;
@@ -1040,8 +1028,6 @@ namespace SkyrimCraftingTool.ViewModel
         public string Name { get; }
         public int EntryCount { get; }
 
-        // A leveled list the user created in the tool - marked in the tree, because it is the one kind
-        // of row here that no plugin defines (docs/LeveledList-Create-Plan.md, L-P2).
         public bool IsOwn { get; }
 
         // This tab decided something about it - see OwnerContentsVM.RefreshEdited.
@@ -1064,15 +1050,6 @@ namespace SkyrimCraftingTool.ViewModel
         }
     }
 
-    // One OBJECT in the contents, with every occurrence of it folded in - see PlacementLookup's
-    // OwnedEntry for why folded and not per row.
-    //
-    // FOLDED ACROSS OWNERS TOO, now that several containers or lists can be picked at once. The same
-    // object sitting in four of the picked chests is one row that knows it is in four of them, not
-    // four rows: the decision the user makes here is about the object, which is the same reason the
-    // occurrences inside one owner were folded in the first place. The removal itself is still
-    // recorded per owner - RemovalStore is keyed (owner, reference) - so the row has to carry which
-    // owners it came from, and which of them already hold the decision.
     public sealed class OwnedEntryVM : ViewModelBase, IOwnerPaneRow
     {
         private readonly OwnedEntry _entry;
@@ -1116,9 +1093,6 @@ namespace SkyrimCraftingTool.ViewModel
             AfterBreakdownChanged();
         }
 
-        // What the patch will put here, shown among the scanned rows rather than in a box of its
-        // own: the question this pane answers is "what comes out of this", and a placement the user
-        // has already made is part of that answer. Marked, never silently mixed in.
         public void AddPlanned(OwnedOccurrence row)
         {
             Breakdown.Add(new OwnedOccurrenceVM(row, _hasLevel));
@@ -1137,13 +1111,9 @@ namespace SkyrimCraftingTool.ViewModel
 
         public bool HasPlannedRows => Breakdown.Any(r => !r.IsScanned);
 
-        // Nothing but a restoration the user made. Taking THIS out is undoing that decision, not
-        // recording a removal - see RemoveSelectedCommand.
         public bool IsReaddedOnly =>
             Breakdown.Count > 0 && Breakdown.All(r => r.IsRestored);
 
-        // Nothing but a placement the user made from an item's own tab. Taking THIS out means
-        // editing that item's ContainerString, which is where the placement actually lives.
         public bool IsPlacedOnly =>
             Breakdown.Count > 0 && Breakdown.All(r => r.IsPlacement);
 
@@ -1152,16 +1122,6 @@ namespace SkyrimCraftingTool.ViewModel
         // it is in. The view groups on it.
         public string Section { get; set; } = "";
 
-        // EVERY ROW CAN BE TAKEN OUT. What that MEANS differs, and RemoveSelectedCommand reads it
-        // off the row:
-        //
-        //   it is in the load order  -> a removal, recorded for the patch
-        //   you put it back          -> the restoration is undone and it is a loss again
-        //   you placed it here       -> the placement is taken out of the item that carries it
-        //
-        // The last two used to have no tick at all, on the reasoning that a row the patch adds has
-        // no load-order entry to remove. True, and beside the point: there is something to undo in
-        // every case, and the row is where the user is looking at it.
         public bool CanRemove => true;
 
         // What taking this row out will do, said on the row - "remove" meaning three things is only
@@ -1174,8 +1134,11 @@ namespace SkyrimCraftingTool.ViewModel
             {
                 if (!HasRemoveNote) return "";
 
-                return Breakdown.Any(r => r.IsRestored)
-                    ? "Not in the load order - you put this back. Taking it out undoes that, and it is a loss again below."
+                if (Breakdown.Any(r => r.IsRestored))
+                    return "Not in the load order - you put this back. Taking it out undoes that, and it is a loss again below.";
+
+                return IsList
+                    ? "Your own leveled list - your patch hangs it here. Taking it out only takes it off here; the list stays."
                     : "Not in the load order - your patch adds it. Taking it out removes the placement from the item that carries it.";
             }
         }
@@ -1238,9 +1201,6 @@ namespace SkyrimCraftingTool.ViewModel
         // two of everything.
         public bool HasOccurrenceNote => _occurrences > 1 || SelectionSize > 1;
 
-        // The one thing the user has to understand before ticking anything, said on the row that
-        // needs it rather than in a banner nobody reads. With several owners picked it also has to
-        // say how far the row reaches - "remove" on a row held by four of them is four removals.
         public string OccurrenceNote
         {
             get
