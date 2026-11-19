@@ -19,9 +19,20 @@
                              Tag="Search by name or Plugin|FormID (2+ letters)..."
                              Style="{StaticResource ItemTextBoxStyle}"/>
                 </DockPanel>
+                <!-- The same group chips as in the dropdown pickers (PickerChipStyle, Controls.xaml):
+                     skill trees for perks, kinds for materials. Hidden for lists without groups. -->
+                <ItemsControl ItemsSource="{Binding Filter.Chips}" Margin="0,4,0,0"
+                              ItemTemplate="{StaticResource PickerChipTemplate}"
+                              Visibility="{Binding Filter.HasChips, Converter={StaticResource BoolToVis}}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                </ItemsControl>
                 <ListBox ItemsSource="{Binding Matches}" SelectedItem="{Binding Selected}"
                          Visibility="{Binding HasMatches, Converter={StaticResource BoolToVis}}"
-                         DisplayMemberPath="Name" MaxHeight="120" Margin="0,4,0,0"
+                         ItemTemplate="{StaticResource RecordChoiceTemplate}" MaxHeight="120" Margin="0,4,0,0"
                          Background="{DynamicResource ColorBackgroundPanel}"
                          BorderBrush="{DynamicResource ColorBorder}"
                          VirtualizingPanel.IsVirtualizing="True"/>
@@ -153,11 +164,12 @@
                     </ItemsControl>
                     <ContentControl Content="{Binding MaterialPicker}" Margin="0,6,0,10"/>
 
-                    <TextBlock Text="Required perks:" Style="{StaticResource ItemLabelStyle}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding Perks}" ItemTemplate="{StaticResource KeyEntryTemplate}"/>
-                    <ContentControl Content="{Binding PerkPicker}" Margin="0,6,0,0"/>
-                    <TextBlock Text="{Binding OtherConditions, Mode=OneWay}" Foreground="{DynamicResource ColorTextTertiary}"
-                               FontSize="11" Margin="0,4,0,0"/>
+                    <!-- The item recipe's condition editor: same row template, same OR groups. -->
+                    <TextBlock Text="Conditions:" Style="{StaticResource ItemLabelStyle}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding Conditions}" model:ConditionGroupingBehavior.IsEnabled="True"
+                                  ItemTemplate="{StaticResource ConditionRowTemplate}"/>
+                    <Button Command="{Binding AddConditionCommand}" HorizontalAlignment="Left"
+                            ToolTip="Add Condition" Style="{StaticResource AddButtonStyle}"/>
                 </StackPanel>
             </GroupBox>
         </DataTemplate>

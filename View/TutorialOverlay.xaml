@@ -13,8 +13,6 @@
               Fill="{DynamicResource ColorBackgroundBase}"
               Opacity="0.72"/>
 
-        <!-- Frame around the cut-out. Never hit-testable: it sits on top of the very control the user
-             may want to click. -->
         <Border x:Name="Frame"
                 BorderBrush="{DynamicResource ColorHeadingAccent}"
                 BorderThickness="2"

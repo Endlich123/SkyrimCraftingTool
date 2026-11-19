@@ -112,11 +112,6 @@
                   Background="{DynamicResource ColorBackgroundBase}"
                   Foreground="{DynamicResource ColorTextPrimary}">
 
-                    <!-- Container-Style wie bisher, plus die zwei Zustände, die der Sprung braucht:
-                         TreeView.SelectedItem ist read-only, Auswahl aus dem Code geht nur über
-                         TreeViewItem.IsSelected - und selektierbar ist nur, was aufgeklappt und
-                         damit realisiert ist. Beide zweiwegig, damit das, was der Anwender im Baum
-                         tut, im Knoten landet und ein Sprung nicht dagegen arbeitet. -->
                     <TreeView.ItemContainerStyle>
                         <Style TargetType="TreeViewItem">
                             <Setter Property="Padding" Value="2" />
@@ -295,8 +290,6 @@
                                         </Button.ToolTip>
                                     </Button>
 
-                                    <!-- Only where the plugin actually holds records of the user's,
-                                         mirroring IsUserCreatedSelected on the single record. -->
                                     <Button Content="Delete enchantments"
                                             Command="{Binding DeletePluginCommand}"
                                             Visibility="{Binding HasOwnEnchantments, Converter={StaticResource BoolToVis}}"
@@ -482,10 +475,6 @@
                                 </Button.ToolTip>
                             </Button>
 
-                            <!-- EditorID. Editable only on records the user created - a scanned
-                                 record's EditorID belongs to its plugin. Both spellings sit in the
-                                 same cell; exactly one is visible, so the row keeps its height
-                                 either way. -->
                             <TextBlock Grid.Row="2"
                                        Text="EditorID:"
                                        Style="{StaticResource ItemLabelStyle}"/>
@@ -711,12 +700,6 @@
                             <TextBlock Grid.Row="9"
                                        Text="Charge Time:"
                                        Style="{StaticResource ItemLabelStyle}"/>
-                            <!-- Staff enchantments only. Measured across the load order: of 1501
-                                 non-staff records, ZERO carry a charge time - a value here is
-                                 stored and means nothing. Deliberately not narrowed further to
-                                 FireAndForget staves: 24 Concentration staves use it legitimately.
-                                 Disabled, not cleared - taking the stored value away would be an
-                                 edit the user never asked for. -->
                             <TextBox Grid.Row="9"
                                      Grid.Column="1"
                                      Text="{Binding ChargeTime}"
@@ -794,7 +777,7 @@
                     <!-- Expanded by default, unlike every expander in MainContentView: the effect
                          list is the reason one opens an enchantment at all, so having to unfold it
                          each time would be a click for nothing. -->
-                    <Expander Style="{StaticResource DarkExpanderStyle}" IsExpanded="True" Margin="0,0,0,10" views:Tutorial.Id="ench.effects">
+                    <Expander views:ExpanderState.Key="ench.effects" Style="{StaticResource DarkExpanderStyle}" IsExpanded="True" Margin="0,0,0,10" views:Tutorial.Id="ench.effects">
                         <Expander.Header>
                             <!-- A collapsed section must still admit that something inside it
                                  changed - the amber borders on the fields are invisible while it is
@@ -856,9 +839,11 @@
                                       IsTextSearchEnabled="False"
                                       IsSynchronizedWithCurrentItem="False"
                                       StaysOpenOnEdit="True"
-                                      DisplayMemberPath="Label"
+                                      ItemTemplate="{StaticResource MagicEffectChoiceTemplate}"
+                                      TextSearch.TextPath="Label"
+                                      model:PickerChips.Filter="{Binding DataContext.MagicEffectFilter, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                       Style="{StaticResource ItemComboBoxStyle}"
-                                      ToolTip="Type to filter the scanned magic effects. Effects this enchantment already carries are not listed."/>
+                                      ToolTip="Type to filter the scanned magic effects. Effects this enchantment already carries are not listed. The chips filter by cast/target type; effects outside the usual pair can still be added."/>
 
                             <!-- Eigener Margin statt dem des Stils: StandardButtonStyle bringt
                                  Margin="0,0,5,5" mit, und die 5px unten setzen den Knopf gegenüber
@@ -975,7 +960,7 @@
                     <!-- Hidden where the field means nothing - but never where it holds something.
                          See EnchantmentMenuVM.ShowWornRestrictions: an assigned list always wins
                          over the category, so a misclassified record can never hide real data. -->
-                    <Expander Style="{StaticResource DarkExpanderStyle}" IsExpanded="False" views:Tutorial.Id="ench.expander.worn"
+                    <Expander views:ExpanderState.Key="ench.worn" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False" views:Tutorial.Id="ench.expander.worn"
                               Visibility="{Binding DataContext.ShowWornRestrictions, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}">
                         <Expander.Header>
                             <StackPanel Orientation="Horizontal">

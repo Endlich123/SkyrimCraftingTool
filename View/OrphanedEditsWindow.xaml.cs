@@ -33,7 +33,7 @@ namespace SkyrimCraftingTool.View
             LastChanged = e.LastChanged;
         }
 
-        public event PropertyChangedEventHandler PropertyChanged;
+        public event PropertyChangedEventHandler? PropertyChanged;
     }
 
     public partial class OrphanedEditsWindow : Window
@@ -60,8 +60,7 @@ namespace SkyrimCraftingTool.View
             DwmTitleBarService.ApplyAccentCaption(hwnd, captionColor, textColor);
         }
 
-        // Returns how many rows the user deleted.
-        public static int ShowDialog(IEnumerable<OrphanedEdit> orphans, IItemService itemService, Window owner = null)
+        public static int ShowDialog(IEnumerable<OrphanedEdit> orphans, IItemService itemService, Window? owner = null)
         {
             var window = new OrphanedEditsWindow(orphans, itemService)
             {

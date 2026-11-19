@@ -13,9 +13,6 @@ namespace SkyrimCraftingTool.View
             InitializeComponent();
         }
 
-        // Branch nodes are selectable too (a tree where only leaves respond feels broken), but only
-        // a leaf changes the detail pane - clicking "Skyrim.esm" must not blank out the NPC the user
-        // was just looking at.
         private void TreeView_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
         {
             if (DataContext is not NpcMenuVM vm) return;

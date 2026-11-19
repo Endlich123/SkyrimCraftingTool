@@ -36,8 +36,6 @@
                     ToolTip="Deletes the log file. Do this before reproducing a bug to get a clean report."/>
         </StackPanel>
 
-        <!-- Read-only TextBox rather than a TextBlock: users need to select and copy parts of it,
-             and a ScrollViewer around a TextBlock gives no selection. -->
         <TextBox Grid.Row="2"
                  x:Name="ReportBox"
                  IsReadOnly="True"

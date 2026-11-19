@@ -22,7 +22,6 @@ namespace SkyrimCraftingTool.View
             SourceInitialized += ApplyCaption;
         }
 
-        // Returns the rows the user kept, or null when they cancelled.
         public static IReadOnlyList<FamilyChangeRowVM>? Show(
             Window? owner, EnchantmentRecord parent, IReadOnlyList<FamilyEffectChange> plan, int childCount)
         {

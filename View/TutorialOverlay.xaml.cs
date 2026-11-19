@@ -31,8 +31,6 @@ namespace SkyrimCraftingTool.View
         private FrameworkElement? _target;
         private Window? _window;
 
-        // Expanders the tour opened. Closed again at the end, so the item view looks the way the
-        // user left it.
         private readonly List<Expander> _openedExpanders = new();
 
         private Rect _lastHole = Rect.Empty;
@@ -51,6 +49,9 @@ namespace SkyrimCraftingTool.View
             if (tour.Steps.Count == 0) return;
             if (IsRunning) End();
 
+            // The sections the tour opens are its own doing - not saved as a preference.
+            ExpanderState.Suspend();
+
             _tour = tour;
             _host = hostContext as ITutorialHost;
             _stopped = false;
@@ -66,12 +67,17 @@ namespace SkyrimCraftingTool.View
 
         public void End()
         {
+            bool wasRunning = _tour != null;
+
             LayoutUpdated -= OnLayoutUpdated;
             if (_window != null) _window.PreviewKeyDown -= OnWindowKeyDown;
 
             foreach (var expander in _openedExpanders)
                 expander.IsExpanded = false;
             _openedExpanders.Clear();
+
+            // After closing them, so closing is not saved either.
+            if (wasRunning) ExpanderState.Resume();
 
             _tour = null;
             _host = null;

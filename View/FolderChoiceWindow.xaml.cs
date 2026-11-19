@@ -12,10 +12,6 @@ namespace SkyrimCraftingTool.View
     {
         private FolderSettings _settings;
 
-        // The radio buttons fire Checked while the constructor is still filling the window in.
-        // Without this guard the prefill below would overwrite the paths that were just loaded from
-        // settings.json with freshly guessed ones - i.e. the user's own corrections would be lost
-        // on every start.
         private bool _loading = true;
 
         public FolderChoiceWindow()
@@ -78,9 +74,6 @@ namespace SkyrimCraftingTool.View
 
             if (SelectedKind() == ModManagerKind.Other)
             {
-                // Deployment already put the real files in the game folder, so that folder IS the
-                // mod source. Only fill in what is still blank - a user who deliberately pointed
-                // this somewhere else keeps their choice.
                 if (string.IsNullOrWhiteSpace(ModDirectoryPathBox.Text))
                     ModDirectoryPathBox.Text = GameDataPathBox.Text;
 

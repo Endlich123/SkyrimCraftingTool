@@ -21,7 +21,6 @@
                     <TextBlock Text="{Binding Display}"
                                Foreground="{DynamicResource ColorTreeLeaf}"
                                TextTrimming="CharacterEllipsis"/>
-                    <!-- The placement is the user's (PlacementListVM.RefreshEdited). -->
                     <TextBlock Style="{StaticResource ChangedDotStyle}"
                                Visibility="{Binding IsEdited, Converter={StaticResource BoolToVis}}"/>
                 </StackPanel>
@@ -53,8 +52,6 @@
                      Margin="0,0,0,6"
                      ToolTip="Filter by name or FormID."/>
 
-            <!-- Only the records whose placement is the user's - read from the database, so it
-                 also finds armor and weapons nobody opened this session. -->
             <WrapPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
                 <CheckBox Content="Only edited"
                           IsChecked="{Binding OnlyEdited}"
@@ -163,16 +160,6 @@
                 </StackPanel>
             </Border>
 
-            <!-- The host is THIS view model, which is why the panel's bindings resolve: it answers
-                 the same nine members MainContentVM does. With several records picked it is handed
-                 the template instead of a record - see PlacementListVM.PlacementTarget.
-
-                 THE SCROLLVIEWER IS THE HOST'S JOB. The panel grows with what is selected - one
-                 merchant chest alone lists 30+ leveled lists - and has no scroll region of its own;
-                 the item editor brings one. Without it here, DockPanel cut the panel off at the
-                 window edge and everything below was out of reach, on every placement sub-tab
-                 (user, 2026-11-05). The panel's container list keeps its virtualisation: its height
-                 is fixed, so the infinite height from up here never reaches it. -->
             <ScrollViewer VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled"
                           Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}">

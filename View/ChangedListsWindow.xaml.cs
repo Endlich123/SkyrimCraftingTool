@@ -7,10 +7,6 @@ using SkyrimCraftingTool.ViewModel;
 
 namespace SkyrimCraftingTool.View
 {
-    // The overview of every leveled list whose own properties the user changed.
-    //
-    // A window rather than a view: it is a review-and-undo step, not a place to work in, and it has
-    // to be reachable from wherever the container section is without replacing what is on screen.
     public partial class ChangedListsWindow : Window
     {
         private ChangedListsWindow(ChangedListsVM vm)

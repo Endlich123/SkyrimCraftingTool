@@ -833,6 +833,7 @@
 
                                         <TextBlock Grid.Column="0"
                                                    Text="{Binding Name}"
+                                                   ToolTip="{Binding ToolTip}"
                                                    TextTrimming="CharacterEllipsis"
                                                    VerticalAlignment="Center"/>
 
@@ -882,7 +883,9 @@
                                       IsTextSearchEnabled="False"
                                       IsSynchronizedWithCurrentItem="False"
                                       StaysOpenOnEdit="True"
-                                      DisplayMemberPath="Name"
+                                      ItemTemplate="{StaticResource RecordChoiceTemplate}"
+                                      TextSearch.TextPath="Name"
+                                      model:PickerChips.Filter="{Binding PerkFilter}"
                                       Style="{StaticResource ItemComboBoxStyle}"/>
 
                             <Button Grid.Column="1"

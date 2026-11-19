@@ -80,9 +80,6 @@ namespace SkyrimCraftingTool.View
 
         public bool Show(string message)
         {
-            // Over the window the user is working in: the main window, or a dialog on top of it - the
-            // preset patch starts from the modal dry-run window, and an overlay laid over the main
-            // window only would sit behind it (2026-10-22).
             var target = ActiveWindow();
             if (!target.IsVisible || target.WindowState == WindowState.Minimized) return false;
             if (target.Content is not FrameworkElement root || root.ActualWidth <= 0) return false;
@@ -212,7 +209,25 @@ namespace SkyrimCraftingTool.View
                 Title = "Loading",
                 Content = grid,
             };
-            new WindowInteropHelper(_window).EnsureHandle();
+            var hwnd = new WindowInteropHelper(_window).EnsureHandle();
+
+            // NEVER ACTIVATED, NOT EVEN BY A CLICK (2026-11-09). ShowActivated only covers Show; a click
+            // on the overlay still made it the active window. Its owner - the main window - lives on
+            // the main thread, which is blocked while the overlay is up, and activation has to tell the
+            // owner synchronously. With the ghost window switched off (App.DisableProcessWindowsGhosting)
+            // that click reached the overlay instead of Windows' ghost: tabbed back and clicked during a
+            // "Reset all items", the overlay never went away again and the process had to be killed.
+            // WS_EX_NOACTIVATE plus eating WM_MOUSEACTIVATE keeps every click from starting that
+            // exchange; the overlay needs no clicks of its own.
+            SetWindowLong(hwnd, GWL_EXSTYLE, GetWindowLong(hwnd, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+            HwndSource.FromHwnd(hwnd)?.AddHook(NoActivateHook);
+        }
+
+        private static IntPtr NoActivateHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            if (msg != WM_MOUSEACTIVATE) return IntPtr.Zero;
+            handled = true;
+            return (IntPtr)MA_NOACTIVATEANDEAT;
         }
 
         private void Present(string message, Point topLeftPx, Point bottomRightPx, IntPtr ownerHwnd, Colours c)
@@ -261,5 +276,17 @@ namespace SkyrimCraftingTool.View
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
+
+        private const int GWL_EXSTYLE = -20;
+        private const int WS_EX_NOACTIVATE = 0x08000000;
+        private const int WM_MOUSEACTIVATE = 0x0021;
+        private const int MA_NOACTIVATEANDEAT = 4;
+
+        // The 32-bit pair is enough for GWL_EXSTYLE on 64-bit too: the extended style is a 32-bit value.
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern int GetWindowLong(IntPtr hWnd, int index);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern int SetWindowLong(IntPtr hWnd, int index, int value);
     }
 }

@@ -6,11 +6,6 @@ using SkyrimCraftingTool.Services;
 
 namespace SkyrimCraftingTool.View
 {
-    // Log viewer and bug-report generator.
-    //
-    // Deliberately offline: it builds the report locally and hands it to the user via clipboard or
-    // a file. The tool makes no network calls, and a modding tool that phoned home would rightly
-    // be treated as suspect.
     public partial class LogViewerWindow : Window
     {
         public LogViewerWindow()
@@ -48,8 +43,6 @@ namespace SkyrimCraftingTool.View
             }
             catch (Exception ex)
             {
-                // The clipboard can genuinely be locked by another process; say so rather than
-                // leaving the user wondering whether the copy worked.
                 AppLogger.LogError("LogViewerWindow.Copy", ex);
                 StatusText.Text = $"Could not copy: {ex.Message} — use \"Save report…\" instead.";
             }

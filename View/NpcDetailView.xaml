@@ -184,7 +184,7 @@
                         </Border>
 
                         <!-- GENERAL -->
-                        <Expander Style="{StaticResource DarkExpanderStyle}" Header="General" IsExpanded="True">
+                        <Expander views:ExpanderState.Key="npcs.general" Style="{StaticResource DarkExpanderStyle}" Header="General" IsExpanded="True">
                             <StackPanel Margin="0,10,0,0">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -230,7 +230,7 @@
                         </Expander>
 
                         <!-- STATS -->
-                        <Expander Style="{StaticResource DarkExpanderStyle}" Header="Stats" IsExpanded="True" views:Tutorial.Id="npcs.stats">
+                        <Expander views:ExpanderState.Key="npcs.stats" Style="{StaticResource DarkExpanderStyle}" Header="Stats" IsExpanded="True" views:Tutorial.Id="npcs.stats">
                             <StackPanel Margin="0,10,0,0">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -295,7 +295,7 @@
                         </Expander>
 
                         <!-- LEVEL -->
-                        <Expander Style="{StaticResource DarkExpanderStyle}" Header="Level" IsExpanded="True" views:Tutorial.Id="npcs.level">
+                        <Expander views:ExpanderState.Key="npcs.level" Style="{StaticResource DarkExpanderStyle}" Header="Level" IsExpanded="True" views:Tutorial.Id="npcs.level">
                             <StackPanel Margin="0,10,0,0">
                                 <!-- Both halves stay visible when the switch flips: seeing what the
                                      record falls back to is the whole point of changing it. -->
@@ -349,7 +349,7 @@
                         </Expander>
 
                         <!-- SKILLS -->
-                        <Expander Style="{StaticResource DarkExpanderStyle}" Header="Skills" IsExpanded="False" views:Tutorial.Id="npcs.skills">
+                        <Expander views:ExpanderState.Key="npcs.skills" Style="{StaticResource DarkExpanderStyle}" Header="Skills" IsExpanded="False" views:Tutorial.Id="npcs.skills">
                             <ItemsControl ItemsSource="{Binding Skills}" Margin="0,10,0,0">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
@@ -642,7 +642,7 @@
                         </Expander>
 
                         <!-- PERKS -->
-                        <Expander Style="{StaticResource DarkExpanderStyle}" IsExpanded="False" views:Tutorial.Id="npcs.perks">
+                        <Expander views:ExpanderState.Key="npcs.perks" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False" views:Tutorial.Id="npcs.perks">
                             <Expander.Header>
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="Perks"/>
@@ -660,7 +660,7 @@
                                 <ItemsControl ItemsSource="{Binding PerkRows}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Grid Margin="0,0,0,3" ToolTip="{Binding Key}">
+                                            <Grid Margin="0,0,0,3" Background="Transparent" ToolTip="{Binding ToolTip}">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*"/>
                                                     <ColumnDefinition Width="40"/>
@@ -708,7 +708,9 @@
                                               IsTextSearchEnabled="False"
                                               IsSynchronizedWithCurrentItem="False"
                                               StaysOpenOnEdit="True"
-                                              DisplayMemberPath="Name"
+                                              ItemTemplate="{StaticResource RecordChoiceTemplate}"
+                                              TextSearch.TextPath="Name"
+                                              model:PickerChips.Filter="{Binding DataContext.PerkFilter, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                               Style="{StaticResource ItemComboBoxStyle}"/>
                                     <Button Grid.Column="1" Content="Add" Width="70" Margin="6,0,0,5"
                                             Command="{Binding DataContext.AddPerkCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"

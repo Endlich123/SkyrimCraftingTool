@@ -106,8 +106,6 @@ namespace SkyrimCraftingTool.View
             FlushThenClose(vm);
         }
 
-        // A TextBox / editable ComboBox with the default LostFocus binding hasn't pushed its value to
-        // the VM yet if the user closed the window without leaving the field. Force the commit.
         private void CommitFocusedEdit()
         {
             if (Keyboard.FocusedElement is not FrameworkElement fe)

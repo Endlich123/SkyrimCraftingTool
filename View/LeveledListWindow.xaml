@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:model="clr-namespace:SkyrimCraftingTool.Model"
+        xmlns:views="clr-namespace:SkyrimCraftingTool.View"
         Title="Leveled List"
         Width="980" Height="760"
         Background="{DynamicResource ColorBackgroundBase}"
@@ -220,13 +221,7 @@
             </StackPanel>
         </Expander>
 
-        <!-- HISTORY
-             Collapsed by default and hidden entirely when there is nothing to report: on most lists
-             there is nothing, and an empty box that is always there teaches people to stop looking.
-             Yellow, never the amber used for the user's own edits - "this used to be here" and "you
-             changed this" must not read alike. The strikethrough carries the same meaning without
-             colour, for anyone who cannot tell the two apart. -->
-        <Expander Grid.Row="5" Margin="0,10,0,0"
+        <Expander views:ExpanderState.Key="lvl.history" Grid.Row="5" Margin="0,10,0,0"
                   Foreground="{DynamicResource ColorTextPrimary}"
                   Visibility="{Binding HasLostEntries, Converter={StaticResource BoolToVis}}">
             <Expander.Header>
@@ -242,8 +237,6 @@
                            Foreground="{DynamicResource ColorTextTertiary}"
                            TextWrapping="Wrap" FontSize="11" Margin="0,0,0,2"/>
 
-                <!-- Said plainly, because the obvious reading is the wrong one: a mod that drops an
-                     entry may have meant to. Nothing here is patched unless the user says so. -->
                 <TextBlock Text="A plugin may have removed these on purpose, or may simply have overwritten the list. Nothing here is written to your patch."
                            Foreground="{DynamicResource ColorTextTertiary}"
                            TextWrapping="Wrap" FontSize="11" Margin="0,0,0,6"/>
@@ -267,13 +260,16 @@
                             Command="{Binding UndoSelectedCommand}"
                             IsEnabled="{Binding HasSelectedLostEntries}"
                             Style="{StaticResource StandardButtonStyle}"
-                            Margin="8,0,0,0"
                             ToolTip="Take the selected entries back out of the patch."/>
 
+                    <!-- Margins stay the style's 0,0,5,5 apart from the gap: overriding them on one
+                         button shifts it off the Close button's right edge and off its neighbour's
+                         vertical centre. -->
                     <Button DockPanel.Dock="Right" Content="Put back selected" Width="130"
                             Command="{Binding PutBackSelectedCommand}"
                             IsEnabled="{Binding HasSelectedLostEntries}"
                             Style="{StaticResource StandardButtonStyle}"
+                            Margin="0,0,8,5"
                             ToolTip="Add the selected entries back. The next patch puts them in at runtime - the mod that dropped them is not changed."/>
 
                     <TextBlock Text="{Binding LostSelectionSummary}"

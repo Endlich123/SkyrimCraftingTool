@@ -2,7 +2,8 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:SkyrimCraftingTool.ViewModel"
-             xmlns:model="clr-namespace:SkyrimCraftingTool.Model">
+             xmlns:model="clr-namespace:SkyrimCraftingTool.Model"
+             xmlns:views="clr-namespace:SkyrimCraftingTool.View">
 
     <!-- DataContext is MultiSelectDetailVM (see MainContentView.xaml), not MainContentVM
          directly - SelectedItems/Apply commands live there, see MultiSelectDetailVM.cs. -->
@@ -68,7 +69,7 @@
                  value; the RESULT is clamped to the field's valid range (Speed/Reach/Stagger 0..10,
                  the rest floored at 0). Persists directly per item via MainContentVM.PersistFieldAsync
                  (bypasses the shared debouncer - see its comment). -->
-            <Expander Style="{StaticResource DarkExpanderStyle}" Header="Numeric Fields (set / add / subtract)" IsExpanded="False">
+            <Expander views:ExpanderState.Key="multi.numeric" Style="{StaticResource DarkExpanderStyle}" Header="Numeric Fields (set / add / subtract)" IsExpanded="False">
                 <StackPanel>
                     <TextBlock Text="Applies to every selected item that has the field. + / − use each item's current value; the result is clamped to the valid range."
                                Foreground="{DynamicResource ColorTextTertiary}"
@@ -125,7 +126,7 @@
                  hundred keywords from the mod list got rendered here - that was the main cause of lag
                  when expanding. Search is now debounced (180ms) instead of re-filtering on every
                  keystroke. -->
-            <Expander Style="{StaticResource DarkExpanderStyle}" Header="Keywords (additive)" IsExpanded="False">
+            <Expander views:ExpanderState.Key="multi.keywords" Style="{StaticResource DarkExpanderStyle}" Header="Keywords (additive)" IsExpanded="False">
                 <StackPanel>
                     <Grid Margin="0,0,0,6">
                         <Grid.ColumnDefinitions>
@@ -203,13 +204,7 @@
                 </StackPanel>
             </Expander>
 
-            <!-- Crafting Recipe: a free-form template the user builds directly right here (Workbench,
-                 Conditions, Ingredients - the same fields the single-item editor exposes), NOT copied
-                 from one of the selected items. Each checkbox controls whether that part gets applied
-                 at all. The Conditions/Ingredients editors below are copied verbatim from
-                 MainContentView.xaml's single-item Crafting Recipe (same property/command names on
-                 MultiSelectDetailVM - see its class comment) so they behave identically. -->
-            <Expander Style="{StaticResource DarkExpanderStyle}" Header="Crafting Recipe" IsExpanded="False">
+            <Expander views:ExpanderState.Key="multi.crafting" Style="{StaticResource DarkExpanderStyle}" Header="Crafting Recipe" IsExpanded="False">
                 <StackPanel>
 
                     <!-- Workbench -->
@@ -349,11 +344,11 @@
                                     </Grid.ColumnDefinitions>
 
                                     <ComboBox Grid.Column="0"
-                                          ItemsSource="{Binding LocalMaterialsView}" VerticalAlignment="Stretch"
+                                          ItemsSource="{Binding LocalMaterialsView}" model:PickerChips.Filter="{Binding MaterialFilter}" VerticalAlignment="Stretch"
                                           SelectedItem="{Binding SelectedMaterial}" IsSynchronizedWithCurrentItem="False"
                                           Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                                           ToolTip="{Binding Key}"
-                                          DisplayMemberPath="Name"
+                                          ItemTemplate="{StaticResource RecordChoiceTemplate}" TextSearch.TextPath="Name"
                                           IsEditable="True"
                                           IsTextSearchEnabled="False"
                                           StaysOpenOnEdit="True"
@@ -393,7 +388,7 @@
             <!-- Temper Recipe: mirror image of the Crafting section, minus Workbench - like in the
                  single-item editor, the Temper workbench is always auto-derived from the item at
                  COBJ-creation time and never user-settable, so there's nothing to choose here. -->
-            <Expander Style="{StaticResource DarkExpanderStyle}" Header="Temper Recipe" IsExpanded="False">
+            <Expander views:ExpanderState.Key="multi.temper" Style="{StaticResource DarkExpanderStyle}" Header="Temper Recipe" IsExpanded="False">
                 <StackPanel>
 
                     <!-- Conditions -->
@@ -510,11 +505,11 @@
                                     </Grid.ColumnDefinitions>
 
                                     <ComboBox Grid.Column="0"
-                                          ItemsSource="{Binding LocalMaterialsView}" VerticalAlignment="Stretch"
+                                          ItemsSource="{Binding LocalMaterialsView}" model:PickerChips.Filter="{Binding MaterialFilter}" VerticalAlignment="Stretch"
                                           SelectedItem="{Binding SelectedMaterial}" IsSynchronizedWithCurrentItem="False"
                                           Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                                           ToolTip="{Binding Key}"
-                                          DisplayMemberPath="Name"
+                                          ItemTemplate="{StaticResource RecordChoiceTemplate}" TextSearch.TextPath="Name"
                                           IsEditable="True"
                                           IsTextSearchEnabled="False"
                                           StaysOpenOnEdit="True"
@@ -555,7 +550,7 @@
                  smelter breakdown from a tanning-rack one and cannot be derived from the item), and
                  the material row is what the recipe PRODUCES - at most one, because a COBJ creates
                  one KIND of object. -->
-            <Expander Style="{StaticResource DarkExpanderStyle}" Header="Breakdown Recipe" IsExpanded="False">
+            <Expander views:ExpanderState.Key="multi.breakdown" Style="{StaticResource DarkExpanderStyle}" Header="Breakdown Recipe" IsExpanded="False">
                 <StackPanel Margin="0,10,0,0">
                     <CheckBox Content="Workbench"
                               IsChecked="{Binding IncludeBreakdownBench}"
@@ -585,11 +580,11 @@
                                     </Grid.ColumnDefinitions>
 
                                     <ComboBox Grid.Column="0"
-                                              ItemsSource="{Binding LocalMaterialsView}" VerticalAlignment="Stretch"
+                                              ItemsSource="{Binding LocalMaterialsView}" model:PickerChips.Filter="{Binding MaterialFilter}" VerticalAlignment="Stretch"
                                               SelectedItem="{Binding SelectedMaterial}" IsSynchronizedWithCurrentItem="False"
                                               Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                                               ToolTip="{Binding Key}"
-                                              DisplayMemberPath="Name"
+                                              ItemTemplate="{StaticResource RecordChoiceTemplate}" TextSearch.TextPath="Name"
                                               IsEditable="True"
                                               IsTextSearchEnabled="False"
                                               StaysOpenOnEdit="True"
@@ -644,7 +639,7 @@
             <!-- Container: additive (union). Left: selection catalog (by default only vendors, like
                  LimitedContainerVMs in the single-item editor); right: the template with LVLi levels,
                  which get applied 1:1 to every affected item. -->
-            <Expander Style="{StaticResource DarkExpanderStyle}" Header="Container (additive)" IsExpanded="False">
+            <Expander views:ExpanderState.Key="multi.container" Style="{StaticResource DarkExpanderStyle}" Header="Container (additive)" IsExpanded="False">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="2*"/>

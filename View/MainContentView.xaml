@@ -122,7 +122,10 @@
                             <Setter Property="Padding" Value="2" />
                             <Setter Property="HorizontalContentAlignment" Value="Left" />
                             <Setter Property="VerticalContentAlignment" Value="Center" />
-
+                            <!-- Plugin AND category rows: the plugin template has no container style
+                                 of its own, so its children inherit this one. The item rows below get
+                                 theirs from the category template and carry no IsExpanded. -->
+                            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
                         </Style>
                     </TreeView.ItemContainerStyle>
 
@@ -470,12 +473,6 @@
                                                  "(no enchantment)" is a real entry in the list, not a
                                                  blank - taking one off is something the patch can
                                                  express. -->
-                                            <!-- TEMPLATE ARMOR (TNAM, read-only) plus the jump there - the
-                                                 armor counterpart of "Base: ... / Open base" on
-                                                 enchantments. Its own row above the enchantment
-                                                 (user, 2026-10-25), shown only when the record has a
-                                                 template: an Auto row whose content is collapsed takes
-                                                 no space, so plain pieces and weapons look as before. -->
                                             <TextBlock Grid.Row="5"
                                                        Text="{Binding LineageLabel}"
                                                        Style="{StaticResource ItemLabelStyle}"
@@ -604,7 +601,8 @@
                                                           IsSynchronizedWithCurrentItem="False"
                                                           StaysOpenOnEdit="True"
                                                           TextSearch.TextPath="Name"
-                                                          DisplayMemberPath="Name"
+                                                          ItemTemplate="{StaticResource RecordChoiceTemplate}"
+                                                          model:PickerChips.Filter="{Binding EnchantmentFilter}"
                                                           BorderBrush="{Binding IsObjectEffectChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
                                                           Style="{StaticResource ItemComboBoxStyle}"
                                                           ToolTip="{Binding ObjectEffectSummary}"/>
@@ -617,6 +615,10 @@
                                                             <TextBlock Text="Which enchantment this item carries."
                                                                        Style="{StaticResource ToolTipTitelStyle}"/>
                                                             <TextBlock Text="•  Listed as EditorID | Name: 473 of 632 enchantments share their name with another, so the name alone cannot tell a base effect from its tiers."
+                                                                       Style="{StaticResource ToolTipTextStyle}"/>
+                                                            <TextBlock Text="•  Grey after the name: Armor, Weapon, Staff or Other - the same split as the Enchantments tab. The chips in the dropdown filter by it; nothing is preselected."
+                                                                       Style="{StaticResource ToolTipTextStyle}"/>
+                                                            <TextBlock Text="•  Hover an entry for its effects as the item card words them, with the numbers filled in."
                                                                        Style="{StaticResource ToolTipTextStyle}"/>
                                                             <TextBlock Text="•  This assigns an existing enchantment - it does not edit the enchantment itself. That is the Enchantments tab."
                                                                        Style="{StaticResource ToolTipTextStyle}"/>
@@ -670,7 +672,7 @@
                                     <!-- Header carries a dot when something inside changed: the
                                          section is collapsed by default, and the amber borders on
                                          the fields cannot be seen through a shut expander. -->
-                                    <Expander Grid.Row="2" views:Tutorial.Id="items.expander.specific" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
+                                    <Expander views:ExpanderState.Key="items.specific" Grid.Row="2" views:Tutorial.Id="items.expander.specific" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
                                         <Expander.Header>
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="Expand Armor / Weapon Specific Details"/>
@@ -1000,7 +1002,7 @@
 
                                     <!-- Keywords -->
                                     <!-- Top View -->
-                                    <Expander Grid.Row="3" views:Tutorial.Id="items.expander.keywords" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
+                                    <Expander views:ExpanderState.Key="items.keywords" Grid.Row="3" views:Tutorial.Id="items.expander.keywords" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
                                         <Expander.Header>
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="Keywords"/>
@@ -1157,7 +1159,7 @@
                                     </Expander>
 
                                     <!-- Crafting / Recipe -->
-                                    <Expander Grid.Row="4" views:Tutorial.Id="items.expander.crafting" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
+                                    <Expander views:ExpanderState.Key="items.crafting" Grid.Row="4" views:Tutorial.Id="items.expander.crafting" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
                                         <Expander.Header>
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="Crafting Recipe"/>
@@ -1170,9 +1172,6 @@
                                                         ToolTip="This item has more than one crafting recipe. Choose which one the editor shows, or take one out."
                                                         Visibility="{Binding HasOtherCraftingRecipes, Converter={StaticResource BoolToVis}}"
                                                         Style="{StaticResource StandardButtonStyle}"/>
-                                                <!-- HasCraftingChanges also covers a recipe the user
-                                                     created outright, which has no scanned original
-                                                     to differ from. -->
                                                 <TextBlock Style="{StaticResource ChangedDotStyle}"
                                                            ToolTip="The crafting recipe was changed or newly created."
                                                            Visibility="{Binding HasCraftingChanges, Converter={StaticResource BoolToVis}}"/>
@@ -1431,11 +1430,11 @@
                                                                 </Grid.ColumnDefinitions>
 
                                                                 <ComboBox Grid.Column="0"
-                                                                  ItemsSource="{Binding LocalMaterialsView}" VerticalAlignment="Stretch"
+                                                                  ItemsSource="{Binding LocalMaterialsView}" model:PickerChips.Filter="{Binding MaterialFilter}" VerticalAlignment="Stretch"
                                                                   SelectedItem="{Binding SelectedMaterial}" IsSynchronizedWithCurrentItem="False" BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
                                                                   Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                                                                   ToolTip="{Binding Key}"
-                                                                  DisplayMemberPath="Name"
+                                                                  ItemTemplate="{StaticResource RecordChoiceTemplate}" TextSearch.TextPath="Name"
                                                                   IsEditable="True"
                                                                   IsTextSearchEnabled="False"
                                                                   StaysOpenOnEdit="True"
@@ -1467,7 +1466,7 @@
                                     </Expander>
 
                                     <!-- Temper Recipe -->
-                                    <Expander Grid.Row="5" views:Tutorial.Id="items.expander.temper" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
+                                    <Expander views:ExpanderState.Key="items.temper" Grid.Row="5" views:Tutorial.Id="items.expander.temper" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
                                         <Expander.Header>
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="Temper Recipe"/>
@@ -1695,11 +1694,11 @@
                                                                 </Grid.ColumnDefinitions>
 
                                                                 <ComboBox Grid.Column="0"
-                                                            ItemsSource="{Binding LocalMaterialsView}" VerticalAlignment="Stretch"
+                                                            ItemsSource="{Binding LocalMaterialsView}" model:PickerChips.Filter="{Binding MaterialFilter}" VerticalAlignment="Stretch"
                                                             SelectedItem="{Binding SelectedMaterial}" IsSynchronizedWithCurrentItem="False" BorderBrush="{Binding IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
                                                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                                                             ToolTip="{Binding Key}"
-                                                            DisplayMemberPath="Name"
+                                                            ItemTemplate="{StaticResource RecordChoiceTemplate}" TextSearch.TextPath="Name"
                                                             IsEditable="True"
                                                             IsTextSearchEnabled="False"
                                                             StaysOpenOnEdit="True"
@@ -1730,7 +1729,7 @@
                                     </Expander>
                                     <!-- Breakdown: recipes that CONSUME this item.
                                          Read-only for now; editing and creating comes next. -->
-                                    <Expander Grid.Row="6" views:Tutorial.Id="items.expander.breakdown" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
+                                    <Expander views:ExpanderState.Key="items.breakdown" Grid.Row="6" views:Tutorial.Id="items.expander.breakdown" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
                                         <Expander.Header>
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="Breakdown"/>
@@ -1841,8 +1840,8 @@
                                                                               IsTextSearchEnabled="False"
                                                                               StaysOpenOnEdit="True"
                                                                               IsSynchronizedWithCurrentItem="False"
-                                                                              ItemsSource="{Binding Output.LocalMaterialsView}"
-                                                                              DisplayMemberPath="Name"
+                                                                              ItemsSource="{Binding Output.LocalMaterialsView}" model:PickerChips.Filter="{Binding Output.MaterialFilter}"
+                                                                              ItemTemplate="{StaticResource RecordChoiceTemplate}" TextSearch.TextPath="Name"
                                                                               ToolTip="{Binding Output.Key}"
                                                                               BorderBrush="{Binding Output.IsDeadReference, Converter={StaticResource BoolToDeadRefBorderConverter}}"
                                                                               Text="{Binding Output.SearchText, UpdateSourceTrigger=PropertyChanged}"
@@ -1919,7 +1918,7 @@
                                     </Expander>
 
                                     <!-- Container Section -->
-                                    <Expander Grid.Row="7" views:Tutorial.Id="items.expander.container" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
+                                    <Expander views:ExpanderState.Key="items.container" Grid.Row="7" views:Tutorial.Id="items.expander.container" Style="{StaticResource DarkExpanderStyle}" IsExpanded="False">
                                         <Expander.Header>
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="Container"/>

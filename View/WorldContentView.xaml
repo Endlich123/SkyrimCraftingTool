@@ -137,8 +137,6 @@
                                VerticalAlignment="Center"
                                Margin="5,0,0,0"/>
 
-                    <!-- The user's own list (docs/LeveledList-Create-Plan.md, L-P2): the one kind of
-                         row here no plugin defines, and the one that can be renamed and deleted. -->
                     <TextBlock Text="yours"
                                Visibility="{Binding IsOwn, Converter={StaticResource BoolToVis}}"
                                Foreground="{DynamicResource ColorAccentLight}"
@@ -233,15 +231,6 @@
                                Foreground="{DynamicResource ColorTextTertiary}"
                                FontSize="10" Margin="2,4,0,0"/>
 
-                    <!-- Plugin, and the containers/lists it defines - nothing in between. A flat list
-                         of every container in the load order is thousands of rows of which the user
-                         only ever wants one mod's worth, and collapsed plugin rows also mean the tree
-                         renders a few hundred items instead of a few thousand.
-
-                         The tree itself is Styles/PluginTreeTemplate.xaml, shared with the placement
-                         tabs; what stays here is the LEAF, above - an owner row looks nothing like a
-                         placeable record. Ctrl/Shift and the selection come with the style, through
-                         MultiSelectTreeBehavior and IMultiSelectTree. -->
                     <TreeView ItemsSource="{Binding FilteredTree}"
                               views:Tutorial.Id="world.owner.tree"
                               Style="{StaticResource PluginTreeStyle}"/>
@@ -281,27 +270,126 @@
                                    Margin="8,0,0,0"/>
                     </StackPanel>
 
-                    <!-- THE BLOCKS ABOVE THE CONTENTS, scrolling together and capped at 60 % of the pane.
-                         A DockPanel hands a top-docked block whatever it asks for and cuts off what does
-                         not fit - with the own list's panel on top, a smaller window made the odds below
-                         unreachable (user, 2026-10-12). The contents list keeps at least the rest, and
-                         with it its virtualisation, which a ScrollViewer around the whole pane would cost. -->
                     <ScrollViewer DockPanel.Dock="Top"
                                   VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled"
                                   MaxHeight="{Binding ActualHeight, ElementName=ContentsPane, Converter={StaticResource ScaleConverter}, ConverterParameter=0.6}">
                         <StackPanel>
-                            <!-- ONE OF THE USER'S OWN LISTS (docs/LeveledList-Create-Plan.md, L-P2 / L-P6): its
-                                 name, deleting it, and where it hangs. NOT what is in it - that arrives from an
-                                 item's Container tab like it does for every list, and the rows below show it.
+                            <!-- WHAT THIS LIST DOES, for the lists that have properties at all. The very
+                                 panel the leveled-list window shows - chance of nothing, how the list
+                                 calculates, and what the odds come to for one object in it. It existed; it
+                                 was simply unreachable for anyone reading a list from here rather than from
+                                 an item. See Styles/LeveledListPropertiesPanel.xaml.
+                                 First in the pane, own lists included: the "how the list calculates" box
+                                 lives in here, so an own list needs no separate copy of it above. -->
+                            <!-- THE VISIBILITY SITS ON THE EXPANDER, NOT ON THE PRESENTER. A ContentPresenter
+                                 makes its Content its own DataContext - that is how it binds the template -
+                                 so a Visibility bound on it asks the CONTENT for HasListEditor, not the
+                                 pane. With no list there is no content, the binding resolves against null,
+                                 and WPF falls back to the default: Visible. Which is how a container ended
+                                 up showing an empty "This list" and "Chance calculator". -->
+                            <!-- COLLAPSED BY DEFAULT. Open, this is as tall as the list underneath it, on a
+                                 tab whose whole job is that list - the contents had a row and a half. The
+                                 header carries the three facts worth knowing without opening it, so leaving
+                                 it closed costs nothing. -->
+                            <Expander
+                                      IsExpanded="{Binding IsListEditorExpanded, Mode=TwoWay}"
+                                      views:Tutorial.Id="world.owner.odds"
+                                      Visibility="{Binding HasListEditor, Converter={StaticResource BoolToVis}}"
+                                      Foreground="{DynamicResource ColorTextPrimary}"
+                                      Margin="0,0,0,8">
+                                <Expander.Header>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="This list and its odds"/>
+                                        <TextBlock Text="{Binding ListEditorHeader}"
+                                                   Foreground="{DynamicResource ColorTextTertiary}"
+                                                   FontSize="11"
+                                                   VerticalAlignment="Center"
+                                                   Margin="8,0,0,0"/>
+                                    </StackPanel>
+                                </Expander.Header>
 
-                                 Visibility on the Border against the pane - the same reason the list-properties
-                                 expander below spells out. -->
+                                <ContentPresenter Content="{Binding ListEditor}"
+                                                  ContentTemplate="{StaticResource LeveledListPropertiesPanel}"
+                                                  Margin="0,6,0,0"/>
+                            </Expander>
+
+                            <!-- The standing reminder, and it appears only once there is something to remind
+                                 about. Everything else this tool writes only ever adds; these rules delete
+                                 entries other mods put there. -->
                             <Border
-                                    Visibility="{Binding HasOwnListEditor, Converter={StaticResource BoolToVis}}"
+                                    Visibility="{Binding HasRemovals, Converter={StaticResource BoolToVis}}"
                                     Background="{DynamicResource ColorBackgroundControl}"
-                                    BorderBrush="{DynamicResource ColorAccentLight}" BorderThickness="1"
-                                    Padding="8,6" Margin="0,0,0,8">
+                                    BorderBrush="#D8B84A" BorderThickness="1"
+                                    Padding="8,5" Margin="0,0,0,8">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding RemovalCountText}"
+                                               Foreground="#D8B84A" TextWrapping="Wrap"/>
+                                    <TextBlock Text="Removing takes the object out for EVERY mod that feeds this, not just for your own additions. Everything else the patch writes only adds."
+                                               Foreground="{DynamicResource ColorTextTertiary}"
+                                               FontSize="10" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- SectionNote explains the two halves of the list below, which is the one
+                         thing a merged view has to say out loud. Not for own lists: no override
+                         drops anything from them, and an entry taken out is simply gone. -->
+                    <TextBlock DockPanel.Dock="Top"
+                               Text="{Binding SectionNote}"
+                               Visibility="{Binding HasSectionNote, Converter={StaticResource BoolToVis}}"
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               FontSize="10" TextWrapping="Wrap" Margin="0,0,0,6"/>
+
+                    <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0" views:Tutorial.Id="world.owner.buttons">
+                        <Button DockPanel.Dock="Left"
+                                Content="Remove selected"
+                                Command="{Binding RemoveSelectedCommand}"
+                                IsEnabled="{Binding HasSelectedRows}"
+                                Style="{StaticResource StandardButtonStyle}"
+                                ToolTip="Moves the ticked rows down into the lower section. What the load order put here becomes a removal in your patch; what you put here is simply dropped again."/>
+
+                        <Button DockPanel.Dock="Left"
+                                Content="Put back selected"
+                                Command="{Binding PutBackSelectedCommand}"
+                                IsEnabled="{Binding HasSelectedRows}"
+                                Style="{StaticResource StandardButtonStyle}"
+                                ToolTip="Moves the ticked rows back up. Your own removal is taken back; an entry an override dropped is added again at the level and amount it last had."/>
+
+                        <TextBlock Text="{Binding SelectionSummary}"
+                                   Foreground="{DynamicResource ColorTextTertiary}"
+                                   FontSize="10" VerticalAlignment="Center"
+                                   TextWrapping="Wrap" Margin="10,0,0,0"/>
+                    </DockPanel>
+
+                    <!-- Said once, under the rows it is about: the honesty note the whole lower
+                         section needs, and for a container also where those losses come from. -->
+                    <TextBlock DockPanel.Dock="Bottom"
+                               Text="{Binding HistoryNote}"
+                               Visibility="{Binding HasHistory, Converter={StaticResource BoolToVis}}"
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               FontSize="10" TextWrapping="Wrap" Margin="0,6,0,0"/>
+
+                    <!-- Why the lower section carries no overrides while several are picked. -->
+                    <TextBlock DockPanel.Dock="Bottom"
+                               Text="{Binding HistoryMultiNote}"
+                               Visibility="{Binding IsHistoryOnePickOnly, Converter={StaticResource BoolToVis}}"
+                               Foreground="{DynamicResource ColorTextTertiary}"
+                               FontSize="10" Margin="0,6,0,0"/>
+
+                    <!-- ONE BLOCK. For an own list its editor sits at the top of the contents box, split
+                         off by a line - not in a framed box of its own above it, which left two boxes
+                         for one list and, on an empty list, a big grey box with nothing in it. -->
+                    <Border views:Tutorial.Id="world.owner.rows"
+                            Background="{DynamicResource ColorBackgroundControl}"
+                            BorderBrush="{DynamicResource ColorBorder}"
+                            BorderThickness="1">
+                        <DockPanel>
+                            <Border DockPanel.Dock="Top"
+                                    Visibility="{Binding HasOwnListEditor, Converter={StaticResource BoolToVis}}"
+                                    BorderBrush="{DynamicResource ColorBorder}" BorderThickness="0,0,0,1"
+                                    Padding="8,6">
                                 <!-- A ContentPresenter, not a DataContext on the panel: with the DataContext
                                      switched on an element, the bindings inside first resolve against the
                                      inherited pane (OwnerContentsVM) while the template is built, and every
@@ -471,153 +559,64 @@
                                 </ContentPresenter>
                             </Border>
 
-                            <!-- The standing reminder, and it appears only once there is something to remind
-                                 about. Everything else this tool writes only ever adds; these rules delete
-                                 entries other mods put there. -->
-                            <Border
-                                    Visibility="{Binding HasRemovals, Converter={StaticResource BoolToVis}}"
-                                    Background="{DynamicResource ColorBackgroundControl}"
-                                    BorderBrush="#D8B84A" BorderThickness="1"
-                                    Padding="8,5" Margin="0,0,0,8">
-                                <StackPanel>
-                                    <TextBlock Text="{Binding RemovalCountText}"
-                                               Foreground="#D8B84A" TextWrapping="Wrap"/>
-                                    <TextBlock Text="Removing takes the object out for EVERY mod that feeds this, not just for your own additions. Everything else the patch writes only adds."
-                                               Foreground="{DynamicResource ColorTextTertiary}"
-                                               FontSize="10" TextWrapping="Wrap" Margin="0,3,0,0"/>
-                                </StackPanel>
-                            </Border>
+                            <Grid>
+                            <ListBox x:Name="RowsList" ItemsSource="{Binding Rows}"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     HorizontalContentAlignment="Stretch"
+                                     ItemContainerStyle="{StaticResource PlainListBoxItemStyle}"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     VirtualizingPanel.IsVirtualizing="True"
+                                     VirtualizingPanel.IsVirtualizingWhenGrouping="True"
+                                     VirtualizingPanel.VirtualizationMode="Recycling">
+                                <ListBox.GroupStyle>
+                                    <GroupStyle>
+                                        <GroupStyle.HeaderTemplate>
+                                            <DataTemplate>
+                                                <Border Background="{DynamicResource ColorBackgroundPanel}"
+                                                        BorderBrush="{DynamicResource ColorBorder}"
+                                                        BorderThickness="0,0,0,1"
+                                                        Padding="4,3" Margin="0,4,0,2">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="{Binding Name}"
+                                                                   FontWeight="Bold"
+                                                                   Foreground="{DynamicResource ColorAccentLight}"/>
+                                                        <TextBlock Text="{Binding ItemCount, StringFormat=({0})}"
+                                                                   Foreground="{DynamicResource ColorTextTertiary}"
+                                                                   FontSize="10"
+                                                                   VerticalAlignment="Center"
+                                                                   Margin="5,0,0,0"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </GroupStyle.HeaderTemplate>
+                                    </GroupStyle>
+                                </ListBox.GroupStyle>
+                            </ListBox>
 
-                            <!-- WHAT THIS LIST DOES, for the lists that have properties at all. The very
-                                 panel the leveled-list window shows - chance of nothing, how the list
-                                 calculates, and what the odds come to for one object in it. It existed; it
-                                 was simply unreachable for anyone reading a list from here rather than from
-                                 an item. See Styles/LeveledListPropertiesPanel.xaml. -->
-                            <!-- THE VISIBILITY SITS ON THE BORDER, NOT ON THE PRESENTER. A ContentPresenter
-                                 makes its Content its own DataContext - that is how it binds the template -
-                                 so a Visibility bound on it asks the CONTENT for HasListEditor, not the
-                                 pane. With no list there is no content, the binding resolves against null,
-                                 and WPF falls back to the default: Visible. Which is how a container ended
-                                 up showing an empty "This list" and "Chance calculator".
-
-                                 The two neighbouring presenters get away with Content="{Binding}" - their
-                                 content IS the view model, so the question happens to reach the right
-                                 object. This one does not, and relying on that coincidence is the bug. -->
-                            <!-- COLLAPSED BY DEFAULT. Open, this is as tall as the list underneath it, on a
-                                 tab whose whole job is that list - the contents had a row and a half. The
-                                 header carries the three facts worth knowing without opening it, so leaving
-                                 it closed costs nothing. -->
-                            <Expander
-                                      IsExpanded="{Binding IsListEditorExpanded, Mode=TwoWay}"
-                                      views:Tutorial.Id="world.owner.odds"
-                                      Visibility="{Binding HasListEditor, Converter={StaticResource BoolToVis}}"
-                                      Foreground="{DynamicResource ColorTextPrimary}"
-                                      Margin="0,0,0,6">
-                                <Expander.Header>
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="This list and its odds"/>
-                                        <TextBlock Text="{Binding ListEditorHeader}"
-                                                   Foreground="{DynamicResource ColorTextTertiary}"
-                                                   FontSize="11"
-                                                   VerticalAlignment="Center"
-                                                   Margin="8,0,0,0"/>
-                                    </StackPanel>
-                                </Expander.Header>
-
-                                <ContentPresenter Content="{Binding ListEditor}"
-                                                  ContentTemplate="{StaticResource LeveledListPropertiesPanel}"
-                                                  Margin="0,6,0,0"/>
-                            </Expander>
-                        </StackPanel>
-                    </ScrollViewer>
-
-                    <!-- SectionNote explains the two halves of the list below, which is the one
-                         thing a merged view has to say out loud. -->
-                    <TextBlock DockPanel.Dock="Top"
-                               Text="{Binding SectionNote}"
-                               Foreground="{DynamicResource ColorTextTertiary}"
-                               FontSize="10" TextWrapping="Wrap" Margin="0,0,0,6"/>
-
-                    <!-- THE TWO DIRECTIONS, and the only two buttons in here. "Put back" undoes a
-                         removal of the user's own AND restores what an override dropped, because
-                         from the list's point of view those are the same thing happening. The rows
-                         decide which store is written - see OwnerContentsVM. -->
-                    <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0" views:Tutorial.Id="world.owner.buttons">
-                        <Button DockPanel.Dock="Left"
-                                Content="Remove selected"
-                                Command="{Binding RemoveSelectedCommand}"
-                                IsEnabled="{Binding HasSelectedRows}"
-                                Style="{StaticResource StandardButtonStyle}"
-                                ToolTip="Moves the ticked rows down into the lower section. What the load order put here becomes a removal in your patch; what you put here is simply dropped again."/>
-
-                        <Button DockPanel.Dock="Left"
-                                Content="Put back selected"
-                                Command="{Binding PutBackSelectedCommand}"
-                                IsEnabled="{Binding HasSelectedRows}"
-                                Style="{StaticResource StandardButtonStyle}"
-                                ToolTip="Moves the ticked rows back up. Your own removal is taken back; an entry an override dropped is added again at the level and amount it last had."/>
-
-                        <TextBlock Text="{Binding SelectionSummary}"
-                                   Foreground="{DynamicResource ColorTextTertiary}"
-                                   FontSize="10" VerticalAlignment="Center"
-                                   TextWrapping="Wrap" Margin="10,0,0,0"/>
-                    </DockPanel>
-
-                    <!-- Said once, under the rows it is about: the honesty note the whole lower
-                         section needs, and for a container also where those losses come from. -->
-                    <TextBlock DockPanel.Dock="Bottom"
-                               Text="{Binding HistoryNote}"
-                               Visibility="{Binding HasHistory, Converter={StaticResource BoolToVis}}"
-                               Foreground="{DynamicResource ColorTextTertiary}"
-                               FontSize="10" TextWrapping="Wrap" Margin="0,6,0,0"/>
-
-                    <!-- Why the lower section carries no overrides while several are picked. -->
-                    <TextBlock DockPanel.Dock="Bottom"
-                               Text="{Binding HistoryMultiNote}"
-                               Visibility="{Binding IsHistoryOnePickOnly, Converter={StaticResource BoolToVis}}"
-                               Foreground="{DynamicResource ColorTextTertiary}"
-                               FontSize="10" Margin="0,6,0,0"/>
-
-                    <!-- ONE LIST, TWO SECTIONS. What comes out of this thing, and what does not -
-                         the user's removals and the overrides' losses together, because they mean
-                         the same thing. The grouping comes from the view model (the default view of
-                         Rows, grouped on Section); the rows are picked by type through the two
-                         implicit templates in this dictionary. -->
-                    <ListBox ItemsSource="{Binding Rows}"
-                             views:Tutorial.Id="world.owner.rows"
-                             Background="{DynamicResource ColorBackgroundControl}"
-                             BorderBrush="{DynamicResource ColorBorder}"
-                             BorderThickness="1"
-                             HorizontalContentAlignment="Stretch"
-                             ItemContainerStyle="{StaticResource PlainListBoxItemStyle}"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             VirtualizingPanel.IsVirtualizing="True"
-                             VirtualizingPanel.IsVirtualizingWhenGrouping="True"
-                             VirtualizingPanel.VirtualizationMode="Recycling">
-                        <ListBox.GroupStyle>
-                            <GroupStyle>
-                                <GroupStyle.HeaderTemplate>
-                                    <DataTemplate>
-                                        <Border Background="{DynamicResource ColorBackgroundPanel}"
-                                                BorderBrush="{DynamicResource ColorBorder}"
-                                                BorderThickness="0,0,0,1"
-                                                Padding="4,3" Margin="0,4,0,2">
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="{Binding Name}"
-                                                           FontWeight="Bold"
-                                                           Foreground="{DynamicResource ColorAccentLight}"/>
-                                                <TextBlock Text="{Binding ItemCount, StringFormat=({0})}"
-                                                           Foreground="{DynamicResource ColorTextTertiary}"
-                                                           FontSize="10"
-                                                           VerticalAlignment="Center"
-                                                           Margin="5,0,0,0"/>
-                                            </StackPanel>
-                                        </Border>
-                                    </DataTemplate>
-                                </GroupStyle.HeaderTemplate>
-                            </GroupStyle>
-                        </ListBox.GroupStyle>
-                    </ListBox>
+                                <!-- An own list starts empty; say where its entries come from. -->
+                                <TextBlock Text="Nothing in this list yet. Items go into it from an item's Container tab, under a container this list hangs in."
+                                           Foreground="{DynamicResource ColorTextTertiary}"
+                                           FontSize="11" TextWrapping="Wrap" Margin="8"
+                                           HorizontalAlignment="Left" VerticalAlignment="Top">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition Binding="{Binding HasOwnListEditor}" Value="True"/>
+                                                        <Condition Binding="{Binding HasItems, ElementName=RowsList}" Value="False"/>
+                                                    </MultiDataTrigger.Conditions>
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </MultiDataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
+                        </DockPanel>
+                    </Border>
                 </DockPanel>
             </Grid>
         </DataTemplate>

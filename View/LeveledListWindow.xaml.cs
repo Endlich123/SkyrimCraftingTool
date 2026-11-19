@@ -10,11 +10,6 @@ using SkyrimCraftingTool.ViewModel;
 
 namespace SkyrimCraftingTool.View
 {
-    // The detail window behind a leveled list in an item's Container section.
-    //
-    // A window rather than a navigable view because it only makes sense for a particular item: the
-    // editable half is "what does THIS item get in THIS list". A view would have no such context and
-    // would replace the item editor the user came from.
     public partial class LeveledListWindow : Window
     {
         private readonly LeveledListEditorVM _vm;

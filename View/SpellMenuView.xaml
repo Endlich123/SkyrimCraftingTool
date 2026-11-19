@@ -2,7 +2,8 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:SkyrimCraftingTool.ViewModel"
-             xmlns:views="clr-namespace:SkyrimCraftingTool.View">
+             xmlns:views="clr-namespace:SkyrimCraftingTool.View"
+             xmlns:model="clr-namespace:SkyrimCraftingTool.Model">
 
     <Grid Margin="10">
         <!-- The same three columns as the Items and Enchantments tabs: a resizable tree with a
@@ -19,8 +20,6 @@
 
         <DockPanel Grid.Row="0" Grid.ColumnSpan="3" Margin="0,0,0,8"
                    views:Tutorial.Id="spells.toolbar">
-            <!-- Records of the user's own. They appear under the tool's own plugin in the tree and
-                 reach the game through the generated ESP. -->
             <Button DockPanel.Dock="Left" Content="New spell"
                     Command="{Binding NewSpellCommand}"
                     Style="{StaticResource ActionButtonGreenStyle}"
@@ -262,7 +261,7 @@
                              A collapsed section must still admit that something inside it changed -
                              the amber borders on the fields are invisible while it is shut - hence
                              the same dot the tree uses. -->
-                        <Expander Style="{StaticResource DarkExpanderStyle}" IsExpanded="True" Margin="0,0,0,10"
+                        <Expander views:ExpanderState.Key="spells.basic" Style="{StaticResource DarkExpanderStyle}" IsExpanded="True" Margin="0,0,0,10"
                                   views:Tutorial.Id="spells.basic">
                             <Expander.Header>
                                 <StackPanel Orientation="Horizontal">
@@ -461,9 +460,6 @@
                                                Style="{StaticResource ItemLabelStyle}"/>
                                     <StackPanel Grid.Row="9" Grid.Column="1"
                                                 views:Tutorial.Id="spells.halfcost">
-                                        <!-- A pick from the scanned perks, never free text: halfCostPerk=
-                                             takes a perk and nothing else (user, 2026-10-18). Filters
-                                             as you type - see SpellPerkPickerVM. -->
                                         <ComboBox DataContext="{Binding HalfCostPerkPicker}"
                                                   ItemsSource="{Binding Options}"
                                                   SelectedItem="{Binding Selected, Mode=TwoWay}"
@@ -472,7 +468,9 @@
                                                   IsTextSearchEnabled="False"
                                                   IsSynchronizedWithCurrentItem="False"
                                                   StaysOpenOnEdit="True"
-                                                  DisplayMemberPath="Display"
+                                                  ItemTemplate="{StaticResource PerkChoiceTemplate}"
+                                                  TextSearch.TextPath="Display"
+                                                  model:PickerChips.Filter="{Binding Filter}"
                                                   Margin="0,0,5,5"
                                                   BorderBrush="{Binding IsChanged, Converter={StaticResource BoolToChangedBorderConverter}}"
                                                   Style="{StaticResource ItemComboBoxStyle}"/>
@@ -583,7 +581,7 @@
                              the SAME kind of record - Mutagen gives SPEL and ENCH an identical
                              effect type - so anything that looked different here would be a
                              difference invented by this tool rather than one the game has. -->
-                        <Expander Style="{StaticResource DarkExpanderStyle}" IsExpanded="True" Margin="0,0,0,10"
+                        <Expander views:ExpanderState.Key="spells.effects" Style="{StaticResource DarkExpanderStyle}" IsExpanded="True" Margin="0,0,0,10"
                                   views:Tutorial.Id="spells.effects">
                             <Expander.Header>
                                 <StackPanel Orientation="Horizontal">

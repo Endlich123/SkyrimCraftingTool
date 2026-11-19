@@ -7,15 +7,6 @@ using SkyrimCraftingTool.Model;
 
 namespace SkyrimCraftingTool.View
 {
-    // "Open Folder": opens FolderPath in Explorer (user, 2026-10-18). A button type of its own, so a
-    // view only says WHICH folder - the click, the creating and the error message are written once.
-    //
-    // The folder is created first: Presets and Exports only exist once something was written there,
-    // and Explorer handed a missing path opens some other folder instead (usually Documents),
-    // which looks like a wrong folder rather than an empty one.
-    //
-    // Looks like a StandardButtonStyle button, labelled "Open Folder", with the full path as tooltip -
-    // the implicit style in Styles/Controls.xaml; a view can still set its own Content or ToolTip.
     public class OpenFolderButton : Button
     {
         public static readonly DependencyProperty FolderPathProperty =

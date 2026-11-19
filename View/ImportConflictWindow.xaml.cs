@@ -36,7 +36,7 @@ namespace SkyrimCraftingTool.View
             Conflict = conflict;
         }
 
-        public event PropertyChangedEventHandler PropertyChanged;
+        public event PropertyChangedEventHandler? PropertyChanged;
     }
 
     public partial class ImportConflictWindow : Window
@@ -61,10 +61,7 @@ namespace SkyrimCraftingTool.View
             DwmTitleBarService.ApplyAccentCaption(hwnd, captionColor, textColor);
         }
 
-        // Returns the set of "Table|Key" identifiers the user chose to overwrite with the imported
-        // (older) version. Returns null if the user cancelled — the caller must then abort the whole
-        // import, since leaving conflicts unresolved would silently apply nothing for those items.
-        public static HashSet<string> ShowDialog(List<ImportConflict> conflicts)
+        public static HashSet<string>? ShowDialog(List<ImportConflict> conflicts)
         {
             var window = new ImportConflictWindow(conflicts) { Owner = System.Windows.Application.Current.MainWindow };
             bool? result = window.ShowDialog();
